@@ -1,0 +1,28 @@
+{
+  "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  "extends": ["../../.oxlintrc.json"],
+  "plugins": ["react"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "builtin": true,
+    "browser": true
+  },
+  "settings": {
+    "react": {
+      "version": "19.2.6"
+    },
+    "tailwindcss": {
+      "callees": ["clsx", "cva", "cn"]
+    }
+  },
+  "ignorePatterns": [
+    ".source/",
+    ".output/",
+    ".tanstack/",
+    ".nitro/",
+    ".vercel/",
+    "src/routeTree.gen.ts"
+  ]
+}
