@@ -1,6 +1,27 @@
 import { Cause, Effect, Exit, Fiber, Queue, Scope, Stream } from "effect";
 import { createSession } from "@mitome/core";
-import type { Definition, TurnEvent } from "@mitome/core";
+import type { Definition, TurnEvent as CoreTurnEvent } from "@mitome/core";
+
+export type TurnEvent =
+  | { readonly type: "model-output"; readonly text: string }
+  | { readonly type: "tool-call"; readonly id: string; readonly name: string }
+  | {
+      readonly type: "tool-result";
+      readonly id: string;
+      readonly name: string;
+      readonly result: unknown;
+      readonly isFailure: boolean;
+    }
+  | {
+      readonly type: "approval-required";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+      readonly name: string;
+      readonly params: unknown;
+      readonly approve: () => Promise<void>;
+      readonly deny: (reason?: string) => Promise<void>;
+    }
+  | { readonly type: "response-complete" };
 
 export interface Session {
   readonly prompt: (text: string) => AsyncIterable<TurnEvent>;
@@ -11,13 +32,22 @@ class CallbackFailure {
 }
 
 type TurnItem =
-  | { readonly _tag: "Event"; readonly event: TurnEvent }
+  | { readonly _tag: "Event"; readonly event: CoreTurnEvent }
   | { readonly _tag: "Exit"; readonly exit: Exit.Exit<void, unknown> };
+
+const toSdkEvent = (event: CoreTurnEvent): TurnEvent => {
+  if (event.type !== "approval-required") return event;
+  return {
+    ...event,
+    approve: () => Effect.runPromise(event.approve()),
+    deny: (reason) => Effect.runPromise(event.deny(reason)),
+  };
+};
 
 // beta.97's Stream.toAsyncIterable().return() only closes its Scope, never Fiber.interrupts an in-flight pull.
 // This bridge makes iterator return()/throw() interrupt active model/tool work.
 const toAsyncIterable = (
-  stream: Stream.Stream<TurnEvent, unknown>,
+  stream: Stream.Stream<CoreTurnEvent, unknown>,
   scope: Scope.Scope,
 ): AsyncIterable<TurnEvent> => ({
   [Symbol.asyncIterator]() {
@@ -45,7 +75,7 @@ const toAsyncIterable = (
       async next(): Promise<IteratorResult<TurnEvent>> {
         if (closed) return { done: true, value: undefined };
         const item = await Effect.runPromise(Queue.take(queue));
-        if (item._tag === "Event") return { done: false, value: item.event };
+        if (item._tag === "Event") return { done: false, value: toSdkEvent(item.event) };
         closed = true;
         if (Exit.isSuccess(item.exit)) return { done: true, value: undefined };
         throw Cause.squash(item.exit.cause);

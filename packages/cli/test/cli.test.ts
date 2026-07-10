@@ -1,3 +1,5 @@
+// Bun's async matchers are typed void but must be awaited to stay within the test.
+// oxlint-disable typescript/await-thenable
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -52,6 +54,39 @@ export default { instructions: "Reply with the fixture output.", model, plugins:
     }) } }]`
     : "[]"
 } };
+`;
+
+const approvalDefinitionSource = (marker: string): string => `
+import { writeFileSync } from "node:fs";
+import { Effect, Layer, Schema, Stream } from "effect";
+import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
+import { makeModel } from "@mitome/core";
+
+let calls = 0;
+const model = makeModel(Layer.effect(LanguageModel.LanguageModel, LanguageModel.make({
+  generateText: () => Effect.succeed([]),
+  streamText: () => {
+    calls += 1;
+    if (calls === 1) return Stream.succeed({
+      type: "tool-call", id: "call-approval", name: "dangerous", params: {},
+    });
+    return Stream.succeed({ type: "text-delta", id: "done", delta: "continued" });
+  },
+})));
+const dangerous = Tool.make("dangerous", {
+  parameters: Schema.Struct({}),
+  success: Schema.String,
+  needsApproval: true,
+});
+export default {
+  instructions: "Approve the fixture Tool.",
+  model,
+  plugins: [{
+    name: "dangerous",
+    toolkit: Toolkit.make(dangerous),
+    handlers: { dangerous: () => Effect.sync(() => { writeFileSync(${JSON.stringify(marker)}, "ran"); return "ran"; }) },
+  }],
+};
 `;
 
 type Fixture = {
@@ -114,6 +149,44 @@ const output = async (process: ReturnType<typeof spawn>) => {
   ]);
   return { stdout, stderr, exitCode };
 };
+
+const spawnInteractive = (args: ReadonlyArray<string>, current: Fixture) =>
+  Bun.spawn([binary, ...args], {
+    cwd: current.root,
+    env: current.env,
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+type StdoutReader = {
+  read(): Promise<{ readonly done: boolean; readonly value?: Uint8Array<ArrayBuffer> | undefined }>;
+};
+
+const readUntil = async (reader: StdoutReader, marker: string) => {
+  let output = "";
+  while (!output.includes(marker)) {
+    const next = await reader.read();
+    if (next.done) throw new Error(`Missing ${marker} in ${output}`);
+    output += new TextDecoder().decode(next.value);
+  }
+  return output;
+};
+
+const rest = (reader: StdoutReader) =>
+  new Response(
+    new ReadableStream({
+      start(controller) {
+        const read = async (): Promise<void> => {
+          const next = await reader.read();
+          if (next.done) return controller.close();
+          controller.enqueue(next.value);
+          await read();
+        };
+        void read();
+      },
+    }),
+  ).text();
 
 beforeAll(async () => {
   if (!(await Bun.file(binary).exists())) {
@@ -378,5 +451,74 @@ export default {
     expect(await child.exited).toBe(130);
     expect(await Bun.file(signalProbe.cleanupDone).exists()).toBe(true);
     expect(firstOutput + rest).not.toContain(" second");
+  });
+
+  test("approves, denies, defaults, and EOF-denies pending Tool execution", async () => {
+    const run = async (answer: string | undefined) => {
+      const current = await fixture();
+      const marker = join(current.root, "handler-ran");
+      await writeFile(current.definition, approvalDefinitionSource(marker));
+      const process = spawnInteractive(["--use", current.definition], current);
+      const reader = process.stdout.getReader();
+      void process.stdin.write("hello\n");
+      const initial = await readUntil(reader, "[approval dangerous]");
+      if (answer === undefined) void process.stdin.end();
+      else {
+        void process.stdin.write(answer);
+        void process.stdin.end();
+      }
+      const [tail, stderr, exitCode] = await Promise.all([
+        rest(reader),
+        new Response(process.stderr).text(),
+        process.exited,
+      ]);
+      return {
+        current,
+        marker,
+        stdout: initial + tail,
+        stderr,
+        exitCode,
+        ran: await Bun.file(marker).exists(),
+      };
+    };
+
+    const approved = await run("y\n");
+    expect(approved).toMatchObject({ exitCode: 0, stderr: "", ran: true });
+    expect(approved.stdout).toContain("continued");
+
+    for (const answer of ["n\n", "\n", undefined]) {
+      const denied = await run(answer);
+      expect(denied).toMatchObject({ exitCode: 0, stderr: "", ran: false });
+      expect(denied.stdout).toContain("[approval dangerous]");
+    }
+  });
+
+  test("interrupts while a Tool approval is pending", async () => {
+    const current = await fixture();
+    const marker = join(current.root, "handler-ran");
+    await writeFile(current.definition, approvalDefinitionSource(marker));
+    const process = spawnInteractive(["--use", current.definition], current);
+    const reader = process.stdout.getReader();
+    void process.stdin.write("hello\n");
+    await readUntil(reader, "[approval dangerous]");
+    process.kill("SIGINT");
+    await expect(process.exited).resolves.toBe(130);
+    expect(await Bun.file(marker).exists()).toBe(false);
+  });
+
+  test("uses Core directly without SDK runtime support", async () => {
+    const packageJson = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    // The Session host lives in host.ts; index.ts only embeds it as text.
+    const source = await readFile(join(packageDir, "src", "index.ts"), "utf8");
+    const host = await readFile(join(packageDir, "src", "host.ts"), "utf8");
+    expect(packageJson.devDependencies["@mitome/core"]).toBe("workspace:*");
+    expect(packageJson.dependencies?.["@mitome/sdk"]).toBeUndefined();
+    expect(packageJson.devDependencies["@mitome/sdk"]).toBeUndefined();
+    expect(host).toContain("createSession");
+    expect(source).not.toContain("@mitome/sdk");
+    expect(host).not.toContain("@mitome/sdk");
   });
 });

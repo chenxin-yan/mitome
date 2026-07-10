@@ -11,6 +11,7 @@ export type {
 export { makeModel } from "./model.js";
 export type { Model } from "./model.js";
 export {
+  ApprovalResolutionError,
   SessionBusyError,
   SessionReleasedError,
   ToolExecutionDenied,
