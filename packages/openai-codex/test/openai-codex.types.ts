@@ -1,5 +1,7 @@
 import type { CredentialDescriptor, Model } from "@mitome/core";
 import {
+  type CodexOptions,
+  type KnownModelId,
   type LoginOptions,
   type LogoutOptions,
   type ModelId,
@@ -33,12 +35,24 @@ type LiteralOAuthCredential = {
   readonly expires: number;
   readonly accountId: string;
 };
+type LiteralCodexOptions = {
+  readonly baseUrl?: string;
+  readonly configDirectory?: string;
+  readonly tokenUrl?: string;
+  readonly fetch?: typeof fetch;
+  readonly sessionId?: string;
+};
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Assert<T extends true> = T;
 type PublicOAuth = () => CredentialDescriptor;
-type PublicCodex = (model: ModelId, credential?: CredentialDescriptor) => Model;
+type PublicModelId = KnownModelId | (string & {});
+type PublicCodex = (
+  model: ModelId,
+  credential?: CredentialDescriptor,
+  options?: CodexOptions,
+) => Model;
 type PublicLogin = (options: LiteralLoginOptions) => Promise<void>;
 type PublicLogout = (options: LiteralLogoutOptions) => Promise<void>;
 type PublicWriteCredential = (
@@ -55,6 +69,7 @@ type PublicAuthenticate = (options: {
 }) => Promise<void>;
 
 const publicContracts: [
+  Assert<Equal<ModelId, PublicModelId>>,
   Assert<Equal<typeof oauth, PublicOAuth>>,
   Assert<Equal<typeof codex, PublicCodex>>,
   Assert<Equal<typeof login, PublicLogin>>,
@@ -64,5 +79,6 @@ const publicContracts: [
   Assert<Equal<LoginOptions, LiteralLoginOptions>>,
   Assert<Equal<LogoutOptions, LiteralLogoutOptions>>,
   Assert<Equal<OAuthCredential, LiteralOAuthCredential>>,
-] = [true, true, true, true, true, true, true, true, true];
+  Assert<Equal<CodexOptions, LiteralCodexOptions>>,
+] = [true, true, true, true, true, true, true, true, true, true, true];
 void publicContracts;
