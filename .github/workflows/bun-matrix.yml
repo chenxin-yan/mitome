@@ -1,0 +1,77 @@
+name: Bun target matrix
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: ${{ matrix.artifact }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bun-linux-x64-baseline
+            artifact: bun-linux-x64-baseline
+            runner: ubuntu-24.04
+            musl: false
+          - target: bun-linux-x64-musl-baseline
+            artifact: bun-linux-x64-musl-baseline
+            runner: ubuntu-24.04
+            musl: true
+          - target: bun-linux-arm64
+            artifact: bun-linux-arm64
+            runner: ubuntu-24.04-arm
+            musl: false
+          - target: bun-linux-arm64-musl
+            artifact: bun-linux-arm64-musl
+            runner: ubuntu-24.04-arm
+            musl: true
+          - target: bun-darwin-x64-baseline
+            artifact: bun-darwin-x64-baseline
+            runner: macos-26-intel
+            musl: false
+          - target: bun-darwin-arm64
+            artifact: bun-darwin-arm64
+            runner: macos-26
+            musl: false
+          - target: bun-windows-x64-baseline
+            artifact: bun-windows-x64-baseline
+            runner: windows-2025
+            musl: false
+          - target: bun-windows-arm64
+            artifact: bun-windows-arm64
+            runner: windows-11-arm
+            musl: false
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run --cwd packages/cli build:matrix -- --target=${{ matrix.target }}
+      - if: matrix.musl
+        run: bun run --cwd packages/cli prepare:matrix-fixture "$GITHUB_WORKSPACE/.matrix-fixture"
+      - if: matrix.musl == false && runner.os != 'Windows'
+        working-directory: packages/cli
+        run: MITOME_BINARY="$GITHUB_WORKSPACE/packages/cli/dist/matrix/${{ matrix.artifact }}/mitome-${{ matrix.artifact }}" bun test test/cli.test.ts --test-name-pattern "loads only XDG or explicit TypeScript Definitions without Bun on PATH"
+      - if: matrix.musl == false && runner.os == 'Windows'
+        working-directory: packages/cli
+        shell: pwsh
+        run: |
+          $env:MITOME_BINARY = "$env:GITHUB_WORKSPACE\packages\cli\dist\matrix\${{ matrix.artifact }}\mitome-${{ matrix.artifact }}.exe"
+          bun test test/cli.test.ts --test-name-pattern "loads only XDG or explicit TypeScript Definitions without Bun on PATH"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - if: matrix.musl
+        shell: bash
+        run: |
+          output="$(printf 'hello\n' | docker run --rm -i -v "$GITHUB_WORKSPACE:/workspace:ro" -w /workspace docker.io/library/alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce sh -c 'apk add --no-cache libstdc++ >/dev/null && env -i PATH=/workspace/.matrix-fixture/empty-path HOME=/workspace/.matrix-fixture/home XDG_CONFIG_HOME=/workspace/.matrix-fixture/xdg TMPDIR=/tmp /workspace/packages/cli/dist/matrix/${{ matrix.artifact }}/mitome-${{ matrix.artifact }} --use /workspace/.matrix-fixture/definition/agent.ts')"
+          test "$output" = matrix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            packages/cli/dist/matrix/${{ matrix.artifact }}
+            packages/cli/dist/matrix/checksums.sha256

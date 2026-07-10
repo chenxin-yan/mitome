@@ -10,7 +10,12 @@ import {
 import { Sse } from "effect/unstable/encoding";
 import { chmod, mkdir, open, readFile, rename, rm, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { makeModel, type CredentialDescriptor, type Model } from "@mitome/core";
+import {
+  makeModel,
+  resolveConfigDirectory,
+  type CredentialDescriptor,
+  type Model,
+} from "@mitome/core";
 
 const clientId = "app_EMoamEEZ73f0CkXaXp7hrann";
 const provider = "openai-codex";
@@ -59,7 +64,7 @@ export interface LogoutOptions {
 export interface CodexOptions {
   /** Unofficial ChatGPT backend root; injectable for controlled transport fixtures. */
   readonly baseUrl?: string;
-  /** Credential directory; defaults to $XDG_CONFIG_HOME/mitome or ~/.config/mitome. */
+  /** Credential directory; defaults to XDG_CONFIG_HOME, Windows APPDATA, or Unix HOME. */
   readonly configDirectory?: string;
   /** OAuth token endpoint; injectable for controlled refresh fixtures. */
   readonly tokenUrl?: string;
@@ -87,13 +92,7 @@ const invalidOutput = (description: string) =>
 const networkError = (cause: unknown) =>
   providerError(cause instanceof Error ? cause.message : "Codex request failed");
 
-const defaultConfigDirectory = (): string => {
-  const configHome =
-    process.env.XDG_CONFIG_HOME || (process.env.HOME && join(process.env.HOME, ".config"));
-  if (configHome === undefined)
-    throw new Error("Set XDG_CONFIG_HOME or HOME to locate Codex credentials.");
-  return join(configHome, "mitome");
-};
+const defaultConfigDirectory = (): string => resolveConfigDirectory(process.env, process.platform);
 
 const contentFor = (
   content: string | ReadonlyArray<{ readonly type: string; readonly text?: string }>,

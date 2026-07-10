@@ -11,9 +11,11 @@
   "type": "module",
   "scripts": {
     "build": "bun build --compile --no-compile-autoload-dotenv src/index.ts --outfile dist/mitome",
+    "build:matrix": "bun scripts/build-matrix.ts",
     "check:types": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
+    "prepare:matrix-fixture": "bun scripts/prepare-matrix-fixture.ts",
     "test": "vitest run --testTimeout 15000"
   },
   "devDependencies": {
