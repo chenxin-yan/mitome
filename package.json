@@ -24,7 +24,6 @@
     "test": "turbo run test && bun run check:declarations",
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "check:declarations": "bun scripts/check-sdk-declarations.mjs",
     "prepare": "effect-tsgo patch"
   },
   "dependencies": {
