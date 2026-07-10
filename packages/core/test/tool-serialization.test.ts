@@ -1,0 +1,123 @@
+import { describe, expect, test } from "bun:test";
+import { Effect, Layer, Stream } from "effect";
+import { Schema } from "effect";
+import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { createSession, makeModel, type Definition } from "../src/index.js";
+
+describe("createSession Tool serialization", () => {
+  test("does not overlap two Tool handlers while model output streams", async () => {
+    let calls = 0;
+    let active = 0;
+    let maxActive = 0;
+    const log: Array<string> = [];
+    let startFirst!: () => void;
+    let releaseFirst!: () => void;
+    const firstStarted = new Promise<void>((resolve) => (startFirst = resolve));
+    const firstReleased = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const first = Tool.make("first", { parameters: Schema.Struct({}), success: Schema.String });
+    const second = Tool.make("second", { parameters: Schema.Struct({}), success: Schema.String });
+    const model = makeModel(
+      Layer.succeed(LanguageModel.LanguageModel, {
+        streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
+          calls += 1;
+          if (calls === 2)
+            return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
+          const toolCalls = [
+            Response.makePart("tool-call", {
+              id: "one",
+              name: "first",
+              params: {},
+              providerExecuted: false,
+            }),
+            Response.makePart("tool-call", {
+              id: "two",
+              name: "second",
+              params: {},
+              providerExecuted: false,
+            }),
+          ];
+          const results = Stream.mergeAll({ concurrency: "unbounded" })(
+            toolCalls.map((call) =>
+              Stream.unwrap(options.toolkit!.handle(call.name, call.params)).pipe(
+                Stream.map((result) =>
+                  Response.makePart("tool-result", {
+                    id: call.id,
+                    name: call.name,
+                    providerExecuted: false,
+                    ...result,
+                  }),
+                ),
+              ),
+            ),
+          );
+          return Stream.concat(
+            Stream.fromIterable([
+              Response.makePart("text-delta", { id: "first", delta: "working" }),
+              ...toolCalls,
+            ]),
+            results,
+          );
+        },
+      } as LanguageModel.Service),
+    );
+    const definition: Definition = {
+      instructions: "Be concise.",
+      model,
+      plugins: [
+        {
+          name: "tools",
+          toolkit: Toolkit.make(first, second),
+          handlers: {
+            first: () =>
+              Effect.promise(async () => {
+                active += 1;
+                maxActive = Math.max(maxActive, active);
+                log.push("first-start");
+                startFirst();
+                await firstReleased;
+                log.push("first-end");
+                active -= 1;
+                return "first";
+              }),
+            second: () =>
+              Effect.promise(async () => {
+                active += 1;
+                maxActive = Math.max(maxActive, active);
+                log.push("second-run");
+                active -= 1;
+                return "second";
+              }),
+          },
+        },
+      ],
+    };
+
+    const turn = Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession(definition);
+          return yield* Stream.runCollect(session.prompt("Hi"));
+        }),
+      ),
+    );
+    await firstStarted;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(log).toEqual(["first-start"]);
+    expect(maxActive).toBe(1);
+    releaseFirst();
+    const events = await turn;
+
+    expect(log).toEqual(["first-start", "first-end", "second-run"]);
+    expect(maxActive).toBe(1);
+    expect([...events].map((event) => event.type)).toEqual([
+      "model-output",
+      "tool-call",
+      "tool-call",
+      "tool-result",
+      "tool-result",
+      "model-output",
+      "response-complete",
+    ]);
+  });
+});

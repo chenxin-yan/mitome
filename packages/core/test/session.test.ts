@@ -49,8 +49,8 @@ describe("createSession", () => {
           first = yield* createSession(definition);
           const second = yield* createSession(definition);
           yield* Stream.runDrain(first.prompt("first"));
-          expect(first.history()).toEqual(["first"]);
-          expect(second.history()).toEqual([]);
+          expect(first.history().map((message) => message.role)).toEqual(["system", "user"]);
+          expect(second.history().map((message) => message.role)).toEqual(["system"]);
         }),
       ),
     );
@@ -98,7 +98,12 @@ describe("createSession", () => {
           const session = yield* createSession(definition);
           yield* Stream.runDrain(session.prompt("first"));
           yield* Stream.runDrain(session.prompt("second"));
-          expect(session.history()).toEqual(["first", "second"]);
+          // The deterministic fixture emits bare text-deltas, which record no assistant message.
+          expect(session.history().map((message) => message.role)).toEqual([
+            "system",
+            "user",
+            "user",
+          ]);
         }),
       ),
     );
