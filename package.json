@@ -32,6 +32,10 @@
     "build": "turbo run build",
     "build:pkgs": "turbo run build --filter='./packages/*'",
     "build:docs": "turbo run build --filter=@mitome/docs",
+    "check:lockstep": "bun scripts/check-lockstep.ts",
+    "check:release-preflight": "bun scripts/release-preflight.ts",
+    "test:release": "bun scripts/release-fixtures.ts && bun scripts/release-dry-run.ts --test-failure",
+    "release:dry-run": "bun scripts/release-dry-run.ts",
     "prepare": "effect-tsgo patch"
   },
   "dependencies": {

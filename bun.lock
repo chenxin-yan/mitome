@@ -46,9 +46,9 @@
     },
     "packages/cli": {
       "name": "@mitome/cli",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "bin": {
-        "mitome": "./dist/mitome",
+        "mitome": "./scripts/mitome.mjs",
       },
       "devDependencies": {
         "@effect/platform-bun": "catalog:",
@@ -63,10 +63,11 @@
     },
     "packages/config": {
       "name": "@mitome/config",
+      "version": "0.0.0",
     },
     "packages/core": {
       "name": "@mitome/core",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -80,7 +81,7 @@
     },
     "packages/providers": {
       "name": "@mitome/providers",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@effect/ai-openai": "catalog:",
         "@effect/ai-openai-compat": "catalog:",
@@ -93,12 +94,12 @@
         "typescript": "catalog:",
       },
       "peerDependencies": {
-        "@mitome/core": "workspace:*",
+        "@mitome/core": "0.0.1",
       },
     },
     "packages/sdk": {
       "name": "@mitome/sdk",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@standard-schema/spec": "^1.1.0",
         "effect": "catalog:",
@@ -111,7 +112,7 @@
         "vitest": "catalog:",
       },
       "peerDependencies": {
-        "@mitome/core": "workspace:*",
+        "@mitome/core": "0.0.1",
       },
     },
   },
