@@ -1,6 +1,7 @@
 **/node_modules/
 **/dist/
 **/.turbo/
+.pi-subagents/
 .DS_Store
 .env
 .env.*
