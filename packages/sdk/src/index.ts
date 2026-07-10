@@ -8,11 +8,7 @@ export interface Session {
   readonly prompt: (text: string) => AsyncIterable<TurnEvent>;
 }
 
-export const defineAgent = (definition: Definition): Definition => ({
-  instructions: definition.instructions,
-  model: definition.model,
-  plugins: definition.plugins,
-});
+export const defineAgent = (definition: Definition): Definition => definition;
 
 class CallbackFailure {
   constructor(readonly cause: unknown) {}

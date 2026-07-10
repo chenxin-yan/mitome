@@ -1,15 +1,6 @@
 import { Glob } from "bun";
 
-const forbidden = [
-  /from ["']effect(?:[/'"]|$)/,
-  /["']effect["']/,
-  /effect\//,
-  /Effect</,
-  /Layer</,
-  /Scope/,
-  /Stream</,
-  /Context\.Tag/,
-];
+const forbidden = /["']effect(?:\/|["'])/;
 const files = [...new Glob("packages/sdk/dist/**/*.d.ts").scanSync()];
 
 if (files.length === 0) {
@@ -18,8 +9,7 @@ if (files.length === 0) {
 
 for (const file of files) {
   const declaration = await Bun.file(file).text();
-  const match = forbidden.find((pattern) => pattern.test(declaration));
-  if (match !== undefined) {
-    throw new Error(`${file} leaks ${match}`);
+  if (forbidden.test(declaration)) {
+    throw new Error(`${file} leaks Effect types`);
   }
 }

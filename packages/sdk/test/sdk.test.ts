@@ -35,7 +35,6 @@ describe("@mitome/sdk", () => {
       plugins: [{ name: "first" }, { name: "second" }],
     });
 
-    expect(Object.keys(definition)).toEqual(["instructions", "model", "plugins"]);
     expect(definition.plugins.map((plugin) => plugin.name)).toEqual(["first", "second"]);
 
     await Effect.runPromise(
