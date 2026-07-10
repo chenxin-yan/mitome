@@ -9,8 +9,8 @@ export type {
   ToolResultHookContext,
   ToolResultValidator,
 } from "./definition.js";
-export { makeModel } from "./model.js";
-export type { Model } from "./model.js";
+export { credentialDescriptor, makeModel } from "./model.js";
+export type { CredentialDescriptor, Model } from "./model.js";
 export {
   ApprovalResolutionError,
   SessionBusyError,

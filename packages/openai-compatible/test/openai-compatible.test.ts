@@ -4,7 +4,7 @@
 import { describe, expect, test } from "bun:test";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import { createSession, type Definition } from "@mitome/core";
+import { createSession, credentialDescriptor, type Definition } from "@mitome/core";
 import { env, openaiCompatible } from "../src/index.js";
 
 const key = "MITOME_OPENAI_COMPATIBLE_TEST_KEY";
@@ -29,6 +29,16 @@ const withKey = async <A>(run: () => Promise<A>): Promise<A> => {
 };
 
 describe("openaiCompatible", () => {
+  test("exposes its credential descriptor without building a Session", () => {
+    expect(
+      credentialDescriptor(
+        openaiCompatible("any-model", env("MITOME_TEST_API_KEY"), {
+          baseUrl: "http://localhost:1",
+        }),
+      ),
+    ).toEqual({ kind: "env", name: "MITOME_TEST_API_KEY" });
+  });
+
   test("passes known and arbitrary model ids unchanged and streams text incrementally", async () => {
     const requests: Array<{
       readonly model: string;
