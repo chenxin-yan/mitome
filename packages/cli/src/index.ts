@@ -21,7 +21,17 @@ const authHostSource: string = authHost;
 
 // Validates untrusted JSON crossing the auth-host process boundary.
 const isCredentialDescriptor = (value: unknown): value is CredentialDescriptor =>
-  typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+  typeof value === "string"
+    ? /^[A-Za-z_][A-Za-z0-9_]*$/.test(value)
+    : typeof value === "object" &&
+      value !== null &&
+      "capability" in value &&
+      typeof value.capability === "object" &&
+      value.capability !== null &&
+      "module" in value.capability &&
+      typeof value.capability.module === "string" &&
+      "provider" in value.capability &&
+      typeof value.capability.provider === "string";
 
 const configDirectory = (): string | undefined => {
   const home = process.env.HOME;
@@ -267,6 +277,35 @@ const inspectCredential = async (path: string): Promise<CredentialDescriptor> =>
   }
 };
 
+const runOAuthAuth = async (path: string, command: "login" | "logout"): Promise<void> => {
+  const config = requireConfigDirectory();
+  const directory = await mkdtemp(join(tmpdir(), "mitome-auth-"));
+  const output = join(directory, "credential.json");
+  try {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--env-file=/dev/null",
+        "--eval",
+        authHostSource,
+        path,
+        output,
+        command,
+        config,
+      ],
+      {
+        env: { ...process.env, BUN_BE_BUN: "1" },
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      },
+    );
+    if ((await child.exited) !== 0) throw new Error("Provider authentication failed.");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+};
+
 const init = async (): Promise<void> => {
   const directory = requireConfigDirectory();
   const path = join(directory, "agent.ts");
@@ -319,6 +358,10 @@ const auth = async (command: string | undefined, args: ReadonlyArray<string>): P
   const path = await definitionPath(args);
   await checkRuntime(path);
   const credential = await inspectCredential(path);
+  if (typeof credential !== "string") {
+    await runOAuthAuth(path, command);
+    return;
+  }
   if (command === "logout") {
     await removeConfigEnv(credential);
     return;

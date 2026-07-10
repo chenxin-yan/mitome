@@ -873,6 +873,52 @@ export default {
     expect(result.stderr).toContain("Usage: mitome auth <login|logout>");
   });
 
+  test("auth delegates generic OAuth capabilities without a provider registry", async () => {
+    const current = await fixture();
+    const capability = join(current.root, "capability.mjs");
+    const marker = join(current.root, "capability-calls");
+    await writeFile(
+      capability,
+      `import { appendFile } from "node:fs/promises"; export const authenticate = async ({ operation, input }) => appendFile(${JSON.stringify(marker)}, operation + ":" + (operation === "login" ? await input() : "logout") + "\\n");`,
+    );
+    await writeFile(
+      current.definition,
+      `import { Layer, Stream } from "effect";
+import { LanguageModel, Response } from "effect/unstable/ai";
+import { makeModel } from "@mitome/core";
+const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, { streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "unused" })) }), { capability: { module: ${JSON.stringify(new URL(`file://${capability}`).href)}, provider: "fixture" } });
+export default { instructions: "", model, plugins: [] };`,
+    );
+    expect(
+      await output(
+        spawn(
+          "http://localhost:1455/auth/callback?code=ac_9rn3xKq&state=deadbeef\n",
+          ["auth", "login", "--use", current.definition],
+          current,
+          {
+            ...current.env,
+            MITOME_NO_BROWSER: "1",
+          },
+        ),
+      ),
+    ).toMatchObject({ exitCode: 0 });
+    expect(
+      await output(
+        spawn("", ["auth", "logout", "--use", current.definition], current, {
+          ...current.env,
+          MITOME_NO_BROWSER: "1",
+        }),
+      ),
+    ).toMatchObject({ exitCode: 0 });
+    expect(await readFile(marker, "utf8")).toBe(
+      "login:http://localhost:1455/auth/callback?code=ac_9rn3xKq&state=deadbeef\nlogout:logout\n",
+    );
+    // The synthetic authorization code must never appear in the CLI source: the
+    // CLI has no provider branch and never sees OAuth payloads.
+    const source = await readFile(join(packageDir, "src", "index.ts"), "utf8");
+    expect(source).not.toContain(["code", "x"].join(""));
+  });
+
   test("auth logout without a stored Credential is a no-op", async () => {
     const current = await fixture(precedenceDefinitionSource("LOGOUT_NOOP_KEY"));
     expect(
