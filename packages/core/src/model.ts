@@ -8,10 +8,12 @@ export interface Model {
   readonly [ModelTypeId]: typeof ModelTypeId;
 }
 
-const modelLayers = new WeakMap<Model, Layer.Layer<LanguageModel.LanguageModel, never, never>>();
+const modelLayers = new WeakMap<Model, Layer.Layer<LanguageModel.LanguageModel, unknown, never>>();
 
 /** Creates the canonical Model value from its provisioned Effect model layer. */
-export const makeModel = (layer: Layer.Layer<LanguageModel.LanguageModel, never, never>): Model => {
+export const makeModel = (
+  layer: Layer.Layer<LanguageModel.LanguageModel, unknown, never>,
+): Model => {
   const model = { [ModelTypeId]: ModelTypeId } as Model;
   modelLayers.set(model, layer);
   return model;
@@ -19,4 +21,4 @@ export const makeModel = (layer: Layer.Layer<LanguageModel.LanguageModel, never,
 
 export const getModelLayer = (
   model: Model,
-): Layer.Layer<LanguageModel.LanguageModel, never, never> | undefined => modelLayers.get(model);
+): Layer.Layer<LanguageModel.LanguageModel, unknown, never> | undefined => modelLayers.get(model);

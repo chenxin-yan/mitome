@@ -77,6 +77,19 @@
         "vitest": "catalog:",
       },
     },
+    "packages/openai": {
+      "name": "@mitome/openai",
+      "version": "0.0.0",
+      "dependencies": {
+        "@mitome/core": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@mitome/config": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/sdk": {
       "name": "@mitome/sdk",
       "version": "0.0.0",
@@ -243,6 +256,8 @@
     "@mitome/core": ["@mitome/core@workspace:packages/core"],
 
     "@mitome/docs": ["@mitome/docs@workspace:apps/docs"],
+
+    "@mitome/openai": ["@mitome/openai@workspace:packages/openai"],
 
     "@mitome/sdk": ["@mitome/sdk@workspace:packages/sdk"],
 

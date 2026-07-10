@@ -524,7 +524,18 @@ export const createSession: (
     return yield* Effect.die(new Error("Model was not created by @mitome/core"));
   }
 
-  const context = yield* Layer.build(layer);
+  const context = yield* Layer.build(layer).pipe(
+    Effect.mapError(
+      (cause) =>
+        new TurnError({
+          message:
+            typeof cause === "object" && cause !== null && "message" in cause
+              ? String(cause.message)
+              : String(cause),
+          cause,
+        }),
+    ),
+  );
   const model = Context.get(context, LanguageModel.LanguageModel);
   const pluginContexts = new Map<AnyPlugin, Context.Context<any>>();
   for (const plugin of definition.plugins) {
