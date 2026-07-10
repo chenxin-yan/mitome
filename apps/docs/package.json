@@ -8,10 +8,12 @@
     "build": "vite build",
     "start": "vite preview",
     "preview": "vite preview",
-    "check:types": "fumadocs-mdx && tsc --noEmit",
+    "check:links": "bun ./scripts/lint.ts",
+    "check:types": "fumadocs-mdx && tsc --noEmit && bun run check:links",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "postinstall": "fumadocs-mdx"
+    "postinstall": "fumadocs-mdx",
+    "test": "bun test content/docs/examples"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.17",
@@ -28,12 +30,18 @@
   },
   "devDependencies": {
     "@mitome/config": "workspace:*",
+    "@mitome/core": "workspace:*",
+    "@mitome/openai": "workspace:*",
+    "@mitome/openai-codex": "workspace:*",
+    "@mitome/openai-compatible": "workspace:*",
+    "@mitome/sdk": "workspace:*",
     "@tailwindcss/vite": "^4.3.2",
     "@types/mdx": "^2.0.14",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "next-validate-link": "1.6.6",
     "nitro": "3.0.260610-beta",
     "oxlint": "^1.73.0",
     "tailwindcss": "^4.3.2",

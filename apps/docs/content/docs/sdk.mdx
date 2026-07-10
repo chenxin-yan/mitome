@@ -1,0 +1,41 @@
+---
+title: SDK
+description: Author Promise-first Definitions, Plugins, Tools, and interactive Turns.
+---
+
+`@mitome/sdk` is the default authoring surface. `defineAgent` returns Core's canonical Definition unchanged; Session creation validates duplicate Plugin and Tool names. It does not create another runtime. `withSession` scopes allocation and cleanup, and `session.prompt(text)` returns an `AsyncIterable` of Turn events.
+
+## Tools and every Hook
+
+A Tool has a name, optional description, input/output [Standard Schema](https://standardschema.dev/) values or direct Effect Schemas, an optional static or async `needsApproval` predicate, and an async handler. A Plugin owns its Tool handlers and its resource: another Plugin cannot obtain that resource.
+
+The following complete, deterministic test is also the displayed Plugin. It names every supported Hook:
+
+- `sessionStart` and `sessionEnd` observe the Session lifecycle.
+- `turnStart` and `turnEnd` observe each Turn.
+- `stepStart` and `stepEnd` observe each model Step.
+- `preStep` transforms the prompt.
+- `preTool` may return `{ reason }` to veto execution.
+- `postTool` transforms a Tool result before it enters Session history; the result is revalidated against the Tool output schema.
+
+Hooks run sequentially in Definition order. Setup runs in Definition order before `sessionStart`; disposal is reverse order after `sessionEnd`. Hook failures fail Session startup or the current Turn, except `sessionEnd` failures are ignored during scope release. Tool handlers and Hooks receive the Plugin-local `resource` and an abort signal.
+
+<include>./examples/sdk-plugin.test.ts#plugin</include>
+
+A rejected SDK Tool handler becomes a stable failure result for the Model so the Turn can continue. A dynamic `needsApproval` predicate that rejects fails closed and requires Approval.
+
+## Approvals and cancellation
+
+A Turn pauses at `approval-required`. Resolve the pending Approval exactly once with `approve()` or `deny(reason?)`; a second decision rejects with `ApprovalResolutionError`. A denial or pre-Tool veto skips the handler and returns the reason as a typed denial result to the Model.
+
+<include>./examples/approval-cancellation.test.ts#approval</include>
+
+To stop an active Turn, obtain the iterator and call `await iterator.return()`. This interrupts the Turn, aborts active SDK handlers and Hooks, discards incomplete history, and leaves the Session available for another Turn. Do not save a pending Approval and resolve it after cancellation.
+
+## Tagged failures
+
+Iteration throws stable tagged error classes. `SessionBusyError` means an overlapping Turn was rejected (Turns are not queued); `SessionReleasedError` means its scope has closed; `TurnStepLimitError` means the 17th Step was prevented; and `TurnError` carries `{ message, cause }` for a model or Hook failure during Session startup or a Turn. `DefinitionError` reports an invalid Definition at Session creation. `ApprovalResolutionError` reports a repeated or expired decision.
+
+<include>./examples/errors.ts#tagged-errors</include>
+
+The original cause is retained on `TurnError`. A successful Turn emits `model-output`, Tool call/result events as applicable, then `response-complete`.

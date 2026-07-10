@@ -1,0 +1,32 @@
+---
+title: Credentials and persistence
+description: Locate Credentials, understand environment precedence, and keep Sessions ephemeral.
+---
+
+## Locations and precedence
+
+Mitome's config directory is `$XDG_CONFIG_HOME/mitome`, or `~/.config/mitome` when `XDG_CONFIG_HOME` is unset.
+
+| Data                   | Location                 | Behavior                                                                                  |
+| ---------------------- | ------------------------ | ----------------------------------------------------------------------------------------- |
+| API-key Credential     | `<config-dir>/.env`      | Written with mode `0600` by `mitome init` or `mitome auth login`; loaded by the CLI only. |
+| Codex OAuth Credential | `<config-dir>/auth.json` | Stored as one provider Credential; atomic, lock-protected, and mode `0600`.               |
+| Default Definition     | `<config-dir>/agent.ts`  | Trusted TypeScript imported in-process by the CLI.                                        |
+
+The CLI refuses to store a value that Bun's `.env` parser would corrupt on read-back: keys containing `#`, `$`, quotes, newlines, or leading/trailing whitespace are rejected at write time. Set such a secret directly in the process environment instead.
+
+When the CLI loads `.env`, an already-present process environment variable wins. For example, an exported `OPENAI_API_KEY` overrides the value in config `.env`. Core and embedded SDK Sessions do not load this file: `env("OPENAI_API_KEY")` resolves only `process.env` at Session startup.
+
+## No Session persistence
+
+A Session, its history, pending Approval, active Turn, and Plugin resources are process-local. Releasing a Session clears history. Cancellation discards incomplete Turn history. Mitome persists only provider Credentials, not Agent state or conversations.
+
+## Secret handling
+
+- Never put a Credential in a Definition, repository, fixture, log, command output, or `.env.example`.
+- Use `mitome auth login` or `mitome init` for masked API-key entry; use the provider login flow for OAuth.
+- Treat `agent.ts` as executable trusted code. A secret does not make an untrusted Definition safe.
+- Use names such as `OPENAI_API_KEY` or redacted illustrative values such as `sk-...redacted...`; never paste a working secret into docs or support material.
+- Restrict access to the config directory. Codex's `auth.json` is already written with `0600`, but do not weaken that permission.
+
+See [OpenAI API keys](/docs/providers/openai) and [Codex subscription](/docs/providers/codex) for the two separate authentication paths.

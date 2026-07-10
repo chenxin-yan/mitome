@@ -1,0 +1,23 @@
+---
+title: Contributor test map
+description: Keep behavior tests at the package seam that owns the behavior.
+---
+
+Run the repository gates with Bun: `bun run check`, `bun run test`, and `bun run build`. Documentation examples are real TypeScript under `apps/docs/content/docs/examples`: `check:types` compiles them and the docs package's `test` script runs their deterministic in-file Models. No docs example calls a live provider.
+
+## One seam, one behavior suite
+
+| Package                     | Own behavior seam                                     | Existing test focus                                                                                                                 |
+| --------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `@mitome/core`              | Scoped Session and Turn runtime                       | `packages/core/test/session.test.ts`, `tool-turn.test.ts`, `approval.test.ts`, `plugin-hooks.test.ts`, `tool-serialization.test.ts` |
+| `@mitome/sdk`               | Promise `withSession`, SDK Tool and Plugin adaptation | `packages/sdk/test/sdk.test.ts`, `tool-turn.test.ts`, `approval.test.ts`, `plugin-hooks.test.ts`, `plugin-resources.test.ts`        |
+| `@mitome/openai`            | Controlled HTTP/SSE translation                       | `packages/openai/test/openai.test.ts`                                                                                               |
+| `@mitome/openai-compatible` | Controlled Chat Completions translation               | `packages/openai-compatible/test/openai-compatible.test.ts`                                                                         |
+| `@mitome/openai-codex`      | Controlled OAuth, SSE, and credential-storage races   | `packages/openai-codex/test/codex.test.ts`, `oauth.test.ts`                                                                         |
+| `@mitome/cli`               | Compiled trusted-host subprocess behavior             | `packages/cli/test/cli.test.ts`                                                                                                     |
+
+Provider and SDK tests should verify their translation seam, not duplicate Core's Session loop, Tool scheduling, Approval state machine, or history behavior. Use deterministic Models and controlled HTTP/SSE fixtures; do not spend paid API calls or require a real Credential in CI.
+
+## Documentation gates
+
+`apps/docs` runs `check:links` from its `check:types` script, so root `bun run check` runs the source-level internal route and anchor validation. It uses `next-validate-link@1.6.6` with the `tanstack-start` preset. `bun run build` keeps TanStack Start prerendering enabled as a separate crawl backstop for reachable internal links. Run `bun --cwd apps/docs run check:links` when editing links, and `bun test apps/docs/content/docs/examples` when editing examples.

@@ -1,0 +1,30 @@
+---
+title: CLI
+description: Run a trusted, in-process Definition from the terminal.
+---
+
+`@mitome/cli` is a trusted in-process Definition host. A Definition is TypeScript that the CLI imports and executes; use only a file you trust. This is deliberately not project discovery or a sandbox.
+
+## Definition selection and runtime
+
+Without arguments, `mitome` loads `$XDG_CONFIG_HOME/mitome/agent.ts`, falling back to `~/.config/mitome/agent.ts`. Use only `mitome --use /path/to/agent.ts` to select another Definition. The path must be an existing `.ts` file; directories, other extensions, and implicit project-local discovery are rejected.
+
+The CLI resolves `@mitome/core` beside that Definition and requires its exact version to equal the CLI's bundled Core version (lockstep with the CLI release). It also loads Effect beside Core. Install Definition dependencies with the embedded Bun runtime:
+
+```sh
+mitome install
+mitome install --use /path/to/agent.ts
+```
+
+`mitome init` prompts for an OpenAI Model identifier, writes an SDK Definition and its exact lockstep Core/OpenAI/SDK dependencies, installs them, then stores the API key (entered with masked echo) in the config `.env` with mode 0600.
+
+## Interactive Session and authentication
+
+Run `mitome` to stream Model output, show Tool activity, and answer an Approval prompt with `y` to approve; any other input or EOF denies. `Ctrl-C` forwards `SIGINT` to the host, interrupts the active scoped Session and Turn, and exits 130 rather than recovering partial history.
+
+`mitome auth login` and `mitome auth logout` load the selected trusted Definition, inspect its Model's credential descriptor, then delegate to that provider. The CLI has no provider registry:
+
+- an environment-backed OpenAI Model prompts for a masked API key and updates config `.env`; logout removes only that variable's line;
+- an OAuth-backed Codex Model uses the provider's browser login and credential store.
+
+If the default Definition is missing, run `mitome init` first. The CLI's config `.env` loading and secret rules are detailed in [credentials and persistence](/docs/security).

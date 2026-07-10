@@ -1,0 +1,26 @@
+---
+title: Codex subscription
+description: Use a ChatGPT subscription through the separate Codex OAuth provider.
+---
+
+`@mitome/openai-codex` is for a ChatGPT subscription, not an OpenAI API key. It is best-effort compatibility with ChatGPT's unofficial `chatgpt.com/backend-api`; OpenAI publishes no stable contract for that backend, so it can change without notice.
+
+## Setup
+
+Create a Definition that imports `codex` from `@mitome/openai-codex`, then authenticate that selected Definition:
+
+<include>../examples/codex-definition.ts#definition</include>
+
+```sh
+mitome install --use /path/to/agent.ts
+mitome auth login --use /path/to/agent.ts
+mitome --use /path/to/agent.ts
+```
+
+Login uses browser PKCE and can fall back to pasting the redirect URL. The provider uses the SSE-only Codex Responses transport; it intentionally has no device-code or WebSocket path. `codex(model, credential = oauth(), options?)` creates its Model, with `oauth()` declaring the provider-owned Credential. `mitome auth logout --use /path/to/agent.ts` removes only this provider's Credential.
+
+## Compatibility and maintenance budget
+
+Known Model IDs are hand-maintained editor hints. They are updated when releasing `@mitome/openai-codex`; there is no runtime model catalog. Arbitrary, future, private, and unknown IDs still pass through, and the backend decides entitlement. Do not depend on a hint as a guarantee that a Model is available.
+
+The provider stores one rotating OAuth Credential in `auth.json` under `$XDG_CONFIG_HOME/mitome` or `~/.config/mitome`. It writes atomically under a storage lock with mode `0600`; never copy, commit, print, or hand-edit its secret contents. This is the narrow Credential persistence exception—Sessions and history remain process-local and ephemeral. For the full storage and precedence rules, see [credentials and persistence](/docs/security).

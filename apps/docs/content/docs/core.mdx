@@ -1,0 +1,24 @@
+---
+title: Core
+description: Use the Effect-native Session runtime when you need Layers, Streams, and typed resources.
+---
+
+`@mitome/core` is the Effect-native power-user surface. It is not a second runtime: SDK builders immediately produce the same Definition, Plugin, and opaque Model values. Choose Core when a Definition needs Effect Layers, `Stream`, or typed resource dependencies.
+
+`createSession(definition)` is a scoped Effect. Its `Session.prompt(text)` is an Effect Stream, while `history()` and `released()` are available for power users. Keep the Scope around every Turn; releasing it runs Session-end Hooks, releases Plugin resources, and clears history.
+
+<include>./examples/core.test.ts#definition</include>
+
+The complete example test uses a deterministic in-file Model and consumes the Stream under `Effect.scoped`:
+
+<include>./examples/core.test.ts</include>
+
+## Core contracts
+
+- A Definition has exactly `instructions`, `model`, and ordered `plugins`.
+- Core Hooks are Effects. Notification Hooks run in Definition order; `preStep` transforms prompts; `preTool` can veto; `postTool` transforms a result that is then schema-revalidated.
+- Tool handlers and related Hooks are serialized per Session, while Model output may continue streaming.
+- A Session allows one active Turn. A concurrent `prompt` fails with `SessionBusyError`; it is never queued. A Turn allows 16 Steps, then fails with `TurnStepLimitError` without committing incomplete history.
+- Pending Approval events expose single-use Effect `approve()` and `deny(reason?)`. A dynamic approval failure fails closed.
+
+Provider factories return opaque Models. Core's `credentialDescriptor(model)` lets a trusted host inspect only provider-owned credential metadata without starting a Session. Keep ordinary OpenAI authors on the [SDK quickstart](/docs); Core is for Effect-native composition, not a more featureful Agent format.

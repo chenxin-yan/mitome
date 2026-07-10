@@ -1,15 +1,39 @@
 ---
-title: Mitome
-description: Define and run AI agents for your own use cases.
+title: Quickstart
+description: Create an SDK Agent, authenticate it, and use an interactive OpenAI Session.
 icon: Rocket
 ---
 
-Mitome lets you define an Agent with instructions, a Model, and reusable Plugins, then run it through the SDK or CLI.
+Mitome runs a user-authored **Definition**: exactly one Agent's instructions, Model, and ordered Plugins. The default surface is `@mitome/sdk`; it is Promise-first and creates the same canonical values consumed by Core and the CLI.
+
+## Initialize and authenticate
+
+Mitome targets Bun. Install the CLI, then let it create a config-backed SDK Definition:
+
+```sh
+bun add -g @mitome/cli
+mitome init
+# Enter gpt-5.4-mini and an OpenAI API key when prompted.
+mitome
+```
+
+`mitome init` writes `$XDG_CONFIG_HOME/mitome/agent.ts` (or `~/.config/mitome/agent.ts`), its exact dependencies, and the API key (entered with masked echo) in that config directory's `.env` with mode 0600. To change or rotate the saved API key later, run `mitome auth login`. `mitome` then opens an interactive Session: type a message, read streamed output, and send EOF to leave it.
+
+The interactive loop streams model output until EOF.
+
+<include>./examples/quickstart.ts#interactive</include>
+
+Use `mitome --use /absolute/path/to/agent.ts` to run an explicit trusted Definition instead of the config default. See [OpenAI setup](/docs/providers/openai) for API-key details and [credentials and persistence](/docs/security) before sharing a Definition.
+
+## Next steps
 
 <Cards>
+  <Card title="SDK: Plugins, Tools, and Turns" href="/docs/sdk" />
   <Card
     title="OpenAI providers"
     href="/docs/providers/openai"
     description="Use official OpenAI or an OpenAI-compatible endpoint."
   />
+  <Card title="Codex subscription setup" href="/docs/providers/codex" />
+  <Card title="Effect-native Core" href="/docs/core" />
 </Cards>
