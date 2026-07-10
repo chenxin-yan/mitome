@@ -1,11 +1,36 @@
 import { Effect, Schema } from "effect";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Prompt, Tool, Toolkit } from "effect/unstable/ai";
 import type { Model } from "./model.js";
+
+export interface ToolHookContext {
+  readonly name: string;
+  readonly params: unknown;
+}
+
+export interface ToolResultHookContext extends ToolHookContext {
+  readonly result: unknown;
+  readonly isFailure: boolean;
+}
+
+export interface PluginHooks {
+  readonly sessionStart?: Effect.Effect<void, unknown>;
+  readonly sessionEnd?: Effect.Effect<void, unknown>;
+  readonly turnStart?: (text: string) => Effect.Effect<void, unknown>;
+  readonly turnEnd?: (text: string) => Effect.Effect<void, unknown>;
+  readonly stepStart?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown>;
+  readonly stepEnd?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown>;
+  readonly preStep?: (prompt: Prompt.Prompt) => Effect.Effect<Prompt.Prompt, unknown>;
+  readonly preTool?: (
+    context: ToolHookContext,
+  ) => Effect.Effect<void | { readonly reason: string }, unknown>;
+  readonly postTool?: (context: ToolResultHookContext) => Effect.Effect<unknown, unknown>;
+}
 
 export interface Plugin {
   readonly name: string;
   readonly toolkit?: Toolkit.Any;
   readonly handlers?: Record<string, (params: unknown) => Effect.Effect<unknown, unknown>>;
+  readonly hooks?: PluginHooks;
 }
 
 export interface Definition {
@@ -30,6 +55,7 @@ export function definePlugin<const Tools extends Record<string, Tool.Any>>(plugi
   readonly name: string;
   readonly toolkit: ServiceFreeToolkit<Tools>;
   readonly handlers: Toolkit.HandlersFrom<Tools>;
+  readonly hooks?: PluginHooks;
 }): Plugin;
 export function definePlugin(plugin: Plugin): Plugin;
 export function definePlugin(plugin: Plugin): Plugin {

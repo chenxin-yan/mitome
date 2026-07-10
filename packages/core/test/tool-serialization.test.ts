@@ -12,8 +12,12 @@ describe("createSession Tool serialization", () => {
     const log: Array<string> = [];
     let startFirst!: () => void;
     let releaseFirst!: () => void;
+    let startPostFirst!: () => void;
+    let releasePostFirst!: () => void;
     const firstStarted = new Promise<void>((resolve) => (startFirst = resolve));
     const firstReleased = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const postFirstStarted = new Promise<void>((resolve) => (startPostFirst = resolve));
+    const postFirstReleased = new Promise<void>((resolve) => (releasePostFirst = resolve));
     const first = Tool.make("first", { parameters: Schema.Struct({}), success: Schema.String });
     const second = Tool.make("second", { parameters: Schema.Struct({}), success: Schema.String });
     const model = makeModel(
@@ -60,6 +64,13 @@ describe("createSession Tool serialization", () => {
         },
       } as LanguageModel.Service),
     );
+    const track = (label: string) =>
+      Effect.sync(() => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        log.push(label);
+        active -= 1;
+      });
     const definition: Definition = {
       instructions: "Be concise.",
       model,
@@ -67,6 +78,25 @@ describe("createSession Tool serialization", () => {
         {
           name: "tools",
           toolkit: Toolkit.make(first, second),
+          hooks: {
+            preTool: ({ name }) => track(`pre-${name}`),
+            postTool: ({ name, result }) => {
+              if (name !== "first") return track(`post-${name}`).pipe(Effect.map(() => result));
+              return Effect.tryPromise({
+                try: async () => {
+                  active += 1;
+                  maxActive = Math.max(maxActive, active);
+                  log.push("post-first-start");
+                  startPostFirst();
+                  await postFirstReleased;
+                  log.push("post-first-end");
+                  active -= 1;
+                  return result;
+                },
+                catch: () => new Error("post-first failed"),
+              });
+            },
+          },
           handlers: {
             first: () =>
               Effect.promise(async () => {
@@ -103,12 +133,29 @@ describe("createSession Tool serialization", () => {
     await firstStarted;
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(log).toEqual(["first-start"]);
+    expect(log).toEqual(["pre-first", "first-start"]);
     expect(maxActive).toBe(1);
     releaseFirst();
+    await postFirstStarted;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    try {
+      expect(log).toEqual(["pre-first", "first-start", "first-end", "post-first-start"]);
+      expect(maxActive).toBe(1);
+    } finally {
+      releasePostFirst();
+    }
     const events = await turn;
 
-    expect(log).toEqual(["first-start", "first-end", "second-run"]);
+    expect(log).toEqual([
+      "pre-first",
+      "first-start",
+      "first-end",
+      "post-first-start",
+      "post-first-end",
+      "pre-second",
+      "second-run",
+      "post-second",
+    ]);
     expect(maxActive).toBe(1);
     expect([...events].map((event) => event.type)).toEqual([
       "model-output",

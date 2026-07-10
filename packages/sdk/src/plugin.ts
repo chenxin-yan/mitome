@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { AiError, Tool as AiTool, Toolkit } from "effect/unstable/ai";
-import { DefinitionError } from "@mitome/core";
-import type { Plugin } from "@mitome/core";
+import { DefinitionError, setToolResultValidator } from "@mitome/core";
+import type { Plugin, PluginHooks } from "@mitome/core";
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec";
 
 type EffectSchema<Output> = Schema.Codec<Output, unknown, never, never>;
@@ -14,8 +14,31 @@ export type OutputSchema<Output = unknown> =
   | StandardSchemaV1<unknown, Output>
   | EffectSchema<Output>;
 
-export interface ToolHandlerContext {
+export interface HookContext {
   readonly signal: AbortSignal;
+}
+
+export type ToolHandlerContext = HookContext;
+
+export interface PluginHooksDefinition {
+  readonly sessionStart?: (context: HookContext) => Promise<void>;
+  readonly sessionEnd?: (context: HookContext) => Promise<void>;
+  readonly turnStart?: (text: string, context: HookContext) => Promise<void>;
+  readonly turnEnd?: (text: string, context: HookContext) => Promise<void>;
+  readonly stepStart?: (prompt: unknown, context: HookContext) => Promise<void>;
+  readonly stepEnd?: (prompt: unknown, context: HookContext) => Promise<void>;
+  readonly preStep?: (prompt: unknown, context: HookContext) => Promise<unknown>;
+  readonly preTool?: (
+    context: { readonly name: string; readonly params: unknown } & HookContext,
+  ) => Promise<void | { readonly reason: string }>;
+  readonly postTool?: (
+    context: {
+      readonly name: string;
+      readonly params: unknown;
+      readonly result: unknown;
+      readonly isFailure: boolean;
+    } & HookContext,
+  ) => Promise<unknown>;
 }
 
 export interface Tool<Input = unknown, Output = unknown> {
@@ -67,9 +90,43 @@ const validate = async <Output>(
   return result.value;
 };
 
+// Core Hooks use an unknown error channel so TurnError retains the original cause.
+const promiseHook = <A>(callback: (signal: HookContext["signal"]) => Promise<A>) =>
+  // @effect-diagnostics-next-line unknownInEffectCatch:off
+  Effect.tryPromise({
+    try: callback,
+    catch: (cause) => cause,
+  });
+
+const adaptHooks = (hooks: PluginHooksDefinition | undefined): PluginHooks | undefined => {
+  if (hooks === undefined) return undefined;
+  const adapted: { -readonly [Key in keyof PluginHooks]?: PluginHooks[Key] } = {};
+  if (hooks.sessionStart)
+    adapted.sessionStart = promiseHook((signal) => hooks.sessionStart!({ signal }));
+  if (hooks.sessionEnd) adapted.sessionEnd = promiseHook((signal) => hooks.sessionEnd!({ signal }));
+  if (hooks.turnStart)
+    adapted.turnStart = (text) => promiseHook((signal) => hooks.turnStart!(text, { signal }));
+  if (hooks.turnEnd)
+    adapted.turnEnd = (text) => promiseHook((signal) => hooks.turnEnd!(text, { signal }));
+  if (hooks.stepStart)
+    adapted.stepStart = (prompt) => promiseHook((signal) => hooks.stepStart!(prompt, { signal }));
+  if (hooks.stepEnd)
+    adapted.stepEnd = (prompt) => promiseHook((signal) => hooks.stepEnd!(prompt, { signal }));
+  if (hooks.preStep)
+    adapted.preStep = (prompt) =>
+      promiseHook((signal) => hooks.preStep!(prompt, { signal })) as never;
+  if (hooks.preTool)
+    adapted.preTool = (context) => promiseHook((signal) => hooks.preTool!({ ...context, signal }));
+  if (hooks.postTool)
+    adapted.postTool = (context) =>
+      promiseHook((signal) => hooks.postTool!({ ...context, signal }));
+  return adapted;
+};
+
 export const definePlugin = (definition: {
   readonly name: string;
   readonly tools: ReadonlyArray<Tool<any, any>>;
+  readonly hooks?: PluginHooksDefinition;
 }): Plugin => {
   const names = new Set<string>();
   const definitions = definition.tools.map((tool) => {
@@ -84,17 +141,27 @@ export const definePlugin = (definition: {
     };
   });
 
+  const tools = definitions.map(({ tool, input, output }) => {
+    const dynamic = AiTool.dynamic(tool.name, {
+      description: tool.description,
+      parameters: input.jsonSchema.input({ target: "draft-2020-12" }),
+      failureMode: "return",
+    });
+    setToolResultValidator(dynamic, (result) =>
+      // @effect-diagnostics-next-line unknownInEffectCatch:off
+      Effect.tryPromise({
+        try: () => validate(output, result),
+        catch: (cause) => cause,
+      }),
+    );
+    return dynamic;
+  });
+
+  const hooks = adaptHooks(definition.hooks);
   return {
     name: definition.name,
-    toolkit: Toolkit.make(
-      ...definitions.map(({ tool, input }) =>
-        AiTool.dynamic(tool.name, {
-          description: tool.description,
-          parameters: input.jsonSchema.input({ target: "draft-2020-12" }),
-          failureMode: "return",
-        }),
-      ),
-    ),
+    ...(hooks === undefined ? {} : { hooks }),
+    toolkit: Toolkit.make(...tools),
     handlers: Object.fromEntries(
       definitions.map(({ tool, input, output }) => [
         tool.name,
