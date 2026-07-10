@@ -5,6 +5,7 @@ export type { Model } from "./model.js";
 export {
   SessionBusyError,
   SessionReleasedError,
+  TurnError,
   TurnStepLimitError,
   createSession,
 } from "./session.js";

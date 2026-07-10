@@ -14,12 +14,24 @@ export type OutputSchema<Output = unknown> =
   | StandardSchemaV1<unknown, Output>
   | EffectSchema<Output>;
 
+// The ESNext-only library config omits the DOM AbortSignal declaration.
+export interface ToolHandlerContext {
+  readonly signal: {
+    readonly aborted: boolean;
+    readonly addEventListener: (
+      type: "abort",
+      listener: () => void,
+      options?: { readonly once?: boolean },
+    ) => void;
+  };
+}
+
 export interface Tool<Input = unknown, Output = unknown> {
   readonly name: string;
   readonly description?: string;
   readonly inputSchema: InputSchema<Input>;
   readonly outputSchema: OutputSchema<Output>;
-  readonly handler: (input: Input) => Promise<Output>;
+  readonly handler: (input: Input, context: ToolHandlerContext) => Promise<Output>;
 }
 
 export const tool = <Input, Output>(definition: Tool<Input, Output>): Tool<Input, Output> =>
@@ -96,7 +108,8 @@ export const definePlugin = (definition: {
         tool.name,
         (params: unknown) =>
           Effect.tryPromise({
-            try: async () => validate(output, await tool.handler(await validate(input, params))),
+            try: async (signal) =>
+              validate(output, await tool.handler(await validate(input, params), { signal })),
             // SDK handlers are untrusted promises; the model gets a stable failure instead.
             catch: () =>
               AiError.make({

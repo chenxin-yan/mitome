@@ -37,8 +37,19 @@ export class TurnStepLimitError extends Schema.TaggedErrorClass<TurnStepLimitErr
   { message: Schema.String },
 ) {}
 
+/** A model or Tool stream failed while completing a Turn. */
+export class TurnError extends Schema.TaggedErrorClass<TurnError>()("TurnError", {
+  message: Schema.String,
+  cause: Schema.Unknown,
+}) {}
+
 export interface Session {
-  readonly prompt: (text: string) => Stream.Stream<TurnEvent, unknown>;
+  readonly prompt: (
+    text: string,
+  ) => Stream.Stream<
+    TurnEvent,
+    SessionBusyError | SessionReleasedError | TurnStepLimitError | TurnError
+  >;
   readonly history: () => ReadonlyArray<Prompt.Message>;
   readonly released: () => boolean;
 }
@@ -97,7 +108,10 @@ export const createSession: (
       }),
     );
 
-    const runStep = (prompt: Prompt.Prompt, step: number): Stream.Stream<TurnEvent, unknown> => {
+    const runStep = (
+      prompt: Prompt.Prompt,
+      step: number,
+    ): Stream.Stream<TurnEvent, TurnStepLimitError | TurnError> => {
       if (step >= maximumTurnSteps) {
         return Stream.fail(
           new TurnStepLimitError({
@@ -113,6 +127,7 @@ export const createSession: (
           unknown
         >
       ).pipe(
+        Stream.mapError((cause) => new TurnError({ message: "Turn failed", cause })),
         Stream.tap((part) => Effect.sync(() => parts.push(part))),
         Stream.filter(
           (part) =>
@@ -135,10 +150,15 @@ export const createSession: (
         }),
         Stream.concat(
           Stream.suspend(() => {
-            history = Prompt.concat(prompt, Prompt.fromResponseParts(parts));
+            const nextPrompt = Prompt.concat(prompt, Prompt.fromResponseParts(parts));
             return parts.some((part) => part.type === "tool-call" && part.providerExecuted !== true)
-              ? runStep(history, step + 1)
-              : Stream.succeed<TurnEvent>({ type: "response-complete" });
+              ? runStep(nextPrompt, step + 1)
+              : Stream.fromEffect(
+                  Effect.sync(() => {
+                    history = nextPrompt;
+                    return { type: "response-complete" } as const;
+                  }),
+                );
           }),
         ),
       );
@@ -146,7 +166,11 @@ export const createSession: (
 
     return {
       prompt: (text) =>
-        Stream.suspend((): Stream.Stream<TurnEvent, unknown> => {
+        Stream.suspend<
+          TurnEvent,
+          SessionBusyError | SessionReleasedError | TurnStepLimitError | TurnError,
+          never
+        >(() => {
           if (isReleased) {
             return Stream.fail(
               new SessionReleasedError({ message: "Session scope has been released" }),

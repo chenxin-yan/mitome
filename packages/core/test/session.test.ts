@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { Cause, Effect, Exit, Stream } from "effect";
+import { Cause, Effect, Exit, Fiber, Layer, Stream } from "effect";
+import { LanguageModel, Response } from "effect/unstable/ai";
 import {
   createSession,
+  makeModel,
   type Definition,
   SessionBusyError,
   SessionReleasedError,
@@ -82,6 +84,46 @@ describe("createSession", () => {
     if (Exit.isFailure(exit)) {
       expect(Cause.squash(exit.cause)).toBeInstanceOf(SessionBusyError);
     }
+  });
+
+  test("discards cancelled Turn history and reuses the Session", async () => {
+    let calls = 0;
+    let start!: () => void;
+    const started = new Promise<void>((resolve) => (start = resolve));
+    const model = makeModel(
+      Layer.succeed(LanguageModel.LanguageModel, {
+        streamText: () => {
+          calls += 1;
+          if (calls === 1) {
+            start();
+            return Stream.concat(
+              Stream.succeed(Response.makePart("text-delta", { id: "first", delta: "partial" })),
+              Stream.never,
+            );
+          }
+          return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
+        },
+      } as LanguageModel.Service),
+    );
+
+    const events = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({ instructions: "Be concise.", model, plugins: [] });
+          const first = yield* Effect.forkChild(Stream.runDrain(session.prompt("first")));
+          yield* Effect.promise(() => started);
+          yield* Fiber.interrupt(first);
+          expect(session.history().map((message) => message.role)).toEqual(["system"]);
+          return yield* Stream.runCollect(session.prompt("second"));
+        }),
+      ),
+    );
+
+    expect([...events]).toEqual([
+      { type: "model-output", text: "done" },
+      { type: "response-complete" },
+    ]);
+    expect(calls).toBe(2);
   });
 
   test("allows sequential prompts after a Turn completes", async () => {

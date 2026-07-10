@@ -114,6 +114,105 @@ describe("@mitome/sdk Tool", () => {
     ).toEqual(["system", "user", "assistant", "tool"]);
   });
 
+  test("aborts an active handler when iteration breaks and reuses the Session", async () => {
+    let calls = 0;
+    let handlerCalls = 0;
+    let secondPrompt: unknown;
+    let handlerStarted!: () => void;
+    let handlerAborted!: () => void;
+    const started = new Promise<void>((resolve) => (handlerStarted = resolve));
+    const aborted = new Promise<void>((resolve) => (handlerAborted = resolve));
+    const layer = Layer.succeed(LanguageModel.LanguageModel, {
+      streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
+        calls += 1;
+        if (calls === 3) {
+          return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+        }
+        if (calls === 2) secondPrompt = options.prompt;
+        const call = Response.makePart("tool-call", {
+          id: `call-${calls}`,
+          name: "echo",
+          params: "hello",
+          providerExecuted: false,
+        });
+        return Stream.concat(
+          Stream.succeed(call),
+          Stream.unwrap(
+            options.toolkit!.handle("echo", "hello").pipe(
+              Effect.map((results) =>
+                Stream.map(results, (result) =>
+                  Response.makePart("tool-result", {
+                    id: call.id,
+                    name: call.name,
+                    providerExecuted: false,
+                    ...result,
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    } as LanguageModel.Service);
+    const definition = defineAgent({
+      instructions: "Be concise.",
+      model: makeModel(layer),
+      plugins: [
+        definePlugin({
+          name: "echo-plugin",
+          tools: [
+            tool({
+              name: "echo",
+              inputSchema: jsonStringSchema,
+              outputSchema: stringSchema,
+              handler: async (_input, { signal }) => {
+                handlerCalls += 1;
+                if (handlerCalls === 2) return "second";
+                return new Promise((resolve) => {
+                  signal.addEventListener(
+                    "abort",
+                    () => {
+                      handlerAborted();
+                      resolve("aborted");
+                    },
+                    { once: true },
+                  );
+                  handlerStarted();
+                });
+              },
+            }),
+          ],
+        }),
+      ],
+    });
+
+    const events = await withSession(definition, async (session) => {
+      const iterator = session.prompt("first")[Symbol.asyncIterator]();
+      await iterator.next();
+      const pending = iterator.next();
+      await started;
+      await iterator.return?.();
+      await aborted;
+      await pending.catch(() => undefined);
+      const next = [];
+      for await (const event of session.prompt("second")) next.push(event);
+      return next;
+    });
+
+    expect(calls).toBe(3);
+    expect(events).toEqual([
+      { type: "tool-call", id: "call-2", name: "echo" },
+      { type: "tool-result", id: "call-2", name: "echo", result: "second", isFailure: false },
+      { type: "model-output", text: "done" },
+      { type: "response-complete" },
+    ]);
+    expect(
+      (secondPrompt as { readonly content: ReadonlyArray<{ readonly role: string }> }).content.map(
+        (message) => message.role,
+      ),
+    ).toEqual(["system", "user"]);
+  });
+
   test("accepts Effect Schema without manual Standard Schema adapters", async () => {
     const fixture = makeToolModel();
     const definition = defineAgent({

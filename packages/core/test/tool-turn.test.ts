@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Layer, Stream } from "effect";
+import { Cause, Effect, Exit, Layer, Stream } from "effect";
 import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { Schema } from "effect";
 import { createSession, makeModel, TurnStepLimitError, type Definition } from "../src/index.js";
@@ -147,7 +147,7 @@ describe("createSession Tool Turn", () => {
       } as LanguageModel.Service),
     );
 
-    const error = await Effect.runPromise(
+    const result = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession({
@@ -161,13 +161,63 @@ describe("createSession Tool Turn", () => {
               },
             ],
           });
-          return yield* Effect.flip(Stream.runDrain(session.prompt("Start")));
+          const exit = yield* Effect.exit(Stream.runDrain(session.prompt("Start")));
+          return {
+            error: Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined,
+            history: session.history(),
+          };
         }),
       ),
     );
 
-    expect(error).toBeInstanceOf(TurnStepLimitError);
+    expect(result.error).toBeInstanceOf(TurnStepLimitError);
+    expect(result.history).toHaveLength(1);
     expect(calls).toBe(16);
+  });
+
+  test("allows exactly sixteen Steps", async () => {
+    let calls = 0;
+    const echo = Tool.make("echo", { success: Schema.String });
+    const model = makeModel(
+      Layer.succeed(LanguageModel.LanguageModel, {
+        streamText: () => {
+          calls += 1;
+          if (calls === 16) {
+            return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+          }
+          return Stream.succeed(
+            Response.makePart("tool-call", {
+              id: `call-${calls}`,
+              name: "echo",
+              params: {},
+              providerExecuted: false,
+            }),
+          );
+        },
+      } as LanguageModel.Service),
+    );
+
+    const events = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({
+            instructions: "Keep calling.",
+            model,
+            plugins: [
+              {
+                name: "echo",
+                toolkit: Toolkit.make(echo),
+                handlers: { echo: () => Effect.succeed("echo") },
+              },
+            ],
+          });
+          return yield* Stream.runCollect(session.prompt("Start"));
+        }),
+      ),
+    );
+
+    expect(calls).toBe(16);
+    expect(events.at(-1)).toEqual({ type: "response-complete" });
   });
 
   test("returns a Core-native Tool's typed failure and continues the Turn", async () => {
