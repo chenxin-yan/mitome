@@ -22,6 +22,22 @@ export type TurnEvent =
   | { readonly type: "model-output"; readonly text: string }
   | { readonly type: "response-complete" };
 
+/** Overlapping `Session.prompt()` while a Turn is active; ADR-0003 mandates a typed busy failure. */
+export class SessionBusyError extends Error {
+  readonly _tag = "SessionBusyError" as const;
+  constructor() {
+    super("Session is busy with an active Turn");
+  }
+}
+
+/** Prompt on a Session whose scope has already closed; the provider resources are disposed. */
+export class SessionReleasedError extends Error {
+  readonly _tag = "SessionReleasedError" as const;
+  constructor() {
+    super("Session scope has been released");
+  }
+}
+
 export interface Session {
   readonly prompt: (text: string) => Stream.Stream<TurnEvent, unknown>;
   readonly history: () => ReadonlyArray<string>;
@@ -41,13 +57,14 @@ export const createSession = (definition: Definition): Effect.Effect<Session, ne
   Effect.gen(function* () {
     const layer = modelLayers.get(definition.model);
     if (layer === undefined) {
-      throw new Error("Model was not created by @mitome/core");
+      return yield* Effect.die(new Error("Model was not created by @mitome/core"));
     }
 
     const context = yield* Layer.build(layer);
     const model = Context.get(context, LanguageModel.LanguageModel);
     const history: Array<string> = [];
     let isReleased = false;
+    let isTurnActive = false;
 
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -57,14 +74,27 @@ export const createSession = (definition: Definition): Effect.Effect<Session, ne
     );
 
     return {
-      prompt: (text) => {
-        history.push(text);
-        return model.streamText({ prompt: `${definition.instructions}\n${text}` }).pipe(
-          Stream.filter((part) => part.type === "text-delta"),
-          Stream.map((part): TurnEvent => ({ type: "model-output", text: part.delta })),
-          Stream.concat(Stream.succeed<TurnEvent>({ type: "response-complete" })),
-        );
-      },
+      prompt: (text) =>
+        Stream.suspend((): Stream.Stream<TurnEvent, unknown> => {
+          if (isReleased) {
+            return Stream.fail(new SessionReleasedError());
+          }
+          if (isTurnActive) {
+            return Stream.fail(new SessionBusyError());
+          }
+          isTurnActive = true;
+          history.push(text);
+          return model.streamText({ prompt: `${definition.instructions}\n${text}` }).pipe(
+            Stream.filter((part) => part.type === "text-delta"),
+            Stream.map((part): TurnEvent => ({ type: "model-output", text: part.delta })),
+            Stream.concat(Stream.succeed<TurnEvent>({ type: "response-complete" })),
+            Stream.ensuring(
+              Effect.sync(() => {
+                isTurnActive = false;
+              }),
+            ),
+          );
+        }),
       history: () => history,
       released: () => isReleased,
     };

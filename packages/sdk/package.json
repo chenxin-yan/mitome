@@ -19,13 +19,16 @@
     "test": "bun test test"
   },
   "dependencies": {
-    "@mitome/core": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@mitome/config": "workspace:*",
+    "@mitome/core": "workspace:*",
     "@types/bun": "catalog:",
     "bunup": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@mitome/core": "workspace:*"
   }
 }
