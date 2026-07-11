@@ -14,8 +14,8 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "check:types": "tsc --noEmit -p tsconfig.json",
+    "build": "bunup src/index.ts --target bun",
+    "check:types": "tsc --noEmit",
     "test": "bun test test"
   },
   "dependencies": {
@@ -25,6 +25,7 @@
   "devDependencies": {
     "@mitome/config": "workspace:*",
     "@types/bun": "catalog:",
+    "bunup": "catalog:",
     "typescript": "catalog:"
   }
 }

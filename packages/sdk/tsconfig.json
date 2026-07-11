@@ -1,12 +1,9 @@
 {
   "extends": "@mitome/config/tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
+    "allowJs": false,
     "declaration": true,
-    "declarationMap": true,
-    "noEmit": false,
-    "allowImportingTsExtensions": false
+    "isolatedDeclarations": true
   },
   "include": ["src/**/*.ts"]
 }
