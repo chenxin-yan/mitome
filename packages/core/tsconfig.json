@@ -1,0 +1,9 @@
+{
+  "extends": "@mitome/config/tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "declaration": true,
+    "isolatedDeclarations": true
+  },
+  "include": ["src/**/*.ts"]
+}

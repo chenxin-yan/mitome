@@ -1,0 +1,34 @@
+{
+  "name": "@mitome/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bunup src/index.ts --target bun",
+    "check:types": "tsc --noEmit",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@mitome/config": "workspace:*",
+    "@mitome/core": "workspace:*",
+    "@types/bun": "catalog:",
+    "bunup": "catalog:",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@mitome/core": "workspace:*"
+  }
+}
