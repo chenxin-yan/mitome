@@ -1,8 +1,5 @@
 {
   "name": "@mitome/config",
   "private": true,
-  "type": "module",
-  "publishConfig": {
-    "access": "public"
-  }
+  "type": "module"
 }
