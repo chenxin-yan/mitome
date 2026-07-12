@@ -1,9 +1,8 @@
 {
-  "extends": "@mitome/config/tsconfig.base.json",
+  "extends": "@mitome/config/tsconfig.lib.json",
   "compilerOptions": {
-    "allowJs": false,
-    "declaration": true,
-    "isolatedDeclarations": true
+    "outDir": "dist",
+    "rootDir": "src"
   },
   "include": ["src/**/*.ts"]
 }

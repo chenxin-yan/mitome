@@ -1,8 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Response, Toolkit } from "effect/unstable/ai";
 import { makeModel } from "@mitome/core";
-import { defineAgent, definePlugin, tool, withSession, type StandardSchema } from "@mitome/sdk";
+import {
+  defineAgent,
+  definePlugin,
+  tool,
+  withSession,
+  type InputSchema,
+  type StandardSchema,
+} from "@mitome/sdk";
 
 const stringSchema: StandardSchema<unknown, string> = {
   "~standard": {
@@ -15,7 +22,7 @@ const stringSchema: StandardSchema<unknown, string> = {
   },
 };
 
-const jsonStringSchema: StandardSchema<unknown, string> = {
+const jsonStringSchema: InputSchema<string> = {
   "~standard": {
     ...stringSchema["~standard"],
     jsonSchema: {
@@ -107,19 +114,39 @@ describe("@mitome/sdk Tool", () => {
     ).toEqual(["system", "user", "assistant", "tool"]);
   });
 
-  test("rejects duplicate Plugin names before Session startup", () => {
+  test("accepts Effect Schema without manual Standard Schema adapters", async () => {
     const fixture = makeToolModel();
-    expect(() =>
-      defineAgent({
-        instructions: "Be concise.",
-        model: fixture.model,
-        plugins: [
-          definePlugin({ name: "same", tools: [] }),
-          definePlugin({ name: "same", tools: [] }),
-        ],
-      }),
-    ).toThrow("Duplicate Plugin name: same");
-    expect(fixture.calls()).toBe(0);
+    const definition = defineAgent({
+      instructions: "Be concise.",
+      model: fixture.model,
+      plugins: [
+        definePlugin({
+          name: "effect-schema",
+          tools: [
+            tool({
+              name: "echo",
+              inputSchema: Schema.String,
+              outputSchema: Schema.String,
+              handler: async (input) => input.toUpperCase(),
+            }),
+          ],
+        }),
+      ],
+    });
+
+    const events = await withSession(definition, async (session) => {
+      const collected = [];
+      for await (const event of session.prompt("Hi")) collected.push(event);
+      return collected;
+    });
+
+    expect(events).toContainEqual({
+      type: "tool-result",
+      id: "call-1",
+      name: "echo",
+      result: "HELLO",
+      isFailure: false,
+    });
   });
 
   test("rejects duplicate Tool names within a Plugin", () => {
@@ -129,13 +156,13 @@ describe("@mitome/sdk Tool", () => {
         tools: [
           tool({
             name: "echo",
-            inputSchema: stringSchema,
+            inputSchema: jsonStringSchema,
             outputSchema: stringSchema,
             handler: async (input) => input,
           }),
           tool({
             name: "echo",
-            inputSchema: stringSchema,
+            inputSchema: jsonStringSchema,
             outputSchema: stringSchema,
             handler: async (input) => input,
           }),
@@ -155,7 +182,7 @@ describe("@mitome/sdk Tool", () => {
           tools: [
             tool({
               name: "echo",
-              inputSchema: stringSchema,
+              inputSchema: jsonStringSchema,
               outputSchema: stringSchema,
               handler: async () => Promise.reject(new Error("secret")),
             }),

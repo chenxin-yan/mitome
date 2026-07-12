@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "declaration": true,
+    "isolatedDeclarations": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": false
+  }
+}
