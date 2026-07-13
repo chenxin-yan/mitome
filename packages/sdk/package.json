@@ -14,18 +14,18 @@
     }
   },
   "scripts": {
-    "build": "bunup src/index.ts --target bun",
+    "build": "rm -rf dist && tsc",
     "check:types": "tsc --noEmit",
     "test": "bun test test"
   },
   "dependencies": {
+    "@standard-schema/spec": "^1.1.0",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
     "@types/bun": "catalog:",
-    "bunup": "catalog:",
     "typescript": "catalog:"
   },
   "peerDependencies": {

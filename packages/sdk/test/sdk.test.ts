@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect, Layer, Ref, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { createSession, makeModel } from "@mitome/core";
-import { defineAgent, withSession } from "@mitome/sdk";
+import { TurnError, defineAgent, withSession } from "@mitome/sdk";
 
 const makeDeterministicModel = (output: string) =>
   Effect.gen(function* () {
@@ -68,6 +68,33 @@ describe("@mitome/sdk", () => {
 
     expect(caught instanceof MyError).toBe(true);
     expect(await Effect.runPromise(fixture.released)).toBe(true);
+  });
+
+  test("throws tagged Turn errors with their original cause", async () => {
+    const cause = new Error("model failed");
+    const definition = defineAgent({
+      instructions: "Be concise.",
+      model: makeModel(
+        Layer.succeed(LanguageModel.LanguageModel, {
+          streamText: () => Stream.fail(cause),
+        } as LanguageModel.Service),
+      ),
+      plugins: [],
+    });
+    let caught: unknown;
+
+    try {
+      await withSession(definition, async (session) => {
+        for await (const _event of session.prompt("Hi")) {
+          // The stream fails before producing an event.
+        }
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(TurnError);
+    expect(caught).toMatchObject({ _tag: "TurnError", name: "TurnError", cause });
   });
 
   test("brackets a typed, terminating Turn stream", async () => {

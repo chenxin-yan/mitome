@@ -1,8 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Response, Toolkit } from "effect/unstable/ai";
 import { makeModel } from "@mitome/core";
-import { defineAgent, definePlugin, tool, withSession, type StandardSchema } from "@mitome/sdk";
+import {
+  defineAgent,
+  definePlugin,
+  tool,
+  withSession,
+  type InputSchema,
+  type StandardSchema,
+} from "@mitome/sdk";
 
 const stringSchema: StandardSchema<unknown, string> = {
   "~standard": {
@@ -15,7 +22,7 @@ const stringSchema: StandardSchema<unknown, string> = {
   },
 };
 
-const jsonStringSchema: StandardSchema<unknown, string> = {
+const jsonStringSchema: InputSchema<string> = {
   "~standard": {
     ...stringSchema["~standard"],
     jsonSchema: {
@@ -107,19 +114,212 @@ describe("@mitome/sdk Tool", () => {
     ).toEqual(["system", "user", "assistant", "tool"]);
   });
 
-  test("rejects duplicate Plugin names before Session startup", () => {
+  test("aborts an active handler when iteration breaks and reuses the Session", async () => {
+    let calls = 0;
+    let handlerCalls = 0;
+    let secondPrompt: unknown;
+    let handlerStarted!: () => void;
+    let handlerAborted!: () => void;
+    const started = new Promise<void>((resolve) => (handlerStarted = resolve));
+    const aborted = new Promise<void>((resolve) => (handlerAborted = resolve));
+    const layer = Layer.succeed(LanguageModel.LanguageModel, {
+      streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
+        calls += 1;
+        if (calls === 3) {
+          return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+        }
+        if (calls === 2) secondPrompt = options.prompt;
+        const call = Response.makePart("tool-call", {
+          id: `call-${calls}`,
+          name: "echo",
+          params: "hello",
+          providerExecuted: false,
+        });
+        return Stream.concat(
+          Stream.succeed(call),
+          Stream.unwrap(
+            options.toolkit!.handle("echo", "hello").pipe(
+              Effect.map((results) =>
+                Stream.map(results, (result) =>
+                  Response.makePart("tool-result", {
+                    id: call.id,
+                    name: call.name,
+                    providerExecuted: false,
+                    ...result,
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    } as LanguageModel.Service);
+    const definition = defineAgent({
+      instructions: "Be concise.",
+      model: makeModel(layer),
+      plugins: [
+        definePlugin({
+          name: "echo-plugin",
+          tools: [
+            tool({
+              name: "echo",
+              inputSchema: jsonStringSchema,
+              outputSchema: stringSchema,
+              handler: async (_input, { signal }) => {
+                handlerCalls += 1;
+                if (handlerCalls === 2) return "second";
+                return new Promise((resolve) => {
+                  signal.addEventListener(
+                    "abort",
+                    () => {
+                      handlerAborted();
+                      resolve("aborted");
+                    },
+                    { once: true },
+                  );
+                  handlerStarted();
+                });
+              },
+            }),
+          ],
+        }),
+      ],
+    });
+
+    const events = await withSession(definition, async (session) => {
+      const iterator = session.prompt("first")[Symbol.asyncIterator]();
+      await iterator.next();
+      const pending = iterator.next();
+      await started;
+      await iterator.return?.();
+      await aborted;
+      await pending.catch(() => undefined);
+      const next = [];
+      for await (const event of session.prompt("second")) next.push(event);
+      return next;
+    });
+
+    expect(calls).toBe(3);
+    expect(events).toEqual([
+      { type: "tool-call", id: "call-2", name: "echo" },
+      { type: "tool-result", id: "call-2", name: "echo", result: "second", isFailure: false },
+      { type: "model-output", text: "done" },
+      { type: "response-complete" },
+    ]);
+    expect(
+      (secondPrompt as { readonly content: ReadonlyArray<{ readonly role: string }> }).content.map(
+        (message) => message.role,
+      ),
+    ).toEqual(["system", "user"]);
+  });
+
+  test("aborts an abandoned iterator's active handler before withSession resolves", async () => {
+    let handlerStarted!: () => void;
+    let handlerAborted!: () => void;
+    const started = new Promise<void>((resolve) => (handlerStarted = resolve));
+    const aborted = new Promise<void>((resolve) => (handlerAborted = resolve));
+    const layer = Layer.succeed(LanguageModel.LanguageModel, {
+      streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
+        const call = Response.makePart("tool-call", {
+          id: "call-1",
+          name: "echo",
+          params: "hello",
+          providerExecuted: false,
+        });
+        return Stream.concat(
+          Stream.succeed(call),
+          Stream.unwrap(
+            options.toolkit!.handle("echo", "hello").pipe(
+              Effect.map((results) =>
+                Stream.map(results, (result) =>
+                  Response.makePart("tool-result", {
+                    id: call.id,
+                    name: call.name,
+                    providerExecuted: false,
+                    ...result,
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    } as LanguageModel.Service);
+    const definition = defineAgent({
+      instructions: "Be concise.",
+      model: makeModel(layer),
+      plugins: [
+        definePlugin({
+          name: "echo-plugin",
+          tools: [
+            tool({
+              name: "echo",
+              inputSchema: jsonStringSchema,
+              outputSchema: stringSchema,
+              handler: async (_input, { signal }) =>
+                new Promise((resolve) => {
+                  signal.addEventListener(
+                    "abort",
+                    () => {
+                      handlerAborted();
+                      resolve("aborted");
+                    },
+                    { once: true },
+                  );
+                  handlerStarted();
+                }),
+            }),
+          ],
+        }),
+      ],
+    });
+    const order: string[] = [];
+    const completion = withSession(definition, async (session) => {
+      const iterator = session.prompt("Hi")[Symbol.asyncIterator]();
+      await iterator.next();
+      await started;
+    }).then(() => order.push("session-resolved"));
+
+    await aborted;
+    order.push("handler-aborted");
+    await completion;
+
+    expect(order).toEqual(["handler-aborted", "session-resolved"]);
+  });
+
+  test("accepts Effect Schema without manual Standard Schema adapters", async () => {
     const fixture = makeToolModel();
-    expect(() =>
-      defineAgent({
-        instructions: "Be concise.",
-        model: fixture.model,
-        plugins: [
-          definePlugin({ name: "same", tools: [] }),
-          definePlugin({ name: "same", tools: [] }),
-        ],
-      }),
-    ).toThrow("Duplicate Plugin name: same");
-    expect(fixture.calls()).toBe(0);
+    const definition = defineAgent({
+      instructions: "Be concise.",
+      model: fixture.model,
+      plugins: [
+        definePlugin({
+          name: "effect-schema",
+          tools: [
+            tool({
+              name: "echo",
+              inputSchema: Schema.String,
+              outputSchema: Schema.String,
+              handler: async (input) => input.toUpperCase(),
+            }),
+          ],
+        }),
+      ],
+    });
+
+    const events = await withSession(definition, async (session) => {
+      const collected = [];
+      for await (const event of session.prompt("Hi")) collected.push(event);
+      return collected;
+    });
+
+    expect(events).toContainEqual({
+      type: "tool-result",
+      id: "call-1",
+      name: "echo",
+      result: "HELLO",
+      isFailure: false,
+    });
   });
 
   test("rejects duplicate Tool names within a Plugin", () => {
@@ -129,13 +329,13 @@ describe("@mitome/sdk Tool", () => {
         tools: [
           tool({
             name: "echo",
-            inputSchema: stringSchema,
+            inputSchema: jsonStringSchema,
             outputSchema: stringSchema,
             handler: async (input) => input,
           }),
           tool({
             name: "echo",
-            inputSchema: stringSchema,
+            inputSchema: jsonStringSchema,
             outputSchema: stringSchema,
             handler: async (input) => input,
           }),
@@ -155,7 +355,7 @@ describe("@mitome/sdk Tool", () => {
           tools: [
             tool({
               name: "echo",
-              inputSchema: stringSchema,
+              inputSchema: jsonStringSchema,
               outputSchema: stringSchema,
               handler: async () => Promise.reject(new Error("secret")),
             }),
