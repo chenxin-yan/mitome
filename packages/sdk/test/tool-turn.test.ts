@@ -213,6 +213,80 @@ describe("@mitome/sdk Tool", () => {
     ).toEqual(["system", "user"]);
   });
 
+  test("aborts an abandoned iterator's active handler before withSession resolves", async () => {
+    let handlerStarted!: () => void;
+    let handlerAborted!: () => void;
+    const started = new Promise<void>((resolve) => (handlerStarted = resolve));
+    const aborted = new Promise<void>((resolve) => (handlerAborted = resolve));
+    const layer = Layer.succeed(LanguageModel.LanguageModel, {
+      streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
+        const call = Response.makePart("tool-call", {
+          id: "call-1",
+          name: "echo",
+          params: "hello",
+          providerExecuted: false,
+        });
+        return Stream.concat(
+          Stream.succeed(call),
+          Stream.unwrap(
+            options.toolkit!.handle("echo", "hello").pipe(
+              Effect.map((results) =>
+                Stream.map(results, (result) =>
+                  Response.makePart("tool-result", {
+                    id: call.id,
+                    name: call.name,
+                    providerExecuted: false,
+                    ...result,
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    } as LanguageModel.Service);
+    const definition = defineAgent({
+      instructions: "Be concise.",
+      model: makeModel(layer),
+      plugins: [
+        definePlugin({
+          name: "echo-plugin",
+          tools: [
+            tool({
+              name: "echo",
+              inputSchema: jsonStringSchema,
+              outputSchema: stringSchema,
+              handler: async (_input, { signal }) =>
+                new Promise((resolve) => {
+                  signal.addEventListener(
+                    "abort",
+                    () => {
+                      handlerAborted();
+                      resolve("aborted");
+                    },
+                    { once: true },
+                  );
+                  handlerStarted();
+                }),
+            }),
+          ],
+        }),
+      ],
+    });
+    const order: string[] = [];
+    const completion = withSession(definition, async (session) => {
+      const iterator = session.prompt("Hi")[Symbol.asyncIterator]();
+      await iterator.next();
+      await started;
+    }).then(() => order.push("session-resolved"));
+
+    await aborted;
+    order.push("handler-aborted");
+    await completion;
+
+    expect(order).toEqual(["handler-aborted", "session-resolved"]);
+  });
+
   test("accepts Effect Schema without manual Standard Schema adapters", async () => {
     const fixture = makeToolModel();
     const definition = defineAgent({

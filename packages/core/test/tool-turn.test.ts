@@ -136,12 +136,14 @@ describe("createSession Tool Turn", () => {
         streamText: () => {
           calls += 1;
           return Stream.succeed(
-            Response.makePart("tool-call", {
-              id: `call-${calls}`,
-              name: "echo",
-              params: {},
-              providerExecuted: false,
-            }),
+            calls === 17
+              ? Response.makePart("text-delta", { id: "done", delta: "done" })
+              : Response.makePart("tool-call", {
+                  id: `call-${calls}`,
+                  name: "echo",
+                  params: {},
+                  providerExecuted: false,
+                }),
           );
         },
       } as LanguageModel.Service),
@@ -162,9 +164,12 @@ describe("createSession Tool Turn", () => {
             ],
           });
           const exit = yield* Effect.exit(Stream.runDrain(session.prompt("Start")));
+          const history = session.history();
+          const reuseEvents = yield* Stream.runCollect(session.prompt("Again"));
           return {
             error: Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined,
-            history: session.history(),
+            history,
+            reuseEvents,
           };
         }),
       ),
@@ -172,7 +177,8 @@ describe("createSession Tool Turn", () => {
 
     expect(result.error).toBeInstanceOf(TurnStepLimitError);
     expect(result.history).toHaveLength(1);
-    expect(calls).toBe(16);
+    expect(result.reuseEvents.at(-1)).toEqual({ type: "response-complete" });
+    expect(calls).toBe(17);
   });
 
   test("allows exactly sixteen Steps", async () => {

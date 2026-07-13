@@ -14,16 +14,8 @@ export type OutputSchema<Output = unknown> =
   | StandardSchemaV1<unknown, Output>
   | EffectSchema<Output>;
 
-// The ESNext-only library config omits the DOM AbortSignal declaration.
 export interface ToolHandlerContext {
-  readonly signal: {
-    readonly aborted: boolean;
-    readonly addEventListener: (
-      type: "abort",
-      listener: () => void,
-      options?: { readonly once?: boolean },
-    ) => void;
-  };
+  readonly signal: AbortSignal;
 }
 
 export interface Tool<Input = unknown, Output = unknown> {

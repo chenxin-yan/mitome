@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Fiber, Queue, Stream } from "effect";
+import { Cause, Effect, Exit, Fiber, Queue, Scope, Stream } from "effect";
 import { createSession } from "@mitome/core";
 import type { Definition, TurnEvent } from "@mitome/core";
 
@@ -16,13 +16,19 @@ type TurnItem =
 
 // beta.97's Stream.toAsyncIterable().return() only closes its Scope, never Fiber.interrupts an in-flight pull.
 // This bridge makes iterator return()/throw() interrupt active model/tool work.
-const toAsyncIterable = (stream: Stream.Stream<TurnEvent, unknown>): AsyncIterable<TurnEvent> => ({
+const toAsyncIterable = (
+  stream: Stream.Stream<TurnEvent, unknown>,
+  scope: Scope.Scope,
+): AsyncIterable<TurnEvent> => ({
   [Symbol.asyncIterator]() {
     const queue = Effect.runSync(Queue.bounded<TurnItem>(1));
-    const fiber = Effect.runFork(
-      Effect.exit(
-        Stream.runForEach(stream, (event) => Queue.offer(queue, { _tag: "Event", event })),
-      ).pipe(Effect.flatMap((exit) => Queue.offer(queue, { _tag: "Exit", exit }))),
+    const fiber = Fiber.runIn(
+      Effect.runFork(
+        Effect.exit(
+          Stream.runForEach(stream, (event) => Queue.offer(queue, { _tag: "Event", event })),
+        ).pipe(Effect.flatMap((exit) => Queue.offer(queue, { _tag: "Exit", exit }))),
+      ),
+      scope,
     );
     let closed = false;
     const close = async (): Promise<void> => {
@@ -64,8 +70,9 @@ export const withSession = <A>(
     Effect.scoped(
       Effect.gen(function* () {
         const session = yield* createSession(definition);
+        const scope = yield* Effect.scope;
         return yield* Effect.tryPromise({
-          try: () => use({ prompt: (text) => toAsyncIterable(session.prompt(text)) }),
+          try: () => use({ prompt: (text) => toAsyncIterable(session.prompt(text), scope) }),
           catch: (error) => new CallbackFailure(error),
         });
       }),

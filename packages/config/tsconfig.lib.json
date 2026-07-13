@@ -6,6 +6,7 @@
     "isolatedDeclarations": false,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "types": ["bun"],
     "noEmit": false
   }
 }

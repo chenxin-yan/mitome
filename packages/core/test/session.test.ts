@@ -84,6 +84,7 @@ describe("createSession", () => {
     if (Exit.isFailure(exit)) {
       expect(Cause.squash(exit.cause)).toBeInstanceOf(SessionBusyError);
     }
+    expect(await Effect.runPromise(fixture.calls)).toBe(1);
   });
 
   test("discards cancelled Turn history and reuses the Session", async () => {
