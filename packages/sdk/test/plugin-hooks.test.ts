@@ -3,7 +3,6 @@ import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response, Toolkit } from "effect/unstable/ai";
 import { makeModel, type Plugin } from "@mitome/core";
 import {
-  TurnError,
   defineAgent,
   definePlugin,
   tool,
@@ -73,39 +72,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
   test("adapts Promise Hooks into the Core lifecycle in Definition order", async () => {
     const log: Array<string> = [];
     const signals: Array<boolean> = [];
-    let calls = 0;
-    const model = makeModel(
-      Layer.succeed(LanguageModel.LanguageModel, {
-        streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
-          calls += 1;
-          if (calls === 2)
-            return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-          const call = Response.makePart("tool-call", {
-            id: "call-1",
-            name: "echo",
-            params: "hello",
-            providerExecuted: false,
-          });
-          return Stream.concat(
-            Stream.succeed(call),
-            Stream.unwrap(
-              options.toolkit!.handle("echo", "hello").pipe(
-                Effect.map((results) =>
-                  Stream.map(results, (result) =>
-                    Response.makePart("tool-result", {
-                      id: call.id,
-                      name: call.name,
-                      providerExecuted: false,
-                      ...result,
-                    }),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      } as LanguageModel.Service),
-    );
+    const model = makeToolModel();
     const core: Plugin = {
       name: "core",
       hooks: {
@@ -159,11 +126,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
 
     const events = await withSession(
       defineAgent({ instructions: "Be concise.", model, plugins: [core, sdk] }),
-      async (session) => {
-        const collected = [];
-        for await (const event of session.prompt("Hi")) collected.push(event);
-        return collected;
-      },
+      (session) => Array.fromAsync(session.prompt("Hi")),
     );
 
     expect(log).toEqual([
@@ -213,19 +176,9 @@ describe("@mitome/sdk Plugin Hooks", () => {
       ],
     });
 
-    let failure: unknown;
-    try {
-      await withSession(agent, async (session) => {
-        for await (const _event of session.prompt("Hi")) {
-          // The rejected Hook fails before the model emits an event.
-        }
-      });
-    } catch (error) {
-      failure = error;
-    }
-
-    expect(failure).toBeInstanceOf(TurnError);
-    expect((failure as TurnError).cause).toBe(original);
+    await expect(
+      withSession(agent, (session) => Array.fromAsync(session.prompt("Hi"))),
+    ).rejects.toMatchObject({ _tag: "TurnError", cause: original });
   });
 
   test("centrally validates any Plugin's SDK Tool transform and preserves SDK failures", async () => {
@@ -251,11 +204,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
         }),
       ],
     });
-    const events = await withSession(failing, async (session) => {
-      const collected = [];
-      for await (const event of session.prompt("Hi")) collected.push(event);
-      return collected;
-    });
+    const events = await withSession(failing, (session) => Array.fromAsync(session.prompt("Hi")));
     expect(events.find((event) => event.type === "tool-result")).toMatchObject({
       type: "tool-result",
       isFailure: true,
@@ -281,11 +230,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
       ],
     });
     await expect(
-      withSession(invalid, async (session) => {
-        for await (const _event of session.prompt("Hi")) {
-          // The invalid post-Tool value fails before a result can be emitted.
-        }
-      }),
+      withSession(invalid, (session) => Array.fromAsync(session.prompt("Hi"))),
     ).rejects.toMatchObject({ _tag: "TurnError" });
   });
 });

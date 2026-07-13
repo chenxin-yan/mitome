@@ -18,8 +18,6 @@ export interface HookContext {
   readonly signal: AbortSignal;
 }
 
-export type ToolHandlerContext = HookContext;
-
 export interface PluginHooksDefinition {
   readonly sessionStart?: (context: HookContext) => Promise<void>;
   readonly sessionEnd?: (context: HookContext) => Promise<void>;
@@ -46,7 +44,7 @@ export interface Tool<Input = unknown, Output = unknown> {
   readonly description?: string;
   readonly inputSchema: InputSchema<Input>;
   readonly outputSchema: OutputSchema<Output>;
-  readonly handler: (input: Input, context: ToolHandlerContext) => Promise<Output>;
+  readonly handler: (input: Input, context: HookContext) => Promise<Output>;
 }
 
 export const tool = <Input, Output>(definition: Tool<Input, Output>): Tool<Input, Output> =>

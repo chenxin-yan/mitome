@@ -15,7 +15,6 @@ export type {
   PluginHooksDefinition,
   StandardSchema,
   Tool,
-  ToolHandlerContext,
 } from "./plugin.js";
 export { withSession } from "./session.js";
 export type { Session } from "./session.js";
