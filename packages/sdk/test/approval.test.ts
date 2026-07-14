@@ -1,6 +1,4 @@
-// Bun's async matchers are typed void but must be awaited to stay within the test.
-// oxlint-disable typescript/await-thenable
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
 import { makeModel } from "@mitome/core";
@@ -11,7 +9,7 @@ import {
   withSession,
   type InputSchema,
   type StandardSchema,
-} from "@mitome/sdk";
+} from "../src/index.js";
 
 const outputSchema: StandardSchema<unknown, { readonly action: string }> = {
   "~standard": {

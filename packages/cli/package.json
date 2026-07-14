@@ -14,13 +14,14 @@
     "check:types": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "test": "bun test test --timeout 15000"
+    "test": "vitest run"
   },
   "devDependencies": {
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
     "@types/bun": "catalog:",
     "effect": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

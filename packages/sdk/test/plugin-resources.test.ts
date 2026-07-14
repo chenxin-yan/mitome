@@ -1,6 +1,4 @@
-// Bun's async matchers are typed void but must be awaited to stay within the test.
-// oxlint-disable typescript/await-thenable
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { Cause, Context, Effect, Exit, Layer, Result, Schema, SchemaGetter, Stream } from "effect";
 import { Response, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import { createSession, type Plugin } from "@mitome/core";
