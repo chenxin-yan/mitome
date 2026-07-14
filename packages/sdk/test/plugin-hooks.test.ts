@@ -222,6 +222,59 @@ describe("@mitome/sdk Plugin Hooks", () => {
     expect(aborted).toBe(true);
   });
 
+  test("continues remaining end Hooks when iteration stops during cleanup", async () => {
+    let started!: () => void;
+    const hookStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let aborted = false;
+    let laterCompleted = false;
+    const agent = defineAgent({
+      instructions: "Be concise.",
+      model: makeTestModel(() =>
+        Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
+      ),
+      plugins: [
+        definePlugin({
+          name: "blocking",
+          tools: [],
+          hooks: {
+            stepEnd: (_prompt, { signal }) =>
+              new Promise((_resolve, reject) => {
+                started();
+                signal.addEventListener(
+                  "abort",
+                  () => {
+                    aborted = signal.aborted;
+                    reject(new Error("aborted"));
+                  },
+                  { once: true },
+                );
+              }),
+          },
+        }),
+        definePlugin({
+          name: "later",
+          tools: [],
+          hooks: {
+            stepEnd: async () => {
+              laterCompleted = true;
+            },
+          },
+        }),
+      ],
+    });
+
+    await withSession(agent, async (session) => {
+      const iterator = session.prompt("Hi")[Symbol.asyncIterator]();
+      expect(await iterator.next()).toMatchObject({ value: { type: "model-output" } });
+      await hookStarted;
+      await iterator.return?.();
+    });
+
+    expect({ aborted, laterCompleted }).toEqual({ aborted: true, laterCompleted: true });
+  });
+
   test("preserves the original rejected Hook error as the TurnError cause", async () => {
     const original = new Error("hook failed");
     const agent = defineAgent({

@@ -1,4 +1,4 @@
-import { Context, Effect, Exit, Layer, Schema, Scope, Semaphore, Stream } from "effect";
+import { Context, Effect, Layer, Schema, Scope, Semaphore, Stream } from "effect";
 import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
 import { validateDefinition } from "./definition.js";
@@ -60,12 +60,6 @@ export interface Session {
   readonly history: () => ReadonlyArray<Prompt.Message>;
   readonly released: () => boolean;
 }
-
-const runHooks = (
-  plugins: ReadonlyArray<Plugin>,
-  getHook: (plugin: Plugin) => Effect.Effect<void, unknown> | undefined,
-): Effect.Effect<void, unknown> =>
-  Effect.forEach(plugins, (plugin) => getHook(plugin) ?? Effect.void, { discard: true });
 
 const transformPrompt = (
   plugins: ReadonlyArray<Plugin>,
@@ -225,6 +219,69 @@ const modelTurnError = (cause: unknown) =>
 const logHookFailure = (message: string) =>
   Effect.catchCause((cause) => Effect.logWarning(message, cause));
 
+interface HookProgress {
+  dispatched: number;
+}
+
+const runCleanupHooks = (
+  plugins: ReadonlyArray<Plugin>,
+  getHook: (plugin: Plugin) => Effect.Effect<void, unknown> | undefined,
+  message: string,
+): Effect.Effect<void> =>
+  Effect.forEach(
+    plugins,
+    (plugin) => (getHook(plugin) ?? Effect.void).pipe(logHookFailure(message)),
+    { discard: true },
+  );
+
+const runStartHooks = (
+  plugins: ReadonlyArray<Plugin>,
+  getStart: (plugin: Plugin) => Effect.Effect<void, unknown> | undefined,
+  getEnd: (plugin: Plugin) => Effect.Effect<void, unknown> | undefined,
+  endFailureMessage: string,
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    let started = 0;
+    const start = Effect.gen(function* () {
+      for (const plugin of plugins) {
+        yield* getStart(plugin) ?? Effect.void;
+        started += 1;
+      }
+    });
+    return yield* start.pipe(
+      Effect.onError(() => runCleanupHooks(plugins.slice(0, started), getEnd, endFailureMessage)),
+    );
+  });
+
+const runEndHooks = (
+  plugins: ReadonlyArray<Plugin>,
+  getHook: (plugin: Plugin) => Effect.Effect<void, unknown> | undefined,
+  progress: HookProgress,
+  failureMessage: string,
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    let failed = false;
+    let firstFailure: unknown;
+    for (const plugin of plugins) {
+      // Interruption must continue with later cleanup, not invoke the active Hook twice.
+      progress.dispatched += 1;
+      const hook = getHook(plugin) ?? Effect.void;
+      if (failed) {
+        yield* hook.pipe(Effect.catch((failure) => Effect.logWarning(failureMessage, failure)));
+      } else {
+        yield* hook.pipe(
+          Effect.catch((failure) =>
+            Effect.sync(() => {
+              failed = true;
+              firstFailure = failure;
+            }),
+          ),
+        );
+      }
+    }
+    if (failed) return yield* Effect.fail(firstFailure);
+  });
+
 export const createSession: (
   definition: Definition,
 ) => Effect.Effect<Session, DefinitionError | TurnError, Scope.Scope> = Effect.fn(
@@ -252,21 +309,28 @@ export const createSession: (
     }),
   );
 
-  yield* runHooks(definition.plugins, (plugin) => plugin.hooks?.sessionStart).pipe(
-    hookTurnError("Session start Hook failed"),
-  );
+  yield* runStartHooks(
+    definition.plugins,
+    (plugin) => plugin.hooks?.sessionStart,
+    (plugin) => plugin.hooks?.sessionEnd,
+    "Session end Hook failed",
+  ).pipe(hookTurnError("Session start Hook failed"));
 
   yield* Effect.addFinalizer(() =>
-    // A failing sessionEnd Hook must not fail scope close.
-    runHooks(definition.plugins, (plugin) => plugin.hooks?.sessionEnd).pipe(
-      logHookFailure("Session end Hook failed"),
+    // A failing sessionEnd Hook must not fail scope close or skip later cleanup.
+    runCleanupHooks(
+      definition.plugins,
+      (plugin) => plugin.hooks?.sessionEnd,
+      "Session end Hook failed",
     ),
   );
+
+  type StepEvent = TurnEvent | { readonly type: "turn-complete"; readonly history: Prompt.Prompt };
 
   const runStep = (
     prompt: Prompt.Prompt,
     step: number,
-  ): Stream.Stream<TurnEvent, TurnStepLimitError | TurnError> => {
+  ): Stream.Stream<StepEvent, TurnStepLimitError | TurnError> => {
     if (step >= maximumTurnSteps) {
       return Stream.fail(
         new TurnStepLimitError({
@@ -277,10 +341,16 @@ export const createSession: (
 
     const parts: Array<Response.AnyPart> = [];
     return Stream.unwrap(
-      runHooks(definition.plugins, (plugin) => plugin.hooks?.stepStart?.(prompt)).pipe(
+      runStartHooks(
+        definition.plugins,
+        (plugin) => plugin.hooks?.stepStart?.(prompt),
+        (plugin) => plugin.hooks?.stepEnd?.(prompt),
+        "Step end Hook failed",
+      ).pipe(
         hookTurnError("Step start Hook failed"),
         Effect.map(() => {
-          let ended = false;
+          const startedPlugins = definition.plugins;
+          const endProgress: HookProgress = { dispatched: 0 };
           let endPrompt = prompt;
           return Stream.unwrap(
             transformPrompt(definition.plugins, prompt).pipe(
@@ -301,7 +371,7 @@ export const createSession: (
                       part.type === "tool-call" ||
                       part.type === "tool-result",
                   ),
-                  Stream.map((part): TurnEvent => {
+                  Stream.map((part): StepEvent => {
                     if (part.type === "text-delta") {
                       return { type: "model-output", text: part.delta };
                     }
@@ -319,27 +389,20 @@ export const createSession: (
                   Stream.concat(
                     Stream.suspend(() => {
                       const nextPrompt = Prompt.concat(prompt, Prompt.fromResponseParts(parts));
-                      const next = parts.some(
-                        (part) => part.type === "tool-call" && part.providerExecuted !== true,
-                      )
-                        ? runStep(nextPrompt, step + 1)
-                        : Stream.fromEffect(
-                            Effect.sync(() => {
-                              history = nextPrompt;
-                              return { type: "response-complete" } as const;
-                            }),
-                          );
+                      const next: Stream.Stream<StepEvent, TurnStepLimitError | TurnError> =
+                        parts.some(
+                          (part) => part.type === "tool-call" && part.providerExecuted !== true,
+                        )
+                          ? runStep(nextPrompt, step + 1)
+                          : Stream.succeed({ type: "turn-complete", history: nextPrompt });
                       return Stream.concat(
                         Stream.fromEffectDrain(
-                          Effect.sync(() => {
-                            ended = true;
-                          }).pipe(
-                            Effect.andThen(
-                              runHooks(definition.plugins, (plugin) =>
-                                plugin.hooks?.stepEnd?.(transformed),
-                              ).pipe(hookTurnError("Step end Hook failed")),
-                            ),
-                          ),
+                          runEndHooks(
+                            startedPlugins,
+                            (plugin) => plugin.hooks?.stepEnd?.(transformed),
+                            endProgress,
+                            "Step end Hook failed",
+                          ).pipe(hookTurnError("Step end Hook failed")),
                         ),
                         next,
                       );
@@ -349,13 +412,12 @@ export const createSession: (
               }),
             ),
           ).pipe(
-            Stream.onExit((exit) =>
-              // Preserve a prior failure or interruption while still notifying the Hook.
-              Exit.isSuccess(exit) || ended
-                ? Effect.void
-                : runHooks(definition.plugins, (plugin) => plugin.hooks?.stepEnd?.(endPrompt)).pipe(
-                    logHookFailure("Step end Hook failed"),
-                  ),
+            Stream.onExit(() =>
+              runCleanupHooks(
+                startedPlugins.slice(endProgress.dispatched),
+                (plugin) => plugin.hooks?.stepEnd?.(endPrompt),
+                "Step end Hook failed",
+              ),
             ),
           );
         }),
@@ -382,31 +444,38 @@ export const createSession: (
         }
         isTurnActive = true;
         return Stream.unwrap(
-          runHooks(definition.plugins, (plugin) => plugin.hooks?.turnStart?.(text)).pipe(
+          runStartHooks(
+            definition.plugins,
+            (plugin) => plugin.hooks?.turnStart?.(text),
+            (plugin) => plugin.hooks?.turnEnd?.(text),
+            "Turn end Hook failed",
+          ).pipe(
             hookTurnError("Turn start Hook failed"),
             Effect.map(() => {
-              let ended = false;
+              const startedPlugins = definition.plugins;
+              const endProgress: HookProgress = { dispatched: 0 };
               return runStep(Prompt.concat(history, text), 0).pipe(
-                Stream.concat(
-                  Stream.fromEffectDrain(
-                    Effect.sync(() => {
-                      ended = true;
-                    }).pipe(
-                      Effect.andThen(
-                        runHooks(definition.plugins, (plugin) =>
-                          plugin.hooks?.turnEnd?.(text),
-                        ).pipe(hookTurnError("Turn end Hook failed")),
-                      ),
-                    ),
+                Stream.mapEffect((event): Effect.Effect<TurnEvent, TurnError> => {
+                  if (event.type !== "turn-complete") return Effect.succeed(event);
+                  return runEndHooks(
+                    startedPlugins,
+                    (plugin) => plugin.hooks?.turnEnd?.(text),
+                    endProgress,
+                    "Turn end Hook failed",
+                  ).pipe(
+                    hookTurnError("Turn end Hook failed"),
+                    Effect.map(() => {
+                      history = event.history;
+                      return { type: "response-complete" } as const;
+                    }),
+                  );
+                }),
+                Stream.onExit(() =>
+                  runCleanupHooks(
+                    startedPlugins.slice(endProgress.dispatched),
+                    (plugin) => plugin.hooks?.turnEnd?.(text),
+                    "Turn end Hook failed",
                   ),
-                ),
-                Stream.onExit((exit) =>
-                  // Preserve a prior failure or interruption while still notifying the Hook.
-                  Exit.isSuccess(exit) || ended
-                    ? Effect.void
-                    : runHooks(definition.plugins, (plugin) => plugin.hooks?.turnEnd?.(text)).pipe(
-                        logHookFailure("Turn end Hook failed"),
-                      ),
                 ),
               );
             }),

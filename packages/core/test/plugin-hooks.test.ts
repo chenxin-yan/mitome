@@ -376,6 +376,226 @@ describe("Plugin Hooks", () => {
     expect(stepLog).toEqual(["start", "end"]);
   });
 
+  test("ends successful Hook prefixes when a later start fails", async () => {
+    const sessionLog: Array<string> = [];
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.exit(
+          createSession({
+            instructions: "Be concise.",
+            model: textModel(() => undefined),
+            plugins: [
+              {
+                name: "started",
+                hooks: {
+                  sessionStart: Effect.sync(() => void sessionLog.push("start:first")),
+                  sessionEnd: Effect.sync(() => void sessionLog.push("end:first")),
+                },
+              },
+              {
+                name: "failed",
+                hooks: {
+                  sessionStart: Effect.sync(() => void sessionLog.push("start:second")).pipe(
+                    Effect.andThen(Effect.fail(new HookFailure({ message: "session" }))),
+                  ),
+                  sessionEnd: Effect.sync(() => void sessionLog.push("end:second")),
+                },
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    expect(sessionLog).toEqual(["start:first", "start:second", "end:first"]);
+
+    const turnLog: Array<string> = [];
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({
+            instructions: "Be concise.",
+            model: textModel(() => undefined),
+            plugins: [
+              {
+                name: "started",
+                hooks: {
+                  turnStart: () => Effect.sync(() => void turnLog.push("start:first")),
+                  turnEnd: () => Effect.sync(() => void turnLog.push("end:first")),
+                },
+              },
+              {
+                name: "failed",
+                hooks: {
+                  turnStart: () =>
+                    Effect.sync(() => void turnLog.push("start:second")).pipe(
+                      Effect.andThen(Effect.fail(new HookFailure({ message: "turn" }))),
+                    ),
+                  turnEnd: () => Effect.sync(() => void turnLog.push("end:second")),
+                },
+              },
+            ],
+          });
+          yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
+        }),
+      ),
+    );
+    expect(turnLog).toEqual(["start:first", "start:second", "end:first"]);
+
+    const stepLog: Array<string> = [];
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({
+            instructions: "Be concise.",
+            model: textModel(() => undefined),
+            plugins: [
+              {
+                name: "started",
+                hooks: {
+                  stepStart: () => Effect.sync(() => void stepLog.push("start:first")),
+                  stepEnd: () => Effect.sync(() => void stepLog.push("end:first")),
+                },
+              },
+              {
+                name: "failed",
+                hooks: {
+                  stepStart: () =>
+                    Effect.sync(() => void stepLog.push("start:second")).pipe(
+                      Effect.andThen(Effect.fail(new HookFailure({ message: "step" }))),
+                    ),
+                  stepEnd: () => Effect.sync(() => void stepLog.push("end:second")),
+                },
+              },
+            ],
+          });
+          yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
+        }),
+      ),
+    );
+    expect(stepLog).toEqual(["start:first", "start:second", "end:first"]);
+  });
+
+  test("continues cleanup Hooks after an earlier cleanup fails", async () => {
+    const sessionLog: Array<string> = [];
+    await Effect.runPromise(
+      Effect.scoped(
+        createSession({
+          instructions: "Be concise.",
+          model: textModel(() => undefined),
+          plugins: [
+            {
+              name: "first",
+              hooks: {
+                sessionEnd: Effect.sync(() => void sessionLog.push("first")).pipe(
+                  Effect.andThen(Effect.fail(new HookFailure({ message: "sessionEnd" }))),
+                ),
+              },
+            },
+            {
+              name: "second",
+              hooks: { sessionEnd: Effect.sync(() => void sessionLog.push("second")) },
+            },
+          ],
+        }),
+      ),
+    );
+    expect(sessionLog).toEqual(["first", "second"]);
+
+    const turnLog: Array<string> = [];
+    const failingModel = makeTestModel(() => Stream.fail(new HookFailure({ message: "model" })));
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({
+            instructions: "Be concise.",
+            model: failingModel,
+            plugins: [
+              {
+                name: "first",
+                hooks: {
+                  stepEnd: () =>
+                    Effect.sync(() => void turnLog.push("step:first")).pipe(
+                      Effect.andThen(Effect.fail(new HookFailure({ message: "stepEnd" }))),
+                    ),
+                  turnEnd: () =>
+                    Effect.sync(() => void turnLog.push("turn:first")).pipe(
+                      Effect.andThen(Effect.fail(new HookFailure({ message: "turnEnd" }))),
+                    ),
+                },
+              },
+              {
+                name: "second",
+                hooks: {
+                  stepEnd: () => Effect.sync(() => void turnLog.push("step:second")),
+                  turnEnd: () => Effect.sync(() => void turnLog.push("turn:second")),
+                },
+              },
+            ],
+          });
+          yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
+        }),
+      ),
+    );
+    expect(turnLog).toEqual(["step:first", "step:second", "turn:first", "turn:second"]);
+  });
+
+  test("emits response-complete only after turnEnd succeeds", async () => {
+    const log: Array<string> = [];
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({
+            instructions: "Be concise.",
+            model: textModel(() => undefined),
+            plugins: [
+              {
+                name: "hooks",
+                hooks: { turnEnd: () => Effect.sync(() => void log.push("turn-end")) },
+              },
+            ],
+          });
+          yield* Stream.runForEach(session.prompt("Hi"), (event) =>
+            Effect.sync(() => void log.push(event.type)),
+          );
+        }),
+      ),
+    );
+    expect(log).toEqual(["model-output", "turn-end", "response-complete"]);
+  });
+
+  test("does not commit history or completion when turnEnd fails", async () => {
+    const events: Array<string> = [];
+    let history: ReadonlyArray<Prompt.Message> = [];
+    const exit = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({
+            instructions: "Be concise.",
+            model: textModel(() => undefined),
+            plugins: [
+              {
+                name: "bad",
+                hooks: {
+                  turnEnd: () => Effect.fail(new HookFailure({ message: "turnEnd" })),
+                },
+              },
+            ],
+          });
+          const turnExit = yield* Effect.exit(
+            Stream.runForEach(session.prompt("Hi"), (event) =>
+              Effect.sync(() => void events.push(event.type)),
+            ),
+          );
+          history = session.history();
+          return turnExit;
+        }),
+      ),
+    );
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(events).toEqual(["model-output"]);
+    expect(history).toHaveLength(1);
+  });
+
   const failingTurnHooks: ReadonlyArray<readonly [string, PluginHooks]> = [
     ["stepStart", { stepStart: () => Effect.fail(new HookFailure({ message: "stepStart" })) }],
     ["preStep", { preStep: () => Effect.fail(new HookFailure({ message: "preStep" })) }],

@@ -26,6 +26,7 @@ export interface PluginHooksDefinition {
   readonly turnStart?: (text: string, context: HookContext) => Promise<void>;
   readonly turnEnd?: (text: string, context: HookContext) => Promise<void>;
   readonly stepStart?: (prompt: Prompt, context: HookContext) => Promise<void>;
+  /** Receives the prompt used by the model, including any completed pre-Step transforms. */
   readonly stepEnd?: (prompt: Prompt, context: HookContext) => Promise<void>;
   readonly preStep?: (prompt: Prompt, context: HookContext) => Promise<Prompt>;
   readonly preTool?: (

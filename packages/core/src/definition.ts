@@ -18,6 +18,7 @@ export interface PluginHooks {
   readonly turnStart?: (text: string) => Effect.Effect<void, unknown>;
   readonly turnEnd?: (text: string) => Effect.Effect<void, unknown>;
   readonly stepStart?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown>;
+  /** Receives the prompt used by the model, including any completed pre-Step transforms. */
   readonly stepEnd?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown>;
   readonly preStep?: (prompt: Prompt.Prompt) => Effect.Effect<Prompt.Prompt, unknown>;
   readonly preTool?: (
