@@ -1,15 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { Cause, Effect, Exit, Fiber, Layer, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
+import { Cause, Effect, Exit, Fiber, Stream } from "effect";
+import { Response } from "effect/unstable/ai";
 import {
   createSession,
-  makeModel,
   type Definition,
   SessionBusyError,
   SessionReleasedError,
   type Session,
 } from "../src/index.js";
-import { makeDeterministicModel } from "./model.js";
+import { makeDeterministicModel, makeTestModel } from "./model.js";
 
 describe("createSession", () => {
   test("streams one model Step before completion", async () => {
@@ -91,21 +90,17 @@ describe("createSession", () => {
     let calls = 0;
     let start!: () => void;
     const started = new Promise<void>((resolve) => (start = resolve));
-    const model = makeModel(
-      Layer.succeed(LanguageModel.LanguageModel, {
-        streamText: () => {
-          calls += 1;
-          if (calls === 1) {
-            start();
-            return Stream.concat(
-              Stream.succeed(Response.makePart("text-delta", { id: "first", delta: "partial" })),
-              Stream.never,
-            );
-          }
-          return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
-        },
-      } as LanguageModel.Service),
-    );
+    const model = makeTestModel(() => {
+      calls += 1;
+      if (calls === 1) {
+        start();
+        return Stream.concat(
+          Stream.succeed(Response.makePart("text-delta", { id: "first", delta: "partial" })),
+          Stream.never,
+        );
+      }
+      return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
+    });
 
     const events = await Effect.runPromise(
       Effect.scoped(

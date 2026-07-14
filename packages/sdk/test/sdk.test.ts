@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Layer, Ref, Stream } from "effect";
+import { Effect, Layer, Ref, Schema, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { createSession, makeModel } from "@mitome/core";
-import { TurnError, defineAgent, withSession } from "@mitome/sdk";
+import { TurnError, defineAgent, withSession } from "../src/index.js";
+import { makeTestModel, testLanguageModel } from "./model.js";
+
+class ModelFailure extends Schema.TaggedErrorClass<ModelFailure>()("ModelFailure", {
+  message: Schema.String,
+}) {}
 
 const makeDeterministicModel = (output: string) =>
   Effect.gen(function* () {
@@ -11,14 +16,15 @@ const makeDeterministicModel = (output: string) =>
     const layer = Layer.effect(
       LanguageModel.LanguageModel,
       Effect.acquireRelease(
-        Effect.succeed({
-          streamText: () =>
+        Effect.succeed(
+          testLanguageModel(() =>
             Stream.fromEffect(Ref.update(calls, (count) => count + 1)).pipe(
               Stream.map(() =>
                 Response.makePart("text-delta", { id: "deterministic", delta: output }),
               ),
             ),
-        } as LanguageModel.Service),
+          ),
+        ),
         () => Ref.set(released, true),
       ),
     );
@@ -71,14 +77,10 @@ describe("@mitome/sdk", () => {
   });
 
   test("throws tagged Turn errors with their original cause", async () => {
-    const cause = new Error("model failed");
+    const cause = new ModelFailure({ message: "model failed" });
     const definition = defineAgent({
       instructions: "Be concise.",
-      model: makeModel(
-        Layer.succeed(LanguageModel.LanguageModel, {
-          streamText: () => Stream.fail(cause),
-        } as LanguageModel.Service),
-      ),
+      model: makeTestModel(() => Stream.fail(cause)),
       plugins: [],
     });
     let caught: unknown;

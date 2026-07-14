@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Response, Toolkit } from "effect/unstable/ai";
-import { makeModel } from "@mitome/core";
+import { Effect, Schema, Stream } from "effect";
+import { Prompt, Response } from "effect/unstable/ai";
 import {
   defineAgent,
   definePlugin,
@@ -9,7 +8,8 @@ import {
   withSession,
   type InputSchema,
   type StandardSchema,
-} from "@mitome/sdk";
+} from "../src/index.js";
+import { makeTestModel } from "./model.js";
 
 const stringSchema: StandardSchema<unknown, string> = {
   "~standard": {
@@ -34,43 +34,38 @@ const jsonStringSchema: InputSchema<string> = {
 
 const makeToolModel = () => {
   let calls = 0;
-  let secondPrompt: unknown;
-  const layer = Layer.succeed(LanguageModel.LanguageModel, {
-    streamText: (options: {
-      readonly prompt: unknown;
-      readonly toolkit?: Toolkit.WithHandler<any>;
-    }) => {
-      calls += 1;
-      if (calls === 2) {
-        secondPrompt = options.prompt;
-        return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
-      }
-      const call = Response.makePart("tool-call", {
-        id: "call-1",
-        name: "echo",
-        params: "hello",
-        providerExecuted: false,
-      });
-      return Stream.concat(
-        Stream.succeed(call),
-        Stream.unwrap(
-          options.toolkit!.handle("echo", "hello").pipe(
-            Effect.map((results) =>
-              Stream.map(results, (result) =>
-                Response.makePart("tool-result", {
-                  id: call.id,
-                  name: call.name,
-                  providerExecuted: false,
-                  ...result,
-                }),
-              ),
+  let secondPrompt: Prompt.Prompt | undefined;
+  const model = makeTestModel((options) => {
+    calls += 1;
+    if (calls === 2) {
+      secondPrompt = options.prompt;
+      return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
+    }
+    const call = Response.makePart("tool-call", {
+      id: "call-1",
+      name: "echo",
+      params: "hello",
+      providerExecuted: false,
+    });
+    return Stream.concat(
+      Stream.succeed(call),
+      Stream.unwrap(
+        options.toolkit!.handle("echo", "hello").pipe(
+          Effect.map((results) =>
+            Stream.map(results, (result) =>
+              Response.makePart("tool-result", {
+                id: call.id,
+                name: call.name,
+                providerExecuted: false,
+                ...result,
+              }),
             ),
           ),
         ),
-      );
-    },
-  } as LanguageModel.Service);
-  return { model: makeModel(layer), calls: () => calls, prompt: () => secondPrompt };
+      ),
+    );
+  });
+  return { model, calls: () => calls, prompt: () => secondPrompt };
 };
 
 describe("@mitome/sdk Tool", () => {
@@ -107,56 +102,55 @@ describe("@mitome/sdk Tool", () => {
       { type: "response-complete" },
     ]);
     expect(fixture.calls()).toBe(2);
-    expect(
-      (
-        fixture.prompt() as { readonly content: ReadonlyArray<{ readonly role: string }> }
-      ).content.map((message) => message.role),
-    ).toEqual(["system", "user", "assistant", "tool"]);
+    expect(fixture.prompt()?.content.map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "tool",
+    ]);
   });
 
   test("aborts an active handler when iteration breaks and reuses the Session", async () => {
     let calls = 0;
     let handlerCalls = 0;
-    let secondPrompt: unknown;
+    let secondPrompt: Prompt.Prompt | undefined;
     let handlerStarted!: () => void;
     let handlerAborted!: () => void;
     const started = new Promise<void>((resolve) => (handlerStarted = resolve));
     const aborted = new Promise<void>((resolve) => (handlerAborted = resolve));
-    const layer = Layer.succeed(LanguageModel.LanguageModel, {
-      streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
-        calls += 1;
-        if (calls === 3) {
-          return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-        }
-        if (calls === 2) secondPrompt = options.prompt;
-        const call = Response.makePart("tool-call", {
-          id: `call-${calls}`,
-          name: "echo",
-          params: "hello",
-          providerExecuted: false,
-        });
-        return Stream.concat(
-          Stream.succeed(call),
-          Stream.unwrap(
-            options.toolkit!.handle("echo", "hello").pipe(
-              Effect.map((results) =>
-                Stream.map(results, (result) =>
-                  Response.makePart("tool-result", {
-                    id: call.id,
-                    name: call.name,
-                    providerExecuted: false,
-                    ...result,
-                  }),
-                ),
+    const model = makeTestModel((options) => {
+      calls += 1;
+      if (calls === 3) {
+        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+      }
+      if (calls === 2) secondPrompt = options.prompt;
+      const call = Response.makePart("tool-call", {
+        id: `call-${calls}`,
+        name: "echo",
+        params: "hello",
+        providerExecuted: false,
+      });
+      return Stream.concat(
+        Stream.succeed(call),
+        Stream.unwrap(
+          options.toolkit!.handle("echo", "hello").pipe(
+            Effect.map((results) =>
+              Stream.map(results, (result) =>
+                Response.makePart("tool-result", {
+                  id: call.id,
+                  name: call.name,
+                  providerExecuted: false,
+                  ...result,
+                }),
               ),
             ),
           ),
-        );
-      },
-    } as LanguageModel.Service);
+        ),
+      );
+    });
     const definition = defineAgent({
       instructions: "Be concise.",
-      model: makeModel(layer),
+      model,
       plugins: [
         definePlugin({
           name: "echo-plugin",
@@ -206,11 +200,7 @@ describe("@mitome/sdk Tool", () => {
       { type: "model-output", text: "done" },
       { type: "response-complete" },
     ]);
-    expect(
-      (secondPrompt as { readonly content: ReadonlyArray<{ readonly role: string }> }).content.map(
-        (message) => message.role,
-      ),
-    ).toEqual(["system", "user"]);
+    expect(secondPrompt?.content.map((message) => message.role)).toEqual(["system", "user"]);
   });
 
   test("aborts an abandoned iterator's active handler before withSession resolves", async () => {
@@ -218,36 +208,34 @@ describe("@mitome/sdk Tool", () => {
     let handlerAborted!: () => void;
     const started = new Promise<void>((resolve) => (handlerStarted = resolve));
     const aborted = new Promise<void>((resolve) => (handlerAborted = resolve));
-    const layer = Layer.succeed(LanguageModel.LanguageModel, {
-      streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
-        const call = Response.makePart("tool-call", {
-          id: "call-1",
-          name: "echo",
-          params: "hello",
-          providerExecuted: false,
-        });
-        return Stream.concat(
-          Stream.succeed(call),
-          Stream.unwrap(
-            options.toolkit!.handle("echo", "hello").pipe(
-              Effect.map((results) =>
-                Stream.map(results, (result) =>
-                  Response.makePart("tool-result", {
-                    id: call.id,
-                    name: call.name,
-                    providerExecuted: false,
-                    ...result,
-                  }),
-                ),
+    const model = makeTestModel((options) => {
+      const call = Response.makePart("tool-call", {
+        id: "call-1",
+        name: "echo",
+        params: "hello",
+        providerExecuted: false,
+      });
+      return Stream.concat(
+        Stream.succeed(call),
+        Stream.unwrap(
+          options.toolkit!.handle("echo", "hello").pipe(
+            Effect.map((results) =>
+              Stream.map(results, (result) =>
+                Response.makePart("tool-result", {
+                  id: call.id,
+                  name: call.name,
+                  providerExecuted: false,
+                  ...result,
+                }),
               ),
             ),
           ),
-        );
-      },
-    } as LanguageModel.Service);
+        ),
+      );
+    });
     const definition = defineAgent({
       instructions: "Be concise.",
-      model: makeModel(layer),
+      model,
       plugins: [
         definePlugin({
           name: "echo-plugin",

@@ -10,14 +10,18 @@
       "persistent": true
     },
     "test": {
-      "dependsOn": ["build", "^build"],
+      "dependsOn": ["^build"],
       "outputs": []
     },
-    "//#lint": {
-      "dependsOn": ["^build"]
-    },
-    "//#lint:fix": {
+    "lint": {
       "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.oxlintrc.json"],
+      "outputs": []
+    },
+    "lint:fix": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.oxlintrc.json"],
+      "outputs": [],
       "cache": false
     },
     "//#fmt": {},

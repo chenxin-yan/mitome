@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Layer, Schema } from "effect";
-import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
-import { createSession, DefinitionError, makeModel, type Definition } from "../src/index.js";
+import { Effect, Schema, Stream } from "effect";
+import { Tool, Toolkit } from "effect/unstable/ai";
+import { createSession, DefinitionError, type Definition } from "../src/index.js";
+import { makeTestModel } from "./model.js";
 
-const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {} as LanguageModel.Service));
+const model = makeTestModel(() => Stream.empty);
 const getDefinitionError = (definition: Definition) =>
   Effect.runPromise(Effect.flip(Effect.scoped(createSession(definition))));
 
@@ -67,6 +68,25 @@ describe("Definition validation", () => {
     expect((await getDefinitionError(missing)).message).toBe("Missing Tool handler: echo");
     expect((await getDefinitionError(orphaned)).message).toBe(
       "Tool handler has no matching Tool: echo",
+    );
+  });
+
+  test("rejects a Tool result validator outside its owning Plugin", async () => {
+    const definition: Definition = {
+      instructions: "Be concise.",
+      model,
+      plugins: [
+        {
+          name: "validator",
+          toolkit: Toolkit.make(Tool.make("owned")),
+          handlers: { owned: () => Effect.void },
+          toolResultValidators: { other: Effect.succeed },
+        },
+      ],
+    };
+
+    expect((await getDefinitionError(definition)).message).toBe(
+      "Tool result validator has no matching Tool: other",
     );
   });
 });
