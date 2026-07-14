@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import { Schema } from "effect";
-import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
-import { createSession, makeModel, type Definition } from "../src/index.js";
+import { Response, Tool, Toolkit } from "effect/unstable/ai";
+import { createSession, type Definition } from "../src/index.js";
+import { makeTestModel } from "./model.js";
+
+class HookFailure extends Schema.TaggedErrorClass<HookFailure>()("HookFailure", {
+  message: Schema.String,
+}) {}
 
 describe("createSession Tool serialization", () => {
   test("does not overlap two Tool handlers while model output streams", async () => {
@@ -20,50 +25,46 @@ describe("createSession Tool serialization", () => {
     const postFirstReleased = new Promise<void>((resolve) => (releasePostFirst = resolve));
     const first = Tool.make("first", { parameters: Schema.Struct({}), success: Schema.String });
     const second = Tool.make("second", { parameters: Schema.Struct({}), success: Schema.String });
-    const model = makeModel(
-      Layer.succeed(LanguageModel.LanguageModel, {
-        streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
-          calls += 1;
-          if (calls === 2)
-            return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
-          const toolCalls = [
-            Response.makePart("tool-call", {
-              id: "one",
-              name: "first",
-              params: {},
-              providerExecuted: false,
-            }),
-            Response.makePart("tool-call", {
-              id: "two",
-              name: "second",
-              params: {},
-              providerExecuted: false,
-            }),
-          ];
-          const results = Stream.mergeAll({ concurrency: "unbounded" })(
-            toolCalls.map((call) =>
-              Stream.unwrap(options.toolkit!.handle(call.name, call.params)).pipe(
-                Stream.map((result) =>
-                  Response.makePart("tool-result", {
-                    id: call.id,
-                    name: call.name,
-                    providerExecuted: false,
-                    ...result,
-                  }),
-                ),
-              ),
+    const model = makeTestModel((options) => {
+      calls += 1;
+      if (calls === 2)
+        return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
+      const toolCalls = [
+        Response.makePart("tool-call", {
+          id: "one",
+          name: "first",
+          params: {},
+          providerExecuted: false,
+        }),
+        Response.makePart("tool-call", {
+          id: "two",
+          name: "second",
+          params: {},
+          providerExecuted: false,
+        }),
+      ];
+      const results = Stream.mergeAll({ concurrency: "unbounded" })(
+        toolCalls.map((call) =>
+          Stream.unwrap(options.toolkit!.handle(call.name, call.params)).pipe(
+            Stream.map((result) =>
+              Response.makePart("tool-result", {
+                id: call.id,
+                name: call.name,
+                providerExecuted: false,
+                ...result,
+              }),
             ),
-          );
-          return Stream.concat(
-            Stream.fromIterable([
-              Response.makePart("text-delta", { id: "first", delta: "working" }),
-              ...toolCalls,
-            ]),
-            results,
-          );
-        },
-      } as LanguageModel.Service),
-    );
+          ),
+        ),
+      );
+      return Stream.concat(
+        Stream.fromIterable([
+          Response.makePart("text-delta", { id: "first", delta: "working" }),
+          ...toolCalls,
+        ]),
+        results,
+      );
+    });
     const track = (label: string) =>
       Effect.sync(() => {
         active += 1;
@@ -93,7 +94,7 @@ describe("createSession Tool serialization", () => {
                   active -= 1;
                   return result;
                 },
-                catch: () => new Error("post-first failed"),
+                catch: () => new HookFailure({ message: "post-first failed" }),
               });
             },
           },

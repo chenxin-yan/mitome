@@ -1,50 +1,44 @@
 import { describe, expect, test } from "bun:test";
-import { Cause, Effect, Exit, Layer, Stream } from "effect";
-import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { Cause, Effect, Exit, Stream } from "effect";
+import { AiError, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { Schema } from "effect";
-import { createSession, makeModel, TurnStepLimitError, type Definition } from "../src/index.js";
+import { createSession, definePlugin, TurnStepLimitError, type Definition } from "../src/index.js";
+import { makeTestModel } from "./model.js";
 
 const makeToolModel = () => {
   let calls = 0;
-  let secondPrompt: unknown;
+  let secondPrompt: Prompt.Prompt | undefined;
   return {
-    model: makeModel(
-      Layer.succeed(LanguageModel.LanguageModel, {
-        streamText: (options: {
-          readonly prompt: unknown;
-          readonly toolkit?: Toolkit.WithHandler<any>;
-        }) => {
-          calls += 1;
-          if (calls === 2) {
-            secondPrompt = options.prompt;
-            return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
-          }
-          const call = Response.makePart("tool-call", {
-            id: "call-1",
-            name: "echo",
-            params: { text: "hello" },
-            providerExecuted: false,
-          });
-          return Stream.concat(
-            Stream.succeed(call),
-            Stream.unwrap(
-              options.toolkit!.handle("echo", { text: "hello" }).pipe(
-                Effect.map((results) =>
-                  Stream.map(results, (result) =>
-                    Response.makePart("tool-result", {
-                      id: call.id,
-                      name: call.name,
-                      providerExecuted: false,
-                      ...result,
-                    }),
-                  ),
-                ),
+    model: makeTestModel((options) => {
+      calls += 1;
+      if (calls === 2) {
+        secondPrompt = options.prompt;
+        return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
+      }
+      const call = Response.makePart("tool-call", {
+        id: "call-1",
+        name: "echo",
+        params: { text: "hello" },
+        providerExecuted: false,
+      });
+      return Stream.concat(
+        Stream.succeed(call),
+        Stream.unwrap(
+          options.toolkit!.handle("echo", { text: "hello" }).pipe(
+            Effect.map((results) =>
+              Stream.map(results, (result) =>
+                Response.makePart("tool-result", {
+                  id: call.id,
+                  name: call.name,
+                  providerExecuted: false,
+                  ...result,
+                }),
               ),
             ),
-          );
-        },
-      } as LanguageModel.Service),
-    ),
+          ),
+        ),
+      );
+    }),
     calls: () => calls,
     prompt: () => secondPrompt,
   };
@@ -63,11 +57,11 @@ describe("createSession Tool Turn", () => {
       instructions: "Be concise.",
       model: fixture.model,
       plugins: [
-        {
+        definePlugin({
           name: "echo",
           toolkit: Toolkit.make(echo),
           handlers: { echo: ({ text }) => Effect.succeed(text) },
-        },
+        }),
       ],
     };
 
@@ -87,30 +81,27 @@ describe("createSession Tool Turn", () => {
       { type: "response-complete" },
     ]);
     expect(fixture.calls()).toBe(2);
-    expect(
-      (
-        fixture.prompt() as { readonly content: ReadonlyArray<{ readonly role: string }> }
-      ).content.map((message) => message.role),
-    ).toEqual(["system", "user", "assistant", "tool"]);
+    expect(fixture.prompt()?.content.map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "tool",
+    ]);
   });
 
   test("does not start another Step for a provider-executed Tool call", async () => {
     let calls = 0;
-    const model = makeModel(
-      Layer.succeed(LanguageModel.LanguageModel, {
-        streamText: () => {
-          calls += 1;
-          return Stream.succeed(
-            Response.makePart("tool-call", {
-              id: "provider-call",
-              name: "web-search",
-              params: {},
-              providerExecuted: true,
-            }),
-          );
-        },
-      } as LanguageModel.Service),
-    );
+    const model = makeTestModel(() => {
+      calls += 1;
+      return Stream.succeed(
+        Response.makePart("tool-call", {
+          id: "provider-call",
+          name: "web-search",
+          params: {},
+          providerExecuted: true,
+        }),
+      );
+    });
 
     const events = await Effect.runPromise(
       Effect.scoped(
@@ -131,23 +122,19 @@ describe("createSession Tool Turn", () => {
   test("fails after the fixed 16 model Step limit", async () => {
     let calls = 0;
     const echo = Tool.make("echo", { success: Schema.String });
-    const model = makeModel(
-      Layer.succeed(LanguageModel.LanguageModel, {
-        streamText: () => {
-          calls += 1;
-          return Stream.succeed(
-            calls === 17
-              ? Response.makePart("text-delta", { id: "done", delta: "done" })
-              : Response.makePart("tool-call", {
-                  id: `call-${calls}`,
-                  name: "echo",
-                  params: {},
-                  providerExecuted: false,
-                }),
-          );
-        },
-      } as LanguageModel.Service),
-    );
+    const model = makeTestModel(() => {
+      calls += 1;
+      return Stream.succeed(
+        calls === 17
+          ? Response.makePart("text-delta", { id: "done", delta: "done" })
+          : Response.makePart("tool-call", {
+              id: `call-${calls}`,
+              name: "echo",
+              params: {},
+              providerExecuted: false,
+            }),
+      );
+    });
 
     const result = await Effect.runPromise(
       Effect.scoped(
@@ -184,24 +171,20 @@ describe("createSession Tool Turn", () => {
   test("allows exactly sixteen Steps", async () => {
     let calls = 0;
     const echo = Tool.make("echo", { success: Schema.String });
-    const model = makeModel(
-      Layer.succeed(LanguageModel.LanguageModel, {
-        streamText: () => {
-          calls += 1;
-          if (calls === 16) {
-            return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-          }
-          return Stream.succeed(
-            Response.makePart("tool-call", {
-              id: `call-${calls}`,
-              name: "echo",
-              params: {},
-              providerExecuted: false,
-            }),
-          );
-        },
-      } as LanguageModel.Service),
-    );
+    const model = makeTestModel(() => {
+      calls += 1;
+      if (calls === 16) {
+        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+      }
+      return Stream.succeed(
+        Response.makePart("tool-call", {
+          id: `call-${calls}`,
+          name: "echo",
+          params: {},
+          providerExecuted: false,
+        }),
+      );
+    });
 
     const events = await Effect.runPromise(
       Effect.scoped(
@@ -223,6 +206,65 @@ describe("createSession Tool Turn", () => {
     );
 
     expect(calls).toBe(16);
+    expect(events.at(-1)).toEqual({ type: "response-complete" });
+  });
+
+  test("passes through a dynamic Tool failure without running post-Tool Hooks", async () => {
+    const fixture = makeToolModel();
+    let postCalls = 0;
+    const echo = Tool.dynamic("echo", {
+      parameters: {
+        type: "object",
+        properties: { text: { type: "string" } },
+        required: ["text"],
+      },
+      failureMode: "return",
+    });
+    const definition: Definition = {
+      instructions: "Be concise.",
+      model: fixture.model,
+      plugins: [
+        {
+          name: "observe",
+          hooks: {
+            postTool: ({ result }) =>
+              Effect.sync(() => {
+                postCalls += 1;
+                return result;
+              }),
+          },
+        },
+        {
+          name: "echo",
+          toolkit: Toolkit.make(echo),
+          handlers: {
+            echo: () =>
+              Effect.fail(
+                AiError.make({
+                  module: "test",
+                  method: "echo",
+                  reason: new AiError.UnknownError({ description: "expected" }),
+                }),
+              ),
+          },
+        },
+      ],
+    };
+
+    const events = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession(definition);
+          return yield* Stream.runCollect(session.prompt("Hi"));
+        }),
+      ),
+    );
+
+    expect(events.find((event) => event.type === "tool-result")).toMatchObject({
+      type: "tool-result",
+      isFailure: true,
+    });
+    expect(postCalls).toBe(0);
     expect(events.at(-1)).toEqual({ type: "response-complete" });
   });
 

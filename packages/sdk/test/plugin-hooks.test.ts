@@ -1,7 +1,9 @@
+// Bun's async matchers are typed void but must be awaited to stay within the test.
+// oxlint-disable typescript/await-thenable
 import { describe, expect, test } from "bun:test";
-import { Effect, Layer, Stream } from "effect";
-import { LanguageModel, Response, Toolkit } from "effect/unstable/ai";
-import { makeModel, type Plugin } from "@mitome/core";
+import { Effect, Stream } from "effect";
+import { Response } from "effect/unstable/ai";
+import { type Plugin } from "@mitome/core";
 import {
   defineAgent,
   definePlugin,
@@ -9,7 +11,8 @@ import {
   withSession,
   type InputSchema,
   type StandardSchema,
-} from "@mitome/sdk";
+} from "../src/index.js";
+import { makeTestModel } from "./model.js";
 
 const stringSchema: StandardSchema<unknown, string> = {
   "~standard": {
@@ -34,38 +37,34 @@ const jsonStringSchema: InputSchema<string> = {
 
 const makeToolModel = () => {
   let calls = 0;
-  return makeModel(
-    Layer.succeed(LanguageModel.LanguageModel, {
-      streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
-        calls += 1;
-        if (calls === 2)
-          return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-        const call = Response.makePart("tool-call", {
-          id: "call-1",
-          name: "echo",
-          params: "hello",
-          providerExecuted: false,
-        });
-        return Stream.concat(
-          Stream.succeed(call),
-          Stream.unwrap(
-            options.toolkit!.handle("echo", "hello").pipe(
-              Effect.map((results) =>
-                Stream.map(results, (result) =>
-                  Response.makePart("tool-result", {
-                    id: call.id,
-                    name: call.name,
-                    providerExecuted: false,
-                    ...result,
-                  }),
-                ),
-              ),
+  return makeTestModel((options) => {
+    calls += 1;
+    if (calls === 2)
+      return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+    const call = Response.makePart("tool-call", {
+      id: "call-1",
+      name: "echo",
+      params: "hello",
+      providerExecuted: false,
+    });
+    return Stream.concat(
+      Stream.succeed(call),
+      Stream.unwrap(
+        options.toolkit!.handle("echo", "hello").pipe(
+          Effect.map((results) =>
+            Stream.map(results, (result) =>
+              Response.makePart("tool-result", {
+                id: call.id,
+                name: call.name,
+                providerExecuted: false,
+                ...result,
+              }),
             ),
           ),
-        );
-      },
-    } as LanguageModel.Service),
-  );
+        ),
+      ),
+    );
+  });
 };
 
 describe("@mitome/sdk Plugin Hooks", () => {
@@ -147,7 +146,8 @@ describe("@mitome/sdk Plugin Hooks", () => {
       "core:pre-step",
       "sdk:pre-step",
     ]);
-    expect(signals).toEqual(Array(signals.length).fill(false));
+    expect(signals).toHaveLength(8);
+    expect(signals.every((aborted) => !aborted)).toBe(true);
     expect(events).toContainEqual({
       type: "tool-result",
       id: "call-1",
@@ -157,15 +157,77 @@ describe("@mitome/sdk Plugin Hooks", () => {
     });
   });
 
+  test("rejects invalid pre-Step output before calling the model", async () => {
+    let modelCalls = 0;
+    const agent = defineAgent({
+      instructions: "Be concise.",
+      model: makeTestModel(() => {
+        modelCalls += 1;
+        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+      }),
+      plugins: [
+        definePlugin({
+          name: "sdk",
+          tools: [],
+          hooks: { preStep: async () => undefined as never },
+        }),
+      ],
+    });
+
+    await expect(
+      withSession(agent, (session) => Array.fromAsync(session.prompt("Hi"))),
+    ).rejects.toMatchObject({ _tag: "TurnError", message: "Pre-Step Hook failed" });
+    expect(modelCalls).toBe(0);
+  });
+
+  test("aborts an in-flight Promise Hook when iteration stops", async () => {
+    let started!: () => void;
+    const hookStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let aborted = false;
+    const agent = defineAgent({
+      instructions: "Be concise.",
+      model: makeToolModel(),
+      plugins: [
+        definePlugin({
+          name: "sdk",
+          tools: [],
+          hooks: {
+            preStep: (_prompt, { signal }) =>
+              new Promise((_resolve, reject) => {
+                started();
+                signal.addEventListener(
+                  "abort",
+                  () => {
+                    aborted = signal.aborted;
+                    reject(new Error("aborted"));
+                  },
+                  { once: true },
+                );
+              }),
+          },
+        }),
+      ],
+    });
+
+    await withSession(agent, async (session) => {
+      const iterator = session.prompt("Hi")[Symbol.asyncIterator]();
+      const next = iterator.next();
+      await hookStarted;
+      await iterator.return?.();
+      await next;
+    });
+
+    expect(aborted).toBe(true);
+  });
+
   test("preserves the original rejected Hook error as the TurnError cause", async () => {
     const original = new Error("hook failed");
     const agent = defineAgent({
       instructions: "Be concise.",
-      model: makeModel(
-        Layer.succeed(LanguageModel.LanguageModel, {
-          streamText: () =>
-            Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
-        } as LanguageModel.Service),
+      model: makeTestModel(() =>
+        Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
       ),
       plugins: [
         definePlugin({
@@ -182,9 +244,16 @@ describe("@mitome/sdk Plugin Hooks", () => {
   });
 
   test("centrally validates any Plugin's SDK Tool transform and preserves SDK failures", async () => {
+    let postCalls = 0;
     const core: Plugin = {
       name: "core",
-      hooks: { postTool: ({ result }) => Effect.succeed(result) },
+      hooks: {
+        postTool: ({ result }) =>
+          Effect.sync(() => {
+            postCalls += 1;
+            return result;
+          }),
+      },
     };
     const failing = defineAgent({
       instructions: "Be concise.",
@@ -209,6 +278,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
       type: "tool-result",
       isFailure: true,
     });
+    expect(postCalls).toBe(0);
     expect(events.at(-1)).toEqual({ type: "response-complete" });
 
     const invalid = defineAgent({

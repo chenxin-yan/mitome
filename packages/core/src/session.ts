@@ -1,9 +1,15 @@
 import { Context, Effect, Exit, Layer, Schema, Scope, Semaphore, Stream } from "effect";
-import { LanguageModel, Prompt, Tool, Toolkit } from "effect/unstable/ai";
+import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
 import { validateDefinition } from "./definition.js";
-import type { Definition, DefinitionError, Plugin } from "./definition.js";
+import type { Definition, DefinitionError, Plugin, ToolResultValidator } from "./definition.js";
 import { getModelLayer } from "./model.js";
+
+export const ToolExecutionDenied = Schema.Struct({
+  type: Schema.Literal("execution-denied"),
+  reason: Schema.String,
+});
+export type ToolExecutionDenied = typeof ToolExecutionDenied.Type;
 
 export type TurnEvent =
   | { readonly type: "model-output"; readonly text: string }
@@ -29,6 +35,7 @@ export class SessionReleasedError extends Schema.TaggedErrorClass<SessionRelease
   { message: Schema.String },
 ) {}
 
+const moduleName = "@mitome/core";
 const maximumTurnSteps = 16;
 
 /** A Turn reached ADR-0003's fixed model Step limit. */
@@ -72,16 +79,8 @@ const transformPrompt = (
     return current;
   });
 
-const ToolResultValidatorTypeId = Symbol.for("@mitome/core/ToolResultValidator");
-type ToolResultValidator = (result: unknown) => Effect.Effect<unknown, unknown>;
-
-/** @internal SDK output schemas need revalidation after core post-Tool transforms. */
-export const setToolResultValidator = (tool: Tool.Any, validator: ToolResultValidator): void => {
-  (tool as unknown as Record<symbol, ToolResultValidator>)[ToolResultValidatorTypeId] = validator;
-};
-
 const failureResult = (reason: string): Tool.HandlerResult<Tool.Any> => {
-  const result = { type: "execution-denied", reason };
+  const result: ToolExecutionDenied = { type: "execution-denied", reason };
   return {
     result,
     encodedResult: result,
@@ -94,16 +93,9 @@ const validateResult = (
   tool: Tool.Any,
   handlerResult: Tool.HandlerResult<Tool.Any>,
   result: unknown,
+  validator: ToolResultValidator | undefined,
 ): Effect.Effect<Tool.HandlerResult<Tool.Any>, unknown> =>
   Effect.gen(function* () {
-    // Preserve SDK Tool failures as encoded; post-Tool transforms intentionally do not apply to them.
-    if (handlerResult.isFailure && Tool.isDynamic(tool) && tool.failureSchema === Schema.Never) {
-      return handlerResult;
-    }
-
-    const validator = (tool as unknown as Record<symbol, ToolResultValidator | undefined>)[
-      ToolResultValidatorTypeId
-    ];
     const validated = validator === undefined ? result : yield* validator(result);
     const schema = handlerResult.isFailure ? tool.failureSchema : tool.successSchema;
     const encodedResult = yield* Schema.encodeUnknownEffect(schema)(validated);
@@ -115,11 +107,43 @@ const validateResult = (
     } as Tool.HandlerResult<Tool.Any>;
   }) as Effect.Effect<Tool.HandlerResult<Tool.Any>, unknown>;
 
+const describeFailure = (message: string, cause: unknown): string =>
+  `${message}: ${cause instanceof Error ? cause.message : String(cause)}`;
+
+const hookAiError = (method: string, message: string) =>
+  Effect.mapError((cause: unknown) => {
+    const reason = AiError.isAiError(cause)
+      ? cause.reason
+      : AiError.isAiErrorReason(cause)
+        ? cause
+        : new AiError.UnknownError({ description: describeFailure(message, cause) });
+    return AiError.make({ module: moduleName, method, reason });
+  });
+
+const toolAiError = (method: string) =>
+  Effect.mapError((cause: unknown) =>
+    AiError.isAiError(cause)
+      ? cause
+      : AiError.make({
+          module: moduleName,
+          method,
+          reason: AiError.isAiErrorReason(cause)
+            ? cause
+            : new AiError.UnknownError({
+                description: describeFailure("Tool execution failed", cause),
+              }),
+        }),
+  );
+
 const makeToolkit = (
   plugins: ReadonlyArray<Plugin>,
   semaphore: Semaphore.Semaphore,
 ): Effect.Effect<Toolkit.WithHandler<Record<string, Tool.Any>>, never> => {
   const tools = plugins.flatMap((plugin) => Object.values(plugin.toolkit?.tools ?? {}));
+  const validators: Readonly<Record<string, ToolResultValidator>> = Object.assign(
+    {},
+    ...plugins.map((plugin) => plugin.toolResultValidators ?? {}),
+  );
   const toolkit = Toolkit.make(...tools);
   return toolkit
     .toHandlers(Object.assign({}, ...plugins.map((plugin) => plugin.handlers ?? {})) as never)
@@ -127,52 +151,79 @@ const makeToolkit = (
       Effect.flatMap((handlers) => Effect.provide(toolkit, handlers)),
       Effect.map((handlers): Toolkit.WithHandler<Record<string, Tool.Any>> => {
         const handle = handlers.handle as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
-        return {
-          tools: handlers.tools,
-          handle: (name, params) =>
-            semaphore.withPermit(
-              Effect.gen(function* () {
-                for (const plugin of plugins) {
-                  const veto = yield* plugin.hooks?.preTool?.({ name, params }) ?? Effect.void;
-                  if (veto !== undefined) return Stream.succeed(failureResult(veto.reason));
-                }
+        const wrappedHandle = ((name: string, params: unknown) =>
+          semaphore.withPermit(
+            Effect.gen(function* () {
+              for (const plugin of plugins) {
+                const veto = yield* (plugin.hooks?.preTool?.({ name, params }) ?? Effect.void).pipe(
+                  hookAiError("preTool", "Pre-Tool Hook failed"),
+                );
+                if (veto !== undefined) return Stream.succeed(failureResult(veto.reason));
+              }
 
-                const results = yield* handle(name, params).pipe(
-                  Effect.flatMap((stream) =>
-                    Stream.runCollect(stream as Stream.Stream<Tool.HandlerResult<Tool.Any>>),
+              const results = yield* handle(name, params).pipe(
+                Effect.flatMap((stream) =>
+                  Stream.runCollect(
+                    stream as unknown as Stream.Stream<Tool.HandlerResult<Tool.Any>, unknown>,
                   ),
-                );
-                if (!plugins.some((plugin) => plugin.hooks?.postTool !== undefined)) {
-                  return Stream.fromIterable(results);
-                }
-                const tool = handlers.tools[name] as Tool.Any;
-                const finalResults = yield* Effect.forEach(results, (handlerResult) =>
-                  Effect.gen(function* () {
-                    let result = handlerResult.result;
-                    for (const plugin of plugins) {
-                      const postTool = plugin.hooks?.postTool;
-                      if (postTool !== undefined) {
-                        result = yield* postTool({
-                          name,
-                          params,
-                          result,
-                          isFailure: handlerResult.isFailure,
-                        });
-                      }
+                ),
+                toolAiError(name),
+              );
+              if (!plugins.some((plugin) => plugin.hooks?.postTool !== undefined)) {
+                return Stream.fromIterable(results);
+              }
+              const tool = handlers.tools[name] as Tool.Any;
+              const validator = validators[name];
+              const finalResults = yield* Effect.forEach(results, (handlerResult) =>
+                Effect.gen(function* () {
+                  // Schema-less dynamic Tool failures are already encoded and have no failure schema.
+                  if (
+                    handlerResult.isFailure &&
+                    (validator !== undefined ||
+                      (Tool.isDynamic(tool) && tool.failureSchema === Schema.Never))
+                  ) {
+                    return handlerResult;
+                  }
+
+                  let result = handlerResult.result;
+                  for (const plugin of plugins) {
+                    const postTool = plugin.hooks?.postTool;
+                    if (postTool !== undefined) {
+                      result = yield* postTool({
+                        name,
+                        params,
+                        result,
+                        isFailure: handlerResult.isFailure,
+                      }).pipe(hookAiError("postTool", "Post-Tool Hook failed"));
                     }
-                    return yield* validateResult(tool, handlerResult, result);
-                  }),
-                );
-                return Stream.fromIterable(finalResults);
-              }) as Effect.Effect<Stream.Stream<Tool.HandlerResult<Tool.Any>, never>, never>,
-            ) as never,
-        };
+                  }
+                  return yield* validateResult(tool, handlerResult, result, validator).pipe(
+                    hookAiError("postTool", "Post-Tool result validation failed"),
+                  );
+                }),
+              );
+              return Stream.fromIterable(finalResults);
+            }),
+          )) as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
+        return { tools: handlers.tools, handle: wrappedHandle };
       }),
     );
 };
 
 const hookTurnError = (message: string) =>
   Effect.mapError((cause: unknown) => new TurnError({ message, cause }));
+
+const modelTurnError = (cause: unknown) =>
+  new TurnError({
+    message:
+      AiError.isAiError(cause) && cause.module === moduleName
+        ? cause.reason.message
+        : "Turn failed",
+    cause,
+  });
+
+const logHookFailure = (message: string) =>
+  Effect.catchCause((cause) => Effect.logWarning(message, cause));
 
 export const createSession: (
   definition: Definition,
@@ -195,19 +246,21 @@ export const createSession: (
   let isTurnActive = false;
 
   yield* Effect.addFinalizer(() =>
-    // A failing sessionEnd Hook must not fail scope close.
-    Effect.ignore(runHooks(definition.plugins, (plugin) => plugin.hooks?.sessionEnd)).pipe(
-      Effect.ensuring(
-        Effect.sync(() => {
-          history = Prompt.empty;
-          isReleased = true;
-        }),
-      ),
-    ),
+    Effect.sync(() => {
+      history = Prompt.empty;
+      isReleased = true;
+    }),
   );
 
   yield* runHooks(definition.plugins, (plugin) => plugin.hooks?.sessionStart).pipe(
     hookTurnError("Session start Hook failed"),
+  );
+
+  yield* Effect.addFinalizer(() =>
+    // A failing sessionEnd Hook must not fail scope close.
+    runHooks(definition.plugins, (plugin) => plugin.hooks?.sessionEnd).pipe(
+      logHookFailure("Session end Hook failed"),
+    ),
   );
 
   const runStep = (
@@ -224,84 +277,89 @@ export const createSession: (
 
     const parts: Array<Response.AnyPart> = [];
     return Stream.unwrap(
-      Effect.gen(function* () {
-        yield* runHooks(definition.plugins, (plugin) => plugin.hooks?.stepStart?.(prompt)).pipe(
-          hookTurnError("Step start Hook failed"),
-        );
-        const transformed = yield* transformPrompt(definition.plugins, prompt).pipe(
-          hookTurnError("Pre-Step Hook failed"),
-        );
-        let ended = false;
-        const stream = (
-          model.streamText({ prompt: transformed, toolkit }) as Stream.Stream<
-            Response.StreamPart<Record<string, Tool.Any>>,
-            unknown
-          >
-        ).pipe(
-          Stream.mapError((cause) => new TurnError({ message: "Turn failed", cause })),
-          Stream.tap((part) => Effect.sync(() => parts.push(part))),
-          Stream.filter(
-            (part) =>
-              part.type === "text-delta" ||
-              part.type === "tool-call" ||
-              part.type === "tool-result",
-          ),
-          Stream.map((part): TurnEvent => {
-            if (part.type === "text-delta") {
-              return { type: "model-output", text: part.delta };
-            }
-            if (part.type === "tool-call") {
-              return { type: "tool-call", id: part.id, name: part.name };
-            }
-            return {
-              type: "tool-result",
-              id: part.id,
-              name: part.name,
-              result: part.result,
-              isFailure: part.isFailure,
-            };
-          }),
-          Stream.concat(
-            Stream.suspend(() => {
-              const nextPrompt = Prompt.concat(prompt, Prompt.fromResponseParts(parts));
-              const next = parts.some(
-                (part) => part.type === "tool-call" && part.providerExecuted !== true,
-              )
-                ? runStep(nextPrompt, step + 1)
-                : Stream.fromEffect(
-                    Effect.sync(() => {
-                      history = nextPrompt;
-                      return { type: "response-complete" } as const;
-                    }),
-                  );
-              return Stream.concat(
-                Stream.fromEffectDrain(
-                  Effect.sync(() => {
-                    ended = true;
-                  }).pipe(
-                    Effect.andThen(
-                      runHooks(definition.plugins, (plugin) =>
-                        plugin.hooks?.stepEnd?.(transformed),
-                      ).pipe(hookTurnError("Step end Hook failed")),
-                    ),
+      runHooks(definition.plugins, (plugin) => plugin.hooks?.stepStart?.(prompt)).pipe(
+        hookTurnError("Step start Hook failed"),
+        Effect.map(() => {
+          let ended = false;
+          let endPrompt = prompt;
+          return Stream.unwrap(
+            transformPrompt(definition.plugins, prompt).pipe(
+              hookTurnError("Pre-Step Hook failed"),
+              Effect.map((transformed) => {
+                endPrompt = transformed;
+                return (
+                  model.streamText({ prompt: transformed, toolkit }) as Stream.Stream<
+                    Response.StreamPart<Record<string, Tool.Any>>,
+                    unknown
+                  >
+                ).pipe(
+                  Stream.mapError(modelTurnError),
+                  Stream.tap((part) => Effect.sync(() => parts.push(part))),
+                  Stream.filter(
+                    (part) =>
+                      part.type === "text-delta" ||
+                      part.type === "tool-call" ||
+                      part.type === "tool-result",
                   ),
-                ),
-                next,
-              );
-            }),
-          ),
-        );
-        return stream.pipe(
-          Stream.onExit((exit) =>
-            // Preserve a prior failure or interruption while still notifying the Hook.
-            Exit.isSuccess(exit) || ended
-              ? Effect.void
-              : Effect.ignore(
-                  runHooks(definition.plugins, (plugin) => plugin.hooks?.stepEnd?.(transformed)),
-                ),
-          ),
-        );
-      }),
+                  Stream.map((part): TurnEvent => {
+                    if (part.type === "text-delta") {
+                      return { type: "model-output", text: part.delta };
+                    }
+                    if (part.type === "tool-call") {
+                      return { type: "tool-call", id: part.id, name: part.name };
+                    }
+                    return {
+                      type: "tool-result",
+                      id: part.id,
+                      name: part.name,
+                      result: part.result,
+                      isFailure: part.isFailure,
+                    };
+                  }),
+                  Stream.concat(
+                    Stream.suspend(() => {
+                      const nextPrompt = Prompt.concat(prompt, Prompt.fromResponseParts(parts));
+                      const next = parts.some(
+                        (part) => part.type === "tool-call" && part.providerExecuted !== true,
+                      )
+                        ? runStep(nextPrompt, step + 1)
+                        : Stream.fromEffect(
+                            Effect.sync(() => {
+                              history = nextPrompt;
+                              return { type: "response-complete" } as const;
+                            }),
+                          );
+                      return Stream.concat(
+                        Stream.fromEffectDrain(
+                          Effect.sync(() => {
+                            ended = true;
+                          }).pipe(
+                            Effect.andThen(
+                              runHooks(definition.plugins, (plugin) =>
+                                plugin.hooks?.stepEnd?.(transformed),
+                              ).pipe(hookTurnError("Step end Hook failed")),
+                            ),
+                          ),
+                        ),
+                        next,
+                      );
+                    }),
+                  ),
+                );
+              }),
+            ),
+          ).pipe(
+            Stream.onExit((exit) =>
+              // Preserve a prior failure or interruption while still notifying the Hook.
+              Exit.isSuccess(exit) || ended
+                ? Effect.void
+                : runHooks(definition.plugins, (plugin) => plugin.hooks?.stepEnd?.(endPrompt)).pipe(
+                    logHookFailure("Step end Hook failed"),
+                  ),
+            ),
+          );
+        }),
+      ),
     );
   };
 
@@ -323,34 +381,37 @@ export const createSession: (
           );
         }
         isTurnActive = true;
-        let ended = false;
         return Stream.unwrap(
           runHooks(definition.plugins, (plugin) => plugin.hooks?.turnStart?.(text)).pipe(
             hookTurnError("Turn start Hook failed"),
-            Effect.map(() => runStep(Prompt.concat(history, text), 0)),
-          ),
-        ).pipe(
-          Stream.concat(
-            Stream.fromEffectDrain(
-              Effect.sync(() => {
-                ended = true;
-              }).pipe(
-                Effect.andThen(
-                  runHooks(definition.plugins, (plugin) => plugin.hooks?.turnEnd?.(text)).pipe(
-                    hookTurnError("Turn end Hook failed"),
+            Effect.map(() => {
+              let ended = false;
+              return runStep(Prompt.concat(history, text), 0).pipe(
+                Stream.concat(
+                  Stream.fromEffectDrain(
+                    Effect.sync(() => {
+                      ended = true;
+                    }).pipe(
+                      Effect.andThen(
+                        runHooks(definition.plugins, (plugin) =>
+                          plugin.hooks?.turnEnd?.(text),
+                        ).pipe(hookTurnError("Turn end Hook failed")),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ),
-          Stream.onExit((exit) =>
-            // Preserve a prior failure or interruption while still notifying the Hook.
-            Exit.isSuccess(exit) || ended
-              ? Effect.void
-              : Effect.ignore(
-                  runHooks(definition.plugins, (plugin) => plugin.hooks?.turnEnd?.(text)),
+                Stream.onExit((exit) =>
+                  // Preserve a prior failure or interruption while still notifying the Hook.
+                  Exit.isSuccess(exit) || ended
+                    ? Effect.void
+                    : runHooks(definition.plugins, (plugin) => plugin.hooks?.turnEnd?.(text)).pipe(
+                        logHookFailure("Turn end Hook failed"),
+                      ),
                 ),
+              );
+            }),
           ),
+        ).pipe(
           Stream.ensuring(
             Effect.sync(() => {
               isTurnActive = false;

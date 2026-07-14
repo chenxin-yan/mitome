@@ -9,8 +9,9 @@
     "start": "vite preview",
     "preview": "vite preview",
     "check:types": "fumadocs-mdx && tsc --noEmit",
-    "postinstall": "fumadocs-mdx",
-    "lint": "oxlint"
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.17",

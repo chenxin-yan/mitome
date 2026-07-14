@@ -1,60 +1,61 @@
 import { describe, expect, test } from "bun:test";
-import { Cause, Effect, Exit, Layer, Stream } from "effect";
-import { LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { Cause, Effect, Exit, Stream } from "effect";
+import { Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { Schema } from "effect";
-import { TurnError, createSession, makeModel, type Definition, type Plugin } from "../src/index.js";
+import {
+  ToolExecutionDenied,
+  TurnError,
+  createSession,
+  type Definition,
+  type Plugin,
+  type PluginHooks,
+} from "../src/index.js";
+import { makeTestModel } from "./model.js";
+
+class HookFailure extends Schema.TaggedErrorClass<HookFailure>()("HookFailure", {
+  message: Schema.String,
+}) {}
 
 const textModel = (capture: (prompt: Prompt.Prompt) => void) =>
-  makeModel(
-    Layer.succeed(LanguageModel.LanguageModel, {
-      streamText: ({ prompt }: { readonly prompt: Prompt.Prompt }) => {
-        capture(prompt);
-        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-      },
-    } as LanguageModel.Service),
-  );
+  makeTestModel(({ prompt }) => {
+    capture(prompt);
+    return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+  });
 
 const toolModel = () => {
   let calls = 0;
   let secondPrompt: Prompt.Prompt | undefined;
   return {
-    model: makeModel(
-      Layer.succeed(LanguageModel.LanguageModel, {
-        streamText: (options: {
-          readonly prompt: Prompt.Prompt;
-          readonly toolkit?: Toolkit.WithHandler<any>;
-        }) => {
-          calls += 1;
-          if (calls === 2) {
-            secondPrompt = options.prompt;
-            return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-          }
-          const call = Response.makePart("tool-call", {
-            id: "call-1",
-            name: "echo",
-            params: "hello",
-            providerExecuted: false,
-          });
-          return Stream.concat(
-            Stream.succeed(call),
-            Stream.unwrap(
-              options.toolkit!.handle("echo", "hello").pipe(
-                Effect.map((results) =>
-                  Stream.map(results, (result) =>
-                    Response.makePart("tool-result", {
-                      id: call.id,
-                      name: call.name,
-                      providerExecuted: false,
-                      ...result,
-                    }),
-                  ),
-                ),
+    model: makeTestModel((options) => {
+      calls += 1;
+      if (calls === 2) {
+        secondPrompt = options.prompt;
+        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+      }
+      const call = Response.makePart("tool-call", {
+        id: "call-1",
+        name: "echo",
+        params: "hello",
+        providerExecuted: false,
+      });
+      return Stream.concat(
+        Stream.succeed(call),
+        Stream.unwrap(
+          options.toolkit!.handle("echo", "hello").pipe(
+            Effect.map((results) =>
+              Stream.map(results, (result) =>
+                Response.makePart("tool-result", {
+                  id: call.id,
+                  name: call.name,
+                  providerExecuted: false,
+                  ...result,
+                }),
               ),
             ),
-          );
-        },
-      } as LanguageModel.Service),
-    ),
+          ),
+        ),
+      );
+    }),
     prompt: () => secondPrompt,
   };
 };
@@ -224,6 +225,10 @@ describe("Plugin Hooks", () => {
       isFailure: true,
       result: { type: "execution-denied", reason: "not now" },
     });
+    expect(Schema.decodeUnknownSync(ToolExecutionDenied)(denial?.result)).toEqual({
+      type: "execution-denied",
+      reason: "not now",
+    });
     expect(handlerCalls).toBe(0);
     expect(postCalls).toBe(0);
     expect(JSON.stringify(fixture.prompt())).toContain("not now");
@@ -290,8 +295,134 @@ describe("Plugin Hooks", () => {
     expect(history).toHaveLength(1);
   });
 
+  test("only ends lifecycle phases that started", async () => {
+    let sessionEnds = 0;
+    const startupExit = await Effect.runPromise(
+      Effect.scoped(
+        Effect.exit(
+          createSession({
+            instructions: "Be concise.",
+            model: textModel(() => undefined),
+            plugins: [
+              {
+                name: "bad",
+                hooks: {
+                  sessionStart: Effect.fail(new HookFailure({ message: "startup" })),
+                  sessionEnd: Effect.sync(() => ++sessionEnds),
+                },
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    expect(Exit.isFailure(startupExit)).toBe(true);
+    expect(sessionEnds).toBe(0);
+
+    let laterTurnStarts = 0;
+    let turnEnds = 0;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({
+            instructions: "Be concise.",
+            model: textModel(() => undefined),
+            plugins: [
+              {
+                name: "bad",
+                hooks: {
+                  turnStart: () => Effect.fail(new HookFailure({ message: "turn" })),
+                  turnEnd: () => Effect.sync(() => ++turnEnds),
+                },
+              },
+              {
+                name: "later",
+                hooks: {
+                  turnStart: () => Effect.sync(() => ++laterTurnStarts),
+                  turnEnd: () => Effect.sync(() => ++turnEnds),
+                },
+              },
+            ],
+          });
+          yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
+        }),
+      ),
+    );
+    expect(laterTurnStarts).toBe(0);
+    expect(turnEnds).toBe(0);
+
+    const stepLog: Array<string> = [];
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({
+            instructions: "Be concise.",
+            model: textModel(() => undefined),
+            plugins: [
+              {
+                name: "bad",
+                hooks: {
+                  stepStart: () => Effect.sync(() => void stepLog.push("start")),
+                  preStep: () => Effect.fail(new HookFailure({ message: "pre-step" })),
+                  stepEnd: () => Effect.sync(() => void stepLog.push("end")),
+                },
+              },
+            ],
+          });
+          yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
+        }),
+      ),
+    );
+    expect(stepLog).toEqual(["start", "end"]);
+  });
+
+  const failingTurnHooks: ReadonlyArray<readonly [string, PluginHooks]> = [
+    ["stepStart", { stepStart: () => Effect.fail(new HookFailure({ message: "stepStart" })) }],
+    ["preStep", { preStep: () => Effect.fail(new HookFailure({ message: "preStep" })) }],
+    ["preTool", { preTool: () => Effect.fail(new HookFailure({ message: "preTool" })) }],
+    ["postTool", { postTool: () => Effect.fail(new HookFailure({ message: "postTool" })) }],
+    ["stepEnd", { stepEnd: () => Effect.fail(new HookFailure({ message: "stepEnd" })) }],
+    ["turnEnd", { turnEnd: () => Effect.fail(new HookFailure({ message: "turnEnd" })) }],
+  ];
+
+  for (const [hookName, hooks] of failingTurnHooks) {
+    test(`fails the Turn when ${hookName} fails`, async () => {
+      const fixture = toolModel();
+      const echo = Tool.make("echo", { parameters: Schema.String, success: Schema.String });
+      const exit = await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const session = yield* createSession({
+              instructions: "Be concise.",
+              model: fixture.model,
+              plugins: [
+                { name: "bad", hooks },
+                {
+                  name: "tool",
+                  toolkit: Toolkit.make(echo),
+                  handlers: { echo: () => Effect.succeed("hello") },
+                },
+              ],
+            });
+            return yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
+          }),
+        ),
+      );
+      const failure = Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty);
+      expect(failure).toBeInstanceOf(TurnError);
+      if (hookName === "preTool" || hookName === "postTool") {
+        expect(failure).toMatchObject({
+          message: `${hookName === "preTool" ? "Pre-Tool" : "Post-Tool"} Hook failed: ${hookName}`,
+          cause: { _tag: "AiError", module: "@mitome/core", method: hookName },
+        });
+      } else {
+        expect(failure).toMatchObject({ cause: { message: hookName } });
+      }
+    });
+  }
+
   test("fails startup and Turns for unrecovered Hooks while allowing Plugin recovery", async () => {
-    const startup = new Error("startup");
+    const startup = new HookFailure({ message: "startup" });
     const startupDefinition: Definition = {
       instructions: "Be concise.",
       model: textModel(() => undefined),
@@ -307,7 +438,7 @@ describe("Plugin Hooks", () => {
       cause: startup,
     });
 
-    const turn = new Error("turn");
+    const turn = new HookFailure({ message: "turn" });
     const turnDefinition: Definition = {
       instructions: "Be concise.",
       model: textModel(() => undefined),
@@ -332,7 +463,7 @@ describe("Plugin Hooks", () => {
       plugins: [
         {
           name: "recover",
-          hooks: { turnStart: () => Effect.fail(turn).pipe(Effect.catch(() => Effect.void)) },
+          hooks: { turnStart: () => Effect.fail(turn).pipe(Effect.ignore) },
         },
       ],
     };

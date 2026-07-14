@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
-import { AiError, Tool as AiTool, Toolkit } from "effect/unstable/ai";
-import { DefinitionError, setToolResultValidator } from "@mitome/core";
-import type { Plugin, PluginHooks } from "@mitome/core";
+import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
+import { DefinitionError } from "@mitome/core";
+import type { Plugin, PluginHooks, ToolHookContext, ToolResultHookContext } from "@mitome/core";
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec";
 
 type EffectSchema<Output> = Schema.Codec<Output, unknown, never, never>;
@@ -14,6 +14,8 @@ export type OutputSchema<Output = unknown> =
   | StandardSchemaV1<unknown, Output>
   | EffectSchema<Output>;
 
+export type Prompt = AiPrompt.Prompt;
+
 export interface HookContext {
   readonly signal: AbortSignal;
 }
@@ -23,20 +25,13 @@ export interface PluginHooksDefinition {
   readonly sessionEnd?: (context: HookContext) => Promise<void>;
   readonly turnStart?: (text: string, context: HookContext) => Promise<void>;
   readonly turnEnd?: (text: string, context: HookContext) => Promise<void>;
-  readonly stepStart?: (prompt: unknown, context: HookContext) => Promise<void>;
-  readonly stepEnd?: (prompt: unknown, context: HookContext) => Promise<void>;
-  readonly preStep?: (prompt: unknown, context: HookContext) => Promise<unknown>;
+  readonly stepStart?: (prompt: Prompt, context: HookContext) => Promise<void>;
+  readonly stepEnd?: (prompt: Prompt, context: HookContext) => Promise<void>;
+  readonly preStep?: (prompt: Prompt, context: HookContext) => Promise<Prompt>;
   readonly preTool?: (
-    context: { readonly name: string; readonly params: unknown } & HookContext,
+    context: ToolHookContext & HookContext,
   ) => Promise<void | { readonly reason: string }>;
-  readonly postTool?: (
-    context: {
-      readonly name: string;
-      readonly params: unknown;
-      readonly result: unknown;
-      readonly isFailure: boolean;
-    } & HookContext,
-  ) => Promise<unknown>;
+  readonly postTool?: (context: ToolResultHookContext & HookContext) => Promise<unknown>;
 }
 
 export interface Tool<Input = unknown, Output = unknown> {
@@ -88,7 +83,7 @@ const validate = async <Output>(
   return result.value;
 };
 
-// Core Hooks use an unknown error channel so TurnError retains the original cause.
+// Promise Hooks use an unknown error channel; Core owns lifecycle-specific error mapping.
 const promiseHook = <A>(callback: (signal: HookContext["signal"]) => Promise<A>) =>
   // @effect-diagnostics-next-line unknownInEffectCatch:off
   Effect.tryPromise({
@@ -99,31 +94,37 @@ const promiseHook = <A>(callback: (signal: HookContext["signal"]) => Promise<A>)
 const adaptHooks = (hooks: PluginHooksDefinition | undefined): PluginHooks | undefined => {
   if (hooks === undefined) return undefined;
   const adapted: { -readonly [Key in keyof PluginHooks]?: PluginHooks[Key] } = {};
-  if (hooks.sessionStart)
-    adapted.sessionStart = promiseHook((signal) => hooks.sessionStart!({ signal }));
-  if (hooks.sessionEnd) adapted.sessionEnd = promiseHook((signal) => hooks.sessionEnd!({ signal }));
-  if (hooks.turnStart)
-    adapted.turnStart = (text) => promiseHook((signal) => hooks.turnStart!(text, { signal }));
-  if (hooks.turnEnd)
-    adapted.turnEnd = (text) => promiseHook((signal) => hooks.turnEnd!(text, { signal }));
-  if (hooks.stepStart)
-    adapted.stepStart = (prompt) => promiseHook((signal) => hooks.stepStart!(prompt, { signal }));
-  if (hooks.stepEnd)
-    adapted.stepEnd = (prompt) => promiseHook((signal) => hooks.stepEnd!(prompt, { signal }));
-  if (hooks.preStep)
+  const sessionStart = hooks.sessionStart;
+  if (sessionStart) adapted.sessionStart = promiseHook((signal) => sessionStart({ signal }));
+  const sessionEnd = hooks.sessionEnd;
+  if (sessionEnd) adapted.sessionEnd = promiseHook((signal) => sessionEnd({ signal }));
+  const turnStart = hooks.turnStart;
+  if (turnStart) adapted.turnStart = (text) => promiseHook((signal) => turnStart(text, { signal }));
+  const turnEnd = hooks.turnEnd;
+  if (turnEnd) adapted.turnEnd = (text) => promiseHook((signal) => turnEnd(text, { signal }));
+  const stepStart = hooks.stepStart;
+  if (stepStart)
+    adapted.stepStart = (prompt) => promiseHook((signal) => stepStart(prompt, { signal }));
+  const stepEnd = hooks.stepEnd;
+  if (stepEnd) adapted.stepEnd = (prompt) => promiseHook((signal) => stepEnd(prompt, { signal }));
+  const preStep = hooks.preStep;
+  if (preStep)
     adapted.preStep = (prompt) =>
-      promiseHook((signal) => hooks.preStep!(prompt, { signal })) as never;
-  if (hooks.preTool)
-    adapted.preTool = (context) => promiseHook((signal) => hooks.preTool!({ ...context, signal }));
-  if (hooks.postTool)
-    adapted.postTool = (context) =>
-      promiseHook((signal) => hooks.postTool!({ ...context, signal }));
+      promiseHook((signal) => preStep(prompt, { signal })).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(AiPrompt.Prompt)),
+      );
+  const preTool = hooks.preTool;
+  if (preTool)
+    adapted.preTool = (context) => promiseHook((signal) => preTool({ ...context, signal }));
+  const postTool = hooks.postTool;
+  if (postTool)
+    adapted.postTool = (context) => promiseHook((signal) => postTool({ ...context, signal }));
   return adapted;
 };
 
 export const definePlugin = (definition: {
   readonly name: string;
-  readonly tools: ReadonlyArray<Tool<any, any>>;
+  readonly tools: ReadonlyArray<Tool<any, unknown>>;
   readonly hooks?: PluginHooksDefinition;
 }): Plugin => {
   const names = new Set<string>();
@@ -139,42 +140,51 @@ export const definePlugin = (definition: {
     };
   });
 
-  const tools = definitions.map(({ tool, input, output }) => {
-    const dynamic = AiTool.dynamic(tool.name, {
+  const tools = definitions.map(({ tool, input }) =>
+    AiTool.dynamic(tool.name, {
       description: tool.description,
       parameters: input.jsonSchema.input({ target: "draft-2020-12" }),
       failureMode: "return",
-    });
-    setToolResultValidator(dynamic, (result) =>
-      // @effect-diagnostics-next-line unknownInEffectCatch:off
-      Effect.tryPromise({
-        try: () => validate(output, result),
-        catch: (cause) => cause,
-      }),
-    );
-    return dynamic;
-  });
+    }),
+  );
+  const toolResultValidators = Object.fromEntries(
+    definitions.map(({ tool, output }) => [
+      tool.name,
+      (result: unknown) =>
+        // @effect-diagnostics-next-line unknownInEffectCatch:off
+        Effect.tryPromise({
+          try: () => validate(output, result),
+          catch: (cause) => cause,
+        }),
+    ]),
+  );
 
   const hooks = adaptHooks(definition.hooks);
   return {
     name: definition.name,
     ...(hooks === undefined ? {} : { hooks }),
     toolkit: Toolkit.make(...tools),
+    toolResultValidators,
     handlers: Object.fromEntries(
       definitions.map(({ tool, input, output }) => [
         tool.name,
         (params: unknown) =>
+          // @effect-diagnostics-next-line unknownInEffectCatch:off
           Effect.tryPromise({
             try: async (signal) =>
               validate(output, await tool.handler(await validate(input, params), { signal })),
+            catch: (cause) => cause,
+          }).pipe(
+            Effect.tapError((cause) => Effect.logWarning(`SDK Tool "${tool.name}" failed`, cause)),
             // SDK handlers are untrusted promises; the model gets a stable failure instead.
-            catch: () =>
+            Effect.mapError(() =>
               AiError.make({
                 module: "@mitome/sdk",
                 method: tool.name,
                 reason: new AiError.UnknownError({ description: "SDK tool handler failed" }),
               }),
-          }),
+            ),
+          ),
       ]),
     ),
   };

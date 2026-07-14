@@ -23,13 +23,18 @@ export interface PluginHooks {
   readonly preTool?: (
     context: ToolHookContext,
   ) => Effect.Effect<void | { readonly reason: string }, unknown>;
+  /** Failures already encoded outside an Effect failure schema skip this Hook. */
   readonly postTool?: (context: ToolResultHookContext) => Effect.Effect<unknown, unknown>;
 }
+
+export type ToolResultValidator = (result: unknown) => Effect.Effect<unknown, unknown>;
 
 export interface Plugin {
   readonly name: string;
   readonly toolkit?: Toolkit.Any;
   readonly handlers?: Record<string, (params: unknown) => Effect.Effect<unknown, unknown>>;
+  /** Revalidates post-Tool transforms; keys must name Tools in this Plugin. */
+  readonly toolResultValidators?: Readonly<Record<string, ToolResultValidator>>;
   readonly hooks?: PluginHooks;
 }
 
@@ -45,21 +50,31 @@ export class DefinitionError extends Schema.TaggedErrorClass<DefinitionError>()(
 
 export const defineAgent = <const Value extends Definition>(definition: Value): Value => definition;
 
-type ServiceFreeToolkit<Tools extends Record<string, Tool.Any>> = [
-  Tool.HandlerServices<Tools[keyof Tools]>,
+type ServiceFree<Tools extends Record<string, Tool.Any>> = [
+  Tool.HandlerServices<Tools[keyof Tools]> | Tool.ResultDecodingServices<Tools[keyof Tools]>,
 ] extends [never]
-  ? Toolkit.Toolkit<Tools>
+  ? unknown
   : never;
 
-export function definePlugin<const Tools extends Record<string, Tool.Any>>(plugin: {
+type ToolkitlessPlugin = Omit<Plugin, "toolkit" | "handlers" | "toolResultValidators"> & {
+  readonly toolkit?: undefined;
+  readonly handlers?: undefined;
+  readonly toolResultValidators?: undefined;
+};
+
+export function definePlugin(plugin: ToolkitlessPlugin): Plugin;
+export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
   readonly name: string;
-  readonly toolkit: ServiceFreeToolkit<Tools>;
-  readonly handlers: Toolkit.HandlersFrom<Tools>;
+  readonly toolkit: ToolkitValue;
+  readonly handlers: Toolkit.HandlersFrom<Toolkit.Tools<NoInfer<ToolkitValue>>> &
+    ServiceFree<Toolkit.Tools<NoInfer<ToolkitValue>>>;
+  readonly toolResultValidators?: Readonly<
+    Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
+  >;
   readonly hooks?: PluginHooks;
 }): Plugin;
-export function definePlugin(plugin: Plugin): Plugin;
-export function definePlugin(plugin: Plugin): Plugin {
-  return plugin;
+export function definePlugin(plugin: unknown): Plugin {
+  return plugin as Plugin;
 }
 
 const toolRequiresHandler = (tool: Tool.Any): boolean =>
@@ -80,12 +95,22 @@ export const validateDefinition: (definition: Definition) => Effect.Effect<void,
       }
       pluginNames.add(plugin.name);
 
+      const pluginToolNames = new Set<string>();
       for (const tool of Object.values(plugin.toolkit?.tools ?? {})) {
         if (toolNames.has(tool.name)) {
           return yield* new DefinitionError({ message: `Duplicate Tool name: ${tool.name}` });
         }
         toolNames.add(tool.name);
+        pluginToolNames.add(tool.name);
         if (toolRequiresHandler(tool)) requiredHandlerNames.add(tool.name);
+      }
+
+      for (const name of Object.keys(plugin.toolResultValidators ?? {})) {
+        if (!pluginToolNames.has(name)) {
+          return yield* new DefinitionError({
+            message: `Tool result validator has no matching Tool: ${name}`,
+          });
+        }
       }
 
       for (const name of Object.keys(plugin.handlers ?? {})) {
