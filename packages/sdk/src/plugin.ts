@@ -201,11 +201,7 @@ export const definePlugin = <Resource = never>(definition: {
               (value) =>
                 definition.dispose === undefined
                   ? Effect.void
-                  : // @effect-diagnostics-next-line unknownInEffectCatch:off
-                    Effect.tryPromise({
-                      try: () => definition.dispose!(value),
-                      catch: (cause) => cause,
-                    }).pipe(Effect.catch(Effect.die)),
+                  : Effect.promise(() => definition.dispose!(value)),
             ),
           ),
         }),
@@ -215,33 +211,25 @@ export const definePlugin = <Resource = never>(definition: {
     handlers: Object.fromEntries(
       definitions.map(({ tool, input, output }) => [
         tool.name,
-        (params: unknown) => {
-          const handle = (resource: Resource) =>
-            // @effect-diagnostics-next-line unknownInEffectCatch:off
-            Effect.tryPromise({
-              try: async (signal) =>
-                validate(
-                  output,
-                  await tool.handler(await validate(input, params), { resource, signal }),
-                ),
-              catch: (cause) => cause,
-            }).pipe(
-              Effect.tapError((cause) =>
-                Effect.logWarning(`SDK Tool "${tool.name}" failed`, cause),
+        (params: unknown) =>
+          promiseHook(
+            async ({ resource, signal }) =>
+              validate(
+                output,
+                await tool.handler(await validate(input, params), { resource, signal }),
               ),
-              // SDK handlers are untrusted promises; the model gets a stable failure instead.
-              Effect.mapError(() =>
-                AiError.make({
-                  module: "@mitome/sdk",
-                  method: tool.name,
-                  reason: new AiError.UnknownError({ description: "SDK tool handler failed" }),
-                }),
-              ),
-            );
-          return service === undefined
-            ? handle(undefined as Resource)
-            : Effect.flatMap(Effect.service(service), handle);
-        },
+            service,
+          ).pipe(
+            Effect.tapError((cause) => Effect.logWarning(`SDK Tool "${tool.name}" failed`, cause)),
+            // SDK handlers are untrusted promises; the model gets a stable failure instead.
+            Effect.mapError(() =>
+              AiError.make({
+                module: "@mitome/sdk",
+                method: tool.name,
+                reason: new AiError.UnknownError({ description: "SDK tool handler failed" }),
+              }),
+            ),
+          ),
       ]),
     ),
   };

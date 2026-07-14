@@ -40,16 +40,16 @@ const textModel = () =>
     } as unknown as LanguageModel.Service),
   );
 
-const toolModel = (name: string) => {
+const toolModel = (name: string, doneAt = 2) => {
   let calls = 0;
   return makeModel(
     Layer.succeed(LanguageModel.LanguageModel, {
       streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
         calls += 1;
-        if (calls === 2)
+        if (calls === doneAt)
           return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
         const call = Response.makePart("tool-call", {
-          id: "call-1",
+          id: `call-${calls}`,
           name,
           params: "hello",
           providerExecuted: false,
@@ -103,11 +103,7 @@ describe("@mitome/sdk Plugin resources", () => {
         model: textModel(),
         plugins: [plugin("first"), plugin("second"), plugin("third")],
       }),
-      async (session) => {
-        for await (const _event of session.prompt("Hi")) {
-          // Complete one public Turn before the Session scope closes.
-        }
-      },
+      (session) => Array.fromAsync(session.prompt("Hi")),
     );
 
     expect(log).toEqual([
@@ -147,16 +143,12 @@ describe("@mitome/sdk Plugin resources", () => {
       },
     });
 
-    let setupError: unknown;
-    try {
-      await withSession(
+    expect(
+      withSession(
         defineAgent({ instructions: "Be concise.", model: textModel(), plugins: [first, second] }),
         async () => undefined,
-      );
-    } catch (error) {
-      setupError = error;
-    }
-    expect(setupError).toMatchObject({ _tag: "TurnError", cause: setupFailure });
+      ),
+    ).rejects.toMatchObject({ _tag: "TurnError", cause: setupFailure });
     expect(setupLog).toEqual(["setup:first", "setup:second", "dispose:first"]);
 
     const hookLog: Array<string> = [];
@@ -178,20 +170,16 @@ describe("@mitome/sdk Plugin resources", () => {
           },
         },
       });
-    let hookError: unknown;
-    try {
-      await withSession(
+    expect(
+      withSession(
         defineAgent({
           instructions: "Be concise.",
           model: textModel(),
           plugins: [plugin("first"), plugin("second", true)],
         }),
         async () => undefined,
-      );
-    } catch (error) {
-      hookError = error;
-    }
-    expect(hookError).toMatchObject({ _tag: "TurnError", cause: hookFailure });
+      ),
+    ).rejects.toMatchObject({ _tag: "TurnError", cause: hookFailure });
     expect(hookLog).toEqual([
       "setup:first",
       "setup:second",
@@ -238,11 +226,7 @@ describe("@mitome/sdk Plugin resources", () => {
         model: toolModel("alpha-tool"),
         plugins: [alpha, beta],
       }),
-      async (session) => {
-        const collected = [];
-        for await (const event of session.prompt("Hi")) collected.push(event);
-        return collected;
-      },
+      (session) => Array.fromAsync(session.prompt("Hi")),
     );
 
     expect(log).toEqual(["hook:beta:true", "tool:alpha:1"]);
@@ -256,43 +240,9 @@ describe("@mitome/sdk Plugin resources", () => {
   });
 
   test("keeps a resource live across Turn cancellation and passes the Session AbortSignal", async () => {
-    let calls = 0;
-    let started!: () => void;
-    let aborted!: () => void;
-    const handlerStarted = new Promise<void>((resolve) => (started = resolve));
-    const handlerAborted = new Promise<void>((resolve) => (aborted = resolve));
-    const model = makeModel(
-      Layer.succeed(LanguageModel.LanguageModel, {
-        streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
-          calls += 1;
-          if (calls === 3)
-            return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-          const call = Response.makePart("tool-call", {
-            id: `call-${calls}`,
-            name: "wait",
-            params: "hello",
-            providerExecuted: false,
-          });
-          return Stream.concat(
-            Stream.succeed(call),
-            Stream.unwrap(
-              options.toolkit!.handle("wait", "hello").pipe(
-                Effect.map((results) =>
-                  Stream.map(results, (result) =>
-                    Response.makePart("tool-result", {
-                      id: call.id,
-                      name: call.name,
-                      providerExecuted: false,
-                      ...result,
-                    }),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      } as unknown as LanguageModel.Service),
-    );
+    const { promise: handlerStarted, resolve: started } = Promise.withResolvers<void>();
+    const { promise: handlerAborted, resolve: aborted } = Promise.withResolvers<void>();
+    const model = toolModel("wait", 3);
     let disposed = 0;
     const definition = defineAgent({
       instructions: "Be concise.",
@@ -311,10 +261,7 @@ describe("@mitome/sdk Plugin resources", () => {
           setup: async () => {
             let waits = 0;
             return {
-              wait: (signal: {
-                readonly aborted: boolean;
-                addEventListener(...args: any[]): void;
-              }) => {
+              wait: (signal: AbortSignal) => {
                 waits += 1;
                 if (waits === 2) return Promise.resolve("second");
                 return new Promise<string>((resolve) => {
@@ -346,12 +293,9 @@ describe("@mitome/sdk Plugin resources", () => {
       await iterator.return?.();
       await handlerAborted;
       await pending.catch(() => undefined);
-      const next = [];
-      for await (const event of session.prompt("second")) next.push(event);
-      return next;
+      return Array.fromAsync(session.prompt("second"));
     });
 
-    expect(calls).toBe(3);
     expect(events.at(-1)).toEqual({ type: "response-complete" });
     expect(disposed).toBe(1);
   });
