@@ -182,14 +182,12 @@ const makeToolkit = (
   const preparedByCallId = new Map<string, PreparedTool>();
   // Toolkit.handle lacks toolCallId, so name+params keys are FIFO.
   const keyFor = (name: string, params: unknown) => `${name}:${JSON.stringify(params)}`;
-  const discardPrepared = (toolCallId: string): PreparedTool | undefined => {
+  const discardPrepared = (toolCallId: string): void => {
     const prepared = preparedByCallId.get(toolCallId);
-    if (prepared === undefined) return undefined;
+    if (prepared === undefined) return;
     preparedByCallId.delete(toolCallId);
     const items = preparedByKey.get(prepared.key)!;
     items.splice(items.indexOf(prepared), 1);
-    if (items.length === 0) preparedByKey.delete(prepared.key);
-    return prepared;
   };
   const runPreTool = (name: string, params: unknown): Effect.Effect<string | undefined, unknown> =>
     Effect.gen(function* () {
@@ -262,9 +260,6 @@ const makeToolkit = (
           semaphore.withPermit(
             Effect.gen(function* () {
               const prepared = preparedByKey.get(keyFor(name, params))?.shift();
-              if (prepared !== undefined && preparedByKey.get(prepared.key)?.length === 0) {
-                preparedByKey.delete(prepared.key);
-              }
               const veto =
                 prepared === undefined
                   ? yield* runPreTool(name, params).pipe(
@@ -349,7 +344,7 @@ const makeToolkit = (
             }
             return undefined;
           },
-          discardPrepared: (toolCallId) => void discardPrepared(toolCallId),
+          discardPrepared,
           clearPrepared: () => {
             preparedByKey.clear();
             preparedByCallId.clear();

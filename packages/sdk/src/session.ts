@@ -2,26 +2,13 @@ import { Cause, Effect, Exit, Fiber, Queue, Scope, Stream } from "effect";
 import { createSession } from "@mitome/core";
 import type { Definition, TurnEvent as CoreTurnEvent } from "@mitome/core";
 
+type CoreApproval = Extract<CoreTurnEvent, { type: "approval-required" }>;
 export type TurnEvent =
-  | { readonly type: "model-output"; readonly text: string }
-  | { readonly type: "tool-call"; readonly id: string; readonly name: string }
-  | {
-      readonly type: "tool-result";
-      readonly id: string;
-      readonly name: string;
-      readonly result: unknown;
-      readonly isFailure: boolean;
-    }
-  | {
-      readonly type: "approval-required";
-      readonly approvalId: string;
-      readonly toolCallId: string;
-      readonly name: string;
-      readonly params: unknown;
+  | Exclude<CoreTurnEvent, CoreApproval>
+  | (Omit<CoreApproval, "approve" | "deny"> & {
       readonly approve: () => Promise<void>;
       readonly deny: (reason?: string) => Promise<void>;
-    }
-  | { readonly type: "response-complete" };
+    });
 
 export interface Session {
   readonly prompt: (text: string) => AsyncIterable<TurnEvent>;

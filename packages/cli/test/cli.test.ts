@@ -173,20 +173,14 @@ const readUntil = async (reader: StdoutReader, marker: string) => {
   return output;
 };
 
-const rest = (reader: StdoutReader) =>
-  new Response(
-    new ReadableStream({
-      start(controller) {
-        const read = async (): Promise<void> => {
-          const next = await reader.read();
-          if (next.done) return controller.close();
-          controller.enqueue(next.value);
-          await read();
-        };
-        void read();
-      },
-    }),
-  ).text();
+const rest = async (reader: StdoutReader) => {
+  const decoder = new TextDecoder();
+  let output = "";
+  for (let next = await reader.read(); !next.done; next = await reader.read()) {
+    output += decoder.decode(next.value, { stream: true });
+  }
+  return output + decoder.decode();
+};
 
 beforeAll(async () => {
   if (!(await Bun.file(binary).exists())) {

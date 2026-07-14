@@ -1,9 +1,8 @@
 // Bun's async matchers are typed void but must be awaited to stay within the test.
 // oxlint-disable typescript/await-thenable
 import { describe, expect, test } from "bun:test";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
-import { Schema } from "effect";
 import { createSession, makeModel, type Definition, type TurnEvent } from "../src/index.js";
 
 const approvalModel = () => {
@@ -89,7 +88,7 @@ const definition = (
             postTool: (context) =>
               Effect.sync(() => {
                 postCalls += 1;
-                return hooks?.postTool === undefined ? context.result : context.result;
+                return context.result;
               }),
           },
         },
