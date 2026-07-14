@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 const packageDir = resolve(import.meta.dir, "..");
 const binary = join(packageDir, "dist/mitome");
 const coreDir = resolve(packageDir, "../core");
-const effectDir = resolve(packageDir, "../../node_modules/effect");
+const effectDir = dirname(Bun.resolveSync("effect/package.json", packageDir));
 const corePackage = JSON.parse(await readFile(join(coreDir, "package.json"), "utf8")) as {
   version: string;
 };
@@ -224,6 +224,96 @@ describe("compiled mitome", () => {
     const invalidDefinition = await output(spawn("", ["--use", invalid.definition], invalid));
     expect(invalidDefinition.exitCode).toBe(1);
     expect(invalidDefinition.stderr).toContain("Definition must default-export an Agent");
+
+    const javascript = join(current.root, "agent.js");
+    await writeFile(javascript, "export default {};");
+    const nonTypescript = await output(spawn("", ["--use", javascript], current));
+    expect(nonTypescript.exitCode).toBe(1);
+    expect(nonTypescript.stderr).toContain("must be a TypeScript entry file");
+  });
+
+  test("reports a failed Turn with its cause and keeps the Session usable", async () => {
+    const current = await fixture(`
+import { Layer, Stream } from "effect";
+import { LanguageModel, Response } from "effect/unstable/ai";
+import { makeModel } from "@mitome/core";
+
+let calls = 0;
+const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+  streamText: () => {
+    calls += 1;
+    return calls === 2
+      ? Stream.fail(new Error("provider boom"))
+      : Stream.succeed(Response.makePart("text-delta", { id: String(calls), delta: "ok" + calls }));
+  },
+}));
+export default { instructions: "Reply with the fixture output.", model, plugins: [] };
+`);
+    const result = await output(spawn("a\nb\nc\n", ["--use", current.definition], current));
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("ok1\nok3\n");
+    expect(result.stderr).toContain("TurnError");
+    expect(result.stderr).toContain("provider boom");
+  });
+
+  test("renders tool-call and tool-result events", async () => {
+    const current = await fixture(`
+import { Effect, Layer, Schema, Stream } from "effect";
+import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { definePlugin, makeModel } from "@mitome/core";
+
+let calls = 0;
+const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+  streamText: (options) => {
+    calls += 1;
+    if (calls === 2) {
+      return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
+    }
+    const call = Response.makePart("tool-call", {
+      id: "call-1",
+      name: "echo",
+      params: { text: "hello" },
+      providerExecuted: false,
+    });
+    return Stream.concat(
+      Stream.succeed(call),
+      Stream.unwrap(
+        options.toolkit.handle("echo", { text: "hello" }).pipe(
+          Effect.map((results) =>
+            Stream.map(results, (result) =>
+              Response.makePart("tool-result", {
+                id: call.id,
+                name: call.name,
+                providerExecuted: false,
+                ...result,
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+  },
+}));
+const echo = Tool.make("echo", {
+  parameters: Schema.Struct({ text: Schema.String }),
+  success: Schema.String,
+});
+export default {
+  instructions: "Reply with the fixture output.",
+  model,
+  plugins: [definePlugin({
+    name: "echo",
+    toolkit: Toolkit.make(echo),
+    handlers: { echo: ({ text }) => Effect.succeed(text) },
+  })],
+};
+`);
+    const result = await output(spawn("hello\n", ["--use", current.definition], current));
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("[tool echo]");
+    expect(result.stdout).toContain("[tool echo completed]");
+    expect(result.stdout).toContain("done");
   });
 
   test("checks adjacent Core before Definition execution", async () => {
@@ -235,7 +325,7 @@ describe("compiled mitome", () => {
     });
     const missingCore = await output(spawn("", ["--use", missing.definition], missing));
     expect(missingCore.exitCode).toBe(1);
-    expect(missingCore.stderr).toContain(`install @mitome/core@${corePackage.version}`);
+    expect(missingCore.stderr).toContain(`Install @mitome/core@${corePackage.version}`);
     expect(await Bun.file(join(missing.root, "marker")).exists()).toBe(false);
 
     const mismatch = await fixture(

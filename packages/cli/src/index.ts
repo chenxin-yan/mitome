@@ -1,113 +1,16 @@
 import { stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
-import packageJson from "../package.json" with { type: "json" };
+import corePackage from "@mitome/core/package.json" with { type: "json" };
+// Bun embeds host.ts as source text at compile time; static analysis sees a module without a default export.
+// @ts-expect-error
+// oxlint-disable-next-line import/default
+import definitionHost from "./host.ts" with { type: "text" };
 
 type Package = {
   readonly version?: unknown;
 };
 
-const definitionHost = String.raw`
-import { dirname } from "node:path";
-import { createInterface } from "node:readline";
-import { pathToFileURL } from "node:url";
-
-const definitionPath = process.argv[1];
-const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
-const effectPath = Bun.resolveSync("effect", dirname(corePath));
-const core = await import(pathToFileURL(corePath).href);
-const effect = await import(pathToFileURL(effectPath).href);
-const loaded = (await import(pathToFileURL(definitionPath).href)).default;
-
-const isDefinition = (value) => {
-  if (typeof value !== "object" || value === null) return false;
-  return (
-    typeof value.instructions === "string" &&
-    value.model !== undefined &&
-    Array.isArray(value.plugins) &&
-    value.plugins.every((plugin) =>
-      typeof plugin === "object" && plugin !== null && typeof plugin.name === "string",
-    )
-  );
-};
-
-const render = (event) => {
-  switch (event.type) {
-    case "model-output":
-      process.stdout.write(event.text);
-      break;
-    case "tool-call":
-      process.stdout.write("\n[tool " + event.name + "]\n");
-      break;
-    case "tool-result":
-      process.stdout.write(
-        "\n[tool " + event.name + " " + (event.isFailure ? "failed" : "completed") + "]\n",
-      );
-      break;
-    case "response-complete":
-      process.stdout.write("\n");
-      break;
-  }
-};
-
-const errorMessage = (error) => {
-  if (typeof error === "object" && error !== null && "_tag" in error && "message" in error) {
-    return String(error._tag) + ": " + String(error.message);
-  }
-  return error instanceof Error ? error.message : String(error);
-};
-
-const serve = async (session, state) => {
-  for await (const text of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
-    const turn = effect.Effect.runFork(
-      effect.Stream.runForEach(session.prompt(text), (event) =>
-        effect.Effect.sync(() => render(event)),
-      ),
-    );
-    state.active = turn;
-    const exit = await effect.Effect.runPromiseExit(effect.Fiber.join(turn));
-    state.active = undefined;
-    if (effect.Exit.isFailure(exit)) {
-      if (state.interrupted) return;
-      process.stderr.write(errorMessage(effect.Cause.squash(exit.cause)) + "\n");
-      process.exitCode = 1;
-      return;
-    }
-  }
-};
-
-if (!isDefinition(loaded)) {
-  throw new Error("Definition must default-export an Agent with instructions, model, and Plugins.");
-}
-const state = { active: undefined, interrupted: false };
-const root = effect.Effect.runFork(
-  effect.Effect.scoped(
-    effect.Effect.gen(function* () {
-      const session = yield* core.createSession(loaded);
-      yield* effect.Effect.promise(() => serve(session, state));
-    }),
-  ),
-);
-const interrupt = () => {
-  if (state.interrupted) return;
-  state.interrupted = true;
-  const forceExit = setTimeout(() => process.exit(124), 1_000);
-  void (async () => {
-    if (state.active !== undefined) {
-      await effect.Effect.runPromise(effect.Fiber.interrupt(state.active));
-    }
-    await effect.Effect.runPromise(effect.Fiber.interrupt(root));
-    clearTimeout(forceExit);
-    process.exit(130);
-  })();
-};
-process.on("SIGINT", interrupt);
-const exit = await effect.Effect.runPromiseExit(effect.Fiber.join(root));
-process.off("SIGINT", interrupt);
-if (effect.Exit.isFailure(exit) && !state.interrupted) {
-  process.stderr.write(errorMessage(effect.Cause.squash(exit.cause)) + "\n");
-  process.exitCode = 1;
-}
-`;
+const hostSource: string = definitionHost;
 
 const definitionPath = async (args: ReadonlyArray<string>): Promise<string> => {
   let selected: string;
@@ -130,7 +33,9 @@ const definitionPath = async (args: ReadonlyArray<string>): Promise<string> => {
     file = await stat(path);
   } catch {
     throw new Error(
-      `Definition not found at ${path}. Create it in XDG config or use --use <file>.`,
+      args.length === 0
+        ? `Definition not found at ${path}. Create it in XDG config or use --use <file>.`
+        : `Definition not found at ${path}; check the --use path.`,
     );
   }
   if (file.isDirectory()) {
@@ -152,8 +57,11 @@ const resolvePackage = async (name: string, from: string): Promise<Package | und
       if ((await stat(packagePath)).isFile()) {
         return JSON.parse(await Bun.file(packagePath).text()) as Package;
       }
-    } catch {
-      // Expected while walking package parents: try the next node_modules directory.
+    } catch (error) {
+      // A missing node_modules while walking parents is expected; anything else
+      // (for example a malformed package.json) must fail loud.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
     }
     const parent = dirname(directory);
     if (parent === directory) return undefined;
@@ -165,18 +73,18 @@ const checkRuntime = async (path: string): Promise<void> => {
   const core = await resolvePackage("@mitome/core", path);
   if (core === undefined) {
     throw new Error(
-      `No @mitome/core is installed beside ${path}. install @mitome/core@${packageJson.version} with the Definition dependencies.`,
+      `No @mitome/core is installed beside ${path}. Install @mitome/core@${corePackage.version} with the Definition dependencies.`,
     );
   }
-  if (core.version !== packageJson.version) {
+  if (core.version !== corePackage.version) {
     throw new Error(
-      `@mitome/core beside ${path} is ${String(core.version)}; install @mitome/core@${packageJson.version} with the Definition dependencies.`,
+      `@mitome/core beside ${path} is ${String(core.version)}; install @mitome/core@${corePackage.version} with the Definition dependencies.`,
     );
   }
 };
 
 const runHost = async (path: string): Promise<void> => {
-  const child = Bun.spawn([process.execPath, "--eval", definitionHost, path], {
+  const child = Bun.spawn([process.execPath, "--eval", hostSource, path], {
     env: { ...process.env, BUN_BE_BUN: "1" },
     stdin: "inherit",
     stdout: "inherit",

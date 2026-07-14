@@ -55,6 +55,7 @@
         "@mitome/config": "workspace:*",
         "@mitome/core": "workspace:*",
         "@types/bun": "catalog:",
+        "effect": "catalog:",
         "typescript": "catalog:",
       },
     },

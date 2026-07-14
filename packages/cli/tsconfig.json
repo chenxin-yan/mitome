@@ -3,6 +3,7 @@
   "compilerOptions": {
     "rootDir": ".",
     "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
     "types": ["bun"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]
