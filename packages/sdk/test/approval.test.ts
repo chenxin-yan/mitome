@@ -109,6 +109,55 @@ describe("@mitome/sdk Tool Approval", () => {
     });
   });
 
+  test("adapts a resolving async predicate with validated input", async () => {
+    const fixture = approvalModel();
+    let handlerCalls = 0;
+    let seen: unknown;
+    const definition = defineAgent({
+      instructions: "Be concise.",
+      model: fixture.model,
+      plugins: [
+        definePlugin({
+          name: "dangerous",
+          tools: [
+            tool({
+              name: "dangerous",
+              inputSchema: schema,
+              outputSchema: schema,
+              needsApproval: async (input) => {
+                seen = input;
+                return input.action === "delete";
+              },
+              handler: async (input) => {
+                handlerCalls += 1;
+                return input;
+              },
+            }),
+          ],
+        }),
+      ],
+    });
+
+    const events = await withSession(definition, async (session) => {
+      const collected = [];
+      for await (const event of session.prompt("Hi")) {
+        collected.push(event);
+        if (event.type === "approval-required") await event.approve();
+      }
+      return collected;
+    });
+
+    expect(seen).toEqual({ action: "delete" });
+    expect(handlerCalls).toBe(1);
+    expect(events).toContainEqual({
+      type: "tool-result",
+      id: "call-approval",
+      name: "dangerous",
+      result: { action: "delete" },
+      isFailure: false,
+    });
+  });
+
   test("approves through the streamed SDK event and completes the Turn", async () => {
     const fixture = approvalModel();
     let handlerCalls = 0;

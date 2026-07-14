@@ -94,8 +94,8 @@ const program = Effect.scoped(
           if (answer?.trim().toLowerCase() === "y") {
             yield* event.approve();
           } else {
-            // Default, EOF, and unrecognized answers all deny.
-            yield* event.deny("Approval denied");
+            // Default, EOF, and unrecognized answers all deny with Core's default reason.
+            yield* event.deny();
           }
         }),
       ).pipe(

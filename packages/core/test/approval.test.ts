@@ -158,6 +158,121 @@ describe("Tool Approval", () => {
     expect(preToolCalls).toBe(1);
   });
 
+  test("prompts when a dynamic predicate returns true", async () => {
+    const current = definition((params: { readonly action: string }) => params.action === "delete");
+    const turn = await start(current.definition);
+
+    expect(turn.pending.name).toBe("dangerous");
+    expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
+    await Effect.runPromise(turn.pending.approve());
+    await turn.turn;
+
+    expect(current.counts()).toEqual({ handlerCalls: 1, postCalls: 1 });
+  });
+
+  test("executes without prompting when a dynamic predicate returns false", async () => {
+    const current = definition((params: { readonly action: string }) => params.action !== "delete");
+    const events = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession(current.definition);
+          return yield* Stream.runCollect(session.prompt("Hi"));
+        }),
+      ),
+    );
+
+    expect(events.some((event) => event.type === "approval-required")).toBe(false);
+    expect(current.counts()).toEqual({ handlerCalls: 1, postCalls: 1 });
+  });
+
+  test("denies a pending approval and continues the Turn", async () => {
+    const current = definition(true);
+    const turn = await start(current.definition);
+
+    await Effect.runPromise(turn.pending.deny("not allowed"));
+    await turn.turn;
+
+    expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
+    expect(turn.events).toContainEqual({
+      type: "tool-result",
+      id: "call-approval",
+      name: "dangerous",
+      result: { type: "execution-denied", reason: "not allowed" },
+      isFailure: true,
+    });
+    expect(current.fixture.calls()).toBe(2);
+    expect(JSON.stringify(current.fixture.prompt())).toContain("not allowed");
+  });
+
+  test("runs pre-Tool once when the model reorders params keys", async () => {
+    // needsApproval sees decoded (declaration-ordered) params while immediate
+    // execution passes the raw model params: reordered keys must not desync
+    // the prepared pre-Tool state and re-run the Hook.
+    let preToolCalls = 0;
+    let handlerCalls = 0;
+    let calls = 0;
+    const model = makeModel(
+      Layer.effect(
+        LanguageModel.LanguageModel,
+        LanguageModel.make({
+          generateText: () => Effect.succeed([]),
+          streamText: () => {
+            calls += 1;
+            if (calls === 1) {
+              return Stream.succeed({
+                type: "tool-call" as const,
+                id: "call-approval",
+                name: "dangerous",
+                // Key order differs from the schema declaration below.
+                params: { target: "db", action: "delete" },
+              });
+            }
+            return Stream.succeed({ type: "text-delta" as const, id: "done", delta: "continued" });
+          },
+        }),
+      ),
+    );
+    const dangerous = Tool.make("dangerous", {
+      parameters: Schema.Struct({ action: Schema.String, target: Schema.String }),
+      success: Schema.String,
+      needsApproval: false,
+    });
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({
+            instructions: "Be concise.",
+            model,
+            plugins: [
+              {
+                name: "dangerous",
+                toolkit: Toolkit.make(dangerous),
+                handlers: {
+                  dangerous: () =>
+                    Effect.sync(() => {
+                      handlerCalls += 1;
+                      return "executed";
+                    }),
+                },
+                hooks: {
+                  preTool: () =>
+                    Effect.sync(() => {
+                      preToolCalls += 1;
+                      return undefined;
+                    }),
+                },
+              },
+            ],
+          });
+          yield* Stream.runDrain(session.prompt("Hi"));
+        }),
+      ),
+    );
+
+    expect(preToolCalls).toBe(1);
+    expect(handlerCalls).toBe(1);
+  });
+
   test("fails closed when a dynamic predicate fails", async () => {
     // A failing predicate is deliberately outside NeedsApproval's typed surface.
     const current = definition((() =>

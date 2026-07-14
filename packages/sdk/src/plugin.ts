@@ -112,7 +112,7 @@ const promiseHook = <A, Resource>(
 const adaptHooks = <Resource>(
   hooks: PluginHooksDefinition<Resource> | undefined,
   resource: Context.Service<Resource, Resource> | undefined,
-) => {
+): PluginHooks<Resource> | undefined => {
   if (hooks === undefined) return undefined;
   const adapted: { -readonly [Key in keyof PluginHooks<Resource>]?: PluginHooks<Resource>[Key] } =
     {};
@@ -209,8 +209,10 @@ export function definePlugin<Resource = never>(
                 ? needsApproval
                 : (params: unknown, context: ToolApprovalContext) =>
                     Effect.promise(() =>
-                      Promise.resolve()
-                        .then(() => needsApproval(params as never, context))
+                      // Approval predicates are trust boundaries: validate the raw
+                      // model params first, and fail closed on any failure.
+                      validate(input, params)
+                        .then((typed) => needsApproval(typed, context))
                         .catch(() => true),
                     ),
           }),

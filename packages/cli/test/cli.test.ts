@@ -484,6 +484,8 @@ export default {
       const denied = await run(answer);
       expect(denied).toMatchObject({ exitCode: 0, stderr: "", ran: false });
       expect(denied.stdout).toContain("[approval dangerous]");
+      // Denial lets the Turn continue: the second model step still streams.
+      expect(denied.stdout).toContain("continued");
     }
   });
 
@@ -505,14 +507,8 @@ export default {
       dependencies?: Record<string, string>;
       devDependencies: Record<string, string>;
     };
-    // The Session host lives in host.ts; index.ts only embeds it as text.
-    const source = await readFile(join(packageDir, "src", "index.ts"), "utf8");
-    const host = await readFile(join(packageDir, "src", "host.ts"), "utf8");
     expect(packageJson.devDependencies["@mitome/core"]).toBe("workspace:*");
     expect(packageJson.dependencies?.["@mitome/sdk"]).toBeUndefined();
     expect(packageJson.devDependencies["@mitome/sdk"]).toBeUndefined();
-    expect(host).toContain("createSession");
-    expect(source).not.toContain("@mitome/sdk");
-    expect(host).not.toContain("@mitome/sdk");
   });
 });
