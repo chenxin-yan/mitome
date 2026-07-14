@@ -64,11 +64,11 @@ export interface Session {
 type PluginContexts = ReadonlyMap<AnyPlugin, Context.Context<any>>;
 
 const providePlugin = <A, E>(
-  plugin: AnyPlugin,
+  plugin: AnyPlugin | undefined,
   contexts: PluginContexts,
   effect: Effect.Effect<A, E, any>,
 ): Effect.Effect<A, E> => {
-  const context = contexts.get(plugin);
+  const context = plugin === undefined ? undefined : contexts.get(plugin);
   return (context === undefined ? effect : Effect.provide(effect, context)) as Effect.Effect<A, E>;
 };
 
@@ -151,89 +151,92 @@ const makeToolkit = (
   semaphore: Semaphore.Semaphore,
 ): Effect.Effect<Toolkit.WithHandler<Record<string, Tool.Any>>, never> => {
   const tools = plugins.flatMap((plugin) => Object.values(plugin.toolkit?.tools ?? {}));
+  const owners = new Map<string, AnyPlugin>();
+  for (const plugin of plugins) {
+    for (const tool of Object.values(plugin.toolkit?.tools ?? {})) owners.set(tool.name, plugin);
+  }
   const validators: Readonly<Record<string, ToolResultValidator>> = Object.assign(
     {},
     ...plugins.map((plugin) => plugin.toolResultValidators ?? {}),
   );
   const toolkit = Toolkit.make(...tools);
-  const pluginHandlers = Object.assign(
-    {},
-    ...plugins.map((plugin) =>
-      Object.fromEntries(
-        Object.entries(plugin.handlers ?? {}).map(([name, handler]) => [
-          name,
-          (params: unknown) => providePlugin(plugin, contexts, handler(params)),
-        ]),
-      ),
-    ),
-  );
-  return toolkit.toHandlers(pluginHandlers as never).pipe(
-    Effect.flatMap((handlers) => Effect.provide(toolkit, handlers)),
-    Effect.map((handlers): Toolkit.WithHandler<Record<string, Tool.Any>> => {
-      const handle = handlers.handle as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
-      const wrappedHandle = ((name: string, params: unknown) =>
-        semaphore.withPermit(
-          Effect.gen(function* () {
-            for (const plugin of plugins) {
-              const veto = yield* providePlugin(
-                plugin,
+  return toolkit
+    .toHandlers(Object.assign({}, ...plugins.map((plugin) => plugin.handlers ?? {})) as never)
+    .pipe(
+      Effect.flatMap((handlers) => Effect.provide(toolkit, handlers)),
+      Effect.map((handlers): Toolkit.WithHandler<Record<string, Tool.Any>> => {
+        const handle = handlers.handle as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
+        const wrappedHandle = ((name: string, params: unknown) =>
+          semaphore.withPermit(
+            Effect.gen(function* () {
+              for (const plugin of plugins) {
+                const veto = yield* providePlugin(
+                  plugin,
+                  contexts,
+                  plugin.hooks?.preTool?.({ name, params }) ?? Effect.void,
+                ).pipe(hookAiError("preTool", "Pre-Tool Hook failed"));
+                if (veto !== undefined) return Stream.succeed(failureResult(veto.reason));
+              }
+
+              // The whole Tool call runs in the owning Plugin's context: the handler
+              // itself plus any schema decode/encode services from its resource.
+              const owner = owners.get(name);
+              const results = yield* providePlugin(
+                owner,
                 contexts,
-                plugin.hooks?.preTool?.({ name, params }) ?? Effect.void,
-              ).pipe(hookAiError("preTool", "Pre-Tool Hook failed"));
-              if (veto !== undefined) return Stream.succeed(failureResult(veto.reason));
-            }
-
-            const results = yield* handle(name, params).pipe(
-              Effect.flatMap((stream) =>
-                Stream.runCollect(
-                  stream as unknown as Stream.Stream<Tool.HandlerResult<Tool.Any>, unknown>,
+                handle(name, params).pipe(
+                  Effect.flatMap((stream) =>
+                    Stream.runCollect(
+                      stream as unknown as Stream.Stream<Tool.HandlerResult<Tool.Any>, unknown>,
+                    ),
+                  ),
                 ),
-              ),
-              toolAiError(name),
-            );
-            if (!plugins.some((plugin) => plugin.hooks?.postTool !== undefined)) {
-              return Stream.fromIterable(results);
-            }
-            const tool = handlers.tools[name] as Tool.Any;
-            const validator = validators[name];
-            const finalResults = yield* Effect.forEach(results, (handlerResult) =>
-              Effect.gen(function* () {
-                // Schema-less dynamic Tool failures are already encoded and have no failure schema.
-                if (
-                  handlerResult.isFailure &&
-                  (validator !== undefined ||
-                    (Tool.isDynamic(tool) && tool.failureSchema === Schema.Never))
-                ) {
-                  return handlerResult;
-                }
-
-                let result = handlerResult.result;
-                for (const plugin of plugins) {
-                  const postTool = plugin.hooks?.postTool;
-                  if (postTool !== undefined) {
-                    result = yield* providePlugin(
-                      plugin,
-                      contexts,
-                      postTool({
-                        name,
-                        params,
-                        result,
-                        isFailure: handlerResult.isFailure,
-                      }),
-                    ).pipe(hookAiError("postTool", "Post-Tool Hook failed"));
+              ).pipe(toolAiError(name));
+              if (!plugins.some((plugin) => plugin.hooks?.postTool !== undefined)) {
+                return Stream.fromIterable(results);
+              }
+              const tool = handlers.tools[name] as Tool.Any;
+              const validator = validators[name];
+              const finalResults = yield* Effect.forEach(results, (handlerResult) =>
+                Effect.gen(function* () {
+                  // Schema-less dynamic Tool failures are already encoded and have no failure schema.
+                  if (
+                    handlerResult.isFailure &&
+                    (validator !== undefined ||
+                      (Tool.isDynamic(tool) && tool.failureSchema === Schema.Never))
+                  ) {
+                    return handlerResult;
                   }
-                }
-                return yield* validateResult(tool, handlerResult, result, validator).pipe(
-                  hookAiError("postTool", "Post-Tool result validation failed"),
-                );
-              }),
-            );
-            return Stream.fromIterable(finalResults);
-          }),
-        )) as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
-      return { tools: handlers.tools, handle: wrappedHandle };
-    }),
-  );
+
+                  let result = handlerResult.result;
+                  for (const plugin of plugins) {
+                    const postTool = plugin.hooks?.postTool;
+                    if (postTool !== undefined) {
+                      result = yield* providePlugin(
+                        plugin,
+                        contexts,
+                        postTool({
+                          name,
+                          params,
+                          result,
+                          isFailure: handlerResult.isFailure,
+                        }),
+                      ).pipe(hookAiError("postTool", "Post-Tool Hook failed"));
+                    }
+                  }
+                  return yield* providePlugin(
+                    owner,
+                    contexts,
+                    validateResult(tool, handlerResult, result, validator),
+                  ).pipe(hookAiError("postTool", "Post-Tool result validation failed"));
+                }),
+              );
+              return Stream.fromIterable(finalResults);
+            }),
+          )) as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
+        return { tools: handlers.tools, handle: wrappedHandle };
+      }),
+    );
 };
 
 const hookTurnError = (message: string) =>

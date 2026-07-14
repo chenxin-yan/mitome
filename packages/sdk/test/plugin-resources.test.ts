@@ -1,8 +1,8 @@
 // Bun's async matchers are typed void but must be awaited to stay within the test.
 // oxlint-disable typescript/await-thenable
 import { describe, expect, test } from "bun:test";
-import { Cause, Context, Effect, Exit, Layer, Result, Stream } from "effect";
-import { Response } from "effect/unstable/ai";
+import { Cause, Context, Effect, Exit, Layer, Result, Schema, SchemaGetter, Stream } from "effect";
+import { Response, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import { createSession, type Plugin } from "@mitome/core";
 import { makeTestModel } from "./model.js";
 import {
@@ -12,7 +12,7 @@ import {
   withSession,
   type InputSchema,
   type StandardSchema,
-} from "@mitome/sdk";
+} from "../src/index.js";
 
 const stringSchema: StandardSchema<unknown, string> = {
   "~standard": {
@@ -440,6 +440,77 @@ describe("@mitome/sdk Plugin resources", () => {
       "dispose:sdk",
       "dispose:core",
     ]);
+  });
+
+  test("provides the owning Plugin's resource to native Tool schema encoding", async () => {
+    const Prefix = Context.Service<string>("test/Prefix");
+    // Success schema whose encoding requires the Prefix service from the Plugin resource.
+    const serviceString = Schema.String.pipe(
+      Schema.decodeTo(Schema.String, {
+        decode: SchemaGetter.transformOrFail((value: string) =>
+          Effect.map(Effect.service(Prefix), (prefix) => `${prefix}:${value}`),
+        ),
+        encode: SchemaGetter.transformOrFail((value: string) =>
+          Effect.map(Effect.service(Prefix), (prefix) => `${prefix}:${value}`),
+        ),
+      }),
+    );
+    const echo = AiTool.make("native-echo", {
+      parameters: Schema.Struct({ text: Schema.String }),
+      success: serviceString,
+      failureMode: "return",
+    });
+    const native: Plugin<string> = {
+      name: "native",
+      resource: Layer.succeed(Prefix, "pre"),
+      toolkit: Toolkit.make(echo),
+      handlers: { "native-echo": () => Effect.succeed("hello") },
+      // postTool forces the validateResult re-encoding path as well.
+      hooks: { postTool: (context) => Effect.succeed(context.result) },
+    };
+    let calls = 0;
+    const model = makeTestModel((options) => {
+      calls += 1;
+      if (calls === 2)
+        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+      const call = Response.makePart("tool-call", {
+        id: "call-1",
+        name: "native-echo",
+        params: { text: "hi" },
+        providerExecuted: false,
+      });
+      return Stream.concat(
+        Stream.succeed(call),
+        Stream.unwrap(
+          options.toolkit!.handle("native-echo", { text: "hi" }).pipe(
+            Effect.map((results) =>
+              Stream.map(results, (result) =>
+                Response.makePart("tool-result", {
+                  id: call.id,
+                  name: call.name,
+                  providerExecuted: false,
+                  ...result,
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+    });
+
+    const events = await withSession(
+      defineAgent({ instructions: "Be concise.", model, plugins: [native] }),
+      (session) => Array.fromAsync(session.prompt("Hi")),
+    );
+
+    expect(events).toContainEqual({
+      type: "tool-result",
+      id: "call-1",
+      name: "native-echo",
+      result: "hello",
+      isFailure: false,
+    });
+    expect(events.at(-1)).toEqual({ type: "response-complete" });
   });
 
   test("keeps disposer failure loud with its original cause", async () => {
