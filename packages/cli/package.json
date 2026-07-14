@@ -12,6 +12,8 @@
   "scripts": {
     "build": "bun build --compile src/index.ts --outfile dist/mitome",
     "check:types": "tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
     "test": "bun test test"
   },
   "devDependencies": {

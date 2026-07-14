@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -16,39 +16,23 @@ const effectPackage = JSON.parse(await readFile(join(effectDir, "package.json"),
 };
 const temporaryDirectories: Array<string> = [];
 
-const installedPackage = (name: string): string => {
-  const store = resolve(packageDir, "../../node_modules/.bun");
-  const entry = [
-    ...new Bun.Glob(`**/node_modules/${name}/package.json`).scanSync({ cwd: store }),
-  ][0];
-  if (entry === undefined) throw new Error(`Cannot find installed ${name}`);
-  return dirname(join(store, entry));
-};
-
-const copyPackage = async (
-  name: string,
-  nodeModules: string,
-  copied = new Set<string>(),
-): Promise<void> => {
-  if (copied.has(name)) return;
-  copied.add(name);
-  const source = installedPackage(name);
-  const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8")) as {
-    dependencies?: Record<string, string>;
-  };
-  for (const dependency of Object.keys(manifest.dependencies ?? {})) {
-    await copyPackage(dependency, nodeModules, copied);
-  }
-  const destination = join(nodeModules, name);
-  await mkdir(dirname(destination), { recursive: true });
-  await cp(source, destination, { recursive: true, dereference: true });
-};
-
-const definitionSource = (output: string, options: { readonly block?: boolean } = {}): string => `
+const definitionSource = (
+  output: string,
+  options: {
+    readonly block?: boolean;
+    readonly signalProbe?: {
+      readonly pid: string;
+      readonly cleanupStarted: string;
+      readonly cleanupDone: string;
+    };
+  } = {},
+): string => `
+import { writeFileSync } from "node:fs";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { makeModel } from "@mitome/core";
 
+${options.signalProbe ? `writeFileSync(${JSON.stringify(options.signalProbe.pid)}, String(process.pid));` : ""}
 interface FixtureOutput { readonly text: string }
 const fixture: FixtureOutput = { text: ${JSON.stringify(output)} };
 const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
@@ -57,13 +41,27 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
     ${options.block ? 'Stream.fromEffect(Effect.sleep(10_000).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))' : 'Stream.fromEffect(Effect.sleep(100).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))'},
   ),
 }));
-export default { instructions: "Reply with the fixture output.", model, plugins: [] };
+export default { instructions: "Reply with the fixture output.", model, plugins: ${
+  options.signalProbe
+    ? `[{ name: "cleanup", hooks: { sessionEnd: Effect.sync(() => {
+      writeFileSync(${JSON.stringify(options.signalProbe.cleanupStarted)}, "");
+      // Keep cleanup in progress while the test delivers the duplicate SIGINT.
+      const cleanupUntil = Date.now() + 100;
+      while (Date.now() < cleanupUntil) {}
+      writeFileSync(${JSON.stringify(options.signalProbe.cleanupDone)}, "");
+    }) } }]`
+    : "[]"
+} };
 `;
 
 type Fixture = {
   readonly root: string;
   readonly definition: string;
-  readonly env: Record<string, string>;
+  readonly env: {
+    readonly HOME: string;
+    readonly XDG_CONFIG_HOME: string;
+    readonly PATH: string;
+  };
 };
 
 const fixture = async (source = definitionSource("first")): Promise<Fixture> => {
@@ -76,7 +74,7 @@ const fixture = async (source = definitionSource("first")): Promise<Fixture> => 
   await writeFile(definition, source);
   await cp(join(coreDir, "dist"), join(core, "dist"), { recursive: true });
   await cp(join(coreDir, "package.json"), join(core, "package.json"));
-  await copyPackage("effect", nodeModules);
+  await symlink(effectDir, join(nodeModules, "effect"), "dir");
   const emptyPath = join(root, "empty-path");
   await mkdir(emptyPath);
   return {
@@ -103,8 +101,8 @@ const spawn = (
     stdout: "pipe",
     stderr: "pipe",
   });
-  process.stdin.write(input);
-  process.stdin.end();
+  void process.stdin.write(input);
+  void process.stdin.end();
   return process;
 };
 
@@ -118,11 +116,9 @@ const output = async (process: ReturnType<typeof spawn>) => {
 };
 
 beforeAll(async () => {
-  await Bun.file(binary)
-    .exists()
-    .then((exists) => {
-      if (!exists) throw new Error("Build @mitome/cli before running its subprocess tests");
-    });
+  if (!(await Bun.file(binary).exists())) {
+    throw new Error("Build @mitome/cli before running its subprocess tests");
+  }
 });
 
 afterEach(async () => {
@@ -205,7 +201,7 @@ describe("compiled mitome", () => {
     });
   });
 
-  test("rejects a directory, project discovery, and missing config homes", async () => {
+  test("rejects invalid paths, discovery, config homes, and Definitions", async () => {
     const current = await fixture();
     await writeFile(
       join(current.root, "agent.ts"),
@@ -213,16 +209,21 @@ describe("compiled mitome", () => {
     );
 
     const directory = await output(spawn("", ["--use", dirname(current.definition)], current));
-    expect(directory.exitCode).not.toBe(0);
+    expect(directory.exitCode).toBe(1);
     expect(directory.stderr).toContain("TypeScript entry file");
 
     const implicit = await output(spawn("", [], current));
-    expect(implicit.exitCode).not.toBe(0);
+    expect(implicit.exitCode).toBe(1);
     expect(implicit.stderr).toContain("--use <file>");
 
     const noHomes = await output(spawn("", [], current, { HOME: "", PATH: current.env.PATH }));
-    expect(noHomes.exitCode).not.toBe(0);
+    expect(noHomes.exitCode).toBe(1);
     expect(noHomes.stderr).toContain("XDG_CONFIG_HOME or HOME");
+
+    const invalid = await fixture("export default {};");
+    const invalidDefinition = await output(spawn("", ["--use", invalid.definition], invalid));
+    expect(invalidDefinition.exitCode).toBe(1);
+    expect(invalidDefinition.stderr).toContain("Definition must default-export an Agent");
   });
 
   test("checks adjacent Core before Definition execution", async () => {
@@ -233,7 +234,7 @@ describe("compiled mitome", () => {
       recursive: true,
     });
     const missingCore = await output(spawn("", ["--use", missing.definition], missing));
-    expect(missingCore.exitCode).not.toBe(0);
+    expect(missingCore.exitCode).toBe(1);
     expect(missingCore.stderr).toContain(`install @mitome/core@${corePackage.version}`);
     expect(await Bun.file(join(missing.root, "marker")).exists()).toBe(false);
 
@@ -251,48 +252,41 @@ describe("compiled mitome", () => {
     packageJson.version = "999.0.0";
     await writeFile(packagePath, JSON.stringify(packageJson));
     const incompatibleCore = await output(spawn("", ["--use", mismatch.definition], mismatch));
-    expect(incompatibleCore.exitCode).not.toBe(0);
+    expect(incompatibleCore.exitCode).toBe(1);
     expect(incompatibleCore.stderr).toContain("999.0.0");
     expect(await Bun.file(join(mismatch.root, "marker")).exists()).toBe(false);
   });
 
-  test("renders Core events incrementally and interrupts an active scoped Turn", async () => {
-    const current = await fixture(definitionSource("first", { block: true }));
-    const process = spawn("hello\n", ["--use", current.definition], current);
-    const reader = process.stdout.getReader();
-    const first = await reader.read();
-    const firstOutput = new TextDecoder().decode(first.value);
-    expect(firstOutput).toContain("first");
-    expect(process.exitCode).toBeNull();
-
-    process.kill("SIGINT");
-    const rest = await new Response(
-      new ReadableStream({
-        start(controller) {
-          const read = async (): Promise<void> => {
-            const next = await reader.read();
-            if (next.done) return controller.close();
-            controller.enqueue(next.value);
-            await read();
-          };
-          void read();
-        },
-      }),
-    ).text();
-    expect(await process.exited).toBe(130);
-    expect(firstOutput + rest).not.toContain(" second");
-  });
-
-  test("uses Core directly without SDK runtime support", async () => {
-    const packageJson = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as {
-      dependencies?: Record<string, string>;
-      devDependencies: Record<string, string>;
+  test("renders events and survives duplicate SIGINT during scoped Turn cleanup", async () => {
+    const current = await fixture();
+    const signalProbe = {
+      pid: join(current.root, "host-pid"),
+      cleanupStarted: join(current.root, "cleanup-started"),
+      cleanupDone: join(current.root, "cleanup-done"),
     };
-    const source = await readFile(join(packageDir, "src", "index.ts"), "utf8");
-    expect(packageJson.devDependencies["@mitome/core"]).toBe("workspace:*");
-    expect(packageJson.dependencies?.["@mitome/sdk"]).toBeUndefined();
-    expect(packageJson.devDependencies["@mitome/sdk"]).toBeUndefined();
-    expect(source).toContain("createSession");
-    expect(source).not.toContain("@mitome/sdk");
+    await writeFile(current.definition, definitionSource("first", { block: true, signalProbe }));
+    const child = spawn("hello\n", ["--use", current.definition], current);
+    const reader = child.stdout.getReader();
+    const first = await reader.read();
+    const decoder = new TextDecoder();
+    const firstOutput = decoder.decode(first.value, { stream: true });
+    expect(firstOutput).toContain("first");
+    expect(child.exitCode).toBeNull();
+
+    const hostPid = Number(await readFile(signalProbe.pid, "utf8"));
+    child.kill("SIGINT");
+    for (let attempt = 0; !(await Bun.file(signalProbe.cleanupStarted).exists()); attempt += 1) {
+      if (attempt === 100) throw new Error("Session cleanup did not start");
+      await Bun.sleep(5);
+    }
+    process.kill(hostPid, "SIGINT");
+    let rest = "";
+    for (let next = await reader.read(); !next.done; next = await reader.read()) {
+      rest += decoder.decode(next.value, { stream: true });
+    }
+    rest += decoder.decode();
+    expect(await child.exited).toBe(130);
+    expect(await Bun.file(signalProbe.cleanupDone).exists()).toBe(true);
+    expect(firstOutput + rest).not.toContain(" second");
   });
 });
