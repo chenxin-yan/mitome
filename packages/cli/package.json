@@ -1,0 +1,26 @@
+{
+  "name": "@mitome/cli",
+  "version": "0.0.0",
+  "private": true,
+  "bin": {
+    "mitome": "./dist/mitome"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "bun build --compile src/index.ts --outfile dist/mitome",
+    "check:types": "tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "test": "bun test test --timeout 15000"
+  },
+  "devDependencies": {
+    "@mitome/config": "workspace:*",
+    "@mitome/core": "workspace:*",
+    "@types/bun": "catalog:",
+    "effect": "catalog:",
+    "typescript": "catalog:"
+  }
+}
