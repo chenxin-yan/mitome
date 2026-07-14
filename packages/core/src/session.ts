@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Schema, Scope, Semaphore, Stream } from "effect
 import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
 import { validateDefinition } from "./definition.js";
-import type { Definition, DefinitionError, Plugin, ToolResultValidator } from "./definition.js";
+import type { AnyPlugin, Definition, DefinitionError, ToolResultValidator } from "./definition.js";
 import { getModelLayer } from "./model.js";
 
 export const ToolExecutionDenied = Schema.Struct({
@@ -61,14 +61,30 @@ export interface Session {
   readonly released: () => boolean;
 }
 
+type PluginContexts = ReadonlyMap<AnyPlugin, Context.Context<any>>;
+
+const providePlugin = <A, E>(
+  plugin: AnyPlugin | undefined,
+  contexts: PluginContexts,
+  effect: Effect.Effect<A, E, any>,
+): Effect.Effect<A, E> => {
+  const context = plugin === undefined ? undefined : contexts.get(plugin);
+  return (context === undefined ? effect : Effect.provide(effect, context)) as Effect.Effect<A, E>;
+};
+
 const transformPrompt = (
-  plugins: ReadonlyArray<Plugin>,
+  plugins: ReadonlyArray<AnyPlugin>,
+  contexts: PluginContexts,
   prompt: Prompt.Prompt,
 ): Effect.Effect<Prompt.Prompt, unknown> =>
   Effect.gen(function* () {
     let current = prompt;
     for (const plugin of plugins) {
-      current = yield* plugin.hooks?.preStep?.(current) ?? Effect.succeed(current);
+      current = yield* providePlugin(
+        plugin,
+        contexts,
+        plugin.hooks?.preStep?.(current) ?? Effect.succeed(current),
+      );
     }
     return current;
   });
@@ -130,10 +146,15 @@ const toolAiError = (method: string) =>
   );
 
 const makeToolkit = (
-  plugins: ReadonlyArray<Plugin>,
+  plugins: ReadonlyArray<AnyPlugin>,
+  contexts: PluginContexts,
   semaphore: Semaphore.Semaphore,
 ): Effect.Effect<Toolkit.WithHandler<Record<string, Tool.Any>>, never> => {
   const tools = plugins.flatMap((plugin) => Object.values(plugin.toolkit?.tools ?? {}));
+  const owners = new Map<string, AnyPlugin>();
+  for (const plugin of plugins) {
+    for (const tool of Object.values(plugin.toolkit?.tools ?? {})) owners.set(tool.name, plugin);
+  }
   const validators: Readonly<Record<string, ToolResultValidator>> = Object.assign(
     {},
     ...plugins.map((plugin) => plugin.toolResultValidators ?? {}),
@@ -149,20 +170,28 @@ const makeToolkit = (
           semaphore.withPermit(
             Effect.gen(function* () {
               for (const plugin of plugins) {
-                const veto = yield* (plugin.hooks?.preTool?.({ name, params }) ?? Effect.void).pipe(
-                  hookAiError("preTool", "Pre-Tool Hook failed"),
-                );
+                const veto = yield* providePlugin(
+                  plugin,
+                  contexts,
+                  plugin.hooks?.preTool?.({ name, params }) ?? Effect.void,
+                ).pipe(hookAiError("preTool", "Pre-Tool Hook failed"));
                 if (veto !== undefined) return Stream.succeed(failureResult(veto.reason));
               }
 
-              const results = yield* handle(name, params).pipe(
-                Effect.flatMap((stream) =>
-                  Stream.runCollect(
-                    stream as unknown as Stream.Stream<Tool.HandlerResult<Tool.Any>, unknown>,
+              // The whole Tool call runs in the owning Plugin's context: the handler
+              // itself plus any schema decode/encode services from its resource.
+              const owner = owners.get(name);
+              const results = yield* providePlugin(
+                owner,
+                contexts,
+                handle(name, params).pipe(
+                  Effect.flatMap((stream) =>
+                    Stream.runCollect(
+                      stream as unknown as Stream.Stream<Tool.HandlerResult<Tool.Any>, unknown>,
+                    ),
                   ),
                 ),
-                toolAiError(name),
-              );
+              ).pipe(toolAiError(name));
               if (!plugins.some((plugin) => plugin.hooks?.postTool !== undefined)) {
                 return Stream.fromIterable(results);
               }
@@ -183,17 +212,23 @@ const makeToolkit = (
                   for (const plugin of plugins) {
                     const postTool = plugin.hooks?.postTool;
                     if (postTool !== undefined) {
-                      result = yield* postTool({
-                        name,
-                        params,
-                        result,
-                        isFailure: handlerResult.isFailure,
-                      }).pipe(hookAiError("postTool", "Post-Tool Hook failed"));
+                      result = yield* providePlugin(
+                        plugin,
+                        contexts,
+                        postTool({
+                          name,
+                          params,
+                          result,
+                          isFailure: handlerResult.isFailure,
+                        }),
+                      ).pipe(hookAiError("postTool", "Post-Tool Hook failed"));
                     }
                   }
-                  return yield* validateResult(tool, handlerResult, result, validator).pipe(
-                    hookAiError("postTool", "Post-Tool result validation failed"),
-                  );
+                  return yield* providePlugin(
+                    owner,
+                    contexts,
+                    validateResult(tool, handlerResult, result, validator),
+                  ).pipe(hookAiError("postTool", "Post-Tool result validation failed"));
                 }),
               );
               return Stream.fromIterable(finalResults);
@@ -224,8 +259,8 @@ interface HookProgress {
 }
 
 const runCleanupHooks = (
-  plugins: ReadonlyArray<Plugin>,
-  getHook: (plugin: Plugin) => Effect.Effect<void, unknown> | undefined,
+  plugins: ReadonlyArray<AnyPlugin>,
+  getHook: (plugin: AnyPlugin) => Effect.Effect<void, unknown> | undefined,
   message: string,
 ): Effect.Effect<void> =>
   Effect.forEach(
@@ -235,9 +270,9 @@ const runCleanupHooks = (
   );
 
 const runStartHooks = (
-  plugins: ReadonlyArray<Plugin>,
-  getStart: (plugin: Plugin) => Effect.Effect<void, unknown> | undefined,
-  getEnd: (plugin: Plugin) => Effect.Effect<void, unknown> | undefined,
+  plugins: ReadonlyArray<AnyPlugin>,
+  getStart: (plugin: AnyPlugin) => Effect.Effect<void, unknown> | undefined,
+  getEnd: (plugin: AnyPlugin) => Effect.Effect<void, unknown> | undefined,
   endFailureMessage: string,
 ): Effect.Effect<void, unknown> =>
   Effect.gen(function* () {
@@ -254,8 +289,8 @@ const runStartHooks = (
   });
 
 const runEndHooks = (
-  plugins: ReadonlyArray<Plugin>,
-  getHook: (plugin: Plugin) => Effect.Effect<void, unknown> | undefined,
+  plugins: ReadonlyArray<AnyPlugin>,
+  getHook: (plugin: AnyPlugin) => Effect.Effect<void, unknown> | undefined,
   progress: HookProgress,
   failureMessage: string,
 ): Effect.Effect<void, unknown> =>
@@ -296,11 +331,30 @@ export const createSession: (
 
   const context = yield* Layer.build(layer);
   const model = Context.get(context, LanguageModel.LanguageModel);
+  const pluginContexts = new Map<AnyPlugin, Context.Context<any>>();
+  for (const plugin of definition.plugins) {
+    if (plugin.resource !== undefined) {
+      pluginContexts.set(
+        plugin,
+        // The Plugin's Resource type is erased by AnyPlugin; providePlugin re-pairs it dynamically.
+        (yield* Layer.build(plugin.resource).pipe(
+          hookTurnError("Plugin setup failed"),
+        )) as Context.Context<any>,
+      );
+    }
+  }
   const semaphore = yield* Semaphore.make(1);
-  const toolkit = yield* makeToolkit(definition.plugins, semaphore);
+  const toolkit = yield* makeToolkit(definition.plugins, pluginContexts, semaphore);
   let history = Prompt.make([{ role: "system", content: definition.instructions }]);
   let isReleased = false;
   let isTurnActive = false;
+
+  // Hooks run with their Plugin's scoped resource (if any) in context.
+  const inContext = <A, E>(
+    plugin: AnyPlugin,
+    effect: Effect.Effect<A, E, any> | undefined,
+  ): Effect.Effect<A, E> | undefined =>
+    effect === undefined ? undefined : providePlugin(plugin, pluginContexts, effect);
 
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
@@ -311,8 +365,8 @@ export const createSession: (
 
   yield* runStartHooks(
     definition.plugins,
-    (plugin) => plugin.hooks?.sessionStart,
-    (plugin) => plugin.hooks?.sessionEnd,
+    (plugin) => inContext(plugin, plugin.hooks?.sessionStart),
+    (plugin) => inContext(plugin, plugin.hooks?.sessionEnd),
     "Session end Hook failed",
   ).pipe(hookTurnError("Session start Hook failed"));
 
@@ -320,7 +374,7 @@ export const createSession: (
     // A failing sessionEnd Hook must not fail scope close or skip later cleanup.
     runCleanupHooks(
       definition.plugins,
-      (plugin) => plugin.hooks?.sessionEnd,
+      (plugin) => inContext(plugin, plugin.hooks?.sessionEnd),
       "Session end Hook failed",
     ),
   );
@@ -343,8 +397,8 @@ export const createSession: (
     return Stream.unwrap(
       runStartHooks(
         definition.plugins,
-        (plugin) => plugin.hooks?.stepStart?.(prompt),
-        (plugin) => plugin.hooks?.stepEnd?.(prompt),
+        (plugin) => inContext(plugin, plugin.hooks?.stepStart?.(prompt)),
+        (plugin) => inContext(plugin, plugin.hooks?.stepEnd?.(prompt)),
         "Step end Hook failed",
       ).pipe(
         hookTurnError("Step start Hook failed"),
@@ -353,7 +407,7 @@ export const createSession: (
           const endProgress: HookProgress = { dispatched: 0 };
           let endPrompt = prompt;
           return Stream.unwrap(
-            transformPrompt(definition.plugins, prompt).pipe(
+            transformPrompt(definition.plugins, pluginContexts, prompt).pipe(
               hookTurnError("Pre-Step Hook failed"),
               Effect.map((transformed) => {
                 endPrompt = transformed;
@@ -399,7 +453,7 @@ export const createSession: (
                         Stream.fromEffectDrain(
                           runEndHooks(
                             startedPlugins,
-                            (plugin) => plugin.hooks?.stepEnd?.(transformed),
+                            (plugin) => inContext(plugin, plugin.hooks?.stepEnd?.(transformed)),
                             endProgress,
                             "Step end Hook failed",
                           ).pipe(hookTurnError("Step end Hook failed")),
@@ -415,7 +469,7 @@ export const createSession: (
             Stream.onExit(() =>
               runCleanupHooks(
                 startedPlugins.slice(endProgress.dispatched),
-                (plugin) => plugin.hooks?.stepEnd?.(endPrompt),
+                (plugin) => inContext(plugin, plugin.hooks?.stepEnd?.(endPrompt)),
                 "Step end Hook failed",
               ),
             ),
@@ -446,8 +500,8 @@ export const createSession: (
         return Stream.unwrap(
           runStartHooks(
             definition.plugins,
-            (plugin) => plugin.hooks?.turnStart?.(text),
-            (plugin) => plugin.hooks?.turnEnd?.(text),
+            (plugin) => inContext(plugin, plugin.hooks?.turnStart?.(text)),
+            (plugin) => inContext(plugin, plugin.hooks?.turnEnd?.(text)),
             "Turn end Hook failed",
           ).pipe(
             hookTurnError("Turn start Hook failed"),
@@ -459,7 +513,7 @@ export const createSession: (
                   if (event.type !== "turn-complete") return Effect.succeed(event);
                   return runEndHooks(
                     startedPlugins,
-                    (plugin) => plugin.hooks?.turnEnd?.(text),
+                    (plugin) => inContext(plugin, plugin.hooks?.turnEnd?.(text)),
                     endProgress,
                     "Turn end Hook failed",
                   ).pipe(
@@ -473,7 +527,7 @@ export const createSession: (
                 Stream.onExit(() =>
                   runCleanupHooks(
                     startedPlugins.slice(endProgress.dispatched),
-                    (plugin) => plugin.hooks?.turnEnd?.(text),
+                    (plugin) => inContext(plugin, plugin.hooks?.turnEnd?.(text)),
                     "Turn end Hook failed",
                   ),
                 ),

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { Prompt, Tool, Toolkit } from "effect/unstable/ai";
 import type { Model } from "./model.js";
 
@@ -12,37 +12,49 @@ export interface ToolResultHookContext extends ToolHookContext {
   readonly isFailure: boolean;
 }
 
-export interface PluginHooks {
-  readonly sessionStart?: Effect.Effect<void, unknown>;
-  readonly sessionEnd?: Effect.Effect<void, unknown>;
-  readonly turnStart?: (text: string) => Effect.Effect<void, unknown>;
-  readonly turnEnd?: (text: string) => Effect.Effect<void, unknown>;
-  readonly stepStart?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown>;
+export interface PluginHooks<Resource = never> {
+  readonly sessionStart?: Effect.Effect<void, unknown, Resource>;
+  readonly sessionEnd?: Effect.Effect<void, unknown, Resource>;
+  readonly turnStart?: (text: string) => Effect.Effect<void, unknown, Resource>;
+  readonly turnEnd?: (text: string) => Effect.Effect<void, unknown, Resource>;
+  readonly stepStart?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown, Resource>;
   /** Receives the prompt used by the model, including any completed pre-Step transforms. */
-  readonly stepEnd?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown>;
-  readonly preStep?: (prompt: Prompt.Prompt) => Effect.Effect<Prompt.Prompt, unknown>;
+  readonly stepEnd?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown, Resource>;
+  readonly preStep?: (prompt: Prompt.Prompt) => Effect.Effect<Prompt.Prompt, unknown, Resource>;
   readonly preTool?: (
     context: ToolHookContext,
-  ) => Effect.Effect<void | { readonly reason: string }, unknown>;
+  ) => Effect.Effect<void | { readonly reason: string }, unknown, Resource>;
   /** Failures already encoded outside an Effect failure schema skip this Hook. */
-  readonly postTool?: (context: ToolResultHookContext) => Effect.Effect<unknown, unknown>;
+  readonly postTool?: (context: ToolResultHookContext) => Effect.Effect<unknown, unknown, Resource>;
 }
 
 export type ToolResultValidator = (result: unknown) => Effect.Effect<unknown, unknown>;
 
-export interface Plugin {
+export interface Plugin<Resource = never, ResourceError = never> {
   readonly name: string;
+  /** Required at runtime whenever hooks or handlers use a Resource; hooks run unprovided (missing-service defect) without it. */
+  readonly resource?: Layer.Layer<Resource, ResourceError, never>;
   readonly toolkit?: Toolkit.Any;
-  readonly handlers?: Record<string, (params: unknown) => Effect.Effect<unknown, unknown>>;
+  readonly handlers?: Record<
+    string,
+    (params: unknown) => Effect.Effect<unknown, unknown, Resource>
+  >;
   /** Revalidates post-Tool transforms; keys must name Tools in this Plugin. */
   readonly toolResultValidators?: Readonly<Record<string, ToolResultValidator>>;
-  readonly hooks?: PluginHooks;
+  readonly hooks?: PluginHooks<Resource>;
 }
+
+/**
+ * Any Plugin regardless of its Resource. Layer's ROut is contravariant while
+ * hook/handler Effects are covariant in R, so no single parameterization
+ * accepts every Plugin; the union's arms cover both variance directions.
+ */
+export type AnyPlugin = Plugin<any, unknown> | Plugin<never, any>;
 
 export interface Definition {
   readonly instructions: string;
   readonly model: Model;
-  readonly plugins: ReadonlyArray<Plugin>;
+  readonly plugins: ReadonlyArray<AnyPlugin>;
 }
 
 export class DefinitionError extends Schema.TaggedErrorClass<DefinitionError>()("DefinitionError", {
@@ -57,13 +69,19 @@ type ServiceFree<Tools extends Record<string, Tool.Any>> = [
   ? unknown
   : never;
 
-type ToolkitlessPlugin = Omit<Plugin, "toolkit" | "handlers" | "toolResultValidators"> & {
+type ToolkitlessPlugin<Resource = never, ResourceError = never> = Omit<
+  Plugin<Resource, ResourceError>,
+  "toolkit" | "handlers" | "toolResultValidators"
+> & {
   readonly toolkit?: undefined;
   readonly handlers?: undefined;
   readonly toolResultValidators?: undefined;
 };
 
-export function definePlugin(plugin: ToolkitlessPlugin): Plugin;
+// NoInfer blocks contextual back-inference of Resource=any from AnyPlugin arrays.
+export function definePlugin<Resource = never, ResourceError = never>(
+  plugin: ToolkitlessPlugin<Resource, ResourceError>,
+): NoInfer<Plugin<Resource, ResourceError>>;
 export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
   readonly name: string;
   readonly toolkit: ToolkitValue;
@@ -74,8 +92,9 @@ export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
   >;
   readonly hooks?: PluginHooks;
 }): Plugin;
-export function definePlugin(plugin: unknown): Plugin {
-  return plugin as Plugin;
+// The impl return must be assignable to every overload return; only never is.
+export function definePlugin(plugin: unknown): never {
+  return plugin as never;
 }
 
 const toolRequiresHandler = (tool: Tool.Any): boolean =>

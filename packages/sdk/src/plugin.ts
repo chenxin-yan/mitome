@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import { DefinitionError } from "@mitome/core";
 import type { Plugin, PluginHooks, ToolHookContext, ToolResultHookContext } from "@mitome/core";
@@ -16,35 +16,37 @@ export type OutputSchema<Output = unknown> =
 
 export type Prompt = AiPrompt.Prompt;
 
-export interface HookContext {
+export interface HookContext<Resource = never> {
+  readonly resource: Resource;
   readonly signal: AbortSignal;
 }
 
-export interface PluginHooksDefinition {
-  readonly sessionStart?: (context: HookContext) => Promise<void>;
-  readonly sessionEnd?: (context: HookContext) => Promise<void>;
-  readonly turnStart?: (text: string, context: HookContext) => Promise<void>;
-  readonly turnEnd?: (text: string, context: HookContext) => Promise<void>;
-  readonly stepStart?: (prompt: Prompt, context: HookContext) => Promise<void>;
+export interface PluginHooksDefinition<Resource = never> {
+  readonly sessionStart?: (context: HookContext<Resource>) => Promise<void>;
+  readonly sessionEnd?: (context: HookContext<Resource>) => Promise<void>;
+  readonly turnStart?: (text: string, context: HookContext<Resource>) => Promise<void>;
+  readonly turnEnd?: (text: string, context: HookContext<Resource>) => Promise<void>;
+  readonly stepStart?: (prompt: Prompt, context: HookContext<Resource>) => Promise<void>;
   /** Receives the prompt used by the model, including any completed pre-Step transforms. */
-  readonly stepEnd?: (prompt: Prompt, context: HookContext) => Promise<void>;
-  readonly preStep?: (prompt: Prompt, context: HookContext) => Promise<Prompt>;
+  readonly stepEnd?: (prompt: Prompt, context: HookContext<Resource>) => Promise<void>;
+  readonly preStep?: (prompt: Prompt, context: HookContext<Resource>) => Promise<Prompt>;
   readonly preTool?: (
-    context: ToolHookContext & HookContext,
+    context: ToolHookContext & HookContext<Resource>,
   ) => Promise<void | { readonly reason: string }>;
-  readonly postTool?: (context: ToolResultHookContext & HookContext) => Promise<unknown>;
+  readonly postTool?: (context: ToolResultHookContext & HookContext<Resource>) => Promise<unknown>;
 }
 
-export interface Tool<Input = unknown, Output = unknown> {
+export interface Tool<Input = unknown, Output = unknown, Resource = never> {
   readonly name: string;
   readonly description?: string;
   readonly inputSchema: InputSchema<Input>;
   readonly outputSchema: OutputSchema<Output>;
-  readonly handler: (input: Input, context: HookContext) => Promise<Output>;
+  readonly handler: (input: Input, context: HookContext<Resource>) => Promise<Output>;
 }
 
-export const tool = <Input, Output>(definition: Tool<Input, Output>): Tool<Input, Output> =>
-  definition;
+export const tool = <Input, Output, Resource = never>(
+  definition: Tool<Input, Output, Resource>,
+): Tool<Input, Output, Resource> => definition;
 
 type StandardInput<Input> = StandardSchemaV1.Props<unknown, Input> &
   StandardJSONSchemaV1.Props<unknown, Input>;
@@ -85,49 +87,88 @@ const validate = async <Output>(
 };
 
 // Promise Hooks use an unknown error channel; Core owns lifecycle-specific error mapping.
-const promiseHook = <A>(callback: (signal: HookContext["signal"]) => Promise<A>) =>
-  // @effect-diagnostics-next-line unknownInEffectCatch:off
-  Effect.tryPromise({
-    try: callback,
-    catch: (cause) => cause,
+const promiseHook = <A, Resource>(
+  callback: (context: HookContext<Resource>) => Promise<A>,
+  resource: Context.Service<Resource, Resource> | undefined,
+): Effect.Effect<A, unknown, Resource> =>
+  Effect.gen(function* () {
+    const value =
+      resource === undefined ? (undefined as Resource) : yield* Effect.service(resource);
+    // @effect-diagnostics-next-line unknownInEffectCatch:off
+    return yield* Effect.tryPromise({
+      try: (signal) => callback({ resource: value, signal }),
+      catch: (cause) => cause,
+    });
   });
 
-const adaptHooks = (hooks: PluginHooksDefinition | undefined): PluginHooks | undefined => {
+const adaptHooks = <Resource>(
+  hooks: PluginHooksDefinition<Resource> | undefined,
+  resource: Context.Service<Resource, Resource> | undefined,
+): PluginHooks<Resource> | undefined => {
   if (hooks === undefined) return undefined;
-  const adapted: { -readonly [Key in keyof PluginHooks]?: PluginHooks[Key] } = {};
+  const adapted: { -readonly [Key in keyof PluginHooks<Resource>]?: PluginHooks<Resource>[Key] } =
+    {};
   const sessionStart = hooks.sessionStart;
-  if (sessionStart) adapted.sessionStart = promiseHook((signal) => sessionStart({ signal }));
+  if (sessionStart) adapted.sessionStart = promiseHook(sessionStart, resource);
   const sessionEnd = hooks.sessionEnd;
-  if (sessionEnd) adapted.sessionEnd = promiseHook((signal) => sessionEnd({ signal }));
+  if (sessionEnd) adapted.sessionEnd = promiseHook(sessionEnd, resource);
   const turnStart = hooks.turnStart;
-  if (turnStart) adapted.turnStart = (text) => promiseHook((signal) => turnStart(text, { signal }));
+  if (turnStart)
+    adapted.turnStart = (text) => promiseHook((context) => turnStart(text, context), resource);
   const turnEnd = hooks.turnEnd;
-  if (turnEnd) adapted.turnEnd = (text) => promiseHook((signal) => turnEnd(text, { signal }));
+  if (turnEnd)
+    adapted.turnEnd = (text) => promiseHook((context) => turnEnd(text, context), resource);
   const stepStart = hooks.stepStart;
   if (stepStart)
-    adapted.stepStart = (prompt) => promiseHook((signal) => stepStart(prompt, { signal }));
+    adapted.stepStart = (prompt) => promiseHook((context) => stepStart(prompt, context), resource);
   const stepEnd = hooks.stepEnd;
-  if (stepEnd) adapted.stepEnd = (prompt) => promiseHook((signal) => stepEnd(prompt, { signal }));
+  if (stepEnd)
+    adapted.stepEnd = (prompt) => promiseHook((context) => stepEnd(prompt, context), resource);
   const preStep = hooks.preStep;
   if (preStep)
     adapted.preStep = (prompt) =>
-      promiseHook((signal) => preStep(prompt, { signal })).pipe(
+      promiseHook((context) => preStep(prompt, context), resource).pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(AiPrompt.Prompt)),
       );
   const preTool = hooks.preTool;
   if (preTool)
-    adapted.preTool = (context) => promiseHook((signal) => preTool({ ...context, signal }));
+    adapted.preTool = (context) =>
+      promiseHook((resourceContext) => preTool({ ...context, ...resourceContext }), resource);
   const postTool = hooks.postTool;
   if (postTool)
-    adapted.postTool = (context) => promiseHook((signal) => postTool({ ...context, signal }));
+    adapted.postTool = (context) =>
+      promiseHook((resourceContext) => postTool({ ...context, ...resourceContext }), resource);
   return adapted;
 };
 
-export const definePlugin = (definition: {
+export interface PluginDefinition<Resource = never> {
   readonly name: string;
-  readonly tools: ReadonlyArray<Tool<any, unknown>>;
-  readonly hooks?: PluginHooksDefinition;
-}): Plugin => {
+  readonly tools: ReadonlyArray<Tool<any, unknown, Resource>>;
+  readonly hooks?: PluginHooksDefinition<Resource>;
+  readonly setup?: (context: Pick<HookContext<Resource>, "signal">) => Promise<Resource>;
+  readonly dispose?: (resource: Resource) => Promise<void>;
+}
+
+// A declared Resource without setup would hand handlers `undefined as Resource`,
+// so setup is mandatory whenever anything in the Plugin declares a Resource.
+export function definePlugin<Resource = never>(
+  definition: PluginDefinition<Resource> &
+    ([Resource] extends [never]
+      ? { readonly setup?: undefined; readonly dispose?: undefined }
+      : {
+          readonly setup: (
+            context: Pick<HookContext<NoInfer<Resource>>, "signal">,
+          ) => Promise<Resource>;
+        }),
+): NoInfer<Plugin<Resource, unknown>>;
+export function definePlugin<Resource = never>(
+  definition: PluginDefinition<Resource>,
+): Plugin<Resource, unknown> {
+  if (definition.dispose !== undefined && definition.setup === undefined) {
+    throw new DefinitionError({
+      message: `Plugin "${definition.name}" declares dispose without setup`,
+    });
+  }
   const names = new Set<string>();
   const definitions = definition.tools.map((tool) => {
     if (names.has(tool.name)) {
@@ -141,6 +182,11 @@ export const definePlugin = (definition: {
     };
   });
 
+  const service =
+    definition.setup === undefined
+      ? undefined
+      : Context.Service<Resource>(`@mitome/sdk/${definition.name}`);
+  const hooks = adaptHooks(definition.hooks, service);
   const tools = definitions.map(({ tool, input }) =>
     AiTool.dynamic(tool.name, {
       description: tool.description,
@@ -160,9 +206,35 @@ export const definePlugin = (definition: {
     ]),
   );
 
-  const hooks = adaptHooks(definition.hooks);
   return {
     name: definition.name,
+    ...(service === undefined
+      ? {}
+      : {
+          resource: Layer.effect(
+            service,
+            Effect.acquireRelease(
+              // @effect-diagnostics-next-line unknownInEffectCatch:off
+              Effect.tryPromise({
+                try: (signal) => definition.setup!({ signal }),
+                catch: (cause) => cause,
+              }),
+              (value, exit) => {
+                if (definition.dispose === undefined) return Effect.void;
+                const run = Effect.promise(() => definition.dispose!(value));
+                // On failure exits a disposer defect would replace the primary
+                // cause; log it instead so the original tagged error survives.
+                return Exit.isFailure(exit)
+                  ? run.pipe(
+                      Effect.catchCause((cause) =>
+                        Effect.logWarning("Plugin dispose failed", cause),
+                      ),
+                    )
+                  : run;
+              },
+            ),
+          ),
+        }),
     ...(hooks === undefined ? {} : { hooks }),
     toolkit: Toolkit.make(...tools),
     toolResultValidators,
@@ -170,12 +242,14 @@ export const definePlugin = (definition: {
       definitions.map(({ tool, input, output }) => [
         tool.name,
         (params: unknown) =>
-          // @effect-diagnostics-next-line unknownInEffectCatch:off
-          Effect.tryPromise({
-            try: async (signal) =>
-              validate(output, await tool.handler(await validate(input, params), { signal })),
-            catch: (cause) => cause,
-          }).pipe(
+          promiseHook(
+            async ({ resource, signal }) =>
+              validate(
+                output,
+                await tool.handler(await validate(input, params), { resource, signal }),
+              ),
+            service,
+          ).pipe(
             Effect.tapError((cause) => Effect.logWarning(`SDK Tool "${tool.name}" failed`, cause)),
             // SDK handlers are untrusted promises; the model gets a stable failure instead.
             Effect.mapError(() =>
@@ -189,4 +263,4 @@ export const definePlugin = (definition: {
       ]),
     ),
   };
-};
+}
