@@ -1,5 +1,6 @@
 export { DefinitionError, defineAgent, definePlugin } from "./definition.js";
 export type {
+  AnyPlugin,
   Definition,
   Plugin,
   PluginHooks,

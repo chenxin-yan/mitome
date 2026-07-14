@@ -32,6 +32,7 @@ export type ToolResultValidator = (result: unknown) => Effect.Effect<unknown, un
 
 export interface Plugin<Resource = never, ResourceError = never> {
   readonly name: string;
+  /** Required at runtime whenever hooks or handlers use a Resource; hooks run unprovided (missing-service defect) without it. */
   readonly resource?: Layer.Layer<Resource, ResourceError, never>;
   readonly toolkit?: Toolkit.Any;
   readonly handlers?: Record<
@@ -68,13 +69,19 @@ type ServiceFree<Tools extends Record<string, Tool.Any>> = [
   ? unknown
   : never;
 
-type ToolkitlessPlugin = Omit<Plugin, "toolkit" | "handlers" | "toolResultValidators"> & {
+type ToolkitlessPlugin<Resource = never, ResourceError = never> = Omit<
+  Plugin<Resource, ResourceError>,
+  "toolkit" | "handlers" | "toolResultValidators"
+> & {
   readonly toolkit?: undefined;
   readonly handlers?: undefined;
   readonly toolResultValidators?: undefined;
 };
 
-export function definePlugin(plugin: ToolkitlessPlugin): Plugin;
+// NoInfer blocks contextual back-inference of Resource=any from AnyPlugin arrays.
+export function definePlugin<Resource = never, ResourceError = never>(
+  plugin: ToolkitlessPlugin<Resource, ResourceError>,
+): NoInfer<Plugin<Resource, ResourceError>>;
 export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
   readonly name: string;
   readonly toolkit: ToolkitValue;
@@ -85,8 +92,9 @@ export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
   >;
   readonly hooks?: PluginHooks;
 }): Plugin;
-export function definePlugin(plugin: unknown): Plugin {
-  return plugin as Plugin;
+// The impl return must be assignable to every overload return; only never is.
+export function definePlugin(plugin: unknown): never {
+  return plugin as never;
 }
 
 const toolRequiresHandler = (tool: Tool.Any): boolean =>

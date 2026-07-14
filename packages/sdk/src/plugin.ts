@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import { DefinitionError } from "@mitome/core";
 import type { Plugin, PluginHooks, ToolHookContext, ToolResultHookContext } from "@mitome/core";
@@ -44,7 +44,7 @@ export interface Tool<Input = unknown, Output = unknown, Resource = never> {
   readonly handler: (input: Input, context: HookContext<Resource>) => Promise<Output>;
 }
 
-export const tool = <Input, Output, Resource>(
+export const tool = <Input, Output, Resource = never>(
   definition: Tool<Input, Output, Resource>,
 ): Tool<Input, Output, Resource> => definition;
 
@@ -141,13 +141,34 @@ const adaptHooks = <Resource>(
   return adapted;
 };
 
-export const definePlugin = <Resource = never>(definition: {
+export interface PluginDefinition<Resource = never> {
   readonly name: string;
   readonly tools: ReadonlyArray<Tool<any, unknown, Resource>>;
   readonly hooks?: PluginHooksDefinition<Resource>;
   readonly setup?: (context: Pick<HookContext<Resource>, "signal">) => Promise<Resource>;
   readonly dispose?: (resource: Resource) => Promise<void>;
-}): Plugin<Resource, unknown> => {
+}
+
+// A declared Resource without setup would hand handlers `undefined as Resource`,
+// so setup is mandatory whenever anything in the Plugin declares a Resource.
+export function definePlugin<Resource = never>(
+  definition: PluginDefinition<Resource> &
+    ([Resource] extends [never]
+      ? { readonly setup?: undefined; readonly dispose?: undefined }
+      : {
+          readonly setup: (
+            context: Pick<HookContext<NoInfer<Resource>>, "signal">,
+          ) => Promise<Resource>;
+        }),
+): NoInfer<Plugin<Resource, unknown>>;
+export function definePlugin<Resource = never>(
+  definition: PluginDefinition<Resource>,
+): Plugin<Resource, unknown> {
+  if (definition.dispose !== undefined && definition.setup === undefined) {
+    throw new DefinitionError({
+      message: `Plugin "${definition.name}" declares dispose without setup`,
+    });
+  }
   const names = new Set<string>();
   const definitions = definition.tools.map((tool) => {
     if (names.has(tool.name)) {
@@ -198,10 +219,19 @@ export const definePlugin = <Resource = never>(definition: {
                 try: (signal) => definition.setup!({ signal }),
                 catch: (cause) => cause,
               }),
-              (value) =>
-                definition.dispose === undefined
-                  ? Effect.void
-                  : Effect.promise(() => definition.dispose!(value)),
+              (value, exit) => {
+                if (definition.dispose === undefined) return Effect.void;
+                const run = Effect.promise(() => definition.dispose!(value));
+                // On failure exits a disposer defect would replace the primary
+                // cause; log it instead so the original tagged error survives.
+                return Exit.isFailure(exit)
+                  ? run.pipe(
+                      Effect.catchCause((cause) =>
+                        Effect.logWarning("Plugin dispose failed", cause),
+                      ),
+                    )
+                  : run;
+              },
             ),
           ),
         }),
@@ -233,4 +263,4 @@ export const definePlugin = <Resource = never>(definition: {
       ]),
     ),
   };
-};
+}

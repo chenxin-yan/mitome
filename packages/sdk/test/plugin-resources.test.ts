@@ -1,7 +1,10 @@
+// Bun's async matchers are typed void but must be awaited to stay within the test.
+// oxlint-disable typescript/await-thenable
 import { describe, expect, test } from "bun:test";
 import { Cause, Context, Effect, Exit, Layer, Result, Stream } from "effect";
-import { LanguageModel, Response, Toolkit } from "effect/unstable/ai";
-import { createSession, makeModel, type Plugin } from "@mitome/core";
+import { Response } from "effect/unstable/ai";
+import { createSession, type Plugin } from "@mitome/core";
+import { makeTestModel } from "./model.js";
 import {
   defineAgent,
   definePlugin,
@@ -33,47 +36,40 @@ const jsonStringSchema: InputSchema<string> = {
 };
 
 const textModel = () =>
-  makeModel(
-    Layer.succeed(LanguageModel.LanguageModel, {
-      streamText: () =>
-        Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
-    } as unknown as LanguageModel.Service),
+  makeTestModel(() =>
+    Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
   );
 
 const toolModel = (name: string, doneAt = 2) => {
   let calls = 0;
-  return makeModel(
-    Layer.succeed(LanguageModel.LanguageModel, {
-      streamText: (options: { readonly toolkit?: Toolkit.WithHandler<any> }) => {
-        calls += 1;
-        if (calls === doneAt)
-          return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-        const call = Response.makePart("tool-call", {
-          id: `call-${calls}`,
-          name,
-          params: "hello",
-          providerExecuted: false,
-        });
-        return Stream.concat(
-          Stream.succeed(call),
-          Stream.unwrap(
-            options.toolkit!.handle(name, "hello").pipe(
-              Effect.map((results) =>
-                Stream.map(results, (result) =>
-                  Response.makePart("tool-result", {
-                    id: call.id,
-                    name: call.name,
-                    providerExecuted: false,
-                    ...result,
-                  }),
-                ),
-              ),
+  return makeTestModel((options) => {
+    calls += 1;
+    if (calls === doneAt)
+      return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+    const call = Response.makePart("tool-call", {
+      id: `call-${calls}`,
+      name,
+      params: "hello",
+      providerExecuted: false,
+    });
+    return Stream.concat(
+      Stream.succeed(call),
+      Stream.unwrap(
+        options.toolkit!.handle(name, "hello").pipe(
+          Effect.map((results) =>
+            Stream.map(results, (result) =>
+              Response.makePart("tool-result", {
+                id: call.id,
+                name: call.name,
+                providerExecuted: false,
+                ...result,
+              }),
             ),
           ),
-        );
-      },
-    } as unknown as LanguageModel.Service),
-  );
+        ),
+      ),
+    );
+  });
 };
 
 describe("@mitome/sdk Plugin resources", () => {
@@ -137,13 +133,13 @@ describe("@mitome/sdk Plugin resources", () => {
     const second = definePlugin({
       name: "second",
       tools: [],
-      setup: async () => {
+      setup: async (): Promise<string> => {
         setupLog.push("setup:second");
         throw setupFailure;
       },
     });
 
-    expect(
+    await expect(
       withSession(
         defineAgent({ instructions: "Be concise.", model: textModel(), plugins: [first, second] }),
         async () => undefined,
@@ -170,7 +166,7 @@ describe("@mitome/sdk Plugin resources", () => {
           },
         },
       });
-    expect(
+    await expect(
       withSession(
         defineAgent({
           instructions: "Be concise.",
@@ -237,6 +233,103 @@ describe("@mitome/sdk Plugin resources", () => {
       result: "hello",
       isFailure: false,
     });
+  });
+
+  test("provides the resource to every Hook and disposes after sessionEnd", async () => {
+    const log: Array<string> = [];
+    const plugin = definePlugin({
+      name: "all-hooks",
+      tools: [
+        tool<string, string, string>({
+          name: "res-tool",
+          inputSchema: jsonStringSchema,
+          outputSchema: stringSchema,
+          handler: async (input, { resource }) => {
+            log.push(`tool:${resource}`);
+            return input;
+          },
+        }),
+      ],
+      setup: async () => {
+        log.push("setup");
+        return "res";
+      },
+      dispose: async (resource) => {
+        log.push(`dispose:${resource}`);
+      },
+      hooks: {
+        sessionStart: async ({ resource }) => void log.push(`sessionStart:${resource}`),
+        sessionEnd: async ({ resource }) => void log.push(`sessionEnd:${resource}`),
+        turnStart: async (_text, { resource }) => void log.push(`turnStart:${resource}`),
+        turnEnd: async (_text, { resource }) => void log.push(`turnEnd:${resource}`),
+        stepStart: async (_prompt, { resource }) => void log.push(`stepStart:${resource}`),
+        stepEnd: async (_prompt, { resource }) => void log.push(`stepEnd:${resource}`),
+        preStep: async (prompt, { resource }) => {
+          log.push(`preStep:${resource}`);
+          return prompt;
+        },
+        preTool: async ({ resource }) => void log.push(`preTool:${resource}`),
+        postTool: async ({ result, resource }) => {
+          log.push(`postTool:${resource}`);
+          return result;
+        },
+      },
+    });
+
+    await withSession(
+      defineAgent({ instructions: "Be concise.", model: toolModel("res-tool"), plugins: [plugin] }),
+      (session) => Array.fromAsync(session.prompt("Hi")),
+    );
+
+    expect(log).toEqual([
+      "setup",
+      "sessionStart:res",
+      "turnStart:res",
+      "stepStart:res",
+      "preStep:res",
+      "preTool:res",
+      "tool:res",
+      "postTool:res",
+      "stepEnd:res",
+      "stepStart:res",
+      "preStep:res",
+      "stepEnd:res",
+      "turnEnd:res",
+      "sessionEnd:res",
+      "dispose:res",
+    ]);
+  });
+
+  test("does not expose one core Plugin's resource to another", async () => {
+    const Owned = Context.Service<string>("test/Owned");
+    const Intruding = Context.Service<string>("test/Intruding");
+    const owner: Plugin<string> = {
+      name: "owner",
+      resource: Layer.succeed(Owned, "owned"),
+    };
+    // Both tags share the identifier type, so this compiles as Plugin<string>;
+    // only runtime per-plugin context isolation can reject the foreign lookup.
+    const intruder: Plugin<string> = {
+      name: "intruder",
+      resource: Layer.succeed(Intruding, "intruding"),
+      hooks: { sessionStart: Effect.asVoid(Effect.service(Owned)) },
+    };
+
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          createSession(
+            defineAgent({
+              instructions: "Be concise.",
+              model: textModel(),
+              plugins: [owner, intruder],
+            }),
+          ),
+        ),
+      ),
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
   });
 
   test("keeps a resource live across Turn cancellation and passes the Session AbortSignal", async () => {
@@ -382,5 +475,29 @@ describe("@mitome/sdk Plugin resources", () => {
       expect(Result.isSuccess(defect)).toBe(true);
       if (Result.isSuccess(defect)) expect(defect.success).toBe(disposeFailure);
     }
+  });
+
+  test("preserves the primary error when a disposer fails on a failed exit", async () => {
+    const primary = new Error("primary");
+    const log: Array<string> = [];
+    const plugin = definePlugin({
+      name: "failing-dispose",
+      tools: [],
+      setup: async () => "resource",
+      dispose: async (resource) => {
+        log.push(`dispose:${resource}`);
+        throw new Error("dispose failed");
+      },
+    });
+
+    await expect(
+      withSession(
+        defineAgent({ instructions: "Be concise.", model: textModel(), plugins: [plugin] }),
+        async () => {
+          throw primary;
+        },
+      ),
+    ).rejects.toBe(primary);
+    expect(log).toEqual(["dispose:resource"]);
   });
 });

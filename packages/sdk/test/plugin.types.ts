@@ -51,3 +51,43 @@ definePlugin({
     preStep: async () => undefined,
   },
 });
+
+// Resource inferred from setup flows into hooks and tool handlers.
+definePlugin({
+  name: "resource-inference",
+  tools: [
+    tool({
+      name: "query",
+      inputSchema: Schema.String,
+      outputSchema: Schema.String,
+      handler: async (_input, { resource }: { resource: { readonly db: string } }) => resource.db,
+    }),
+  ],
+  setup: async () => ({ db: "connection" }),
+  hooks: {
+    sessionStart: async ({ resource }) => {
+      const db: string = resource.db;
+      void db;
+    },
+  },
+});
+
+// @ts-expect-error Tools declaring a Resource require setup.
+definePlugin({
+  name: "resource-without-setup",
+  tools: [
+    tool<string, string, { readonly db: string }>({
+      name: "orphan",
+      inputSchema: Schema.String,
+      outputSchema: Schema.String,
+      handler: async (_input, { resource }) => resource.db,
+    }),
+  ],
+});
+
+// @ts-expect-error dispose requires setup.
+definePlugin({
+  name: "dispose-without-setup",
+  tools: [],
+  dispose: async (resource: string) => void resource,
+});
