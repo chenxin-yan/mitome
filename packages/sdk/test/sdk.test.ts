@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { Effect, Layer, Ref, Schema, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { createSession, makeModel } from "@mitome/core";

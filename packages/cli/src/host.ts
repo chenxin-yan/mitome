@@ -6,6 +6,7 @@
 import { dirname } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
+import { inspect } from "node:util";
 import type { Definition, TurnEvent } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
@@ -41,6 +42,11 @@ const render = (event: TurnEvent): void => {
     case "tool-result":
       process.stdout.write(`\n[tool ${event.name} ${event.isFailure ? "failed" : "completed"}]\n`);
       break;
+    case "approval-required":
+      process.stdout.write(
+        `\n[approval ${event.name}] ${inspect(event.params, { breakLength: Infinity })}\nApprove? [y/N] `,
+      );
+      break;
     case "response-complete":
       process.stdout.write("\n");
       break;
@@ -65,21 +71,43 @@ if (!isDefinition(loaded)) {
 
 const { Cause, Effect, Exit, Fiber, Stream } = effect;
 
+// Approval answers are consumed from the same reader mid-Turn, so prompts and
+// y/N decisions share one line source instead of a single prompt Stream.
+const input = createInterface({ input: process.stdin, crlfDelay: Infinity })[
+  Symbol.asyncIterator
+]();
+const nextLine = () =>
+  // @effect-diagnostics-next-line unknownInEffectCatch:off
+  Effect.tryPromise({
+    try: () => input.next().then((result) => (result.done ? undefined : result.value)),
+    catch: (cause) => cause,
+  });
+
 const program = Effect.scoped(
   Effect.gen(function* () {
     const session = yield* core.createSession(loaded);
-    const lines = Stream.fromAsyncIterable(
-      createInterface({ input: process.stdin, crlfDelay: Infinity }),
-      (error) => error,
-    );
-    yield* Stream.runForEach(lines, (text) =>
-      Stream.runForEach(session.prompt(text), (event) => Effect.sync(() => render(event))).pipe(
+    while (true) {
+      const text = yield* nextLine();
+      if (text === undefined) return;
+      yield* Stream.runForEach(session.prompt(text), (event) =>
+        Effect.gen(function* () {
+          render(event);
+          if (event.type !== "approval-required") return;
+          const answer = yield* nextLine();
+          if (answer?.trim().toLowerCase() === "y") {
+            yield* event.approve();
+          } else {
+            // Default, EOF, and unrecognized answers all deny with Core's default reason.
+            yield* event.deny();
+          }
+        }),
+      ).pipe(
         // A failed Turn is reported but keeps the Session usable for the next line.
         Effect.catch((error) =>
           Effect.sync(() => process.stderr.write(`${errorMessage(error)}\n`)),
         ),
-      ),
-    );
+      );
+    }
   }),
 );
 

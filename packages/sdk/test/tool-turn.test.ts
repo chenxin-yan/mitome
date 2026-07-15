@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { Effect, Schema, Stream } from "effect";
 import { Prompt, Response } from "effect/unstable/ai";
 import {

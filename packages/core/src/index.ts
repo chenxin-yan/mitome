@@ -5,12 +5,14 @@ export type {
   Plugin,
   PluginHooks,
   ToolHookContext,
+  ToolInputValidator,
   ToolResultHookContext,
   ToolResultValidator,
 } from "./definition.js";
 export { makeModel } from "./model.js";
 export type { Model } from "./model.js";
 export {
+  ApprovalResolutionError,
   SessionBusyError,
   SessionReleasedError,
   ToolExecutionDenied,

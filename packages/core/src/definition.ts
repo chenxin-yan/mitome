@@ -28,6 +28,7 @@ export interface PluginHooks<Resource = never> {
   readonly postTool?: (context: ToolResultHookContext) => Effect.Effect<unknown, unknown, Resource>;
 }
 
+export type ToolInputValidator = (input: unknown) => Effect.Effect<unknown, unknown>;
 export type ToolResultValidator = (result: unknown) => Effect.Effect<unknown, unknown>;
 
 export interface Plugin<Resource = never, ResourceError = never> {
@@ -39,6 +40,8 @@ export interface Plugin<Resource = never, ResourceError = never> {
     string,
     (params: unknown) => Effect.Effect<unknown, unknown, Resource>
   >;
+  /** Decodes Tool input for Hooks, approval predicates, and approval events. */
+  readonly toolInputValidators?: Readonly<Record<string, ToolInputValidator>>;
   /** Revalidates post-Tool transforms; keys must name Tools in this Plugin. */
   readonly toolResultValidators?: Readonly<Record<string, ToolResultValidator>>;
   readonly hooks?: PluginHooks<Resource>;
@@ -71,10 +74,11 @@ type ServiceFree<Tools extends Record<string, Tool.Any>> = [
 
 type ToolkitlessPlugin<Resource = never, ResourceError = never> = Omit<
   Plugin<Resource, ResourceError>,
-  "toolkit" | "handlers" | "toolResultValidators"
+  "toolkit" | "handlers" | "toolInputValidators" | "toolResultValidators"
 > & {
   readonly toolkit?: undefined;
   readonly handlers?: undefined;
+  readonly toolInputValidators?: undefined;
   readonly toolResultValidators?: undefined;
 };
 
@@ -87,6 +91,9 @@ export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
   readonly toolkit: ToolkitValue;
   readonly handlers: Toolkit.HandlersFrom<Toolkit.Tools<NoInfer<ToolkitValue>>> &
     ServiceFree<Toolkit.Tools<NoInfer<ToolkitValue>>>;
+  readonly toolInputValidators?: Readonly<
+    Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolInputValidator>>
+  >;
   readonly toolResultValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
   >;
@@ -123,6 +130,14 @@ export const validateDefinition: (definition: Definition) => Effect.Effect<void,
         toolNames.add(tool.name);
         pluginToolNames.add(tool.name);
         if (toolRequiresHandler(tool)) requiredHandlerNames.add(tool.name);
+      }
+
+      for (const name of Object.keys(plugin.toolInputValidators ?? {})) {
+        if (!pluginToolNames.has(name)) {
+          return yield* new DefinitionError({
+            message: `Tool input validator has no matching Tool: ${name}`,
+          });
+        }
       }
 
       for (const name of Object.keys(plugin.toolResultValidators ?? {})) {

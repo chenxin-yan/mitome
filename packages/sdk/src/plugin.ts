@@ -21,6 +21,11 @@ export interface HookContext<Resource = never> {
   readonly signal: AbortSignal;
 }
 
+export interface ToolApprovalContext {
+  readonly toolCallId: string;
+  readonly messages: ReadonlyArray<unknown>;
+}
+
 export interface PluginHooksDefinition<Resource = never> {
   readonly sessionStart?: (context: HookContext<Resource>) => Promise<void>;
   readonly sessionEnd?: (context: HookContext<Resource>) => Promise<void>;
@@ -41,6 +46,9 @@ export interface Tool<Input = unknown, Output = unknown, Resource = never> {
   readonly description?: string;
   readonly inputSchema: InputSchema<Input>;
   readonly outputSchema: OutputSchema<Output>;
+  readonly needsApproval?:
+    | boolean
+    | ((input: Input, context: ToolApprovalContext) => boolean | Promise<boolean>);
   readonly handler: (input: Input, context: HookContext<Resource>) => Promise<Output>;
 }
 
@@ -187,12 +195,37 @@ export function definePlugin<Resource = never>(
       ? undefined
       : Context.Service<Resource>(`@mitome/sdk/${definition.name}`);
   const hooks = adaptHooks(definition.hooks, service);
-  const tools = definitions.map(({ tool, input }) =>
-    AiTool.dynamic(tool.name, {
+  const tools = definitions.map(({ tool, input }) => {
+    const needsApproval = tool.needsApproval;
+    return AiTool.dynamic(tool.name, {
       description: tool.description,
       parameters: input.jsonSchema.input({ target: "draft-2020-12" }),
       failureMode: "return",
-    }),
+      ...(needsApproval === undefined
+        ? {}
+        : {
+            needsApproval:
+              typeof needsApproval === "boolean"
+                ? needsApproval
+                : (params: unknown, context: ToolApprovalContext) =>
+                    Effect.promise(() =>
+                      Promise.resolve()
+                        .then(() => needsApproval(params as never, context))
+                        .catch(() => true),
+                    ),
+          }),
+    });
+  });
+  const toolInputValidators = Object.fromEntries(
+    definitions.map(({ tool, input }) => [
+      tool.name,
+      (params: unknown) =>
+        // @effect-diagnostics-next-line unknownInEffectCatch:off
+        Effect.tryPromise({
+          try: () => validate(input, params),
+          catch: (cause) => cause,
+        }),
+    ]),
   );
   const toolResultValidators = Object.fromEntries(
     definitions.map(({ tool, output }) => [
@@ -237,6 +270,7 @@ export function definePlugin<Resource = never>(
         }),
     ...(hooks === undefined ? {} : { hooks }),
     toolkit: Toolkit.make(...tools),
+    toolInputValidators,
     toolResultValidators,
     handlers: Object.fromEntries(
       definitions.map(({ tool, input, output }) => [

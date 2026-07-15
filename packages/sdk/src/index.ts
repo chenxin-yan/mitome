@@ -1,4 +1,5 @@
 export {
+  ApprovalResolutionError,
   DefinitionError,
   SessionBusyError,
   SessionReleasedError,
@@ -15,7 +16,6 @@ export type {
   ToolHookContext,
   ToolResultHookContext,
   ToolResultValidator,
-  TurnEvent,
 } from "@mitome/core";
 export { definePlugin, tool } from "./plugin.js";
 export type {
@@ -28,4 +28,4 @@ export type {
   Tool,
 } from "./plugin.js";
 export { withSession } from "./session.js";
-export type { Session } from "./session.js";
+export type { Session, TurnEvent } from "./session.js";

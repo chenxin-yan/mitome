@@ -18,7 +18,7 @@
     "check:types": "tsc",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "test": "bun test test"
+    "test": "vitest run"
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
@@ -28,7 +28,8 @@
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
     "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "peerDependencies": {
     "@mitome/core": "workspace:*"

@@ -45,7 +45,7 @@ A named capability an Agent can invoke during a Session to inspect or affect som
 _Avoid_: Function, command
 
 **Approval**:
-A user decision allowing one pending Tool call to execute.
+A user decision allowing one pending Tool call to execute; the Turn stays paused until the decision is resolved or the Turn is interrupted.
 _Avoid_: Permission, confirmation
 
 **Credential**:

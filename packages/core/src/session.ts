@@ -1,8 +1,14 @@
-import { Context, Effect, Layer, Schema, Scope, Semaphore, Stream } from "effect";
+import { Context, Deferred, Effect, Layer, Schema, Scope, Semaphore, Stream } from "effect";
 import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
 import { validateDefinition } from "./definition.js";
-import type { AnyPlugin, Definition, DefinitionError, ToolResultValidator } from "./definition.js";
+import type {
+  AnyPlugin,
+  Definition,
+  DefinitionError,
+  ToolInputValidator,
+  ToolResultValidator,
+} from "./definition.js";
 import { getModelLayer } from "./model.js";
 
 export const ToolExecutionDenied = Schema.Struct({
@@ -20,6 +26,15 @@ export type TurnEvent =
       readonly name: string;
       readonly result: unknown;
       readonly isFailure: boolean;
+    }
+  | {
+      readonly type: "approval-required";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+      readonly name: string;
+      readonly params: unknown;
+      readonly approve: () => Effect.Effect<void, ApprovalResolutionError>;
+      readonly deny: (reason?: string) => Effect.Effect<void, ApprovalResolutionError>;
     }
   | { readonly type: "response-complete" };
 
@@ -49,6 +64,13 @@ export class TurnError extends Schema.TaggedErrorClass<TurnError>()("TurnError",
   message: Schema.String,
   cause: Schema.Unknown,
 }) {}
+
+export class ApprovalResolutionError extends Schema.TaggedErrorClass<ApprovalResolutionError>()(
+  "ApprovalResolutionError",
+  { message: Schema.String },
+) {}
+
+type ApprovalDecision = { readonly approved: boolean; readonly reason?: string };
 
 export interface Session {
   readonly prompt: (
@@ -145,42 +167,189 @@ const toolAiError = (method: string) =>
         }),
   );
 
+type PreparedTool =
+  | {
+      readonly _tag: "ok";
+      readonly key: string;
+      readonly toolCallId: string;
+      readonly params: unknown;
+      readonly veto: string | undefined;
+    }
+  | {
+      readonly _tag: "failure";
+      readonly key: string;
+      readonly toolCallId: string;
+      readonly params: unknown;
+      readonly hookFailure: unknown;
+    };
+
+type ApprovalToolkit = {
+  readonly toolkit: Toolkit.WithHandler<Record<string, Tool.Any>>;
+  readonly vetoReason: (toolCallId: string) => string | undefined;
+  readonly preToolFailure: (toolCallId: string) => { readonly cause: unknown } | undefined;
+  readonly preparedParams: (toolCallId: string) => { readonly value: unknown } | undefined;
+  readonly discardPrepared: (toolCallId: string) => void;
+  readonly clearPrepared: () => void;
+};
+
 const makeToolkit = (
   plugins: ReadonlyArray<AnyPlugin>,
   contexts: PluginContexts,
   semaphore: Semaphore.Semaphore,
-): Effect.Effect<Toolkit.WithHandler<Record<string, Tool.Any>>, never> => {
-  const tools = plugins.flatMap((plugin) => Object.values(plugin.toolkit?.tools ?? {}));
+): Effect.Effect<ApprovalToolkit, never> => {
+  const preparedByKey = new Map<string, Array<PreparedTool>>();
+  const preparedByCallId = new Map<string, PreparedTool>();
+  // Toolkit.handle lacks toolCallId, so name+params keys are FIFO. The handler
+  // retries a miss with decoded params to match transforming/defaulting schemas.
+  const canonicalize = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(canonicalize)
+      : typeof value === "object" && value !== null
+        ? Object.fromEntries(
+            Object.entries(value)
+              .sort(([left], [right]) => (left < right ? -1 : 1))
+              .map(([key, entry]) => [key, canonicalize(entry)]),
+          )
+        : value;
+  const keyFor = (name: string, params: unknown) =>
+    `${name}:${JSON.stringify(canonicalize(params))}`;
+  const discardPrepared = (toolCallId: string): void => {
+    const prepared = preparedByCallId.get(toolCallId);
+    if (prepared === undefined) return;
+    preparedByCallId.delete(toolCallId);
+    const items = preparedByKey.get(prepared.key)!;
+    const index = items.indexOf(prepared);
+    // Absent when a same-key shift in wrappedHandle already consumed it.
+    if (index >= 0) items.splice(index, 1);
+  };
+  const runPreTool = (name: string, params: unknown): Effect.Effect<string | undefined, unknown> =>
+    Effect.gen(function* () {
+      for (const plugin of plugins) {
+        const veto = yield* providePlugin(
+          plugin,
+          contexts,
+          plugin.hooks?.preTool?.({ name, params }) ?? Effect.void,
+        );
+        if (veto !== undefined) return veto.reason;
+      }
+      return undefined;
+    });
+  const baseTools = plugins.flatMap((plugin) => Object.values(plugin.toolkit?.tools ?? {}));
   const owners = new Map<string, AnyPlugin>();
   for (const plugin of plugins) {
     for (const tool of Object.values(plugin.toolkit?.tools ?? {})) owners.set(tool.name, plugin);
   }
+  const inputValidators: Readonly<Record<string, ToolInputValidator>> = Object.assign(
+    {},
+    ...plugins.map((plugin) => plugin.toolInputValidators ?? {}),
+  );
   const validators: Readonly<Record<string, ToolResultValidator>> = Object.assign(
     {},
     ...plugins.map((plugin) => plugin.toolResultValidators ?? {}),
   );
+  const tools = baseTools.map((tool) => {
+    const needsApproval = tool.needsApproval;
+    // No with-needsApproval combinator exists upstream, so clone the Tool;
+    // assumes Tool instances keep their data in enumerable own properties.
+    return Object.assign(Object.create(Object.getPrototypeOf(tool)), tool, {
+      needsApproval: (params: unknown, context: Tool.NeedsApprovalContext) =>
+        semaphore.withPermit(
+          Effect.gen(function* () {
+            const inputValidator = inputValidators[tool.name];
+            const input =
+              inputValidator === undefined
+                ? { _tag: "ok" as const, value: params }
+                : yield* inputValidator(params).pipe(
+                    Effect.map((value) => ({ _tag: "ok" as const, value })),
+                    Effect.catch((cause) =>
+                      Effect.succeed({ _tag: "failure" as const, value: params, cause }),
+                    ),
+                  );
+            const preTool = yield* runPreTool(tool.name, input.value).pipe(
+              Effect.map((veto) => ({ _tag: "ok" as const, veto })),
+              Effect.catch((cause) => Effect.succeed({ _tag: "failure" as const, cause })),
+            );
+            const prepared: PreparedTool =
+              preTool._tag === "failure"
+                ? {
+                    _tag: "failure",
+                    key: keyFor(tool.name, inputValidator === undefined ? input.value : params),
+                    toolCallId: context.toolCallId,
+                    params: input.value,
+                    hookFailure: preTool.cause,
+                  }
+                : {
+                    _tag: "ok",
+                    key: keyFor(tool.name, inputValidator === undefined ? input.value : params),
+                    toolCallId: context.toolCallId,
+                    params: input.value,
+                    veto: preTool.veto,
+                  };
+            const items = preparedByKey.get(prepared.key) ?? [];
+            items.push(prepared);
+            preparedByKey.set(prepared.key, items);
+            preparedByCallId.set(context.toolCallId, prepared);
+
+            if (preTool._tag === "failure" || preTool.veto !== undefined) return true;
+            if (needsApproval === undefined || typeof needsApproval === "boolean") {
+              return needsApproval ?? false;
+            }
+            if (input._tag === "failure") return true;
+            // @effect-diagnostics-next-line unknownInEffectCatch:off
+            return yield* Effect.try({
+              try: () => needsApproval(input.value as never, context),
+              catch: (cause) => cause,
+            }).pipe(
+              Effect.flatMap((result) =>
+                Effect.isEffect(result) ? result : Effect.succeed(result),
+              ),
+              // Predicate failures cannot execute the Tool: log and fail closed.
+              Effect.tapCause((cause) =>
+                Effect.logWarning(`needsApproval predicate for "${tool.name}" failed`, cause),
+              ),
+              Effect.orElseSucceed(() => true),
+            );
+          }),
+        ),
+    }) as Tool.Any;
+  });
   const toolkit = Toolkit.make(...tools);
   return toolkit
     .toHandlers(Object.assign({}, ...plugins.map((plugin) => plugin.handlers ?? {})) as never)
     .pipe(
       Effect.flatMap((handlers) => Effect.provide(toolkit, handlers)),
-      Effect.map((handlers): Toolkit.WithHandler<Record<string, Tool.Any>> => {
+      Effect.map((handlers): ApprovalToolkit => {
         const handle = handlers.handle as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
         const wrappedHandle = ((name: string, params: unknown) =>
           semaphore.withPermit(
             Effect.gen(function* () {
-              for (const plugin of plugins) {
-                const veto = yield* providePlugin(
-                  plugin,
-                  contexts,
-                  plugin.hooks?.preTool?.({ name, params }) ?? Effect.void,
-                ).pipe(hookAiError("preTool", "Pre-Tool Hook failed"));
-                if (veto !== undefined) return Stream.succeed(failureResult(veto.reason));
-              }
-
               // The whole Tool call runs in the owning Plugin's context: the handler
               // itself plus any schema decode/encode services from its resource.
               const owner = owners.get(name);
+              const tool = handlers.tools[name] as Tool.Any;
+              let prepared = preparedByKey.get(keyFor(name, params))?.shift();
+              if (prepared === undefined) {
+                const decodedParams = yield* providePlugin(
+                  owner,
+                  contexts,
+                  Schema.decodeUnknownEffect(tool.parametersSchema)(params),
+                ).pipe(
+                  // handlers.handle owns parameter failures; this decode only retries the prepared lookup.
+                  Effect.orElseSucceed(() => params),
+                );
+                prepared = preparedByKey.get(keyFor(name, decodedParams))?.shift();
+              }
+              if (prepared !== undefined) preparedByCallId.delete(prepared.toolCallId);
+              const veto =
+                prepared === undefined
+                  ? yield* runPreTool(name, params).pipe(
+                      hookAiError("preTool", "Pre-Tool Hook failed"),
+                    )
+                  : prepared._tag === "ok"
+                    ? prepared.veto
+                    : undefined;
+              if (veto !== undefined) return Stream.succeed(failureResult(veto));
+
               const results = yield* providePlugin(
                 owner,
                 contexts,
@@ -195,7 +364,6 @@ const makeToolkit = (
               if (!plugins.some((plugin) => plugin.hooks?.postTool !== undefined)) {
                 return Stream.fromIterable(results);
               }
-              const tool = handlers.tools[name] as Tool.Any;
               const validator = validators[name];
               const finalResults = yield* Effect.forEach(results, (handlerResult) =>
                 Effect.gen(function* () {
@@ -234,7 +402,34 @@ const makeToolkit = (
               return Stream.fromIterable(finalResults);
             }),
           )) as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
-        return { tools: handlers.tools, handle: wrappedHandle };
+        return {
+          toolkit: { tools: handlers.tools, handle: wrappedHandle },
+          vetoReason: (toolCallId) => {
+            const prepared = preparedByCallId.get(toolCallId);
+            if (prepared !== undefined && prepared._tag === "ok" && prepared.veto !== undefined) {
+              discardPrepared(toolCallId);
+              return prepared.veto;
+            }
+            return undefined;
+          },
+          preToolFailure: (toolCallId) => {
+            const prepared = preparedByCallId.get(toolCallId);
+            if (prepared !== undefined && prepared._tag === "failure") {
+              discardPrepared(toolCallId);
+              return { cause: prepared.hookFailure };
+            }
+            return undefined;
+          },
+          preparedParams: (toolCallId) => {
+            const prepared = preparedByCallId.get(toolCallId);
+            return prepared === undefined ? undefined : { value: prepared.params };
+          },
+          discardPrepared,
+          clearPrepared: () => {
+            preparedByKey.clear();
+            preparedByCallId.clear();
+          },
+        };
       }),
     );
 };
@@ -344,7 +539,7 @@ export const createSession: (
     }
   }
   const semaphore = yield* Semaphore.make(1);
-  const toolkit = yield* makeToolkit(definition.plugins, pluginContexts, semaphore);
+  const approvalToolkit = yield* makeToolkit(definition.plugins, pluginContexts, semaphore);
   let history = Prompt.make([{ role: "system", content: definition.instructions }]);
   let isReleased = false;
   let isTurnActive = false;
@@ -394,6 +589,8 @@ export const createSession: (
     }
 
     const parts: Array<Response.AnyPart> = [];
+    const toolCalls = new Map<string, { readonly name: string; readonly params: unknown }>();
+    const decisions: Array<Prompt.ToolApprovalResponsePart> = [];
     return Stream.unwrap(
       runStartHooks(
         definition.plugins,
@@ -412,37 +609,130 @@ export const createSession: (
               Effect.map((transformed) => {
                 endPrompt = transformed;
                 return (
-                  model.streamText({ prompt: transformed, toolkit }) as Stream.Stream<
-                    Response.StreamPart<Record<string, Tool.Any>>,
-                    unknown
-                  >
+                  model.streamText({
+                    prompt: transformed,
+                    toolkit: approvalToolkit.toolkit,
+                  }) as Stream.Stream<Response.StreamPart<Record<string, Tool.Any>>, unknown>
                 ).pipe(
                   Stream.mapError(modelTurnError),
                   Stream.tap((part) => Effect.sync(() => parts.push(part))),
-                  Stream.filter(
-                    (part) =>
-                      part.type === "text-delta" ||
-                      part.type === "tool-call" ||
-                      part.type === "tool-result",
-                  ),
-                  Stream.map((part): StepEvent => {
-                    if (part.type === "text-delta") {
-                      return { type: "model-output", text: part.delta };
-                    }
+                  Stream.flatMap((part): Stream.Stream<StepEvent, TurnError> => {
+                    if (part.type === "text-delta")
+                      return Stream.succeed({ type: "model-output", text: part.delta });
                     if (part.type === "tool-call") {
-                      return { type: "tool-call", id: part.id, name: part.name };
+                      toolCalls.set(part.id, { name: part.name, params: part.params });
+                      return Stream.succeed({ type: "tool-call", id: part.id, name: part.name });
                     }
-                    return {
-                      type: "tool-result",
-                      id: part.id,
-                      name: part.name,
-                      result: part.result,
-                      isFailure: part.isFailure,
-                    };
+                    if (part.type === "tool-result") {
+                      return Stream.succeed({
+                        type: "tool-result",
+                        id: part.id,
+                        name: part.name,
+                        result: part.result,
+                        isFailure: part.isFailure,
+                      });
+                    }
+                    if (part.type !== "tool-approval-request") return Stream.empty;
+
+                    const preToolFailure = approvalToolkit.preToolFailure(part.toolCallId);
+                    if (preToolFailure !== undefined) {
+                      return Stream.fail(
+                        new TurnError({
+                          message: "Pre-Tool Hook failed",
+                          cause: preToolFailure.cause,
+                        }),
+                      );
+                    }
+                    const veto = approvalToolkit.vetoReason(part.toolCallId);
+                    if (veto !== undefined) {
+                      decisions.push(
+                        Prompt.toolApprovalResponsePart({
+                          approvalId: part.approvalId,
+                          approved: false,
+                          reason: veto,
+                        }),
+                      );
+                      return Stream.empty;
+                    }
+                    const call = toolCalls.get(part.toolCallId);
+                    if (call === undefined) {
+                      return Stream.fail(
+                        new TurnError({
+                          message: "Tool approval request is missing its Tool call",
+                          cause: part,
+                        }),
+                      );
+                    }
+                    const preparedParams = approvalToolkit.preparedParams(part.toolCallId);
+                    return Stream.unwrap(
+                      Deferred.make<ApprovalDecision>().pipe(
+                        Effect.map((deferred) => {
+                          const resolve = (decision: ApprovalDecision) =>
+                            Deferred.succeed(deferred, decision).pipe(
+                              Effect.flatMap((resolved) =>
+                                resolved
+                                  ? Effect.void
+                                  : Effect.fail(
+                                      new ApprovalResolutionError({
+                                        message: "Approval decision has already been resolved",
+                                      }),
+                                    ),
+                              ),
+                            );
+                          return Stream.concat(
+                            Stream.succeed({
+                              type: "approval-required",
+                              approvalId: part.approvalId,
+                              toolCallId: part.toolCallId,
+                              name: call.name,
+                              params:
+                                preparedParams === undefined ? call.params : preparedParams.value,
+                              approve: () => resolve({ approved: true }),
+                              deny: (reason) =>
+                                resolve({ approved: false, reason: reason ?? "Approval denied" }),
+                            } satisfies TurnEvent),
+                            Stream.fromEffect(
+                              Deferred.await(deferred).pipe(
+                                Effect.tap((decision) =>
+                                  Effect.sync(() => {
+                                    decisions.push(
+                                      Prompt.toolApprovalResponsePart({
+                                        approvalId: part.approvalId,
+                                        approved: decision.approved,
+                                        ...(decision.reason === undefined
+                                          ? {}
+                                          : { reason: decision.reason }),
+                                      }),
+                                    );
+                                    if (!decision.approved)
+                                      approvalToolkit.discardPrepared(part.toolCallId);
+                                  }),
+                                ),
+                                Effect.ensuring(
+                                  Deferred.succeed(deferred, {
+                                    approved: false,
+                                    reason: "Approval decision is no longer pending",
+                                  }).pipe(Effect.asVoid),
+                                ),
+                              ),
+                            ).pipe(Stream.drain),
+                          );
+                        }),
+                      ),
+                    );
                   }),
                   Stream.concat(
                     Stream.suspend(() => {
-                      const nextPrompt = Prompt.concat(prompt, Prompt.fromResponseParts(parts));
+                      const responsePrompt = Prompt.concat(prompt, Prompt.fromResponseParts(parts));
+                      const nextPrompt =
+                        decisions.length === 0
+                          ? responsePrompt
+                          : Prompt.concat(
+                              responsePrompt,
+                              Prompt.fromMessages([
+                                Prompt.makeMessage("tool", { content: decisions }),
+                              ]),
+                            );
                       const next: Stream.Stream<StepEvent, TurnStepLimitError | TurnError> =
                         parts.some(
                           (part) => part.type === "tool-call" && part.providerExecuted !== true,
@@ -537,6 +827,7 @@ export const createSession: (
         ).pipe(
           Stream.ensuring(
             Effect.sync(() => {
+              approvalToolkit.clearPrepared();
               isTurnActive = false;
             }),
           ),

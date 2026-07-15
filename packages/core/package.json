@@ -19,14 +19,16 @@
     "check:types": "tsc",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "test": "bun test test"
+    "test": "vitest run"
   },
   "dependencies": {
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "@mitome/config": "workspace:*",
     "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

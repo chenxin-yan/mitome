@@ -1,12 +1,17 @@
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { spawn as spawnChild } from "node:child_process";
+import { createRequire } from "node:module";
+import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { text } from "node:stream/consumers";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
-const packageDir = resolve(import.meta.dir, "..");
+const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const binary = join(packageDir, "dist/mitome");
 const coreDir = resolve(packageDir, "../core");
-const effectDir = dirname(Bun.resolveSync("effect/package.json", packageDir));
+const effectDir = dirname(createRequire(import.meta.url).resolve("effect/package.json"));
 const corePackage = JSON.parse(await readFile(join(coreDir, "package.json"), "utf8")) as {
   version: string;
 };
@@ -54,6 +59,39 @@ export default { instructions: "Reply with the fixture output.", model, plugins:
 } };
 `;
 
+const approvalDefinitionSource = (marker: string): string => `
+import { writeFileSync } from "node:fs";
+import { Effect, Layer, Schema, Stream } from "effect";
+import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
+import { makeModel } from "@mitome/core";
+
+let calls = 0;
+const model = makeModel(Layer.effect(LanguageModel.LanguageModel, LanguageModel.make({
+  generateText: () => Effect.succeed([]),
+  streamText: () => {
+    calls += 1;
+    if (calls === 1) return Stream.succeed({
+      type: "tool-call", id: "call-approval", name: "dangerous", params: { action: "delete" },
+    });
+    return Stream.succeed({ type: "text-delta", id: "done", delta: "continued" });
+  },
+})));
+const dangerous = Tool.make("dangerous", {
+  parameters: Schema.Struct({ action: Schema.String }),
+  success: Schema.String,
+  needsApproval: true,
+});
+export default {
+  instructions: "Approve the fixture Tool.",
+  model,
+  plugins: [{
+    name: "dangerous",
+    toolkit: Toolkit.make(dangerous),
+    handlers: { dangerous: () => Effect.sync(() => { writeFileSync(${JSON.stringify(marker)}, "ran"); return "ran"; }) },
+  }],
+};
+`;
+
 type Fixture = {
   readonly root: string;
   readonly definition: string;
@@ -94,29 +132,73 @@ const spawn = (
   current: Fixture,
   env: Record<string, string> = current.env,
 ) => {
-  const process = Bun.spawn([binary, ...args], {
+  const child = spawnChild(binary, args, {
     cwd: current.root,
     env,
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
+    stdio: ["pipe", "pipe", "pipe"],
   });
-  void process.stdin.write(input);
-  void process.stdin.end();
-  return process;
+  child.stdin.end(input);
+  return child;
 };
 
-const output = async (process: ReturnType<typeof spawn>) => {
+const exited = (child: ReturnType<typeof spawn>) => {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(child.exitCode);
+  return new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+};
+
+const output = async (child: ReturnType<typeof spawn>) => {
   const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(process.stdout).text(),
-    new Response(process.stderr).text(),
-    process.exited,
+    text(child.stdout),
+    text(child.stderr),
+    exited(child),
   ]);
   return { stdout, stderr, exitCode };
 };
 
+const spawnInteractive = (args: ReadonlyArray<string>, current: Fixture) =>
+  spawnChild(binary, args, {
+    cwd: current.root,
+    env: current.env,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+type StdoutReader = AsyncIterator<string>;
+
+const readUntil = async (reader: StdoutReader, marker: string) => {
+  let output = "";
+  while (!output.includes(marker)) {
+    const next = await reader.next();
+    if (next.done) throw new Error(`Missing ${marker} in ${output}`);
+    output += next.value;
+  }
+  return output;
+};
+
+const rest = async (reader: StdoutReader) => {
+  let output = "";
+  for (let next = await reader.next(); !next.done; next = await reader.next()) {
+    output += next.value;
+  }
+  return output;
+};
+
+const exists = async (path: string) => {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+};
+
 beforeAll(async () => {
-  if (!(await Bun.file(binary).exists())) {
+  if (!(await exists(binary))) {
     throw new Error("Build @mitome/cli before running its subprocess tests");
   }
 });
@@ -182,9 +264,7 @@ describe("compiled mitome", () => {
   test("imports a Definition using real installed Effect without Bun on PATH", async () => {
     const current = await fixture();
     expect(
-      await Bun.file(
-        join(dirname(current.definition), "node_modules", "effect", "index.js"),
-      ).exists(),
+      await exists(join(dirname(current.definition), "node_modules", "effect", "index.js")),
     ).toBe(false);
     expect(
       JSON.parse(
@@ -326,7 +406,7 @@ export default {
     const missingCore = await output(spawn("", ["--use", missing.definition], missing));
     expect(missingCore.exitCode).toBe(1);
     expect(missingCore.stderr).toContain(`Install @mitome/core@${corePackage.version}`);
-    expect(await Bun.file(join(missing.root, "marker")).exists()).toBe(false);
+    expect(await exists(join(missing.root, "marker"))).toBe(false);
 
     const mismatch = await fixture(
       'import { writeFileSync } from "node:fs"; writeFileSync("marker", "ran");',
@@ -344,7 +424,7 @@ export default {
     const incompatibleCore = await output(spawn("", ["--use", mismatch.definition], mismatch));
     expect(incompatibleCore.exitCode).toBe(1);
     expect(incompatibleCore.stderr).toContain("999.0.0");
-    expect(await Bun.file(join(mismatch.root, "marker")).exists()).toBe(false);
+    expect(await exists(join(mismatch.root, "marker"))).toBe(false);
   });
 
   test("renders events and survives duplicate SIGINT during scoped Turn cleanup", async () => {
@@ -356,27 +436,86 @@ export default {
     };
     await writeFile(current.definition, definitionSource("first", { block: true, signalProbe }));
     const child = spawn("hello\n", ["--use", current.definition], current);
-    const reader = child.stdout.getReader();
-    const first = await reader.read();
-    const decoder = new TextDecoder();
-    const firstOutput = decoder.decode(first.value, { stream: true });
+    const reader = child.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
+    const first = await reader.next();
+    if (first.done) throw new Error("Missing first output");
+    const firstOutput = first.value;
     expect(firstOutput).toContain("first");
     expect(child.exitCode).toBeNull();
 
     const hostPid = Number(await readFile(signalProbe.pid, "utf8"));
     child.kill("SIGINT");
-    for (let attempt = 0; !(await Bun.file(signalProbe.cleanupStarted).exists()); attempt += 1) {
+    for (let attempt = 0; !(await exists(signalProbe.cleanupStarted)); attempt += 1) {
       if (attempt === 100) throw new Error("Session cleanup did not start");
-      await Bun.sleep(5);
+      await delay(5);
     }
     process.kill(hostPid, "SIGINT");
-    let rest = "";
-    for (let next = await reader.read(); !next.done; next = await reader.read()) {
-      rest += decoder.decode(next.value, { stream: true });
+    const tail = await rest(reader);
+    expect(await exited(child)).toBe(130);
+    expect(await exists(signalProbe.cleanupDone)).toBe(true);
+    expect(firstOutput + tail).not.toContain(" second");
+  });
+
+  test("approves, denies, defaults, and EOF-denies pending Tool execution", async () => {
+    const run = async (answer: string | undefined) => {
+      const current = await fixture();
+      const marker = join(current.root, "handler-ran");
+      await writeFile(current.definition, approvalDefinitionSource(marker));
+      const process = spawnInteractive(["--use", current.definition], current);
+      const reader = process.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
+      process.stdin.write("hello\n");
+      const initial = await readUntil(reader, "[approval dangerous]");
+      if (answer === undefined) process.stdin.end();
+      else process.stdin.end(answer);
+      const [tail, stderr, exitCode] = await Promise.all([
+        rest(reader),
+        text(process.stderr),
+        exited(process),
+      ]);
+      return {
+        current,
+        marker,
+        stdout: initial + tail,
+        stderr,
+        exitCode,
+        ran: await exists(marker),
+      };
+    };
+
+    const approved = await run("y\n");
+    expect(approved).toMatchObject({ exitCode: 0, stderr: "", ran: true });
+    expect(approved.stdout).toContain("action: 'delete'");
+    expect(approved.stdout).toContain("continued");
+
+    for (const answer of ["n\n", "\n", undefined]) {
+      const denied = await run(answer);
+      expect(denied).toMatchObject({ exitCode: 0, stderr: "", ran: false });
+      expect(denied.stdout).toContain("[approval dangerous]");
+      // Denial lets the Turn continue: the second model step still streams.
+      expect(denied.stdout).toContain("continued");
     }
-    rest += decoder.decode();
-    expect(await child.exited).toBe(130);
-    expect(await Bun.file(signalProbe.cleanupDone).exists()).toBe(true);
-    expect(firstOutput + rest).not.toContain(" second");
+  });
+
+  test("interrupts while a Tool approval is pending", async () => {
+    const current = await fixture();
+    const marker = join(current.root, "handler-ran");
+    await writeFile(current.definition, approvalDefinitionSource(marker));
+    const process = spawnInteractive(["--use", current.definition], current);
+    const reader = process.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
+    process.stdin.write("hello\n");
+    await readUntil(reader, "[approval dangerous]");
+    process.kill("SIGINT");
+    await expect(exited(process)).resolves.toBe(130);
+    expect(await exists(marker)).toBe(false);
+  });
+
+  test("uses Core directly without SDK runtime support", async () => {
+    const packageJson = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    expect(packageJson.devDependencies["@mitome/core"]).toBe("workspace:*");
+    expect(packageJson.dependencies?.["@mitome/sdk"]).toBeUndefined();
+    expect(packageJson.devDependencies["@mitome/sdk"]).toBeUndefined();
   });
 });
