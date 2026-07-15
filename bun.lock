@@ -81,6 +81,23 @@
       "name": "@mitome/openai",
       "version": "0.0.0",
       "dependencies": {
+        "@effect/ai-openai": "catalog:",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@mitome/config": "workspace:*",
+        "@mitome/core": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@mitome/core": "workspace:*",
+      },
+    },
+    "packages/openai-compatible": {
+      "name": "@mitome/openai-compatible",
+      "version": "0.0.0",
+      "dependencies": {
         "@effect/ai-openai-compat": "catalog:",
         "effect": "catalog:",
       },
@@ -114,6 +131,7 @@
     },
   },
   "catalog": {
+    "@effect/ai-openai": "4.0.0-beta.97",
     "@effect/ai-openai-compat": "4.0.0-beta.97",
     "@effect/vitest": "4.0.0-beta.97",
     "@types/bun": "^1.3.10",
@@ -153,6 +171,8 @@
     "@babel/traverse": ["@babel/traverse@7.29.0", "", { "dependencies": { "@babel/code-frame": "^7.29.0", "@babel/generator": "^7.29.0", "@babel/helper-globals": "^7.28.0", "@babel/parser": "^7.29.0", "@babel/template": "^7.28.6", "@babel/types": "^7.29.0", "debug": "^4.3.1" } }, "sha512-4HPiQr0X7+waHfyXPZpWPfWL/J7dcN1mx9gL6WdQVMbPnF3+ZhSMs8tCxN7oHddJE9fhNE7+lxdnlyemKfJRuA=="],
 
     "@babel/types": ["@babel/types@7.29.0", "", { "dependencies": { "@babel/helper-string-parser": "^7.27.1", "@babel/helper-validator-identifier": "^7.28.5" } }, "sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A=="],
+
+    "@effect/ai-openai": ["@effect/ai-openai@4.0.0-beta.97", "", { "peerDependencies": { "effect": "^4.0.0-beta.97" } }, "sha512-ydDvhhSm6PkRMZin3B2XG5BH0iSDG/slNFeS0z1RYVaS9G0zCXS4PhXx8iUyV4vbiCmEPIEQG4O5wnlAKX2qwg=="],
 
     "@effect/ai-openai-compat": ["@effect/ai-openai-compat@4.0.0-beta.97", "", { "peerDependencies": { "effect": "^4.0.0-beta.97" } }, "sha512-UIj+K8Nh70taGznspAKkD3Wspc4XRsET7JCwSTaO4hPygaAmQX5QL67bOJoi2zj27S5O1TBpD70gTepcaf4wQA=="],
 
@@ -265,6 +285,8 @@
     "@mitome/docs": ["@mitome/docs@workspace:apps/docs"],
 
     "@mitome/openai": ["@mitome/openai@workspace:packages/openai"],
+
+    "@mitome/openai-compatible": ["@mitome/openai-compatible@workspace:packages/openai-compatible"],
 
     "@mitome/sdk": ["@mitome/sdk@workspace:packages/sdk"],
 
