@@ -29,6 +29,9 @@ const configDirectory = (): string | undefined => {
   return configHome === undefined ? undefined : join(configHome, "mitome");
 };
 
+const isEnoent = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+
 const configEnvName = (line: string): string | undefined =>
   /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=/.exec(line)?.[1];
 
@@ -37,8 +40,7 @@ const readConfigEnv = async (path: string): Promise<string> => {
     return await readFile(path, "utf8");
   } catch (error) {
     // Missing config .env is normal; other filesystem errors must remain visible.
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")
-      return "";
+    if (isEnoent(error)) return "";
     throw error;
   }
 };
@@ -119,7 +121,7 @@ const maskedPrompt = async (
   input: () => Promise<string | undefined>,
 ): Promise<string> => {
   const stdin = process.stdin;
-  const raw = stdin.isTTY && typeof stdin.setRawMode === "function";
+  const raw = stdin.isTTY;
   if (raw) stdin.setRawMode(true);
   try {
     const value = await prompt(message, input);
@@ -268,16 +270,20 @@ const inspectCredential = async (path: string): Promise<CredentialDescriptor> =>
 const init = async (): Promise<void> => {
   const directory = requireConfigDirectory();
   const path = join(directory, "agent.ts");
-  const existing = await stat(path).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    return undefined;
-  });
-  if (existing !== undefined) {
-    throw new Error(`Definition already exists at ${path}; remove it or use mitome auth login.`);
+  for (const file of [path, join(directory, "package.json")]) {
+    const existing = await stat(file).catch((error: unknown) => {
+      if (!isEnoent(error)) throw error;
+      return undefined;
+    });
+    if (existing !== undefined) {
+      throw new Error(
+        `${file} already exists; remove it, or run mitome install and mitome auth login.`,
+      );
+    }
   }
 
   const input = makeInput();
-  const model = await prompt("OpenAI model identifier: ", input);
+  const model = (await prompt("OpenAI model identifier: ", input)).trim();
   if (model === "") throw new Error("OpenAI model identifier is required.");
   await mkdir(directory, { recursive: true });
   await writeFile(

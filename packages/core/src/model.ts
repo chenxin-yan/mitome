@@ -11,6 +11,14 @@ export interface Model {
 /** Provider-owned environment variable name available without starting a Session. */
 export type CredentialDescriptor = string;
 
+/** A provider credential sourced from the environment. */
+export interface Credential {
+  readonly name: string;
+}
+
+/** Declares the environment variable that supplies a provider credential at Session startup. */
+export const env = (name: string): Credential => ({ name });
+
 const modelLayers = new WeakMap<Model, Layer.Layer<LanguageModel.LanguageModel, unknown, never>>();
 const modelCredentials = new WeakMap<Model, CredentialDescriptor>();
 
