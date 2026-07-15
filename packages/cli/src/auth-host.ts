@@ -49,17 +49,22 @@ if (operation === undefined) {
   if (typeof capability.authenticate !== "function") {
     throw new Error("Definition Model authentication is unsupported.");
   }
-  const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })[
-    Symbol.asyncIterator
-  ]();
-  await capability.authenticate({
-    operation,
-    configDirectory: authConfigDirectory,
-    input: async () => {
-      const next = await lines.next();
-      return next.done ? undefined : next.value;
-    },
-    output: (text) => process.stdout.write(text),
-    ...(process.env.MITOME_NO_BROWSER === "1" ? { openBrowser: false } : {}),
-  });
+  const reader = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  const lines = reader[Symbol.asyncIterator]();
+  try {
+    await capability.authenticate({
+      operation,
+      configDirectory: authConfigDirectory,
+      input: async () => {
+        const next = await lines.next();
+        return next.done ? undefined : next.value;
+      },
+      output: (text) => process.stdout.write(text),
+      ...(process.env.MITOME_NO_BROWSER === "1" ? { openBrowser: false } : {}),
+    });
+  } finally {
+    // An open readline interface keeps the process alive on a TTY even after
+    // authenticate resolves; close it so login/logout exit instead of hanging.
+    reader.close();
+  }
 }

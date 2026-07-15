@@ -25,8 +25,11 @@ const directory = async () => {
   return value;
 };
 
+// Real Codex access tokens nest the account under this claim.
 const jwt = (accountId: string) =>
-  `header.${Buffer.from(JSON.stringify({ chatgpt_account_id: accountId })).toString("base64url")}.signature`;
+  `header.${Buffer.from(
+    JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } }),
+  ).toString("base64url")}.signature`;
 
 const callbackPort = async (): Promise<number> => {
   const server = Bun.serve({ port: 0, fetch: () => new Response() });
@@ -76,7 +79,7 @@ describe("Codex OAuth", () => {
         openBrowser: (url) => {
           authorization = url;
           const state = new URL(url).searchParams.get("state")!;
-          void fetch(`http://127.0.0.1:${port}/auth/callback?code=${marker}-code&state=${state}`);
+          void fetch(`http://localhost:${port}/auth/callback?code=${marker}-code&state=${state}`);
         },
         input: async () => new Promise(() => {}),
         output: () => {},
@@ -100,6 +103,14 @@ describe("Codex OAuth", () => {
         }),
       ]);
       expect(requests[0]!.code_verifier).toBeTruthy();
+      expect(url.searchParams.get("code_challenge")).toBe(
+        Buffer.from(
+          await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(requests[0]!.code_verifier!),
+          ),
+        ).toString("base64url"),
+      );
       expect((await stat(join(configDirectory, "auth.json"))).mode & 0o777).toBe(0o600);
       expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toEqual({
         "openai-codex": expect.objectContaining({ type: "oauth", accountId: "fixture-account" }),

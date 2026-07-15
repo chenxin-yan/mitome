@@ -73,32 +73,32 @@ const ensureDirectory = async (configDirectory: string): Promise<void> => {
 
 const acquireLock = async (configDirectory: string) => {
   const path = lockPath(configDirectory);
-  for (let retry = 0; retry < 2; retry += 1) {
-    for (let attempt = 0; attempt < 500; attempt += 1) {
-      try {
-        return await open(path, "wx", 0o600);
-      } catch (error) {
-        if (
-          typeof error !== "object" ||
-          error === null ||
-          !("code" in error) ||
-          error.code !== "EEXIST"
-        ) {
-          throw error;
-        }
-        await Bun.sleep(10);
+  for (let attempt = 0; attempt < 500; attempt += 1) {
+    try {
+      return await open(path, "wx", 0o600);
+    } catch (error) {
+      if (
+        typeof error !== "object" ||
+        error === null ||
+        !("code" in error) ||
+        error.code !== "EEXIST"
+      ) {
+        throw error;
       }
     }
     try {
+      // ponytail: stat+unlink reaping can race a concurrent reaper and drop a
+      // fresh lock; atomic temp+rename bounds the damage to one lost update.
       if (Date.now() - (await stat(path)).mtimeMs > 30_000) {
         await unlink(path);
         continue;
       }
     } catch (error) {
+      // The lock vanished between checks; retry immediately.
       if (isMissing(error)) continue;
       throw error;
     }
-    break;
+    await Bun.sleep(10);
   }
   throw new Error(`Credential storage lock timed out: ${path}`);
 };
@@ -144,7 +144,10 @@ const updateAuth = async (
     await writeAuth(configDirectory, await update(await readAuth(configDirectory)));
   } finally {
     await lock.close();
-    await unlink(lockPath(configDirectory));
+    await unlink(lockPath(configDirectory)).catch((error: unknown) => {
+      // A stale-reaped lock is already gone; don't mask the update's own error.
+      if (!isMissing(error)) throw error;
+    });
   }
 };
 
@@ -155,26 +158,31 @@ export const writeCredential = async (
   credential: OAuthCredential,
 ): Promise<void> => updateAuth(configDirectory, (auth) => ({ ...auth, [providerKey]: credential }));
 
-const base64url = (value: string): string => Buffer.from(value, "base64url").toString("utf8");
+const decodeBase64url = (value: string): string => Buffer.from(value, "base64url").toString("utf8");
 
 const accountId = (access: string): string => {
   const payload = access.split(".")[1];
   if (payload === undefined) throw new Error("OAuth access token did not contain an account.");
   let parsed: unknown;
   try {
-    parsed = JSON.parse(base64url(payload));
+    parsed = JSON.parse(decodeBase64url(payload));
   } catch {
     throw new Error("OAuth access token did not contain an account.");
   }
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    !("chatgpt_account_id" in parsed) ||
-    typeof parsed.chatgpt_account_id !== "string"
-  ) {
+  if (typeof parsed !== "object" || parsed === null) {
     throw new Error("OAuth access token did not contain an account.");
   }
-  return parsed.chatgpt_account_id;
+  // Codex nests the account under this claim; some tokens carry it top-level.
+  const claims = parsed as Record<string, unknown>;
+  const auth = claims["https://api.openai.com/auth"];
+  const id =
+    typeof auth === "object" && auth !== null
+      ? (auth as Record<string, unknown>)["chatgpt_account_id"]
+      : claims["chatgpt_account_id"];
+  if (typeof id !== "string" || id === "") {
+    throw new Error("OAuth access token did not contain an account.");
+  }
+  return id;
 };
 
 const token = async (tokenUrl: string, form: Record<string, string>): Promise<OAuthCredential> => {
@@ -269,6 +277,7 @@ export const login = async (options: LoginOptions): Promise<void> => {
     try {
       server = Bun.serve({
         port,
+        hostname: "localhost",
         fetch(request) {
           const url = new URL(request.url);
           if (url.pathname !== "/auth/callback") return new Response("Not found", { status: 404 });
@@ -277,25 +286,43 @@ export const login = async (options: LoginOptions): Promise<void> => {
             validateAuthorization(received, state);
             callback.resolve(received);
             return new Response("Authentication complete. You can close this page.");
-          } catch (error) {
-            callback.reject(error instanceof Error ? error : new Error("OAuth callback failed."));
+          } catch {
+            // A stray or mismatched callback must not abort a login in progress.
             return new Response("Authentication failed.", { status: 400 });
           }
         },
       });
-    } catch {
-      // A busy callback port still permits the pasted redirect flow.
+    } catch (error) {
+      // EADDRINUSE: another process holds the port; the pasted redirect flow still works.
+      if (
+        typeof error !== "object" ||
+        error === null ||
+        !("code" in error) ||
+        error.code !== "EADDRINUSE"
+      ) {
+        throw error;
+      }
+      options.output(`Callback port ${port} is busy; paste the redirect URL instead.\n`);
     }
 
     options.output(
       `Open this URL to authenticate:\n${authorization.toString()}\nPaste the redirect URL: `,
     );
     const openBrowser = options.openBrowser === undefined ? defaultBrowser : options.openBrowser;
-    if (openBrowser !== false) await openBrowser(authorization.toString());
+    if (openBrowser !== false) {
+      try {
+        await openBrowser(authorization.toString());
+      } catch {
+        // No browser opener (headless host): the printed URL and paste flow remain.
+      }
+    }
     const manual = options.input().then((input) => {
       if (input === undefined) throw new Error("OAuth input closed.");
       return parseAuthorizationInput(input);
     });
+    // The pasted-input branch can lose the race to the callback; a late Enter
+    // press must not become an unhandled rejection after login already succeeded.
+    manual.catch(() => {});
     const received = await (server === undefined
       ? manual
       : Promise.race([callback.promise, manual]));

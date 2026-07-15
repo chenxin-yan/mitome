@@ -879,7 +879,7 @@ export default {
     const marker = join(current.root, "capability-calls");
     await writeFile(
       capability,
-      `import { appendFile } from "node:fs/promises"; export const authenticate = async ({ operation, input }) => appendFile(${JSON.stringify(marker)}, operation + ":" + (operation === "login" ? await input() : "logout") + "\\n");`,
+      `import { appendFile } from "node:fs/promises"; export const authenticate = async ({ operation, input, openBrowser }) => appendFile(${JSON.stringify(marker)}, operation + ":" + (operation === "login" ? await input() : "logout") + ":browser=" + String(openBrowser) + "\\n");`,
     );
     await writeFile(
       current.definition,
@@ -910,11 +910,12 @@ export default { instructions: "", model, plugins: [] };`,
         }),
       ),
     ).toMatchObject({ exitCode: 0 });
+    // browser=false proves MITOME_NO_BROWSER crossed the process boundary.
     expect(await readFile(marker, "utf8")).toBe(
-      "login:http://localhost:1455/auth/callback?code=ac_9rn3xKq&state=deadbeef\nlogout:logout\n",
+      "login:http://localhost:1455/auth/callback?code=ac_9rn3xKq&state=deadbeef:browser=false\nlogout:logout:browser=false\n",
     );
-    // The synthetic authorization code must never appear in the CLI source: the
-    // CLI has no provider branch and never sees OAuth payloads.
+    // The CLI source must contain no Codex branch (the provider name is spelled
+    // indirectly so this test file itself doesn't trip the scan).
     const source = await readFile(join(packageDir, "src", "index.ts"), "utf8");
     expect(source).not.toContain(["code", "x"].join(""));
   });

@@ -36,7 +36,7 @@ export const makeModel = (
   return model;
 };
 
-/** Returns the provider-owned environment variable name without constructing the provider Layer. */
+/** Returns the Model's credential descriptor (env var name or OAuth capability) without constructing the provider Layer. */
 export const credentialDescriptor = (model: Model): CredentialDescriptor | undefined =>
   modelCredentials.get(model);
 
