@@ -29,7 +29,7 @@ const definitionPath = async (args: ReadonlyArray<string>): Promise<string> => {
   } else if (args.length === 2 && args[0] === "--use") {
     selected = args[1]!;
   } else {
-    throw new Error("Usage: mitome [--use <file>]");
+    throw new Error("Usage: mitome [install] [--use <file>]");
   }
 
   const path = resolve(selected);
@@ -78,14 +78,27 @@ const checkRuntime = async (path: string): Promise<void> => {
   const core = await resolvePackage("@mitome/core", path);
   if (core === undefined) {
     throw new Error(
-      `No @mitome/core is installed beside ${path}. Install @mitome/core@${corePackage.version} with the Definition dependencies.`,
+      `No @mitome/core is installed beside ${path}. Install @mitome/core@${corePackage.version} with the Definition dependencies (run \`mitome install\`).`,
     );
   }
   if (core.version !== corePackage.version) {
     throw new Error(
-      `@mitome/core beside ${path} is ${String(core.version)}; install @mitome/core@${corePackage.version} with the Definition dependencies.`,
+      `@mitome/core beside ${path} is ${String(core.version)}; install @mitome/core@${corePackage.version} with the Definition dependencies (run \`mitome install\`).`,
     );
   }
+};
+
+// No SIGINT forwarding (unlike runHost): the installer is short-lived and
+// terminal Ctrl-C reaches it through the process group.
+const install = async (path: string): Promise<void> => {
+  const child = Bun.spawn([process.execPath, "install"], {
+    cwd: dirname(path),
+    env: { ...process.env, BUN_BE_BUN: "1" },
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  process.exitCode = await child.exited;
 };
 
 const runHost = async (path: string): Promise<void> => {
@@ -106,7 +119,12 @@ const runHost = async (path: string): Promise<void> => {
 };
 
 const main = async (): Promise<void> => {
-  const path = await definitionPath(process.argv.slice(2));
+  const args = process.argv.slice(2);
+  if (args[0] === "install") {
+    await install(await definitionPath(args.slice(1)));
+    return;
+  }
+  const path = await definitionPath(args);
   await checkRuntime(path);
   await runHost(path);
 };

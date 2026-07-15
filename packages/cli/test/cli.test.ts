@@ -120,28 +120,73 @@ type Fixture = {
   };
 };
 
-const fixture = async (source = definitionSource("first")): Promise<Fixture> => {
-  const root = await mkdtemp(join(tmpdir(), "mitome-cli-"));
+const scaffold = async (prefix: string): Promise<Fixture> => {
+  const root = await mkdtemp(join(tmpdir(), prefix));
   temporaryDirectories.push(root);
-  const definition = join(root, "definition", "agent.ts");
-  const nodeModules = join(dirname(definition), "node_modules");
-  const core = join(nodeModules, "@mitome", "core");
-  await mkdir(core, { recursive: true });
-  await writeFile(definition, source);
-  await cp(join(coreDir, "dist"), join(core, "dist"), { recursive: true });
-  await cp(join(coreDir, "package.json"), join(core, "package.json"));
-  await symlink(effectDir, join(nodeModules, "effect"), "dir");
   const emptyPath = join(root, "empty-path");
   await mkdir(emptyPath);
   return {
     root,
-    definition,
+    definition: join(root, "definition", "agent.ts"),
     env: {
       HOME: join(root, "home"),
       XDG_CONFIG_HOME: join(root, "xdg"),
       PATH: emptyPath,
     },
   };
+};
+
+const fixture = async (source = definitionSource("first")): Promise<Fixture> => {
+  const current = await scaffold("mitome-cli-");
+  const nodeModules = join(dirname(current.definition), "node_modules");
+  const core = join(nodeModules, "@mitome", "core");
+  await mkdir(core, { recursive: true });
+  await writeFile(current.definition, source);
+  await cp(join(coreDir, "dist"), join(core, "dist"), { recursive: true });
+  await cp(join(coreDir, "package.json"), join(core, "package.json"));
+  await symlink(effectDir, join(nodeModules, "effect"), "dir");
+  return current;
+};
+
+const installFixture = async (options: { readonly core?: boolean } = {}): Promise<Fixture> => {
+  const current = await scaffold("mitome-install-");
+  const definition = current.definition;
+  const definitionDirectory = dirname(definition);
+  const packages = join(current.root, "pkgs");
+  const marker = join(current.root, "definition-ran");
+  await mkdir(join(packages, "local-dep"), { recursive: true });
+  await writeFile(
+    join(packages, "local-dep", "package.json"),
+    JSON.stringify({ name: "local-dep", version: "1.0.0" }),
+  );
+  await writeFile(join(packages, "local-dep", "index.js"), 'export default "installed";\n');
+  await mkdir(definitionDirectory, { recursive: true });
+  await writeFile(
+    definition,
+    `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "ran");`,
+  );
+
+  const dependencies: Record<string, string> = { "local-dep": "file:../pkgs/local-dep" };
+  if (options.core) {
+    const core = join(packages, "core");
+    await cp(join(coreDir, "dist"), join(core, "dist"), { recursive: true });
+    // The real core package.json declares "effect": "catalog:", which bun
+    // install cannot resolve outside the workspace; write a minimal stand-in.
+    await writeFile(
+      join(core, "package.json"),
+      JSON.stringify({
+        name: "@mitome/core",
+        version: corePackage.version,
+        exports: { ".": "./dist/index.js" },
+      }),
+    );
+    dependencies["@mitome/core"] = "file:../pkgs/core";
+  }
+  await writeFile(
+    join(definitionDirectory, "package.json"),
+    JSON.stringify({ name: "definition", private: true, dependencies }),
+  );
+  return current;
 };
 
 const spawn = (
@@ -226,6 +271,55 @@ afterEach(async () => {
 });
 
 describe("compiled mitome", () => {
+  test("installs Definition dependencies without Bun on PATH or executing the Definition", async () => {
+    const current = await installFixture();
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await mkdir(config, { recursive: true });
+    // If install ever loaded the config .env, bun would honor this setting and
+    // skip writing bun.lock, failing the lockfile assertion below.
+    await writeFile(join(config, ".env"), "BUN_CONFIG_SKIP_SAVE_LOCKFILE=1");
+
+    expect(
+      await output(spawn("", ["install", "--use", current.definition], current)),
+    ).toMatchObject({
+      exitCode: 0,
+    });
+    expect(
+      await exists(join(dirname(current.definition), "node_modules", "local-dep", "index.js")),
+    ).toBe(true);
+    expect(await exists(join(dirname(current.definition), "bun.lock"))).toBe(true);
+    expect(await exists(join(current.root, "definition-ran"))).toBe(false);
+  });
+
+  test("installs Core beside a Definition and then runs it", async () => {
+    const current = await installFixture({ core: true });
+    expect(
+      await output(spawn("", ["install", "--use", current.definition], current)),
+    ).toMatchObject({
+      exitCode: 0,
+    });
+    const coreModules = join(current.root, "pkgs", "core", "node_modules");
+    await mkdir(coreModules, { recursive: true });
+    await symlink(effectDir, join(dirname(current.definition), "node_modules", "effect"), "dir");
+    await symlink(effectDir, join(coreModules, "effect"), "dir");
+    await writeFile(current.definition, definitionSource("installed"));
+
+    expect(await output(spawn("hello\n", ["--use", current.definition], current))).toMatchObject({
+      exitCode: 0,
+      stdout: "installed second\n",
+      stderr: "",
+    });
+  });
+
+  test("preserves failed installer output and status", async () => {
+    const current = await installFixture();
+    await writeFile(join(dirname(current.definition), "package.json"), '{"name":');
+
+    const result = await output(spawn("", ["install", "--use", current.definition], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("package.json");
+  });
+
   test("loads only XDG or explicit TypeScript Definitions without Bun on PATH", async () => {
     const current = await fixture(definitionSource("default"));
     const configDefinition = join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts");
