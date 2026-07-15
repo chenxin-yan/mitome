@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
 // Bun embeds host.ts as source text at compile time; static analysis sees a module without a default export.
@@ -16,41 +16,6 @@ const configDirectory = (): string | undefined => {
   const home = process.env.HOME;
   const configHome = process.env.XDG_CONFIG_HOME || (home ? join(home, ".config") : undefined);
   return configHome === undefined ? undefined : join(configHome, "mitome");
-};
-
-const loadConfigEnv = async (): Promise<void> => {
-  const directory = configDirectory();
-  if (directory === undefined) return;
-  const envPath = join(directory, ".env");
-  let contents: string;
-  try {
-    contents = await readFile(envPath, "utf8");
-  } catch (error) {
-    // Missing config .env is normal; other filesystem errors must remain visible.
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")
-      return;
-    throw error;
-  }
-  for (const line of contents.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed === "" || trimmed.startsWith("#")) continue;
-    const match = /^(?:export )?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(trimmed);
-    if (match === null) {
-      throw new Error(`Invalid config environment entry in ${envPath}: ${line}`);
-    }
-    const [, name, rawValue] = match;
-    const input = rawValue!;
-    const quoted =
-      (input.startsWith('"') && input.endsWith('"')) ||
-      (input.startsWith("'") && input.endsWith("'"));
-    if (!quoted && /\s#/.test(input)) {
-      throw new Error(
-        `Inline comments are not supported in config environment entries in ${envPath}: ${line}`,
-      );
-    }
-    const value = quoted ? input.slice(1, -1) : input;
-    if (process.env[name!] === undefined) process.env[name!] = value;
-  }
 };
 
 const definitionPath = async (args: ReadonlyArray<string>): Promise<string> => {
@@ -124,8 +89,9 @@ const checkRuntime = async (path: string): Promise<void> => {
 };
 
 const runHost = async (path: string): Promise<void> => {
-  // --env-file=/dev/null keeps the host from implicitly loading a cwd .env into Definitions.
-  const child = Bun.spawn([process.execPath, "--env-file=/dev/null", "--eval", hostSource, path], {
+  const directory = configDirectory();
+  const envPath = directory === undefined ? "/dev/null" : join(directory, ".env");
+  const child = Bun.spawn([process.execPath, `--env-file=${envPath}`, "--eval", hostSource, path], {
     env: { ...process.env, BUN_BE_BUN: "1" },
     stdin: "inherit",
     stdout: "inherit",
@@ -138,7 +104,6 @@ const runHost = async (path: string): Promise<void> => {
 };
 
 const main = async (): Promise<void> => {
-  await loadConfigEnv();
   const path = await definitionPath(process.argv.slice(2));
   await checkRuntime(path);
   await runHost(path);

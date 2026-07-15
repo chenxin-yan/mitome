@@ -21,6 +21,7 @@
     "test": "bun test test"
   },
   "dependencies": {
+    "@effect/ai-openai-compat": "catalog:",
     "@mitome/core": "workspace:*",
     "effect": "catalog:"
   },

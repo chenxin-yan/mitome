@@ -10,6 +10,12 @@ import { env, openai } from "../src/index.js";
 const key = "MITOME_OPENAI_TEST_KEY";
 const sse = (data: unknown) =>
   `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
+const chunk = (delta: Record<string, unknown>, finishReason: string | null = null) => ({
+  id: "chatcmpl-test",
+  model: "gpt-4o-mini",
+  created: 1,
+  choices: [{ index: 0, finish_reason: finishReason, delta }],
+});
 
 const withKey = async <A>(run: () => Promise<A>): Promise<A> => {
   const previous = process.env[key];
@@ -38,10 +44,10 @@ describe("openai", () => {
         return new Response(
           new ReadableStream({
             async start(controller) {
-              controller.enqueue(sse({ choices: [{ delta: { content: "hel" } }] }));
+              controller.enqueue(sse(chunk({ content: "hel" })));
               firstChunk();
               await secondReleased;
-              controller.enqueue(sse({ choices: [{ delta: { content: "lo" } }] }));
+              controller.enqueue(sse(chunk({ content: "lo" }, "stop")));
               controller.enqueue(sse("[DONE]"));
               controller.close();
             },
@@ -143,7 +149,7 @@ describe("openai", () => {
         );
         expect(Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty)).toMatchObject({
           _tag: "TurnError",
-          cause: { reason: { _tag: "UnknownError" } },
+          cause: { reason: { _tag: "InvalidRequestError" } },
         });
       });
       expect(requests).toBe(1);
@@ -152,7 +158,7 @@ describe("openai", () => {
     }
   });
 
-  test("maps tool calls through the Core Tool loop when the stream closes without [DONE]", async () => {
+  test("maps tool calls through the Core Tool loop", async () => {
     let calls = 0;
     const server = Bun.serve({
       port: 0,
@@ -162,31 +168,29 @@ describe("openai", () => {
         if (calls === 1) {
           expect(body.tools).toHaveLength(1);
           return new Response(
-            sse({
-              choices: [
-                {
-                  delta: {
-                    tool_calls: [
-                      {
-                        index: 0,
-                        id: "call-1",
-                        type: "function",
-                        function: { name: "echo", arguments: '{"text":' },
-                      },
-                    ],
+            sse(
+              chunk({
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call-1",
+                    type: "function",
+                    function: { name: "echo", arguments: '{"text":' },
                   },
-                },
-              ],
-            }) +
-              sse({
-                choices: [
-                  { delta: { tool_calls: [{ index: 0, function: { arguments: '"hello"}' } }] } },
                 ],
               }),
+            ) +
+              sse(
+                chunk(
+                  { tool_calls: [{ index: 0, function: { arguments: '"hello"}' } }] },
+                  "tool_calls",
+                ),
+              ) +
+              sse("[DONE]"),
             { headers: { "content-type": "text/event-stream" } },
           );
         }
-        return new Response(sse({ choices: [{ delta: { content: "done" } }] }) + sse("[DONE]"), {
+        return new Response(sse(chunk({ content: "done" }, "stop")) + sse("[DONE]"), {
           headers: { "content-type": "text/event-stream" },
         });
       },
