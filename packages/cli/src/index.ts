@@ -12,15 +12,20 @@ type Package = {
 
 const hostSource: string = definitionHost;
 
+const configDirectory = (): string | undefined => {
+  const home = process.env.HOME;
+  const configHome = process.env.XDG_CONFIG_HOME || (home ? join(home, ".config") : undefined);
+  return configHome === undefined ? undefined : join(configHome, "mitome");
+};
+
 const definitionPath = async (args: ReadonlyArray<string>): Promise<string> => {
   let selected: string;
   if (args.length === 0) {
-    const home = process.env.HOME;
-    const configHome = process.env.XDG_CONFIG_HOME || (home ? join(home, ".config") : undefined);
-    if (configHome === undefined) {
+    const directory = configDirectory();
+    if (directory === undefined) {
       throw new Error("Set XDG_CONFIG_HOME or HOME, or use --use <file>.");
     }
-    selected = join(configHome, "mitome", "agent.ts");
+    selected = join(directory, "agent.ts");
   } else if (args.length === 2 && args[0] === "--use") {
     selected = args[1]!;
   } else {
@@ -84,7 +89,11 @@ const checkRuntime = async (path: string): Promise<void> => {
 };
 
 const runHost = async (path: string): Promise<void> => {
-  const child = Bun.spawn([process.execPath, "--eval", hostSource, path], {
+  const directory = configDirectory();
+  // Always pass --env-file: its presence (even /dev/null) suppresses Bun's automatic
+  // cwd .env autoload in the child, and Bun tolerates a missing file silently.
+  const envPath = directory === undefined ? "/dev/null" : join(directory, ".env");
+  const child = Bun.spawn([process.execPath, `--env-file=${envPath}`, "--eval", hostSource, path], {
     env: { ...process.env, BUN_BE_BUN: "1" },
     stdin: "inherit",
     stdout: "inherit",

@@ -59,6 +59,24 @@ export default { instructions: "Reply with the fixture output.", model, plugins:
 } };
 `;
 
+const envDefinitionSource = (): string => `
+import { Layer, Stream } from "effect";
+import { LanguageModel, Response } from "effect/unstable/ai";
+import { makeModel } from "@mitome/core";
+
+const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+  streamText: () => Stream.succeed(Response.makePart("text-delta", {
+    id: "env",
+    delta: [
+      process.env.OPENAI_API_KEY ?? "missing",
+      process.env.QUOTED_VALUE ?? "missing",
+      process.env.PROBE_ONLY_CWD ?? "absent",
+    ].join(":"),
+  })),
+}));
+export default { instructions: "", model, plugins: [] };
+`;
+
 const approvalDefinitionSource = (marker: string): string => `
 import { writeFileSync } from "node:fs";
 import { Effect, Layer, Schema, Stream } from "effect";
@@ -257,6 +275,53 @@ describe("compiled mitome", () => {
     ).toMatchObject({
       exitCode: 0,
       stdout: "fallback second\n",
+      stderr: "",
+    });
+  });
+
+  test("loads exported and quoted config .env values without cwd leakage, and preserves process values", async () => {
+    const current = await fixture(envDefinitionSource());
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await mkdir(config, { recursive: true });
+    await writeFile(
+      join(config, ".env"),
+      "export OPENAI_API_KEY=\"config-synthetic\"\nQUOTED_VALUE='quoted-synthetic'\n",
+    );
+    await writeFile(
+      join(current.root, ".env"),
+      "OPENAI_API_KEY=cwd-synthetic\nPROBE_ONLY_CWD=leaked\n",
+    );
+
+    expect(await output(spawn("hello\n", ["--use", current.definition], current))).toMatchObject({
+      exitCode: 0,
+      stdout: "config-synthetic:quoted-synthetic:absent\n",
+      stderr: "",
+    });
+    expect(
+      await output(
+        spawn("hello\n", ["--use", current.definition], current, {
+          ...current.env,
+          OPENAI_API_KEY: "process-synthetic",
+        }),
+      ),
+    ).toMatchObject({
+      exitCode: 0,
+      stdout: "process-synthetic:quoted-synthetic:absent\n",
+      stderr: "",
+    });
+
+    // No config home at all: the /dev/null --env-file fallback must still suppress
+    // Bun's automatic cwd .env autoload in the host.
+    expect(
+      await output(
+        spawn("hello\n", ["--use", current.definition], current, {
+          HOME: "",
+          PATH: current.env.PATH,
+        }),
+      ),
+    ).toMatchObject({
+      exitCode: 0,
+      stdout: "missing:missing:absent\n",
       stderr: "",
     });
   });

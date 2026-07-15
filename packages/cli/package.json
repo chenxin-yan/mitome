@@ -10,7 +10,7 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "bun build --compile src/index.ts --outfile dist/mitome",
+    "build": "bun build --compile --no-compile-autoload-dotenv src/index.ts --outfile dist/mitome",
     "check:types": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",

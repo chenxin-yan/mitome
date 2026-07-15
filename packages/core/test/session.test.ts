@@ -1,11 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Fiber, Stream } from "effect";
-import { Response } from "effect/unstable/ai";
+import { Cause, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
+import { LanguageModel, Response } from "effect/unstable/ai";
 import {
   createSession,
   type Definition,
+  makeModel,
   SessionBusyError,
   SessionReleasedError,
+  TurnError,
 } from "../src/index.js";
 import { makeDeterministicModel, makeTestModel } from "./model.js";
 
@@ -26,6 +28,26 @@ describe("createSession", () => {
         { type: "response-complete" },
       ]);
       expect(yield* fixture.calls).toBe(1);
+    }),
+  );
+
+  it.effect("wraps a failing model layer build as a TurnError at startup", () =>
+    Effect.gen(function* () {
+      class ProvisionFailure extends Schema.TaggedErrorClass<ProvisionFailure>()(
+        "ProvisionFailure",
+        { message: Schema.String },
+      ) {}
+      const model = makeModel(
+        Layer.effect(
+          LanguageModel.LanguageModel,
+          Effect.fail(new ProvisionFailure({ message: "no credential" })),
+        ),
+      );
+      const error = yield* Effect.flip(
+        Effect.scoped(createSession({ instructions: "", model, plugins: [] })),
+      );
+      expect(error).toBeInstanceOf(TurnError);
+      expect(error).toMatchObject({ _tag: "TurnError", message: "no credential" });
     }),
   );
 
