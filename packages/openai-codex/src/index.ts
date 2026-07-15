@@ -7,10 +7,9 @@ import { makeModel, type CredentialDescriptor, type Model } from "@mitome/core";
 
 const clientId = "app_EMoamEEZ73f0CkXaXp7hrann";
 const provider = "openai-codex";
-const defaultAuthorizeUrl = "https://auth.openai.com/oauth/authorize";
 const defaultTokenUrl = "https://auth.openai.com/oauth/token";
 
-export type ModelId = string & {};
+export type ModelId = string;
 
 export type OAuthCredential = {
   readonly type: "oauth";
@@ -28,13 +27,10 @@ type Output = (text: string) => void;
 export interface LoginOptions {
   readonly configDirectory: string;
   readonly callbackPort?: number;
-  readonly authorizeUrl?: string;
   readonly tokenUrl?: string;
   readonly openBrowser?: false | ((url: string) => void | Promise<void>);
   readonly input: Input;
   readonly output: Output;
-  readonly fetch?: typeof fetch;
-  readonly now?: () => number;
 }
 
 export interface LogoutOptions {
@@ -49,7 +45,7 @@ class CodexTransportUnavailableError extends Schema.TaggedErrorClass<CodexTransp
 
 /** Declares the single ChatGPT Credential used by a Codex Model. */
 export const oauth = (): CredentialDescriptor => ({
-  capability: { module: import.meta.url, provider },
+  capability: { module: import.meta.url },
 });
 
 /** Creates a Codex Model. Streaming transport is intentionally deferred to ticket #13. */
@@ -83,13 +79,10 @@ const acquireLock = async (configDirectory: string) => {
         return await open(path, "wx", 0o600);
       } catch (error) {
         if (
-          !isMissing(error) &&
-          !(
-            typeof error === "object" &&
-            error !== null &&
-            "code" in error &&
-            error.code === "EEXIST"
-          )
+          typeof error !== "object" ||
+          error === null ||
+          !("code" in error) ||
+          error.code !== "EEXIST"
         ) {
           throw error;
         }
@@ -184,13 +177,8 @@ const accountId = (access: string): string => {
   return parsed.chatgpt_account_id;
 };
 
-const token = async (
-  tokenUrl: string,
-  form: Record<string, string>,
-  fetcher: typeof fetch,
-  now: () => number,
-): Promise<OAuthCredential> => {
-  const response = await fetcher(tokenUrl, {
+const token = async (tokenUrl: string, form: Record<string, string>): Promise<OAuthCredential> => {
+  const response = await fetch(tokenUrl, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(form),
@@ -213,7 +201,7 @@ const token = async (
     type: "oauth",
     access: body.access_token,
     refresh: body.refresh_token,
-    expires: now() + body.expires_in * 1_000,
+    expires: Date.now() + body.expires_in * 1_000,
     accountId: accountId(body.access_token),
   };
 };
@@ -221,41 +209,22 @@ const token = async (
 type Authorization = {
   readonly code: string | undefined;
   readonly state: string | undefined;
-  readonly rawCode: boolean;
 };
 
 const parseAuthorizationInput = (input: string): Authorization => {
-  try {
-    const url = new URL(input);
-    return {
-      code: url.searchParams.get("code") ?? undefined,
-      state: url.searchParams.get("state") ?? undefined,
-      rawCode: false,
-    };
-  } catch {
-    const params = new URLSearchParams(input.replace(/^[?#]/, ""));
-    return {
-      code: params.get("code") ?? (input.includes("=") ? undefined : input || undefined),
-      state: params.get("state") ?? undefined,
-      rawCode: !input.includes("="),
-    };
-  }
+  const url = new URL(input);
+  return {
+    code: url.searchParams.get("code") ?? undefined,
+    state: url.searchParams.get("state") ?? undefined,
+  };
 };
 
-const validateAuthorization = (
-  authorization: Authorization,
-  state: string,
-): { readonly code: string } => {
-  if (
-    authorization.state !== state &&
-    !(authorization.rawCode && authorization.state === undefined)
-  ) {
-    throw new Error("OAuth callback state did not match.");
-  }
+const validateAuthorization = (authorization: Authorization, state: string): string => {
+  if (authorization.state !== state) throw new Error("OAuth callback state did not match.");
   if (authorization.code === undefined || authorization.code === "") {
     throw new Error("OAuth callback did not include a code.");
   }
-  return { code: authorization.code };
+  return authorization.code;
 };
 
 const randomHex = (): string =>
@@ -270,7 +239,6 @@ const challenge = async (value: string): Promise<string> =>
   );
 
 const defaultBrowser = (url: string): void => {
-  if (process.env.MITOME_NO_BROWSER === "1") return;
   const command =
     process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
   const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
@@ -283,8 +251,7 @@ export const login = async (options: LoginOptions): Promise<void> => {
   const redirectUri = `http://localhost:${port}/auth/callback`;
   const state = randomHex();
   const codeVerifier = verifier();
-  const authorization = new URL(options.authorizeUrl ?? defaultAuthorizeUrl);
-  authorization.pathname = "/oauth/authorize";
+  const authorization = new URL("https://auth.openai.com/oauth/authorize");
   authorization.search = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -296,12 +263,7 @@ export const login = async (options: LoginOptions): Promise<void> => {
     originator: "mitome",
   }).toString();
 
-  let resolveCallback!: (value: Authorization) => void;
-  let rejectCallback!: (error: Error) => void;
-  const callback = new Promise<Authorization>((resolve, reject) => {
-    resolveCallback = resolve;
-    rejectCallback = reject;
-  });
+  const callback = Promise.withResolvers<Authorization>();
   let server: ReturnType<typeof Bun.serve> | undefined;
   try {
     try {
@@ -310,17 +272,13 @@ export const login = async (options: LoginOptions): Promise<void> => {
         fetch(request) {
           const url = new URL(request.url);
           if (url.pathname !== "/auth/callback") return new Response("Not found", { status: 404 });
-          const received = {
-            code: url.searchParams.get("code") ?? undefined,
-            state: url.searchParams.get("state") ?? undefined,
-            rawCode: false,
-          };
+          const received = parseAuthorizationInput(request.url);
           try {
             validateAuthorization(received, state);
-            resolveCallback(received);
+            callback.resolve(received);
             return new Response("Authentication complete. You can close this page.");
           } catch (error) {
-            rejectCallback(error instanceof Error ? error : new Error("OAuth callback failed."));
+            callback.reject(error instanceof Error ? error : new Error("OAuth callback failed."));
             return new Response("Authentication failed.", { status: 400 });
           }
         },
@@ -338,23 +296,20 @@ export const login = async (options: LoginOptions): Promise<void> => {
       if (input === undefined) throw new Error("OAuth input closed.");
       return parseAuthorizationInput(input);
     });
-    const received = await Promise.race(server === undefined ? [manual] : [callback, manual]);
-    const { code } = validateAuthorization(received, state);
+    const received = await (server === undefined
+      ? manual
+      : Promise.race([callback.promise, manual]));
+    const code = validateAuthorization(received, state);
     await writeCredential(
       options.configDirectory,
       provider,
-      await token(
-        options.tokenUrl ?? defaultTokenUrl,
-        {
-          grant_type: "authorization_code",
-          client_id: clientId,
-          code,
-          code_verifier: codeVerifier,
-          redirect_uri: redirectUri,
-        },
-        options.fetch ?? fetch,
-        options.now ?? Date.now,
-      ),
+      await token(options.tokenUrl ?? defaultTokenUrl, {
+        grant_type: "authorization_code",
+        client_id: clientId,
+        code,
+        code_verifier: codeVerifier,
+        redirect_uri: redirectUri,
+      }),
     );
   } finally {
     void server?.stop(true);
@@ -369,38 +324,6 @@ export const logout = async (options: LogoutOptions): Promise<void> => {
   });
   options.output?.("Logged out.\n");
 };
-
-/** Refreshes the current rotating Credential while holding the storage lock. */
-export const refresh = async (
-  configDirectory: string,
-  options: {
-    readonly tokenUrl?: string;
-    readonly fetch?: typeof fetch;
-    readonly now?: () => number;
-  } = {},
-): Promise<void> =>
-  updateAuth(configDirectory, async (auth) => {
-    const current = auth[provider];
-    if (
-      typeof current !== "object" ||
-      current === null ||
-      !("type" in current) ||
-      current.type !== "oauth" ||
-      !("refresh" in current) ||
-      typeof current.refresh !== "string"
-    ) {
-      throw new Error("Codex Credential is unavailable.");
-    }
-    return {
-      ...auth,
-      [provider]: await token(
-        options.tokenUrl ?? defaultTokenUrl,
-        { grant_type: "refresh_token", refresh_token: current.refresh, client_id: clientId },
-        options.fetch ?? fetch,
-        options.now ?? Date.now,
-      ),
-    };
-  });
 
 /** Generic CLI entry point selected through Core's provider-owned capability. */
 export const authenticate = async (options: {

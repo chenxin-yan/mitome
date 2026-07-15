@@ -886,7 +886,7 @@ export default {
       `import { Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { makeModel } from "@mitome/core";
-const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, { streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "unused" })) }), { capability: { module: ${JSON.stringify(new URL(`file://${capability}`).href)}, provider: "fixture" } });
+const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, { streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "unused" })) }), { capability: { module: ${JSON.stringify(new URL(`file://${capability}`).href)} } });
 export default { instructions: "", model, plugins: [] };`,
     );
     expect(

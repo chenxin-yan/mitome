@@ -59,7 +59,7 @@ afterAll(async () => {
 describe("Codex OAuth", () => {
   test("carries a provider-owned OAuth capability without starting transport", () => {
     expect(credentialDescriptor(codex("fixture-model"))).toEqual({
-      capability: expect.objectContaining({ provider: "openai-codex" }),
+      capability: { module: expect.any(String) },
     });
   });
 
@@ -127,21 +127,24 @@ describe("Codex OAuth", () => {
           `http://localhost:${occupiedPort}/auth/callback?code=${marker}-code&state=${state}`,
         output: () => {},
       });
-      await login({
-        configDirectory,
-        callbackPort: occupiedPort,
-        tokenUrl: `http://127.0.0.1:${server.port}/oauth/token`,
-        openBrowser: false,
-        input: async () => `${marker}-raw-code`,
-        output: () => {},
-      });
+      await expect(
+        login({
+          configDirectory,
+          callbackPort: occupiedPort,
+          tokenUrl: `http://127.0.0.1:${server.port}/oauth/token`,
+          openBrowser: false,
+          input: async () => `${marker}-raw-code`,
+          output: () => {},
+        }),
+      ).rejects.toThrow();
       await expect(
         login({
           configDirectory,
           callbackPort: occupiedPort,
           tokenUrl: `http://127.0.0.1:${server.port}/oauth/token`,
           openBrowser: () => {},
-          input: async () => `code=${marker}-code&state=wrong`,
+          input: async () =>
+            `http://localhost:${occupiedPort}/auth/callback?code=${marker}-code&state=wrong`,
           output: () => {},
         }),
       ).rejects.toThrow("OAuth callback state did not match");
@@ -153,7 +156,7 @@ describe("Codex OAuth", () => {
           openBrowser: (url) => {
             state = new URL(url).searchParams.get("state")!;
           },
-          input: async () => `state=${state}`,
+          input: async () => `http://localhost:${occupiedPort}/auth/callback?state=${state}`,
           output: () => {},
         }),
       ).rejects.toThrow("OAuth callback did not include a code");
@@ -230,7 +233,7 @@ describe("Codex OAuth", () => {
         openBrowser: (url) => {
           state = new URL(url).searchParams.get("state")!;
         },
-        input: async () => `code=${marker}-code&state=${state}`,
+        input: async () => `http://localhost:0/auth/callback?code=${marker}-code&state=${state}`,
         output: (text) => output.push(text),
       });
       expect(output.join("")).not.toContain(marker);

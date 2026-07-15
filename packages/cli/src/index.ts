@@ -29,9 +29,7 @@ const isCredentialDescriptor = (value: unknown): value is CredentialDescriptor =
       typeof value.capability === "object" &&
       value.capability !== null &&
       "module" in value.capability &&
-      typeof value.capability.module === "string" &&
-      "provider" in value.capability &&
-      typeof value.capability.provider === "string";
+      typeof value.capability.module === "string";
 
 const configDirectory = (): string | undefined => {
   const home = process.env.HOME;
@@ -278,32 +276,25 @@ const inspectCredential = async (path: string): Promise<CredentialDescriptor> =>
 };
 
 const runOAuthAuth = async (path: string, command: "login" | "logout"): Promise<void> => {
-  const config = requireConfigDirectory();
-  const directory = await mkdtemp(join(tmpdir(), "mitome-auth-"));
-  const output = join(directory, "credential.json");
-  try {
-    const child = Bun.spawn(
-      [
-        process.execPath,
-        "--env-file=/dev/null",
-        "--eval",
-        authHostSource,
-        path,
-        output,
-        command,
-        config,
-      ],
-      {
-        env: { ...process.env, BUN_BE_BUN: "1" },
-        stdin: "inherit",
-        stdout: "inherit",
-        stderr: "inherit",
-      },
-    );
-    if ((await child.exited) !== 0) throw new Error("Provider authentication failed.");
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "--env-file=/dev/null",
+      "--eval",
+      authHostSource,
+      path,
+      "",
+      command,
+      requireConfigDirectory(),
+    ],
+    {
+      env: { ...process.env, BUN_BE_BUN: "1" },
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    },
+  );
+  if ((await child.exited) !== 0) throw new Error("Provider authentication failed.");
 };
 
 const init = async (): Promise<void> => {

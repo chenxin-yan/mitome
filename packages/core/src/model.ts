@@ -12,9 +12,7 @@ export interface Model {
  * Provider-owned credential metadata available without starting a Session: an
  * environment variable name, or a reference to an OAuth capability module.
  */
-export type CredentialDescriptor =
-  | string
-  | { readonly capability: { readonly module: string; readonly provider: string } };
+export type CredentialDescriptor = string | { readonly capability: { readonly module: string } };
 
 /** A provider credential sourced from the environment. */
 export interface Credential {

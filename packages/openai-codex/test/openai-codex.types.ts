@@ -9,7 +9,6 @@ import {
   login,
   logout,
   oauth,
-  refresh,
   writeCredential,
 } from "../src/index.js";
 
@@ -25,14 +24,6 @@ type PublicWriteCredential = (
   providerKey: string,
   credential: OAuthCredential,
 ) => Promise<void>;
-type PublicRefresh = (
-  configDirectory: string,
-  options?: {
-    readonly tokenUrl?: string;
-    readonly fetch?: typeof fetch;
-    readonly now?: () => number;
-  },
-) => Promise<void>;
 type PublicAuthenticate = (options: {
   readonly operation: "login" | "logout";
   readonly configDirectory: string;
@@ -47,7 +38,6 @@ const publicContracts: [
   Assert<Equal<typeof login, PublicLogin>>,
   Assert<Equal<typeof logout, PublicLogout>>,
   Assert<Equal<typeof writeCredential, PublicWriteCredential>>,
-  Assert<Equal<typeof refresh, PublicRefresh>>,
   Assert<Equal<typeof authenticate, PublicAuthenticate>>,
-] = [true, true, true, true, true, true, true];
+] = [true, true, true, true, true, true];
 void publicContracts;
