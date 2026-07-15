@@ -5,6 +5,7 @@ export type {
   Plugin,
   PluginHooks,
   ToolHookContext,
+  ToolInputValidator,
   ToolResultHookContext,
   ToolResultValidator,
 } from "./definition.js";

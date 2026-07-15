@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
+import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { createSession, makeModel, type Definition, type TurnEvent } from "../src/index.js";
 
 const approvalModel = () => {
@@ -275,6 +275,67 @@ describe("Tool Approval", () => {
 
       expect(preToolCalls).toBe(1);
       expect(handlerCalls).toBe(1);
+    }),
+  );
+
+  it.effect("runs pre-Tool once when decoded params add defaults", () =>
+    Effect.gen(function* () {
+      const fixture = approvalModel();
+      let preToolCalls = 0;
+      const dangerous = Tool.make("dangerous", {
+        parameters: Schema.Struct({
+          action: Schema.String,
+          destructive: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
+        }),
+        success: Schema.String,
+        needsApproval: false,
+      });
+      const session = yield* createSession({
+        instructions: "Be concise.",
+        model: fixture.model,
+        plugins: [
+          {
+            name: "dangerous",
+            toolkit: Toolkit.make(dangerous),
+            handlers: { dangerous: () => Effect.succeed("executed") },
+            hooks: {
+              preTool: () =>
+                Effect.sync(() => {
+                  preToolCalls += 1;
+                }),
+            },
+          },
+        ],
+      });
+      yield* Stream.runDrain(session.prompt("Hi"));
+
+      expect(preToolCalls).toBe(1);
+    }),
+  );
+
+  it.effect("maps an approval request without its Tool call to TurnError", () =>
+    Effect.gen(function* () {
+      const model = makeModel(
+        Layer.succeed(LanguageModel.LanguageModel, {
+          streamText: () =>
+            Stream.succeed(
+              Response.makePart("tool-approval-request", {
+                approvalId: "approval-missing",
+                toolCallId: "call-missing",
+              }),
+            ),
+        } as never),
+      );
+      const session = yield* createSession({
+        instructions: "Be concise.",
+        model,
+        plugins: [],
+      });
+
+      expect(yield* Effect.flip(Stream.runDrain(session.prompt("Hi")))).toMatchObject({
+        _tag: "TurnError",
+        message: "Tool approval request is missing its Tool call",
+      });
     }),
   );
 

@@ -32,6 +32,32 @@ const schema: InputSchema<{ readonly action: string }> = {
   },
 };
 
+const defaultingSchema: InputSchema<{
+  readonly action: string;
+  readonly destructive: boolean;
+}> = {
+  "~standard": {
+    version: 1,
+    vendor: "test",
+    validate: (value) => {
+      if (typeof value !== "object" || value === null || !("action" in value)) {
+        return { issues: [{ message: "expected action" }] };
+      }
+      return {
+        value: {
+          action: String(value.action),
+          destructive: true,
+        },
+        issues: undefined,
+      };
+    },
+    jsonSchema: {
+      input: () => ({ type: "object" }),
+      output: () => ({ type: "object" }),
+    },
+  },
+};
+
 const approvalModel = () => {
   let calls = 0;
   return {
@@ -154,6 +180,45 @@ describe("@mitome/sdk Tool Approval", () => {
       result: { action: "delete" },
       isFailure: false,
     });
+  });
+
+  test("exposes validated approval parameters", async () => {
+    const fixture = approvalModel();
+    let approvalParams: unknown;
+    let handlerInput: unknown;
+    const definition = defineAgent({
+      instructions: "Be concise.",
+      model: fixture.model,
+      plugins: [
+        definePlugin({
+          name: "dangerous",
+          tools: [
+            tool({
+              name: "dangerous",
+              inputSchema: defaultingSchema,
+              outputSchema: schema,
+              needsApproval: true,
+              handler: async (input) => {
+                handlerInput = input;
+                return input;
+              },
+            }),
+          ],
+        }),
+      ],
+    });
+
+    await withSession(definition, async (session) => {
+      for await (const event of session.prompt("Hi")) {
+        if (event.type === "approval-required") {
+          approvalParams = event.params;
+          await event.approve();
+        }
+      }
+    });
+
+    expect(approvalParams).toEqual({ action: "delete", destructive: true });
+    expect(handlerInput).toEqual(approvalParams);
   });
 
   test("approves through the streamed SDK event and completes the Turn", async () => {

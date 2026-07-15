@@ -6,6 +6,7 @@
 import { dirname } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
+import { inspect } from "node:util";
 import type { Definition, TurnEvent } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
@@ -42,7 +43,9 @@ const render = (event: TurnEvent): void => {
       process.stdout.write(`\n[tool ${event.name} ${event.isFailure ? "failed" : "completed"}]\n`);
       break;
     case "approval-required":
-      process.stdout.write(`\n[approval ${event.name}] Approve? [y/N] `);
+      process.stdout.write(
+        `\n[approval ${event.name}] ${inspect(event.params, { breakLength: Infinity })}\nApprove? [y/N] `,
+      );
       break;
     case "response-complete":
       process.stdout.write("\n");

@@ -71,13 +71,13 @@ const model = makeModel(Layer.effect(LanguageModel.LanguageModel, LanguageModel.
   streamText: () => {
     calls += 1;
     if (calls === 1) return Stream.succeed({
-      type: "tool-call", id: "call-approval", name: "dangerous", params: {},
+      type: "tool-call", id: "call-approval", name: "dangerous", params: { action: "delete" },
     });
     return Stream.succeed({ type: "text-delta", id: "done", delta: "continued" });
   },
 })));
 const dangerous = Tool.make("dangerous", {
-  parameters: Schema.Struct({}),
+  parameters: Schema.Struct({ action: Schema.String }),
   success: Schema.String,
   needsApproval: true,
 });
@@ -484,6 +484,7 @@ export default {
 
     const approved = await run("y\n");
     expect(approved).toMatchObject({ exitCode: 0, stderr: "", ran: true });
+    expect(approved.stdout).toContain("action: 'delete'");
     expect(approved.stdout).toContain("continued");
 
     for (const answer of ["n\n", "\n", undefined]) {

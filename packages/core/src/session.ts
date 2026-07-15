@@ -2,7 +2,13 @@ import { Context, Deferred, Effect, Layer, Schema, Scope, Semaphore, Stream } fr
 import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
 import { validateDefinition } from "./definition.js";
-import type { AnyPlugin, Definition, DefinitionError, ToolResultValidator } from "./definition.js";
+import type {
+  AnyPlugin,
+  Definition,
+  DefinitionError,
+  ToolInputValidator,
+  ToolResultValidator,
+} from "./definition.js";
 import { getModelLayer } from "./model.js";
 
 export const ToolExecutionDenied = Schema.Struct({
@@ -166,12 +172,14 @@ type PreparedTool =
       readonly _tag: "ok";
       readonly key: string;
       readonly toolCallId: string;
+      readonly params: unknown;
       readonly veto: string | undefined;
     }
   | {
       readonly _tag: "failure";
       readonly key: string;
       readonly toolCallId: string;
+      readonly params: unknown;
       readonly hookFailure: unknown;
     };
 
@@ -179,6 +187,7 @@ type ApprovalToolkit = {
   readonly toolkit: Toolkit.WithHandler<Record<string, Tool.Any>>;
   readonly vetoReason: (toolCallId: string) => string | undefined;
   readonly preToolFailure: (toolCallId: string) => { readonly cause: unknown } | undefined;
+  readonly preparedParams: (toolCallId: string) => { readonly value: unknown } | undefined;
   readonly discardPrepared: (toolCallId: string) => void;
   readonly clearPrepared: () => void;
 };
@@ -190,11 +199,8 @@ const makeToolkit = (
 ): Effect.Effect<ApprovalToolkit, never> => {
   const preparedByKey = new Map<string, Array<PreparedTool>>();
   const preparedByCallId = new Map<string, PreparedTool>();
-  // Toolkit.handle lacks toolCallId, so name+params keys are FIFO. Keys are
-  // built from decoded params in needsApproval but looked up with raw model
-  // params in handle; canonical key ordering keeps them equal. A transforming
-  // or defaulting parameters schema can still diverge — wrappedHandle's
-  // pre-Tool fallback covers that case.
+  // Toolkit.handle lacks toolCallId, so name+params keys are FIFO. The handler
+  // retries a miss with decoded params to match transforming/defaulting schemas.
   const canonicalize = (value: unknown): unknown =>
     Array.isArray(value)
       ? value.map(canonicalize)
@@ -233,6 +239,10 @@ const makeToolkit = (
   for (const plugin of plugins) {
     for (const tool of Object.values(plugin.toolkit?.tools ?? {})) owners.set(tool.name, plugin);
   }
+  const inputValidators: Readonly<Record<string, ToolInputValidator>> = Object.assign(
+    {},
+    ...plugins.map((plugin) => plugin.toolInputValidators ?? {}),
+  );
   const validators: Readonly<Record<string, ToolResultValidator>> = Object.assign(
     {},
     ...plugins.map((plugin) => plugin.toolResultValidators ?? {}),
@@ -243,40 +253,51 @@ const makeToolkit = (
     // assumes Tool instances keep their data in enumerable own properties.
     return Object.assign(Object.create(Object.getPrototypeOf(tool)), tool, {
       needsApproval: (params: unknown, context: Tool.NeedsApprovalContext) =>
-        semaphore.withPermit(runPreTool(tool.name, params)).pipe(
-          Effect.map((veto) => ({ _tag: "ok" as const, veto })),
-          Effect.catch((cause) => Effect.succeed({ _tag: "failure" as const, cause })),
-          Effect.tap((preTool) =>
-            Effect.sync(() => {
-              const prepared: PreparedTool =
-                preTool._tag === "failure"
-                  ? {
-                      _tag: "failure",
-                      key: keyFor(tool.name, params),
-                      toolCallId: context.toolCallId,
-                      hookFailure: preTool.cause,
-                    }
-                  : {
-                      _tag: "ok",
-                      key: keyFor(tool.name, params),
-                      toolCallId: context.toolCallId,
-                      veto: preTool.veto,
-                    };
-              const items = preparedByKey.get(prepared.key) ?? [];
-              items.push(prepared);
-              preparedByKey.set(prepared.key, items);
-              preparedByCallId.set(context.toolCallId, prepared);
-            }),
-          ),
-          Effect.flatMap((preTool) => {
-            if (preTool._tag === "failure" || preTool.veto !== undefined)
-              return Effect.succeed(true);
+        semaphore.withPermit(
+          Effect.gen(function* () {
+            const inputValidator = inputValidators[tool.name];
+            const input =
+              inputValidator === undefined
+                ? { _tag: "ok" as const, value: params }
+                : yield* inputValidator(params).pipe(
+                    Effect.map((value) => ({ _tag: "ok" as const, value })),
+                    Effect.catch((cause) =>
+                      Effect.succeed({ _tag: "failure" as const, value: params, cause }),
+                    ),
+                  );
+            const preTool = yield* runPreTool(tool.name, input.value).pipe(
+              Effect.map((veto) => ({ _tag: "ok" as const, veto })),
+              Effect.catch((cause) => Effect.succeed({ _tag: "failure" as const, cause })),
+            );
+            const prepared: PreparedTool =
+              preTool._tag === "failure"
+                ? {
+                    _tag: "failure",
+                    key: keyFor(tool.name, inputValidator === undefined ? input.value : params),
+                    toolCallId: context.toolCallId,
+                    params: input.value,
+                    hookFailure: preTool.cause,
+                  }
+                : {
+                    _tag: "ok",
+                    key: keyFor(tool.name, inputValidator === undefined ? input.value : params),
+                    toolCallId: context.toolCallId,
+                    params: input.value,
+                    veto: preTool.veto,
+                  };
+            const items = preparedByKey.get(prepared.key) ?? [];
+            items.push(prepared);
+            preparedByKey.set(prepared.key, items);
+            preparedByCallId.set(context.toolCallId, prepared);
+
+            if (preTool._tag === "failure" || preTool.veto !== undefined) return true;
             if (needsApproval === undefined || typeof needsApproval === "boolean") {
-              return Effect.succeed(needsApproval ?? false);
+              return needsApproval ?? false;
             }
+            if (input._tag === "failure") return true;
             // @effect-diagnostics-next-line unknownInEffectCatch:off
-            return Effect.try({
-              try: () => needsApproval(params as never, context),
+            return yield* Effect.try({
+              try: () => needsApproval(input.value as never, context),
               catch: (cause) => cause,
             }).pipe(
               Effect.flatMap((result) =>
@@ -302,11 +323,23 @@ const makeToolkit = (
         const wrappedHandle = ((name: string, params: unknown) =>
           semaphore.withPermit(
             Effect.gen(function* () {
-              const prepared = preparedByKey.get(keyFor(name, params))?.shift();
+              // The whole Tool call runs in the owning Plugin's context: the handler
+              // itself plus any schema decode/encode services from its resource.
+              const owner = owners.get(name);
+              const tool = handlers.tools[name] as Tool.Any;
+              let prepared = preparedByKey.get(keyFor(name, params))?.shift();
+              if (prepared === undefined) {
+                const decodedParams = yield* providePlugin(
+                  owner,
+                  contexts,
+                  Schema.decodeUnknownEffect(tool.parametersSchema)(params),
+                ).pipe(
+                  // handlers.handle owns parameter failures; this decode only retries the prepared lookup.
+                  Effect.orElseSucceed(() => params),
+                );
+                prepared = preparedByKey.get(keyFor(name, decodedParams))?.shift();
+              }
               if (prepared !== undefined) preparedByCallId.delete(prepared.toolCallId);
-              // Reachable when a transforming or defaulting parameters schema
-              // makes the decoded needsApproval key diverge from the raw model
-              // params key: run the pre-Tool Hooks here instead of skipping them.
               const veto =
                 prepared === undefined
                   ? yield* runPreTool(name, params).pipe(
@@ -317,9 +350,6 @@ const makeToolkit = (
                     : undefined;
               if (veto !== undefined) return Stream.succeed(failureResult(veto));
 
-              // The whole Tool call runs in the owning Plugin's context: the handler
-              // itself plus any schema decode/encode services from its resource.
-              const owner = owners.get(name);
               const results = yield* providePlugin(
                 owner,
                 contexts,
@@ -334,7 +364,6 @@ const makeToolkit = (
               if (!plugins.some((plugin) => plugin.hooks?.postTool !== undefined)) {
                 return Stream.fromIterable(results);
               }
-              const tool = handlers.tools[name] as Tool.Any;
               const validator = validators[name];
               const finalResults = yield* Effect.forEach(results, (handlerResult) =>
                 Effect.gen(function* () {
@@ -390,6 +419,10 @@ const makeToolkit = (
               return { cause: prepared.hookFailure };
             }
             return undefined;
+          },
+          preparedParams: (toolCallId) => {
+            const prepared = preparedByCallId.get(toolCallId);
+            return prepared === undefined ? undefined : { value: prepared.params };
           },
           discardPrepared,
           clearPrepared: () => {
@@ -621,8 +654,16 @@ export const createSession: (
                       );
                       return Stream.empty;
                     }
-                    // Upstream emits the tool-call part before its approval request.
-                    const call = toolCalls.get(part.toolCallId)!;
+                    const call = toolCalls.get(part.toolCallId);
+                    if (call === undefined) {
+                      return Stream.fail(
+                        new TurnError({
+                          message: "Tool approval request is missing its Tool call",
+                          cause: part,
+                        }),
+                      );
+                    }
+                    const preparedParams = approvalToolkit.preparedParams(part.toolCallId);
                     return Stream.unwrap(
                       Deferred.make<ApprovalDecision>().pipe(
                         Effect.map((deferred) => {
@@ -644,7 +685,8 @@ export const createSession: (
                               approvalId: part.approvalId,
                               toolCallId: part.toolCallId,
                               name: call.name,
-                              params: call.params,
+                              params:
+                                preparedParams === undefined ? call.params : preparedParams.value,
                               approve: () => resolve({ approved: true }),
                               deny: (reason) =>
                                 resolve({ approved: false, reason: reason ?? "Approval denied" }),

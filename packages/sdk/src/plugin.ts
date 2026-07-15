@@ -209,15 +209,24 @@ export function definePlugin<Resource = never>(
                 ? needsApproval
                 : (params: unknown, context: ToolApprovalContext) =>
                     Effect.promise(() =>
-                      // Approval predicates are trust boundaries: validate the raw
-                      // model params first, and fail closed on any failure.
-                      validate(input, params)
-                        .then((typed) => needsApproval(typed, context))
+                      Promise.resolve()
+                        .then(() => needsApproval(params as never, context))
                         .catch(() => true),
                     ),
           }),
     });
   });
+  const toolInputValidators = Object.fromEntries(
+    definitions.map(({ tool, input }) => [
+      tool.name,
+      (params: unknown) =>
+        // @effect-diagnostics-next-line unknownInEffectCatch:off
+        Effect.tryPromise({
+          try: () => validate(input, params),
+          catch: (cause) => cause,
+        }),
+    ]),
+  );
   const toolResultValidators = Object.fromEntries(
     definitions.map(({ tool, output }) => [
       tool.name,
@@ -261,6 +270,7 @@ export function definePlugin<Resource = never>(
         }),
     ...(hooks === undefined ? {} : { hooks }),
     toolkit: Toolkit.make(...tools),
+    toolInputValidators,
     toolResultValidators,
     handlers: Object.fromEntries(
       definitions.map(({ tool, input, output }) => [
