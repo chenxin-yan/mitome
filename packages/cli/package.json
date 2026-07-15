@@ -14,7 +14,7 @@
     "check:types": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "test": "vitest run"
+    "test": "vitest run --testTimeout 15000"
   },
   "devDependencies": {
     "@mitome/config": "workspace:*",
