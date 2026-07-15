@@ -36,7 +36,7 @@ describe("openaiCompatible", () => {
           baseUrl: "http://localhost:1",
         }),
       ),
-    ).toEqual({ kind: "env", name: "MITOME_TEST_API_KEY" });
+    ).toBe("MITOME_TEST_API_KEY");
   });
 
   test("passes known and arbitrary model ids unchanged and streams text incrementally", async () => {

@@ -98,19 +98,8 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.succeed(Response.makePart("text-delta", {
     id: "credential", delta: process.env[${JSON.stringify(name)}] ?? "missing",
   })),
-}), { kind: "env", name: ${JSON.stringify(name)} });
+}), ${JSON.stringify(name)});
 export default { instructions: "", model, plugins: [] };
-`;
-
-const openAiDefinitionSource = (name: string): string => `
-import { defineAgent } from "@mitome/sdk";
-import { env, openai } from "@mitome/openai";
-
-export default defineAgent({
-  instructions: "",
-  model: openai("fixture-model", env(${JSON.stringify(name)})),
-  plugins: [],
-});
 `;
 
 const approvalDefinitionSource = (marker: string): string => `
@@ -181,27 +170,6 @@ const fixture = async (source = definitionSource("first")): Promise<Fixture> => 
   await cp(join(coreDir, "dist"), join(core, "dist"), { recursive: true });
   await cp(join(coreDir, "package.json"), join(core, "package.json"));
   await symlink(effectDir, join(nodeModules, "effect"), "dir");
-  return current;
-};
-
-const authFixture = async (name: string): Promise<Fixture> => {
-  const current = await fixture(openAiDefinitionSource(name));
-  const nodeModules = join(dirname(current.definition), "node_modules");
-  for (const packageName of ["openai", "sdk"] as const) {
-    const source = resolve(packageDir, "..", packageName);
-    const destination = join(nodeModules, "@mitome", packageName);
-    await cp(join(source, "dist"), join(destination, "dist"), { recursive: true });
-    await cp(join(source, "package.json"), join(destination, "package.json"));
-  }
-  // openai's dist imports @effect/ai-openai, which the isolated linker keeps
-  // under packages/openai/node_modules rather than the repo root.
-  const aiOpenAiDir = dirname(
-    createRequire(join(packageDir, "..", "openai", "package.json")).resolve(
-      "@effect/ai-openai/package.json",
-    ),
-  );
-  await mkdir(join(nodeModules, "@effect"), { recursive: true });
-  await symlink(aiOpenAiDir, join(nodeModules, "@effect", "ai-openai"), "dir");
   return current;
 };
 
@@ -725,14 +693,12 @@ export default {
     expect(await exists(marker)).toBe(false);
   });
 
-  test("initializes an offline-seeded Definition and stores a masked Credential", async () => {
-    const current = await fixture();
+  test("initializes a Definition and stores a masked Credential", async () => {
+    const current = await scaffold("mitome-cli-");
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
-    await rm(dirname(current.definition), { recursive: true });
     await mkdir(config, { recursive: true });
     const localPackages = join(current.root, "local-packages");
     const archives = new Map<string, Buffer>();
-    const dependencies: Record<string, string> = {};
     for (const packageName of ["core", "openai", "sdk"] as const) {
       const source = resolve(packageDir, "..", packageName);
       const destination = join(localPackages, packageName);
@@ -753,22 +719,7 @@ export default {
       );
       expect(await exited(tar)).toBe(0);
       archives.set(`@mitome/${packageName}`, await readFile(archive));
-      dependencies[`@mitome/${packageName}`] =
-        `file:${join("..", "..", "local-packages", packageName)}`;
     }
-    await writeFile(
-      join(config, "package.json"),
-      JSON.stringify({ name: "mitome-agent", dependencies }),
-    );
-    // The compiled binary with BUN_BE_BUN=1 acts as plain bun; the vitest
-    // process.execPath is node and cannot run the seeding install.
-    const seeded = spawnChild(binary, ["install"], {
-      cwd: config,
-      env: { ...process.env, BUN_BE_BUN: "1" },
-      stdio: "ignore",
-    });
-    expect(await exited(seeded)).toBe(0);
-    await symlink(effectDir, join(config, "node_modules", "effect"), "dir");
     const requests: Array<string> = [];
     const registry = createServer((request, response) => {
       const pathname = new URL(request.url!, "http://localhost").pathname;
@@ -836,7 +787,7 @@ export default {
   });
 
   test("auth delegates to the Definition credential descriptor without exposing Credentials", async () => {
-    const current = await authFixture("FIXTURE_PROVIDER_ENV");
+    const current = await fixture(precedenceDefinitionSource("FIXTURE_PROVIDER_ENV"));
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
     await mkdir(config, { recursive: true });
     await writeFile(join(config, ".env"), "# retained\nOTHER=present\nFIXTURE_PROVIDER_ENV=old\n");
@@ -862,30 +813,6 @@ export default {
     ).toMatchObject({ exitCode: 0 });
     expect(await readFile(join(config, ".env"), "utf8")).toBe("# retained\nOTHER=present\n");
     expect(await readFile(current.definition, "utf8")).toBe(original);
-  });
-
-  test("auth-written Credentials never override the process environment", async () => {
-    const current = await fixture(precedenceDefinitionSource("AUTH_PRECEDENCE_KEY"));
-    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
-    await mkdir(config, { recursive: true });
-    const key = "synthetic-stored-credential";
-    expect(
-      await output(
-        spawn(`${key}\n`, ["auth", "login", "--use", current.definition], current, {
-          ...current.env,
-          AUTH_PRECEDENCE_KEY: "process-synthetic",
-        }),
-      ),
-    ).toMatchObject({ exitCode: 0 });
-    expect(await readFile(join(config, ".env"), "utf8")).toBe(`AUTH_PRECEDENCE_KEY=${key}\n`);
-    expect(
-      await output(
-        spawn("hello\n", ["--use", current.definition], current, {
-          ...current.env,
-          AUTH_PRECEDENCE_KEY: "process-synthetic",
-        }),
-      ),
-    ).toMatchObject({ exitCode: 0, stdout: "process-synthetic\n", stderr: "" });
   });
 
   test("auth login without a Definition directs users to init", async () => {

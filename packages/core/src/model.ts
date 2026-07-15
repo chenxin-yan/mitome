@@ -8,8 +8,8 @@ export interface Model {
   readonly [ModelTypeId]: typeof ModelTypeId;
 }
 
-/** Provider-owned credential metadata available without starting a Session. */
-export type CredentialDescriptor = { readonly kind: "env"; readonly name: string };
+/** Provider-owned environment variable name available without starting a Session. */
+export type CredentialDescriptor = string;
 
 const modelLayers = new WeakMap<Model, Layer.Layer<LanguageModel.LanguageModel, unknown, never>>();
 const modelCredentials = new WeakMap<Model, CredentialDescriptor>();
@@ -25,7 +25,7 @@ export const makeModel = (
   return model;
 };
 
-/** Returns provider-owned credential metadata without constructing the provider Layer. */
+/** Returns the provider-owned environment variable name without constructing the provider Layer. */
 export const credentialDescriptor = (model: Model): CredentialDescriptor | undefined =>
   modelCredentials.get(model);
 

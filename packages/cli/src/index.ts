@@ -21,13 +21,7 @@ const authHostSource: string = authHost;
 
 // Validates untrusted JSON crossing the auth-host process boundary.
 const isCredentialDescriptor = (value: unknown): value is CredentialDescriptor =>
-  typeof value === "object" &&
-  value !== null &&
-  "kind" in value &&
-  value.kind === "env" &&
-  "name" in value &&
-  typeof value.name === "string" &&
-  /^[A-Za-z_][A-Za-z0-9_]*$/.test(value.name);
+  typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 
 const configDirectory = (): string | undefined => {
   const home = process.env.HOME;
@@ -124,13 +118,11 @@ const maskedPrompt = async (
   message: string,
   input: () => Promise<string | undefined>,
 ): Promise<string> => {
-  process.stdout.write(message);
   const stdin = process.stdin;
   const raw = stdin.isTTY && typeof stdin.setRawMode === "function";
   if (raw) stdin.setRawMode(true);
   try {
-    const value = await input();
-    if (value === undefined) throw new Error("Input closed.");
+    const value = await prompt(message, input);
     // ponytail: raw mode disables terminal SIGINT, and the line reader only
     // surfaces ^C once Enter flushes the line; per-byte abort needs a raw reader.
     if (value.includes("\u0003")) throw new Error("Credential input cancelled.");
@@ -170,7 +162,7 @@ const definitionPath = async (args: ReadonlyArray<string>): Promise<string> => {
   } catch {
     throw new Error(
       args.length === 0
-        ? `Definition not found at ${path}. Create it in XDG config or use --use <file>.`
+        ? "No Definition found; run mitome init first or use --use <file>."
         : `Definition not found at ${path}; check the --use path.`,
     );
   }
@@ -318,27 +310,15 @@ const auth = async (command: string | undefined, args: ReadonlyArray<string>): P
   if (command !== "login" && command !== "logout") {
     throw new Error("Usage: mitome auth <login|logout> [--use <file>]");
   }
-  let path: string;
-  try {
-    path = await definitionPath(args);
-  } catch (error) {
-    if (
-      args.length === 0 &&
-      error instanceof Error &&
-      error.message.startsWith("Definition not found")
-    ) {
-      throw new Error("No Definition found; run mitome init first.");
-    }
-    throw error;
-  }
+  const path = await definitionPath(args);
   await checkRuntime(path);
   const credential = await inspectCredential(path);
   if (command === "logout") {
-    await removeConfigEnv(credential.name);
+    await removeConfigEnv(credential);
     return;
   }
   const input = makeInput();
-  await updateConfigEnv(credential.name, await maskedPrompt(`${credential.name}: `, input));
+  await updateConfigEnv(credential, await maskedPrompt(`${credential}: `, input));
 };
 
 const main = async (): Promise<void> => {

@@ -88,10 +88,9 @@ const withKey = async <A>(run: () => Promise<A>): Promise<A> => {
 
 describe("openai", () => {
   test("exposes its credential descriptor without building a Session", () => {
-    expect(credentialDescriptor(openai("gpt-5.4-mini", env("MITOME_TEST_API_KEY")))).toEqual({
-      kind: "env",
-      name: "MITOME_TEST_API_KEY",
-    });
+    expect(credentialDescriptor(openai("gpt-5.4-mini", env("MITOME_TEST_API_KEY")))).toBe(
+      "MITOME_TEST_API_KEY",
+    );
   });
 
   test("passes model ids unchanged and streams official Responses output incrementally", async () => {

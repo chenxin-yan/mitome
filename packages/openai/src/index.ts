@@ -58,8 +58,8 @@ export const openai = (
       }).pipe(Layer.provide(FetchHttpClient.layer));
     }),
   );
-  return makeModel(OpenAiLanguageModel.layer({ model }).pipe(Layer.provide(client)), {
-    kind: "env",
-    name: credential.name,
-  });
+  return makeModel(
+    OpenAiLanguageModel.layer({ model }).pipe(Layer.provide(client)),
+    credential.name,
+  );
 };
