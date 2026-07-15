@@ -1,6 +1,18 @@
-import { spawn as spawnChild } from "node:child_process";
+import { spawn as spawnChild, type ChildProcess } from "node:child_process";
+import { createServer } from "node:http";
 import { createRequire } from "node:module";
-import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import type { AddressInfo } from "node:net";
+import {
+  access,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { text } from "node:stream/consumers";
@@ -12,6 +24,11 @@ const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const binary = join(packageDir, "dist/mitome");
 const coreDir = resolve(packageDir, "../core");
 const effectDir = dirname(createRequire(import.meta.url).resolve("effect/package.json"));
+const aiOpenaiDir = dirname(
+  createRequire(join(packageDir, "..", "openai", "package.json")).resolve(
+    "@effect/ai-openai/package.json",
+  ),
+);
 const corePackage = JSON.parse(await readFile(join(coreDir, "package.json"), "utf8")) as {
   version: string;
 };
@@ -74,6 +91,19 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
     ].join(":"),
   })),
 }));
+export default { instructions: "", model, plugins: [] };
+`;
+
+const precedenceDefinitionSource = (name: string): string => `
+import { Layer, Stream } from "effect";
+import { LanguageModel, Response } from "effect/unstable/ai";
+import { makeModel } from "@mitome/core";
+
+const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+  streamText: () => Stream.succeed(Response.makePart("text-delta", {
+    id: "credential", delta: process.env[${JSON.stringify(name)}] ?? "missing",
+  })),
+}), ${JSON.stringify(name)});
 export default { instructions: "", model, plugins: [] };
 `;
 
@@ -204,7 +234,7 @@ const spawn = (
   return child;
 };
 
-const exited = (child: ReturnType<typeof spawn>) => {
+const exited = (child: ChildProcess) => {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(child.exitCode);
   return new Promise<number | null>((resolve, reject) => {
     child.once("error", reject);
@@ -666,6 +696,224 @@ export default {
     process.kill("SIGINT");
     await expect(exited(process)).resolves.toBe(130);
     expect(await exists(marker)).toBe(false);
+  });
+
+  test("initializes a Definition and stores a masked Credential", async () => {
+    const current = await scaffold("mitome-cli-");
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await mkdir(config, { recursive: true });
+    const localPackages = join(current.root, "local-packages");
+    const archives = new Map<string, Buffer>();
+    for (const packageName of ["core", "openai", "sdk"] as const) {
+      const source = resolve(packageDir, "..", packageName);
+      // npm tarballs root entries under package/; staging the layout keeps tar
+      // invocation portable (GNU --transform is unavailable on BSD/macOS tar).
+      const destination = join(localPackages, packageName, "package");
+      await cp(join(source, "dist"), join(destination, "dist"), { recursive: true });
+      await writeFile(
+        join(destination, "package.json"),
+        JSON.stringify({
+          name: `@mitome/${packageName}`,
+          version: corePackage.version,
+          exports: { ".": "./dist/index.js" },
+        }),
+      );
+      const archive = join(localPackages, `${packageName}.tgz`);
+      const tar = spawnChild(
+        "tar",
+        ["-C", join(localPackages, packageName), "-czf", archive, "package"],
+        { stdio: "ignore" },
+      );
+      expect(await exited(tar)).toBe(0);
+      archives.set(`@mitome/${packageName}`, await readFile(archive));
+    }
+    const requests: Array<string> = [];
+    const registry = createServer((request, response) => {
+      const pathname = new URL(request.url!, "http://localhost").pathname;
+      requests.push(pathname);
+      if (pathname.endsWith(".tgz")) {
+        response.end(archives.get(decodeURIComponent(pathname.slice(1, -4))));
+        return;
+      }
+      const name = decodeURIComponent(pathname.slice(1));
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          name,
+          "dist-tags": { latest: corePackage.version },
+          versions: {
+            [corePackage.version]: {
+              name,
+              version: corePackage.version,
+              dist: { tarball: `${registryUrl}${encodeURIComponent(name)}.tgz` },
+            },
+          },
+        }),
+      );
+    });
+    await new Promise<void>((done) => registry.listen(0, "127.0.0.1", done));
+    const registryUrl = `http://127.0.0.1:${(registry.address() as AddressInfo).port}/`;
+    await writeFile(join(config, "bunfig.toml"), `[install]\nregistry = "${registryUrl}"\n`);
+
+    const key = "synthetic-init-credential";
+    const result = await output(spawn(`fixture-model\n${key}\n`, ["init"], current)).finally(
+      () => new Promise<void>((done) => registry.close(() => done())),
+    );
+    expect(result).toMatchObject({ exitCode: 0 });
+    // 3 packages × (metadata + tarball), pinned by the isolated fixture HOME.
+    expect(requests).toHaveLength(6);
+    expect(result.stdout + result.stderr).not.toContain(key);
+    const definition = await readFile(join(config, "agent.ts"), "utf8");
+    expect(definition).toContain('import { defineAgent } from "@mitome/sdk"');
+    expect(definition).toContain('import { env, openai } from "@mitome/openai"');
+    expect(definition).toContain('openai("fixture-model", env("OPENAI_API_KEY"))');
+    expect(definition).toContain("plugins: []");
+    expect(definition).not.toContain(key);
+    expect(JSON.parse(await readFile(join(config, "package.json"), "utf8"))).toMatchObject({
+      dependencies: {
+        "@mitome/core": corePackage.version,
+        "@mitome/openai": corePackage.version,
+        "@mitome/sdk": corePackage.version,
+      },
+    });
+    expect(await readFile(join(config, ".env"), "utf8")).toBe(`OPENAI_API_KEY=${key}\n`);
+    expect((await stat(join(config, ".env"))).mode & 0o777).toBe(0o600);
+    expect(await exists(join(config, ".env.example"))).toBe(false);
+    expect(await exists(join(config, "bun.lock"))).toBe(true);
+
+    // Prove the scaffold actually loads: auth logout imports it through the
+    // auth-host, so a scaffold that no longer parses or mismatches the SDK/
+    // provider API fails here. The fixture registry packages carry no
+    // dependencies, so link the runtime ones the dists import.
+    const configModules = join(config, "node_modules");
+    await mkdir(join(configModules, "@effect"), { recursive: true });
+    await symlink(effectDir, join(configModules, "effect"), "dir");
+    await symlink(aiOpenaiDir, join(configModules, "@effect", "ai-openai"), "dir");
+    expect(await output(spawn("", ["auth", "logout"], current))).toMatchObject({ exitCode: 0 });
+    expect(await readFile(join(config, ".env"), "utf8")).toBe("");
+  });
+
+  test("refuses to clobber an existing default Definition", async () => {
+    const current = await fixture();
+    const path = join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts");
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, "export default {};\n");
+    const result = await output(spawn("fixture-model\n", ["init"], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("already exists");
+    expect(await readFile(path, "utf8")).toBe("export default {};\n");
+  });
+
+  test("refuses to clobber a config package.json without a Definition", async () => {
+    const current = await scaffold("mitome-cli-");
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await mkdir(config, { recursive: true });
+    await writeFile(join(config, "package.json"), '{"name":"hand-edited"}\n');
+    const result = await output(spawn("fixture-model\n", ["init"], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("already exists");
+    expect(await readFile(join(config, "package.json"), "utf8")).toBe('{"name":"hand-edited"}\n');
+    expect(await exists(join(config, "agent.ts"))).toBe(false);
+  });
+
+  test("init skips the Credential prompt when the installer fails", async () => {
+    const current = await scaffold("mitome-cli-");
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await mkdir(config, { recursive: true });
+    // Unroutable registry: bun install must fail before any Credential is collected.
+    await writeFile(join(config, "bunfig.toml"), '[install]\nregistry = "http://127.0.0.1:1/"\n');
+    const key = "synthetic-never-stored";
+    const result = await output(spawn(`fixture-model\n${key}\n`, ["init"], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout + result.stderr).not.toContain(key);
+    expect(await exists(join(config, ".env"))).toBe(false);
+  });
+
+  test("init requires a non-blank model identifier", async () => {
+    const current = await scaffold("mitome-cli-");
+    const result = await output(spawn("   \n", ["init"], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("OpenAI model identifier is required.");
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts"))).toBe(false);
+  });
+
+  test("auth delegates to the Definition credential descriptor without exposing Credentials", async () => {
+    const current = await fixture(precedenceDefinitionSource("FIXTURE_PROVIDER_ENV"));
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await mkdir(config, { recursive: true });
+    await writeFile(join(config, ".env"), "# retained\nOTHER=present\nFIXTURE_PROVIDER_ENV=old\n");
+    const original = await readFile(current.definition, "utf8");
+    const key = "synthetic-login-credential";
+    const login = await output(
+      spawn(`${key}\n`, ["auth", "login", "--use", current.definition], current),
+    );
+    expect(login).toMatchObject({ exitCode: 0 });
+    expect(login.stdout + login.stderr).not.toContain(key);
+    expect(await readFile(join(config, ".env"), "utf8")).toBe(
+      `# retained\nOTHER=present\nFIXTURE_PROVIDER_ENV=${key}\n`,
+    );
+    expect(await readFile(current.definition, "utf8")).toBe(original);
+
+    expect(
+      await output(
+        spawn("", ["auth", "logout", "--use", current.definition], current, {
+          ...current.env,
+          FIXTURE_PROVIDER_ENV: "process-synthetic",
+        }),
+      ),
+    ).toMatchObject({ exitCode: 0 });
+    expect(await readFile(join(config, ".env"), "utf8")).toBe("# retained\nOTHER=present\n");
+    expect(await readFile(current.definition, "utf8")).toBe(original);
+  });
+
+  test("rejects unknown auth subcommands with usage", async () => {
+    const current = await fixture();
+    const result = await output(spawn("", ["auth", "bogus"], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Usage: mitome auth <login|logout>");
+  });
+
+  test("auth logout without a stored Credential is a no-op", async () => {
+    const current = await fixture(precedenceDefinitionSource("LOGOUT_NOOP_KEY"));
+    expect(
+      await output(spawn("", ["auth", "logout", "--use", current.definition], current)),
+    ).toMatchObject({ exitCode: 0 });
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", ".env"))).toBe(false);
+  });
+
+  test("auth login requires a non-empty Credential", async () => {
+    const current = await fixture(precedenceDefinitionSource("EMPTY_LOGIN_KEY"));
+    const result = await output(
+      spawn("\n", ["auth", "login", "--use", current.definition], current),
+    );
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Credential value is required.");
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", ".env"))).toBe(false);
+  });
+
+  test("auth login without a Definition directs users to init", async () => {
+    const current = await fixture();
+    const result = await output(spawn("", ["auth", "login"], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("run mitome init first");
+    expect(result.stderr).not.toContain("Definition not found");
+  });
+
+  test("auth login rejects Credentials that Bun's env parser would corrupt", async () => {
+    const current = await fixture(precedenceDefinitionSource("AUTH_REJECT_KEY"));
+    const result = await output(
+      spawn("has$dollar\n", ["auth", "login", "--use", current.definition], current),
+    );
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("set the environment variable directly");
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", ".env"))).toBe(false);
+  });
+
+  test("auth login reports a bare Model without a credential descriptor", async () => {
+    const current = await fixture(definitionSource("bare"));
+    const result = await output(spawn("", ["auth", "login", "--use", current.definition], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toBe("Definition Model does not support CLI authentication.\n");
   });
 
   test("uses Core directly without SDK runtime support", async () => {

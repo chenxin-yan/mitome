@@ -1,16 +1,12 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat";
 import { Effect, Layer, Redacted, Schema } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
-import { makeModel, type Model } from "@mitome/core";
+import { type Credential, makeModel, type Model } from "@mitome/core";
+
+export { env } from "@mitome/core";
+export type { Credential } from "@mitome/core";
 
 export type ModelId = string;
-
-export interface Credential {
-  readonly name: string;
-}
-
-/** Declares the environment variable that supplies a provider credential at Session startup. */
-export const env = (name: string): Credential => ({ name });
 
 export interface OpenAiCompatibleOptions {
   /** OpenAI-compatible Chat Completions API root. */
@@ -43,5 +39,8 @@ export const openaiCompatible = (
       }).pipe(Layer.provide(FetchHttpClient.layer));
     }),
   );
-  return makeModel(OpenAiLanguageModel.layer({ model }).pipe(Layer.provide(client)));
+  return makeModel(
+    OpenAiLanguageModel.layer({ model }).pipe(Layer.provide(client)),
+    credential.name,
+  );
 };
