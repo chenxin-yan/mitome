@@ -528,10 +528,7 @@ export const createSession: (
     Effect.mapError(
       (cause) =>
         new TurnError({
-          message:
-            typeof cause === "object" && cause !== null && "message" in cause
-              ? String(cause.message)
-              : String(cause),
+          message: cause instanceof Error ? cause.message : String(cause),
           cause,
         }),
     ),

@@ -309,6 +309,21 @@ describe("compiled mitome", () => {
       stdout: "process-synthetic:quoted-synthetic:absent\n",
       stderr: "",
     });
+
+    // No config home at all: the /dev/null --env-file fallback must still suppress
+    // Bun's automatic cwd .env autoload in the host.
+    expect(
+      await output(
+        spawn("hello\n", ["--use", current.definition], current, {
+          HOME: "",
+          PATH: current.env.PATH,
+        }),
+      ),
+    ).toMatchObject({
+      exitCode: 0,
+      stdout: "missing:missing:absent\n",
+      stderr: "",
+    });
   });
 
   test("imports a Definition using real installed Effect without Bun on PATH", async () => {

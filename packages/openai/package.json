@@ -22,12 +22,15 @@
   },
   "dependencies": {
     "@effect/ai-openai-compat": "catalog:",
-    "@mitome/core": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@mitome/config": "workspace:*",
+    "@mitome/core": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@mitome/core": "workspace:*"
   }
 }

@@ -30,7 +30,11 @@ const withKey = async <A>(run: () => Promise<A>): Promise<A> => {
 
 describe("openai", () => {
   test("passes known and arbitrary model ids unchanged and streams text incrementally", async () => {
-    const requests: Array<{ readonly model: string; readonly authorization: string | null }> = [];
+    const requests: Array<{
+      readonly model: string;
+      readonly stream: boolean;
+      readonly authorization: string | null;
+    }> = [];
     let releaseSecond!: () => void;
     const secondReleased = new Promise<void>((resolve) => (releaseSecond = resolve));
     let firstChunk!: () => void;
@@ -40,7 +44,11 @@ describe("openai", () => {
       fetch: async (request) => {
         expect(new URL(request.url).pathname).toBe("/v1/chat/completions");
         const body = (await request.json()) as { model: string; stream: boolean };
-        requests.push({ model: body.model, authorization: request.headers.get("authorization") });
+        requests.push({
+          model: body.model,
+          stream: body.stream,
+          authorization: request.headers.get("authorization"),
+        });
         return new Response(
           new ReadableStream({
             async start(controller) {
@@ -61,7 +69,8 @@ describe("openai", () => {
       await withKey(async () => {
         const definition = (model: string): Definition => ({
           instructions: "Be concise.",
-          model: openai(model, env(key), { baseUrl: `http://127.0.0.1:${server.port}/v1` }),
+          // Trailing slash pins baseUrl normalization.
+          model: openai(model, env(key), { baseUrl: `http://127.0.0.1:${server.port}/v1/` }),
           plugins: [],
         });
         const events: Array<unknown> = [];
@@ -101,8 +110,8 @@ describe("openai", () => {
         );
       });
       expect(requests).toEqual([
-        { model: "gpt-4o-mini", authorization: "Bearer synthetic-key" },
-        { model: "ft:private-model", authorization: "Bearer synthetic-key" },
+        { model: "gpt-4o-mini", stream: true, authorization: "Bearer synthetic-key" },
+        { model: "ft:private-model", stream: true, authorization: "Bearer synthetic-key" },
       ]);
     } finally {
       void server.stop(true);
@@ -118,7 +127,7 @@ describe("openai", () => {
         Effect.runPromise(Effect.scoped(createSession({ instructions: "", model, plugins: [] }))),
       ).rejects.toMatchObject({
         _tag: "TurnError",
-        message: `Missing environment variable ${key}`,
+        message: `Environment variable ${key} is not set or empty`,
       });
     } finally {
       if (previous !== undefined) process.env[key] = previous;
@@ -160,10 +169,24 @@ describe("openai", () => {
 
   test("maps tool calls through the Core Tool loop", async () => {
     let calls = 0;
+    let followUp: {
+      readonly messages?: ReadonlyArray<{
+        readonly role: string;
+        readonly tool_call_id?: string;
+        readonly content?: unknown;
+      }>;
+    } = {};
     const server = Bun.serve({
       port: 0,
       fetch: async (request) => {
-        const body = (await request.json()) as { readonly tools?: ReadonlyArray<unknown> };
+        const body = (await request.json()) as {
+          readonly tools?: ReadonlyArray<unknown>;
+          readonly messages?: ReadonlyArray<{
+            readonly role: string;
+            readonly tool_call_id?: string;
+            readonly content?: unknown;
+          }>;
+        };
         calls += 1;
         if (calls === 1) {
           expect(body.tools).toHaveLength(1);
@@ -190,6 +213,7 @@ describe("openai", () => {
             { headers: { "content-type": "text/event-stream" } },
           );
         }
+        followUp = body;
         return new Response(sse(chunk({ content: "done" }, "stop")) + sse("[DONE]"), {
           headers: { "content-type": "text/event-stream" },
         });
@@ -228,6 +252,10 @@ describe("openai", () => {
         ]);
       });
       expect(calls).toBe(2);
+      // The follow-up request must carry the tool result attributed to the original call.
+      const toolMessage = followUp.messages?.find((message) => message.role === "tool");
+      expect(toolMessage).toMatchObject({ tool_call_id: "call-1" });
+      expect(JSON.stringify(toolMessage?.content)).toContain("hello");
     } finally {
       void server.stop(true);
     }

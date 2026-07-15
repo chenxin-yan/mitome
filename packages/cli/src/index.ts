@@ -90,6 +90,8 @@ const checkRuntime = async (path: string): Promise<void> => {
 
 const runHost = async (path: string): Promise<void> => {
   const directory = configDirectory();
+  // Always pass --env-file: its presence (even /dev/null) suppresses Bun's automatic
+  // cwd .env autoload in the child, and Bun tolerates a missing file silently.
   const envPath = directory === undefined ? "/dev/null" : join(directory, ".env");
   const child = Bun.spawn([process.execPath, `--env-file=${envPath}`, "--eval", hostSource, path], {
     env: { ...process.env, BUN_BE_BUN: "1" },

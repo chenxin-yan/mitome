@@ -18,7 +18,9 @@ export interface OpenAiOptions {
   readonly baseUrl?: string;
 }
 
-export class MissingCredentialError extends Schema.TaggedErrorClass<MissingCredentialError>()(
+// Deliberately unexported: it never appears in a public signature, and exporting it
+// would drag Effect Schema/Cause types into the generated declarations.
+class MissingCredentialError extends Schema.TaggedErrorClass<MissingCredentialError>()(
   "MissingCredentialError",
   { message: Schema.String },
 ) {}
@@ -29,13 +31,15 @@ export const openai = (
   credential: Credential,
   options: OpenAiOptions = {},
 ): Model => {
-  const baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
+  const baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
   const client = Layer.unwrap(
     Effect.gen(function* () {
+      // Read live rather than via Config: Effect's default ConfigProvider snapshots
+      // process.env at first access, which would miss keys set after startup.
       const value = process.env[credential.name];
       if (value === undefined || value === "") {
         return yield* new MissingCredentialError({
-          message: `Missing environment variable ${credential.name}`,
+          message: `Environment variable ${credential.name} is not set or empty`,
         });
       }
       return OpenAiClient.layer({ apiKey: Redacted.make(value), apiUrl: baseUrl }).pipe(
