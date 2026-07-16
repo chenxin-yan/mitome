@@ -1,6 +1,6 @@
 import { Cause, Effect, Exit, Fiber, Queue, Scope, Stream } from "effect";
 import { createSession } from "@mitome/core";
-import type { Definition, TurnEvent as CoreTurnEvent } from "@mitome/core";
+import type { AgentDefinition, TurnEvent as CoreTurnEvent } from "@mitome/core";
 
 type CoreApproval = Extract<CoreTurnEvent, { type: "approval-required" }>;
 export type TurnEvent =
@@ -80,7 +80,7 @@ const toAsyncIterable = (
 });
 
 export const withSession = <A>(
-  definition: Definition,
+  definition: AgentDefinition,
   use: (session: Session) => Promise<A>,
 ): Promise<A> =>
   Effect.runPromiseExit(

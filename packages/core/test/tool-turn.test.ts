@@ -2,7 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Stream } from "effect";
 import { AiError, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { Schema } from "effect";
-import { createSession, definePlugin, TurnStepLimitError, type Definition } from "../src/index.js";
+import {
+  type AgentDefinition,
+  createSession,
+  definePlugin,
+  TurnStepLimitError,
+} from "../src/index.js";
 import { makeTestModel } from "./model.js";
 
 const makeToolModel = () => {
@@ -54,7 +59,7 @@ describe("createSession Tool Turn", () => {
         failure: Schema.Struct({ code: Schema.String }),
         failureMode: "return",
       });
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model: fixture.model,
         plugins: [
@@ -202,7 +207,7 @@ describe("createSession Tool Turn", () => {
         },
         failureMode: "return",
       });
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model: fixture.model,
         plugins: [
@@ -254,7 +259,7 @@ describe("createSession Tool Turn", () => {
         failure: Schema.Struct({ code: Schema.String }),
         failureMode: "return",
       });
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model: fixture.model,
         plugins: [

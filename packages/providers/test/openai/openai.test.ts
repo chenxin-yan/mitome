@@ -4,18 +4,76 @@
 import { describe, expect, test } from "bun:test";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import { createSession, credentialDescriptor, type Definition } from "@mitome/core";
-import { env, openaiCompatible } from "../src/index.js";
+import { type AgentDefinition, createSession, credentialDescriptor } from "@mitome/core";
+import { env, openai } from "../../src/openai/index.js";
 
-const key = "MITOME_OPENAI_COMPATIBLE_TEST_KEY";
-const sse = (data: unknown) =>
-  `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
-const chunk = (delta: Record<string, unknown>, finishReason: string | null = null) => ({
-  id: "chatcmpl-test",
-  model: "gpt-4o-mini",
-  created: 1,
-  choices: [{ index: 0, finish_reason: finishReason, delta }],
+const key = "MITOME_OPENAI_TEST_KEY";
+const sse = (data: unknown) => `data: ${JSON.stringify(data)}\n\n`;
+const response = (id: string, output: ReadonlyArray<unknown> = []) => ({
+  id,
+  object: "response",
+  model: "gpt-5.6",
+  created_at: 1,
+  output,
 });
+const message = (id: string, text: string, status: "in_progress" | "completed") => ({
+  id,
+  type: "message",
+  role: "assistant",
+  status,
+  content: text === "" ? [] : [{ type: "output_text", text, annotations: [] }],
+});
+const event = (type: string, data: Record<string, unknown> = {}) => ({
+  type,
+  ...data,
+});
+/** SSE frames for one output item: created → added → deltas → done → completed. */
+const itemStream = (
+  respId: string,
+  inProgress: { readonly id: string } & Record<string, unknown>,
+  deltaType: string,
+  deltas: ReadonlyArray<string>,
+  done: Record<string, unknown>,
+): ReadonlyArray<string> => {
+  let seq = 0;
+  return [
+    event("response.created", {
+      sequence_number: ++seq,
+      response: response(respId),
+    }),
+    event("response.output_item.added", {
+      output_index: 0,
+      sequence_number: ++seq,
+      item: inProgress,
+    }),
+    ...deltas.map((delta) =>
+      event(deltaType, {
+        item_id: inProgress.id,
+        output_index: 0,
+        content_index: 0,
+        delta,
+        sequence_number: ++seq,
+      }),
+    ),
+    event("response.output_item.done", {
+      output_index: 0,
+      sequence_number: ++seq,
+      item: done,
+    }),
+    event("response.completed", {
+      sequence_number: ++seq,
+      response: response(respId, [done]),
+    }),
+  ].map(sse);
+};
+const textStream = (respId: string, msgId: string, deltas: ReadonlyArray<string>) =>
+  itemStream(
+    respId,
+    message(msgId, "", "in_progress"),
+    "response.output_text.delta",
+    deltas,
+    message(msgId, deltas.join(""), "completed"),
+  );
 
 const withKey = async <A>(run: () => Promise<A>): Promise<A> => {
   const previous = process.env[key];
@@ -28,18 +86,14 @@ const withKey = async <A>(run: () => Promise<A>): Promise<A> => {
   }
 };
 
-describe("openaiCompatible", () => {
+describe("openai", () => {
   test("exposes its credential descriptor without building a Session", () => {
-    expect(
-      credentialDescriptor(
-        openaiCompatible("any-model", env("MITOME_TEST_API_KEY"), {
-          baseUrl: "http://localhost:1",
-        }),
-      ),
-    ).toBe("MITOME_TEST_API_KEY");
+    expect(credentialDescriptor(openai("gpt-5.4-mini", env("MITOME_TEST_API_KEY")))).toBe(
+      "MITOME_TEST_API_KEY",
+    );
   });
 
-  test("passes known and arbitrary model ids unchanged and streams text incrementally", async () => {
+  test("passes model ids unchanged and streams official Responses output incrementally", async () => {
     const requests: Array<{
       readonly model: string;
       readonly stream: boolean;
@@ -52,21 +106,25 @@ describe("openaiCompatible", () => {
     const server = Bun.serve({
       port: 0,
       fetch: async (request) => {
-        expect(new URL(request.url).pathname).toBe("/v1/chat/completions");
-        const body = (await request.json()) as { model: string; stream: boolean };
+        expect(new URL(request.url).pathname).toBe("/v1/responses");
+        const body = (await request.json()) as {
+          model: string;
+          stream: boolean;
+        };
         requests.push({
           model: body.model,
           stream: body.stream,
           authorization: request.headers.get("authorization"),
         });
+        const frames = textStream("resp-1", "msg-1", ["hel", "lo"]);
         return new Response(
           new ReadableStream({
             async start(controller) {
-              controller.enqueue(sse(chunk({ content: "hel" })));
+              // frames[0..2]: created, item added, first delta.
+              for (const frame of frames.slice(0, 3)) controller.enqueue(frame);
               firstChunk();
               await secondReleased;
-              controller.enqueue(sse(chunk({ content: "lo" }, "stop")));
-              controller.enqueue(sse("[DONE]"));
+              for (const frame of frames.slice(3)) controller.enqueue(frame);
               controller.close();
             },
           }),
@@ -77,10 +135,9 @@ describe("openaiCompatible", () => {
 
     try {
       await withKey(async () => {
-        const definition = (model: string): Definition => ({
+        const definition = (model: string): AgentDefinition => ({
           instructions: "Be concise.",
-          // Trailing slash pins baseUrl normalization.
-          model: openaiCompatible(model, env(key), {
+          model: openai(model, env(key), {
             baseUrl: `http://127.0.0.1:${server.port}/v1/`,
           }),
           plugins: [],
@@ -91,11 +148,11 @@ describe("openaiCompatible", () => {
         const turn = Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
-              const session = yield* createSession(definition("gpt-4o-mini"));
-              yield* Stream.runForEach(session.prompt("Hi"), (event) =>
+              const session = yield* createSession(definition("gpt-5.6"));
+              yield* Stream.runForEach(session.prompt("Hi"), (item) =>
                 Effect.sync(() => {
-                  events.push(event);
-                  if (event.type === "model-output") firstOutput();
+                  events.push(item);
+                  if (item.type === "model-output") firstOutput();
                 }),
               );
             }),
@@ -111,19 +168,13 @@ describe("openaiCompatible", () => {
           { type: "model-output", text: "lo" },
           { type: "response-complete" },
         ]);
-
-        await Effect.runPromise(
-          Effect.scoped(
-            Effect.gen(function* () {
-              const session = yield* createSession(definition("ft:private-model"));
-              yield* Stream.runDrain(session.prompt("Hi"));
-            }),
-          ),
-        );
       });
       expect(requests).toEqual([
-        { model: "gpt-4o-mini", stream: true, authorization: "Bearer synthetic-key" },
-        { model: "ft:private-model", stream: true, authorization: "Bearer synthetic-key" },
+        {
+          model: "gpt-5.6",
+          stream: true,
+          authorization: "Bearer synthetic-key",
+        },
       ]);
     } finally {
       void server.stop(true);
@@ -134,7 +185,7 @@ describe("openaiCompatible", () => {
     const previous = process.env[key];
     delete process.env[key];
     try {
-      const model = openaiCompatible("gpt-4o-mini", env(key), { baseUrl: "http://127.0.0.1/v1" });
+      const model = openai("gpt-5.6", env(key));
       await expect(
         Effect.runPromise(Effect.scoped(createSession({ instructions: "", model, plugins: [] }))),
       ).rejects.toMatchObject({
@@ -150,20 +201,24 @@ describe("openaiCompatible", () => {
     let requests = 0;
     const server = Bun.serve({
       port: 0,
-      fetch: async () => {
+      fetch: () => {
         requests += 1;
         return Response.json({ error: { message: "model not found" } }, { status: 404 });
       },
     });
     try {
       await withKey(async () => {
-        const model = openaiCompatible("future-private-model", env(key), {
+        const model = openai("future-private-model", env(key), {
           baseUrl: `http://127.0.0.1:${server.port}/v1`,
         });
         const exit = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
-              const session = yield* createSession({ instructions: "", model, plugins: [] });
+              const session = yield* createSession({
+                instructions: "",
+                model,
+                plugins: [],
+              });
               return yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
             }),
           ),
@@ -179,54 +234,40 @@ describe("openaiCompatible", () => {
     }
   });
 
-  test("maps tool calls through the Core Tool loop", async () => {
+  test("maps Responses function calls through the Core Tool loop", async () => {
     let calls = 0;
-    let followUp: {
-      readonly messages?: ReadonlyArray<{
-        readonly role: string;
-        readonly tool_call_id?: string;
-        readonly content?: unknown;
-      }>;
-    } = {};
+    let followUp: { readonly input?: ReadonlyArray<Record<string, unknown>> } = {};
     const server = Bun.serve({
       port: 0,
       fetch: async (request) => {
         const body = (await request.json()) as {
           readonly tools?: ReadonlyArray<unknown>;
-          readonly messages?: ReadonlyArray<{
-            readonly role: string;
-            readonly tool_call_id?: string;
-            readonly content?: unknown;
-          }>;
+          readonly input?: ReadonlyArray<Record<string, unknown>>;
         };
         calls += 1;
         if (calls === 1) {
           expect(body.tools).toHaveLength(1);
+          const functionCall = {
+            type: "function_call",
+            id: "fc-1",
+            call_id: "call-1",
+            name: "echo",
+            arguments: '{"text":"hello"}',
+            status: "completed",
+          };
           return new Response(
-            sse(
-              chunk({
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: "call-1",
-                    type: "function",
-                    function: { name: "echo", arguments: '{"text":' },
-                  },
-                ],
-              }),
-            ) +
-              sse(
-                chunk(
-                  { tool_calls: [{ index: 0, function: { arguments: '"hello"}' } }] },
-                  "tool_calls",
-                ),
-              ) +
-              sse("[DONE]"),
+            itemStream(
+              "resp-tool",
+              { ...functionCall, arguments: "", status: "in_progress" },
+              "response.function_call_arguments.delta",
+              ['{"text":"hello"}'],
+              functionCall,
+            ).join(""),
             { headers: { "content-type": "text/event-stream" } },
           );
         }
         followUp = body;
-        return new Response(sse(chunk({ content: "done" }, "stop")) + sse("[DONE]"), {
+        return new Response(textStream("resp-done", "msg-done", ["done"]).join(""), {
           headers: { "content-type": "text/event-stream" },
         });
       },
@@ -237,16 +278,18 @@ describe("openaiCompatible", () => {
           parameters: Schema.Struct({ text: Schema.String }),
           success: Schema.String,
         });
-        const definition: Definition = {
+        const definition: AgentDefinition = {
           instructions: "",
-          model: openaiCompatible("gpt-4o-mini", env(key), {
+          model: openai("gpt-5.6", env(key), {
             baseUrl: `http://127.0.0.1:${server.port}/v1`,
           }),
           plugins: [
             {
               name: "echo",
               toolkit: Toolkit.make(echo),
-              handlers: { echo: (params) => Effect.succeed((params as { text: string }).text) },
+              handlers: {
+                echo: (params) => Effect.succeed((params as { text: string }).text),
+              },
             },
           ],
         };
@@ -260,16 +303,23 @@ describe("openaiCompatible", () => {
         );
         expect([...events]).toEqual([
           { type: "tool-call", id: "call-1", name: "echo" },
-          { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },
+          {
+            type: "tool-result",
+            id: "call-1",
+            name: "echo",
+            result: "hello",
+            isFailure: false,
+          },
           { type: "model-output", text: "done" },
           { type: "response-complete" },
         ]);
       });
       expect(calls).toBe(2);
-      // The follow-up request must carry the tool result attributed to the original call.
-      const toolMessage = followUp.messages?.find((message) => message.role === "tool");
-      expect(toolMessage).toMatchObject({ tool_call_id: "call-1" });
-      expect(JSON.stringify(toolMessage?.content)).toContain("hello");
+      expect(followUp.input).toContainEqual({
+        type: "function_call_output",
+        call_id: "call-1",
+        output: '"hello"',
+      });
     } finally {
       void server.stop(true);
     }

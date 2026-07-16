@@ -6,7 +6,7 @@ import {
   type OpenAiOptions,
   env,
   openai,
-} from "../src/index.js";
+} from "../../src/openai/index.js";
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;

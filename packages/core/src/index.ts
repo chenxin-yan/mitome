@@ -1,8 +1,8 @@
 export { resolveConfigDirectory } from "./config.js";
-export { DefinitionError, defineAgent, definePlugin } from "./definition.js";
+export { AgentDefinitionError, defineAgent, definePlugin } from "./definition.js";
 export type {
   AnyPlugin,
-  Definition,
+  AgentDefinition,
   Plugin,
   PluginHooks,
   ToolHookContext,

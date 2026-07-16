@@ -1,21 +1,22 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import { createSession, DefinitionError, type Definition } from "../src/index.js";
+import { createSession, AgentDefinitionError, type AgentDefinition } from "../src/index.js";
 import { makeTestModel } from "./model.js";
 
 const model = makeTestModel(() => Stream.empty);
-const getDefinitionError = (definition: Definition) => Effect.flip(createSession(definition));
+const getAgentDefinitionError = (definition: AgentDefinition) =>
+  Effect.flip(createSession(definition));
 
-describe("Definition validation", () => {
+describe("Agent Definition validation", () => {
   it.effect("rejects duplicate Plugin and Tool names before Session startup", () =>
     Effect.gen(function* () {
-      const duplicatePlugins: Definition = {
+      const duplicatePlugins: AgentDefinition = {
         instructions: "Be concise.",
         model,
         plugins: [{ name: "same" }, { name: "same" }],
       };
-      const duplicateTools: Definition = {
+      const duplicateTools: AgentDefinition = {
         instructions: "Be concise.",
         model,
         plugins: [
@@ -24,15 +25,15 @@ describe("Definition validation", () => {
         ],
       };
 
-      expect(yield* getDefinitionError(duplicatePlugins)).toBeInstanceOf(DefinitionError);
-      expect(yield* getDefinitionError(duplicateTools)).toBeInstanceOf(DefinitionError);
+      expect(yield* getAgentDefinitionError(duplicatePlugins)).toBeInstanceOf(AgentDefinitionError);
+      expect(yield* getAgentDefinitionError(duplicateTools)).toBeInstanceOf(AgentDefinitionError);
     }),
   );
 
   it.effect("rejects duplicate Tool handler names before Session startup", () =>
     Effect.gen(function* () {
       const tool = Tool.make("echo", { success: Schema.String });
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model,
         plugins: [
@@ -45,7 +46,7 @@ describe("Definition validation", () => {
         ],
       };
 
-      expect((yield* getDefinitionError(definition)).message).toBe(
+      expect((yield* getAgentDefinitionError(definition)).message).toBe(
         "Duplicate Tool handler name: echo",
       );
     }),
@@ -53,7 +54,7 @@ describe("Definition validation", () => {
 
   it.effect("rejects missing and orphaned Tool handlers before Session startup", () =>
     Effect.gen(function* () {
-      const missing: Definition = {
+      const missing: AgentDefinition = {
         instructions: "Be concise.",
         model,
         plugins: [
@@ -63,14 +64,14 @@ describe("Definition validation", () => {
           },
         ],
       };
-      const orphaned: Definition = {
+      const orphaned: AgentDefinition = {
         instructions: "Be concise.",
         model,
         plugins: [{ name: "orphaned", handlers: { echo: () => Effect.succeed("echo") } }],
       };
 
-      expect((yield* getDefinitionError(missing)).message).toBe("Missing Tool handler: echo");
-      expect((yield* getDefinitionError(orphaned)).message).toBe(
+      expect((yield* getAgentDefinitionError(missing)).message).toBe("Missing Tool handler: echo");
+      expect((yield* getAgentDefinitionError(orphaned)).message).toBe(
         "Tool handler has no matching Tool: echo",
       );
     }),
@@ -78,7 +79,7 @@ describe("Definition validation", () => {
 
   it.effect("rejects a Tool result validator outside its owning Plugin", () =>
     Effect.gen(function* () {
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model,
         plugins: [
@@ -91,7 +92,7 @@ describe("Definition validation", () => {
         ],
       };
 
-      expect((yield* getDefinitionError(definition)).message).toBe(
+      expect((yield* getAgentDefinitionError(definition)).message).toBe(
         "Tool result validator has no matching Tool: other",
       );
     }),

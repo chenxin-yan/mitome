@@ -2,8 +2,8 @@ import { describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import {
+  type AgentDefinition,
   createSession,
-  type Definition,
   makeModel,
   SessionBusyError,
   SessionReleasedError,
@@ -15,7 +15,7 @@ describe("createSession", () => {
   it.effect("streams one model Step before completion", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicModel("hello");
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model: fixture.model,
         plugins: [],
@@ -54,7 +54,7 @@ describe("createSession", () => {
   it.effect("isolates and releases session state", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicModel("hello");
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model: fixture.model,
         plugins: [],
@@ -78,7 +78,7 @@ describe("createSession", () => {
   it.effect("fails overlapping prompts with a typed busy error", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicModel("hello");
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model: fixture.model,
         plugins: [],
@@ -131,7 +131,7 @@ describe("createSession", () => {
   it.effect("allows sequential prompts after a Turn completes", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicModel("hello");
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model: fixture.model,
         plugins: [],
@@ -148,7 +148,7 @@ describe("createSession", () => {
   it.effect("rejects prompts after the session scope closes", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicModel("hello");
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model: fixture.model,
         plugins: [],

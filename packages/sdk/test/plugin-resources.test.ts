@@ -71,7 +71,7 @@ const toolModel = (name: string, doneAt = 2) => {
 };
 
 describe("@mitome/sdk Plugin resources", () => {
-  test("acquires resources before sessionStart in Definition order and disposes them in reverse", async () => {
+  test("acquires resources before sessionStart in Agent Definition order and disposes them in reverse", async () => {
     const log: Array<string> = [];
     const plugin = (name: string) =>
       definePlugin({

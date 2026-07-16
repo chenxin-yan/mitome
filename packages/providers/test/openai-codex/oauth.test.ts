@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/p
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { credentialDescriptor } from "@mitome/core";
-import { codex, login, logout, writeCredential } from "../src/index.js";
+import { codex, login, logout, writeCredential } from "../../src/openai-codex/index.js";
 
 const temporaryDirectories: Array<string> = [];
 const marker = "synthetic-secret-marker";
@@ -210,7 +210,7 @@ describe("Codex OAuth", () => {
       join(configDirectory, "auth.json"),
       JSON.stringify({ other: { retained: true } }),
     );
-    const source = new URL("../src/index.ts", import.meta.url).href;
+    const source = new URL("../../src/openai-codex/index.ts", import.meta.url).href;
     const writer = (providerKey: string) =>
       Bun.spawn(
         [

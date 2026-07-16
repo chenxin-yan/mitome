@@ -25,7 +25,7 @@ const binary = join(packageDir, "dist/mitome");
 const coreDir = resolve(packageDir, "../core");
 const effectDir = dirname(createRequire(import.meta.url).resolve("effect/package.json"));
 const aiOpenaiDir = dirname(
-  createRequire(join(packageDir, "..", "openai", "package.json")).resolve(
+  createRequire(join(packageDir, "..", "providers", "package.json")).resolve(
     "@effect/ai-openai/package.json",
   ),
 );
@@ -251,24 +251,7 @@ const output = async (child: ReturnType<typeof spawn>) => {
   return { stdout, stderr, exitCode };
 };
 
-const spawnInteractive = (args: ReadonlyArray<string>, current: Fixture) =>
-  spawnChild(binary, args, {
-    cwd: current.root,
-    env: current.env,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-
 type StdoutReader = AsyncIterator<string>;
-
-const readUntil = async (reader: StdoutReader, marker: string) => {
-  let output = "";
-  while (!output.includes(marker)) {
-    const next = await reader.next();
-    if (next.done) throw new Error(`Missing ${marker} in ${output}`);
-    output += next.value;
-  }
-  return output;
-};
 
 const rest = async (reader: StdoutReader) => {
   let output = "";
@@ -301,7 +284,7 @@ afterEach(async () => {
 });
 
 describe("compiled mitome", () => {
-  test("installs Definition dependencies without Bun on PATH or executing the Definition", async () => {
+  test("installs Agent Definition dependencies without Bun on PATH or executing it", async () => {
     const current = await installFixture();
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
     await mkdir(config, { recursive: true });
@@ -321,7 +304,7 @@ describe("compiled mitome", () => {
     expect(await exists(join(current.root, "definition-ran"))).toBe(false);
   });
 
-  test("installs Core beside a Definition and then runs it", async () => {
+  test("installs Core beside an Agent Definition and then runs it", async () => {
     const current = await installFixture({ core: true });
     expect(
       await output(spawn("", ["install", "--use", current.definition], current)),
@@ -334,9 +317,21 @@ describe("compiled mitome", () => {
     await symlink(effectDir, join(coreModules, "effect"), "dir");
     await writeFile(current.definition, definitionSource("installed"));
 
-    expect(await output(spawn("hello\n", ["--use", current.definition], current))).toMatchObject({
+    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
       exitCode: 0,
       stdout: "installed second\n",
+      stderr: "",
+    });
+  });
+
+  test("runs exactly one positional prompt without reading stdin", async () => {
+    const current = await fixture();
+
+    expect(
+      await output(spawn("ignored\nignored\n", ["hello", "--use", current.definition], current)),
+    ).toMatchObject({
+      exitCode: 0,
+      stdout: "first second\n",
       stderr: "",
     });
   });
@@ -350,7 +345,7 @@ describe("compiled mitome", () => {
     expect(result.stderr).toContain("package.json");
   });
 
-  test("loads only XDG or explicit TypeScript Definitions without Bun on PATH", async () => {
+  test("loads only XDG or explicit TypeScript Agent Definitions without Bun on PATH", async () => {
     const current = await fixture(definitionSource("default"));
     const configDefinition = join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts");
     await mkdir(dirname(configDefinition), { recursive: true });
@@ -364,10 +359,10 @@ describe("compiled mitome", () => {
     );
     await writeFile(
       join(current.root, "agent.ts"),
-      'throw new Error("project Definition was imported");',
+      'throw new Error("project Agent Definition was imported");',
     );
 
-    expect(await output(spawn("hello\n", [], current))).toMatchObject({
+    expect(await output(spawn("", ["hello"], current))).toMatchObject({
       exitCode: 0,
       stdout: "default second\n",
       stderr: "",
@@ -375,7 +370,7 @@ describe("compiled mitome", () => {
 
     const explicit = join(dirname(current.definition), "explicit.ts");
     await writeFile(explicit, definitionSource("explicit"));
-    expect(await output(spawn("hello\n", ["--use", explicit], current))).toMatchObject({
+    expect(await output(spawn("", ["hello", "--use", explicit], current))).toMatchObject({
       exitCode: 0,
       stdout: "explicit second\n",
       stderr: "",
@@ -394,7 +389,7 @@ describe("compiled mitome", () => {
     );
     expect(
       await output(
-        spawn("hello\n", [], fallback, { HOME: fallback.env.HOME, PATH: fallback.env.PATH }),
+        spawn("", ["hello"], fallback, { HOME: fallback.env.HOME, PATH: fallback.env.PATH }),
       ),
     ).toMatchObject({
       exitCode: 0,
@@ -416,14 +411,14 @@ describe("compiled mitome", () => {
       "OPENAI_API_KEY=cwd-synthetic\nPROBE_ONLY_CWD=leaked\n",
     );
 
-    expect(await output(spawn("hello\n", ["--use", current.definition], current))).toMatchObject({
+    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
       exitCode: 0,
       stdout: "config-synthetic:quoted-synthetic:absent\n",
       stderr: "",
     });
     expect(
       await output(
-        spawn("hello\n", ["--use", current.definition], current, {
+        spawn("", ["hello", "--use", current.definition], current, {
           ...current.env,
           OPENAI_API_KEY: "process-synthetic",
         }),
@@ -438,7 +433,7 @@ describe("compiled mitome", () => {
     // Bun's automatic cwd .env autoload in the host.
     expect(
       await output(
-        spawn("hello\n", ["--use", current.definition], current, {
+        spawn("", ["hello", "--use", current.definition], current, {
           HOME: "",
           PATH: current.env.PATH,
         }),
@@ -450,7 +445,7 @@ describe("compiled mitome", () => {
     });
   });
 
-  test("imports a Definition using real installed Effect without Bun on PATH", async () => {
+  test("imports an Agent Definition using real installed Effect without Bun on PATH", async () => {
     const current = await fixture();
     expect(
       await exists(join(dirname(current.definition), "node_modules", "effect", "index.js")),
@@ -463,21 +458,23 @@ describe("compiled mitome", () => {
         ),
       ),
     ).toMatchObject({ version: effectPackage.version, exports: effectPackage.exports });
-    expect(await output(spawn("hello\n", ["--use", current.definition], current))).toMatchObject({
+    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
       exitCode: 0,
       stdout: "first second\n",
       stderr: "",
     });
   });
 
-  test("rejects invalid paths, discovery, config homes, and Definitions", async () => {
+  test("rejects invalid paths, discovery, config homes, and Agent Definitions", async () => {
     const current = await fixture();
     await writeFile(
       join(current.root, "agent.ts"),
-      'throw new Error("project Definition was imported");',
+      'throw new Error("project Agent Definition was imported");',
     );
 
-    const directory = await output(spawn("", ["--use", dirname(current.definition)], current));
+    const directory = await output(
+      spawn("", ["hello", "--use", dirname(current.definition)], current),
+    );
     expect(directory.exitCode).toBe(1);
     expect(directory.stderr).toContain("TypeScript entry file");
 
@@ -485,42 +482,40 @@ describe("compiled mitome", () => {
     expect(implicit.exitCode).toBe(1);
     expect(implicit.stderr).toContain("--use <file>");
 
-    const noHomes = await output(spawn("", [], current, { HOME: "", PATH: current.env.PATH }));
+    const noHomes = await output(
+      spawn("", ["hello"], current, { HOME: "", PATH: current.env.PATH }),
+    );
     expect(noHomes.exitCode).toBe(1);
     expect(noHomes.stderr).toContain("APPDATA (on Windows)");
 
     const invalid = await fixture("export default {};");
-    const invalidDefinition = await output(spawn("", ["--use", invalid.definition], invalid));
+    const invalidDefinition = await output(
+      spawn("", ["hello", "--use", invalid.definition], invalid),
+    );
     expect(invalidDefinition.exitCode).toBe(1);
-    expect(invalidDefinition.stderr).toContain("Definition must default-export an Agent");
+    expect(invalidDefinition.stderr).toContain("Agent Definition must default-export an Agent");
 
     const javascript = join(current.root, "agent.js");
     await writeFile(javascript, "export default {};");
-    const nonTypescript = await output(spawn("", ["--use", javascript], current));
+    const nonTypescript = await output(spawn("", ["hello", "--use", javascript], current));
     expect(nonTypescript.exitCode).toBe(1);
     expect(nonTypescript.stderr).toContain("must be a TypeScript entry file");
   });
 
-  test("reports a failed Turn with its cause and keeps the Session usable", async () => {
+  test("reports a failed Turn with its cause", async () => {
     const current = await fixture(`
 import { Layer, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
+import { LanguageModel } from "effect/unstable/ai";
 import { makeModel } from "@mitome/core";
 
-let calls = 0;
 const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
-  streamText: () => {
-    calls += 1;
-    return calls === 2
-      ? Stream.fail(new Error("provider boom"))
-      : Stream.succeed(Response.makePart("text-delta", { id: String(calls), delta: "ok" + calls }));
-  },
+  streamText: () => Stream.fail(new Error("provider boom")),
 }));
 export default { instructions: "Reply with the fixture output.", model, plugins: [] };
 `);
-    const result = await output(spawn("a\nb\nc\n", ["--use", current.definition], current));
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe("ok1\nok3\n");
+    const result = await output(spawn("", ["hello", "--use", current.definition], current));
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
     expect(result.stderr).toContain("TurnError");
     expect(result.stderr).toContain("provider boom");
   });
@@ -577,7 +572,7 @@ export default {
   })],
 };
 `);
-    const result = await output(spawn("hello\n", ["--use", current.definition], current));
+    const result = await output(spawn("", ["hello", "--use", current.definition], current));
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("[tool echo]");
@@ -585,14 +580,14 @@ export default {
     expect(result.stdout).toContain("done");
   });
 
-  test("checks adjacent Core before Definition execution", async () => {
+  test("checks adjacent Core before Agent Definition execution", async () => {
     const missing = await fixture(
       'import { writeFileSync } from "node:fs"; writeFileSync("marker", "ran");',
     );
     await rm(join(dirname(missing.definition), "node_modules", "@mitome", "core"), {
       recursive: true,
     });
-    const missingCore = await output(spawn("", ["--use", missing.definition], missing));
+    const missingCore = await output(spawn("", ["hello", "--use", missing.definition], missing));
     expect(missingCore.exitCode).toBe(1);
     expect(missingCore.stderr).toContain(`Install @mitome/core@${corePackage.version}`);
     expect(await exists(join(missing.root, "marker"))).toBe(false);
@@ -610,7 +605,9 @@ export default {
     const packageJson = JSON.parse(await readFile(packagePath, "utf8")) as Record<string, unknown>;
     packageJson.version = "999.0.0";
     await writeFile(packagePath, JSON.stringify(packageJson));
-    const incompatibleCore = await output(spawn("", ["--use", mismatch.definition], mismatch));
+    const incompatibleCore = await output(
+      spawn("", ["hello", "--use", mismatch.definition], mismatch),
+    );
     expect(incompatibleCore.exitCode).toBe(1);
     expect(incompatibleCore.stderr).toContain("999.0.0");
     expect(await exists(join(mismatch.root, "marker"))).toBe(false);
@@ -624,7 +621,7 @@ export default {
       cleanupDone: join(current.root, "cleanup-done"),
     };
     await writeFile(current.definition, definitionSource("first", { block: true, signalProbe }));
-    const child = spawn("hello\n", ["--use", current.definition], current);
+    const child = spawn("", ["hello", "--use", current.definition], current);
     const reader = child.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
     const first = await reader.next();
     if (first.done) throw new Error("Missing first output");
@@ -645,66 +642,29 @@ export default {
     expect(firstOutput + tail).not.toContain(" second");
   });
 
-  test("approves, denies, defaults, and EOF-denies pending Tool execution", async () => {
-    const run = async (answer: string | undefined) => {
-      const current = await fixture();
-      const marker = join(current.root, "handler-ran");
-      await writeFile(current.definition, approvalDefinitionSource(marker));
-      const process = spawnInteractive(["--use", current.definition], current);
-      const reader = process.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
-      process.stdin.write("hello\n");
-      const initial = await readUntil(reader, "[approval dangerous]");
-      if (answer === undefined) process.stdin.end();
-      else process.stdin.end(answer);
-      const [tail, stderr, exitCode] = await Promise.all([
-        rest(reader),
-        text(process.stderr),
-        exited(process),
-      ]);
-      return {
-        current,
-        marker,
-        stdout: initial + tail,
-        stderr,
-        exitCode,
-        ran: await exists(marker),
-      };
-    };
-
-    const approved = await run("y\n");
-    expect(approved).toMatchObject({ exitCode: 0, stderr: "", ran: true });
-    expect(approved.stdout).toContain("action: 'delete'");
-    expect(approved.stdout).toContain("continued");
-
-    for (const answer of ["n\n", "\n", undefined]) {
-      const denied = await run(answer);
-      expect(denied).toMatchObject({ exitCode: 0, stderr: "", ran: false });
-      expect(denied.stdout).toContain("[approval dangerous]");
-      // Denial lets the Turn continue: the second model step still streams.
-      expect(denied.stdout).toContain("continued");
-    }
-  });
-
-  test("interrupts while a Tool approval is pending", async () => {
+  test("auto-approves pending Tool execution without reading stdin", async () => {
     const current = await fixture();
     const marker = join(current.root, "handler-ran");
     await writeFile(current.definition, approvalDefinitionSource(marker));
-    const process = spawnInteractive(["--use", current.definition], current);
-    const reader = process.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
-    process.stdin.write("hello\n");
-    await readUntil(reader, "[approval dangerous]");
-    process.kill("SIGINT");
-    await expect(exited(process)).resolves.toBe(130);
-    expect(await exists(marker)).toBe(false);
+
+    const result = await output(
+      spawn("ignored\n", ["hello", "--use", current.definition], current),
+    );
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(result.stdout).toContain("[approval dangerous auto-approved]");
+    expect(result.stdout).not.toContain("Approve?");
+    expect(result.stdout).toContain("continued");
+    expect(await exists(marker)).toBe(true);
   });
 
-  test("initializes a Definition and stores a masked Credential", async () => {
+  test("initializes an Agent Definition and stores a masked Credential", async () => {
     const current = await scaffold("mitome-cli-");
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
     await mkdir(config, { recursive: true });
     const localPackages = join(current.root, "local-packages");
     const archives = new Map<string, Buffer>();
-    for (const packageName of ["core", "openai", "sdk"] as const) {
+    for (const packageName of ["core", "providers", "sdk"] as const) {
       const source = resolve(packageDir, "..", packageName);
       // npm tarballs root entries under package/; staging the layout keeps tar
       // invocation portable (GNU --transform is unavailable on BSD/macOS tar).
@@ -715,7 +675,10 @@ export default {
         JSON.stringify({
           name: `@mitome/${packageName}`,
           version: corePackage.version,
-          exports: { ".": "./dist/index.js" },
+          exports:
+            packageName === "providers"
+              ? { "./openai": "./dist/openai/index.js" }
+              : { ".": "./dist/index.js" },
         }),
       );
       const archive = join(localPackages, `${packageName}.tgz`);
@@ -765,14 +728,14 @@ export default {
     expect(result.stdout + result.stderr).not.toContain(key);
     const definition = await readFile(join(config, "agent.ts"), "utf8");
     expect(definition).toContain('import { defineAgent } from "@mitome/sdk"');
-    expect(definition).toContain('import { env, openai } from "@mitome/openai"');
+    expect(definition).toContain('import { env, openai } from "@mitome/providers/openai"');
     expect(definition).toContain('openai("fixture-model", env("OPENAI_API_KEY"))');
     expect(definition).toContain("plugins: []");
     expect(definition).not.toContain(key);
     expect(JSON.parse(await readFile(join(config, "package.json"), "utf8"))).toMatchObject({
       dependencies: {
         "@mitome/core": corePackage.version,
-        "@mitome/openai": corePackage.version,
+        "@mitome/providers": corePackage.version,
         "@mitome/sdk": corePackage.version,
       },
     });
@@ -793,7 +756,7 @@ export default {
     expect(await readFile(join(config, ".env"), "utf8")).toBe("");
   });
 
-  test("refuses to clobber an existing default Definition", async () => {
+  test("refuses to clobber an existing default Agent Definition", async () => {
     const current = await fixture();
     const path = join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts");
     await mkdir(dirname(path), { recursive: true });
@@ -804,7 +767,7 @@ export default {
     expect(await readFile(path, "utf8")).toBe("export default {};\n");
   });
 
-  test("refuses to clobber a config package.json without a Definition", async () => {
+  test("refuses to clobber a config package.json without an Agent Definition", async () => {
     const current = await scaffold("mitome-cli-");
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
     await mkdir(config, { recursive: true });
@@ -837,7 +800,7 @@ export default {
     expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts"))).toBe(false);
   });
 
-  test("auth delegates to the Definition credential descriptor without exposing Credentials", async () => {
+  test("auth delegates to the Agent Definition credential descriptor without exposing Credentials", async () => {
     const current = await fixture(precedenceDefinitionSource("FIXTURE_PROVIDER_ENV"));
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
     await mkdir(config, { recursive: true });
@@ -938,12 +901,12 @@ export default { instructions: "", model, plugins: [] };`,
     expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", ".env"))).toBe(false);
   });
 
-  test("auth login without a Definition directs users to init", async () => {
+  test("auth login without an Agent Definition directs users to init", async () => {
     const current = await fixture();
     const result = await output(spawn("", ["auth", "login"], current));
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("run mitome init first");
-    expect(result.stderr).not.toContain("Definition not found");
+    expect(result.stderr).not.toContain("Agent Definition not found");
   });
 
   test("auth login rejects Credentials that Bun's env parser would corrupt", async () => {
@@ -960,7 +923,7 @@ export default { instructions: "", model, plugins: [] };`,
     const current = await fixture(definitionSource("bare"));
     const result = await output(spawn("", ["auth", "login", "--use", current.definition], current));
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toBe("Definition Model does not support CLI authentication.\n");
+    expect(result.stderr).toBe("Agent Definition Model does not support CLI authentication.\n");
   });
 
   test("uses Core directly without SDK runtime support", async () => {

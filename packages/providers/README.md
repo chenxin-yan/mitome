@@ -1,6 +1,8 @@
-# @mitome/openai-codex
+# @mitome/providers
 
-`@mitome/openai-codex` is best-effort compatibility with ChatGPT's unofficial `chatgpt.com/backend-api`. OpenAI publishes no stable contract for this backend, so it can change without notice.
+Import a provider through `@mitome/providers/openai`, `@mitome/providers/openai-compatible`, or `@mitome/providers/openai-codex`.
+
+The Codex provider is best-effort compatibility with ChatGPT's unofficial `chatgpt.com/backend-api`. OpenAI publishes no stable contract for this backend, so it can change without notice.
 
 The provider uses browser PKCE credentials and the SSE-only Codex Responses transport. It intentionally has no device-code or WebSocket path.
 

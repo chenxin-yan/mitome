@@ -1,7 +1,7 @@
 import { posix, win32 } from "node:path";
 
 /**
- * Resolves Mitome's shared Definition and Credential directory without reading
+ * Resolves Mitome's shared Agent Definition and Credential directory without reading
  * process globals; undefined when no config root variable is set.
  */
 export const resolveConfigDirectory = (

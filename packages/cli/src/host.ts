@@ -1,15 +1,14 @@
-// Runs inside the embedded Bun runtime with the Definition path as argv[1].
+// Runs inside the embedded Bun runtime with the Agent Definition path as argv[1].
 // index.ts embeds this file as text and never bundles it: Core and Effect are
-// resolved beside the selected Definition at runtime so the host shares the
-// exact module instances the Definition was installed against. The static
+// resolved beside the selected Agent Definition at runtime so the host shares the
+// exact module instances the Agent Definition was installed against. The static
 // imports below are type-only or node builtins, so nothing else is pulled in.
 import { dirname } from "node:path";
-import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
-import { inspect } from "node:util";
-import type { Definition, TurnEvent } from "@mitome/core";
+import type { AgentDefinition, TurnEvent } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
+const prompt = process.argv[2]!;
 const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
 const effectPath = Bun.resolveSync("effect", dirname(corePath));
 const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath).href);
@@ -18,9 +17,9 @@ const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
 
-const isDefinition = (value: unknown): value is Definition => {
+const isAgentDefinition = (value: unknown): value is AgentDefinition => {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<Definition>;
+  const candidate = value as Partial<AgentDefinition>;
   return (
     typeof candidate.instructions === "string" &&
     candidate.model !== undefined &&
@@ -43,9 +42,7 @@ const render = (event: TurnEvent): void => {
       process.stdout.write(`\n[tool ${event.name} ${event.isFailure ? "failed" : "completed"}]\n`);
       break;
     case "approval-required":
-      process.stdout.write(
-        `\n[approval ${event.name}] ${inspect(event.params, { breakLength: Infinity })}\nApprove? [y/N] `,
-      );
+      process.stdout.write(`\n[approval ${event.name} auto-approved]\n`);
       break;
     case "response-complete":
       process.stdout.write("\n");
@@ -65,49 +62,23 @@ const errorMessage = (error: unknown): string => {
   return cause === undefined ? head : `${head}\n  cause: ${errorMessage(cause)}`;
 };
 
-if (!isDefinition(loaded)) {
-  throw new Error("Definition must default-export an Agent with instructions, model, and Plugins.");
+if (!isAgentDefinition(loaded)) {
+  throw new Error(
+    "Agent Definition must default-export an Agent with instructions, model, and Plugins.",
+  );
 }
 
 const { Cause, Effect, Exit, Fiber, Stream } = effect;
 
-// Approval answers are consumed from the same reader mid-Turn, so prompts and
-// y/N decisions share one line source instead of a single prompt Stream.
-const input = createInterface({ input: process.stdin, crlfDelay: Infinity })[
-  Symbol.asyncIterator
-]();
-const nextLine = () =>
-  // @effect-diagnostics-next-line unknownInEffectCatch:off
-  Effect.tryPromise({
-    try: () => input.next().then((result) => (result.done ? undefined : result.value)),
-    catch: (cause) => cause,
-  });
-
 const program = Effect.scoped(
   Effect.gen(function* () {
     const session = yield* core.createSession(loaded);
-    while (true) {
-      const text = yield* nextLine();
-      if (text === undefined) return;
-      yield* Stream.runForEach(session.prompt(text), (event) =>
-        Effect.gen(function* () {
-          render(event);
-          if (event.type !== "approval-required") return;
-          const answer = yield* nextLine();
-          if (answer?.trim().toLowerCase() === "y") {
-            yield* event.approve();
-          } else {
-            // Default, EOF, and unrecognized answers all deny with Core's default reason.
-            yield* event.deny();
-          }
-        }),
-      ).pipe(
-        // A failed Turn is reported but keeps the Session usable for the next line.
-        Effect.catch((error) =>
-          Effect.sync(() => process.stderr.write(`${errorMessage(error)}\n`)),
-        ),
-      );
-    }
+    yield* Stream.runForEach(session.prompt(prompt), (event) =>
+      Effect.gen(function* () {
+        render(event);
+        if (event.type === "approval-required") yield* event.approve();
+      }),
+    );
   }),
 );
 

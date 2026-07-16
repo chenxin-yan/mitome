@@ -54,6 +54,7 @@
       "devDependencies": {
         "@mitome/config": "workspace:*",
         "@mitome/core": "workspace:*",
+        "@mitome/providers": "workspace:*",
         "@types/bun": "catalog:",
         "effect": "catalog:",
         "typescript": "catalog:",
@@ -77,43 +78,11 @@
         "vitest": "catalog:",
       },
     },
-    "packages/openai": {
-      "name": "@mitome/openai",
+    "packages/providers": {
+      "name": "@mitome/providers",
       "version": "0.0.0",
       "dependencies": {
         "@effect/ai-openai": "catalog:",
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@mitome/config": "workspace:*",
-        "@mitome/core": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@mitome/core": "workspace:*",
-      },
-    },
-    "packages/openai-codex": {
-      "name": "@mitome/openai-codex",
-      "version": "0.0.0",
-      "dependencies": {
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@mitome/config": "workspace:*",
-        "@mitome/core": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@mitome/core": "workspace:*",
-      },
-    },
-    "packages/openai-compatible": {
-      "name": "@mitome/openai-compatible",
-      "version": "0.0.0",
-      "dependencies": {
         "@effect/ai-openai-compat": "catalog:",
         "effect": "catalog:",
       },
@@ -300,11 +269,7 @@
 
     "@mitome/docs": ["@mitome/docs@workspace:apps/docs"],
 
-    "@mitome/openai": ["@mitome/openai@workspace:packages/openai"],
-
-    "@mitome/openai-codex": ["@mitome/openai-codex@workspace:packages/openai-codex"],
-
-    "@mitome/openai-compatible": ["@mitome/openai-compatible@workspace:packages/openai-compatible"],
+    "@mitome/providers": ["@mitome/providers@workspace:packages/providers"],
 
     "@mitome/sdk": ["@mitome/sdk@workspace:packages/sdk"],
 

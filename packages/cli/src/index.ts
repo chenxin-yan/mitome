@@ -162,6 +162,8 @@ const maskedPrompt = async (
   }
 };
 
+const promptUsage = 'mitome "prompt" [--use <file>]';
+
 const definitionPath = async (args: ReadonlyArray<string>): Promise<string> => {
   let selected: string;
   if (args.length === 0) {
@@ -173,7 +175,7 @@ const definitionPath = async (args: ReadonlyArray<string>): Promise<string> => {
   } else if (args.length === 2 && args[0] === "--use") {
     selected = args[1]!;
   } else {
-    throw new Error("Usage: mitome [install|init|auth <login|logout>] [--use <file>]");
+    throw new Error(`Usage: ${promptUsage} | mitome [install|init|auth <login|logout>] [--use <file>]`);
   }
 
   const path = resolve(selected);
@@ -183,17 +185,17 @@ const definitionPath = async (args: ReadonlyArray<string>): Promise<string> => {
   } catch {
     throw new Error(
       args.length === 0
-        ? "No Definition found; run mitome init first or use --use <file>."
-        : `Definition not found at ${path}; check the --use path.`,
+        ? "No Agent Definition found; run mitome init first or use --use <file>."
+        : `Agent Definition not found at ${path}; check the --use path.`,
     );
   }
   if (file.isDirectory()) {
     throw new Error(
-      `Definition path ${path} is a directory; --use requires a TypeScript entry file.`,
+      `Agent Definition path ${path} is a directory; --use requires a TypeScript entry file.`,
     );
   }
   if (extname(path) !== ".ts") {
-    throw new Error(`Definition path ${path} must be a TypeScript entry file.`);
+    throw new Error(`Agent Definition path ${path} must be a TypeScript entry file.`);
   }
   return path;
 };
@@ -222,12 +224,12 @@ const checkRuntime = async (path: string): Promise<void> => {
   const core = await resolvePackage("@mitome/core", path);
   if (core === undefined) {
     throw new Error(
-      `No @mitome/core is installed beside ${path}. Install @mitome/core@${corePackage.version} with the Definition dependencies (run \`mitome install\`).`,
+      `No @mitome/core is installed beside ${path}. Install @mitome/core@${corePackage.version} with the Agent Definition dependencies (run \`mitome install\`).`,
     );
   }
   if (core.version !== corePackage.version) {
     throw new Error(
-      `@mitome/core beside ${path} is ${String(core.version)}; install @mitome/core@${corePackage.version} with the Definition dependencies (run \`mitome install\`).`,
+      `@mitome/core beside ${path} is ${String(core.version)}; install @mitome/core@${corePackage.version} with the Agent Definition dependencies (run \`mitome install\`).`,
     );
   }
 };
@@ -245,17 +247,20 @@ const install = async (path: string): Promise<void> => {
   process.exitCode = await child.exited;
 };
 
-const runHost = async (path: string): Promise<void> => {
+const runHost = async (path: string, prompt: string): Promise<void> => {
   const directory = configDirectory();
   // Always pass --env-file: its presence suppresses Bun's automatic cwd .env
   // autoload in the child, and Bun tolerates a missing file silently.
   const envPath = directory === undefined ? await emptyEnvFile() : join(directory, ".env");
-  const child = Bun.spawn([process.execPath, `--env-file=${envPath}`, "--eval", hostSource, path], {
-    env: { ...process.env, BUN_BE_BUN: "1" },
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+  const child = Bun.spawn(
+    [process.execPath, `--env-file=${envPath}`, "--eval", hostSource, path, prompt],
+    {
+      env: { ...process.env, BUN_BE_BUN: "1" },
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    },
+  );
   const forwardSigint = () => child.kill("SIGINT");
   process.once("SIGINT", forwardSigint);
   process.exitCode = await child.exited;
@@ -264,7 +269,7 @@ const runHost = async (path: string): Promise<void> => {
 
 const inspectCredential = async (path: string): Promise<CredentialDescriptor> => {
   const directory = await mkdtemp(join(tmpdir(), "mitome-auth-"));
-  // The descriptor travels via file rather than stdout: importing the Definition
+  // The descriptor travels via file rather than stdout: importing the Agent Definition
   // may print, and stdout stays ignored so nothing leaks into the prompt flow.
   const output = join(directory, "credential.json");
   try {
@@ -283,10 +288,11 @@ const inspectCredential = async (path: string): Promise<CredentialDescriptor> =>
         stderr: "inherit",
       },
     );
-    if ((await child.exited) !== 0) throw new Error("Could not inspect Definition authentication.");
+    if ((await child.exited) !== 0)
+      throw new Error("Could not inspect Agent Definition authentication.");
     const credential: unknown = JSON.parse(await readFile(output, "utf8"));
     if (!isCredentialDescriptor(credential))
-      throw new Error("Definition Model does not support CLI authentication.");
+      throw new Error("Agent Definition Model does not support CLI authentication.");
     return credential;
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -336,7 +342,7 @@ const init = async (): Promise<void> => {
   await mkdir(directory, { recursive: true });
   await writeFile(
     path,
-    `import { defineAgent } from "@mitome/sdk";\nimport { env, openai } from "@mitome/openai";\n\nexport default defineAgent({\n  instructions: "You are a helpful Agent.",\n  model: openai(${JSON.stringify(model)}, env("OPENAI_API_KEY")),\n  plugins: [],\n});\n`,
+    `import { defineAgent } from "@mitome/sdk";\nimport { env, openai } from "@mitome/providers/openai";\n\nexport default defineAgent({\n  instructions: "You are a helpful Agent.",\n  model: openai(${JSON.stringify(model)}, env("OPENAI_API_KEY")),\n  plugins: [],\n});\n`,
   );
   await writeFile(
     join(directory, "package.json"),
@@ -347,7 +353,7 @@ const init = async (): Promise<void> => {
         type: "module",
         dependencies: {
           "@mitome/core": corePackage.version,
-          "@mitome/openai": corePackage.version,
+          "@mitome/providers": corePackage.version,
           "@mitome/sdk": corePackage.version,
         },
       },
@@ -394,9 +400,13 @@ const main = async (): Promise<void> => {
     await auth(args[1], args.slice(2));
     return;
   }
-  const path = await definitionPath(args);
+  const [prompt, ...definitionArgs] = args;
+  if (prompt === undefined || prompt === "--use") {
+    throw new Error(`Usage: ${promptUsage}`);
+  }
+  const path = await definitionPath(definitionArgs);
   await checkRuntime(path);
-  await runHost(path);
+  await runHost(path, prompt);
 };
 
 void main().catch((error: unknown) => {

@@ -5,8 +5,8 @@ import { Schema } from "effect";
 import {
   ToolExecutionDenied,
   TurnError,
+  type AgentDefinition,
   createSession,
-  type Definition,
   type Plugin,
   type PluginHooks,
 } from "../src/index.js";
@@ -62,7 +62,7 @@ const toolModel = () => {
 
 describe("Plugin Hooks", () => {
   it.effect(
-    "runs notification Hooks in Definition order and passes transformed prompts onward",
+    "runs notification Hooks in Agent Definition order and passes transformed prompts onward",
     () =>
       Effect.gen(function* () {
         const log: Array<string> = [];
@@ -82,7 +82,7 @@ describe("Plugin Hooks", () => {
             },
           },
         });
-        const definition: Definition = {
+        const definition: AgentDefinition = {
           instructions: "Be concise.",
           model: textModel((prompt) => (modelPrompt = prompt)),
           plugins: [plugin("first", true), plugin("second")],
@@ -125,7 +125,7 @@ describe("Plugin Hooks", () => {
         parameters: Schema.String,
         success: Schema.String,
       });
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model: fixture.model,
         plugins: [
@@ -155,7 +155,7 @@ describe("Plugin Hooks", () => {
     Effect.gen(function* () {
       const prompts: Array<Prompt.Prompt> = [];
       let history: ReadonlyArray<Prompt.Message> = [];
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model: textModel((prompt) => void prompts.push(prompt)),
         plugins: [
@@ -191,7 +191,7 @@ describe("Plugin Hooks", () => {
         success: Schema.String,
         failureMode: "return",
       });
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model: fixture.model,
         plugins: [
@@ -237,7 +237,7 @@ describe("Plugin Hooks", () => {
         parameters: Schema.String,
         success: Schema.String,
       });
-      const valid: Definition = {
+      const valid: AgentDefinition = {
         instructions: "Be concise.",
         model: fixture.model,
         plugins: [
@@ -266,7 +266,7 @@ describe("Plugin Hooks", () => {
       expect(JSON.stringify(fixture.prompt())).toContain("hello!");
 
       const invalidFixture = toolModel();
-      const invalid: Definition = {
+      const invalid: AgentDefinition = {
         ...valid,
         model: invalidFixture.model,
         plugins: [
@@ -603,7 +603,7 @@ describe("Plugin Hooks", () => {
   it.effect("fails startup and Turns for unrecovered Hooks while allowing Plugin recovery", () =>
     Effect.gen(function* () {
       const startup = new HookFailure({ message: "startup" });
-      const startupDefinition: Definition = {
+      const startupDefinition: AgentDefinition = {
         instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [{ name: "bad", hooks: { sessionStart: Effect.fail(startup) } }],
@@ -617,7 +617,7 @@ describe("Plugin Hooks", () => {
       });
 
       const turn = new HookFailure({ message: "turn" });
-      const turnDefinition: Definition = {
+      const turnDefinition: AgentDefinition = {
         instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [{ name: "bad", hooks: { turnStart: () => Effect.fail(turn) } }],
@@ -629,7 +629,7 @@ describe("Plugin Hooks", () => {
         cause: turn,
       });
 
-      const recovered: Definition = {
+      const recovered: AgentDefinition = {
         instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [

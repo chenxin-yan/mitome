@@ -1,5 +1,5 @@
 {
-  "name": "@mitome/openai-codex",
+  "name": "@mitome/providers",
   "version": "0.0.0",
   "private": true,
   "files": [
@@ -8,9 +8,17 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+    "./openai": {
+      "types": "./dist/openai/index.d.ts",
+      "default": "./dist/openai/index.js"
+    },
+    "./openai-compatible": {
+      "types": "./dist/openai-compatible/index.d.ts",
+      "default": "./dist/openai-compatible/index.js"
+    },
+    "./openai-codex": {
+      "types": "./dist/openai-codex/index.d.ts",
+      "default": "./dist/openai-codex/index.js"
     }
   },
   "scripts": {
@@ -21,6 +29,8 @@
     "test": "bun test test"
   },
   "dependencies": {
+    "@effect/ai-openai": "catalog:",
+    "@effect/ai-openai-compat": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

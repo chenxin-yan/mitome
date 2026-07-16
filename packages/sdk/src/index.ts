@@ -1,6 +1,6 @@
 export {
   ApprovalResolutionError,
-  DefinitionError,
+  AgentDefinitionError,
   SessionBusyError,
   SessionReleasedError,
   ToolExecutionDenied,
@@ -9,7 +9,7 @@ export {
   defineAgent,
 } from "@mitome/core";
 export type {
-  Definition,
+  AgentDefinition,
   Model,
   Plugin,
   PluginHooks,

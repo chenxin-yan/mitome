@@ -54,17 +54,19 @@ export interface Plugin<Resource = never, ResourceError = never> {
  */
 export type AnyPlugin = Plugin<any, unknown> | Plugin<never, any>;
 
-export interface Definition {
+export interface AgentDefinition {
   readonly instructions: string;
   readonly model: Model;
   readonly plugins: ReadonlyArray<AnyPlugin>;
 }
 
-export class DefinitionError extends Schema.TaggedErrorClass<DefinitionError>()("DefinitionError", {
-  message: Schema.String,
-}) {}
+export class AgentDefinitionError extends Schema.TaggedErrorClass<AgentDefinitionError>()(
+  "AgentDefinitionError",
+  { message: Schema.String },
+) {}
 
-export const defineAgent = <const Value extends Definition>(definition: Value): Value => definition;
+export const defineAgent = <const Value extends AgentDefinition>(definition: Value): Value =>
+  definition;
 
 type ServiceFree<Tools extends Record<string, Tool.Any>> = [
   Tool.HandlerServices<Tools[keyof Tools]> | Tool.ResultDecodingServices<Tools[keyof Tools]>,
@@ -107,8 +109,10 @@ export function definePlugin(plugin: unknown): never {
 const toolRequiresHandler = (tool: Tool.Any): boolean =>
   Tool.isProviderDefined(tool) ? tool.requiresHandler : true;
 
-export const validateDefinition: (definition: Definition) => Effect.Effect<void, DefinitionError> =
-  Effect.fn("@mitome/core/validateDefinition")(function* (definition) {
+export const validateAgentDefinition: (
+  definition: AgentDefinition,
+) => Effect.Effect<void, AgentDefinitionError> = Effect.fn("@mitome/core/validateAgentDefinition")(
+  function* (definition) {
     const pluginNames = new Set<string>();
     const toolNames = new Set<string>();
     const handlerNames = new Set<string>();
@@ -116,7 +120,7 @@ export const validateDefinition: (definition: Definition) => Effect.Effect<void,
 
     for (const plugin of definition.plugins) {
       if (pluginNames.has(plugin.name)) {
-        return yield* new DefinitionError({
+        return yield* new AgentDefinitionError({
           message: `Duplicate Plugin name: ${plugin.name}`,
         });
       }
@@ -125,7 +129,7 @@ export const validateDefinition: (definition: Definition) => Effect.Effect<void,
       const pluginToolNames = new Set<string>();
       for (const tool of Object.values(plugin.toolkit?.tools ?? {})) {
         if (toolNames.has(tool.name)) {
-          return yield* new DefinitionError({ message: `Duplicate Tool name: ${tool.name}` });
+          return yield* new AgentDefinitionError({ message: `Duplicate Tool name: ${tool.name}` });
         }
         toolNames.add(tool.name);
         pluginToolNames.add(tool.name);
@@ -134,7 +138,7 @@ export const validateDefinition: (definition: Definition) => Effect.Effect<void,
 
       for (const name of Object.keys(plugin.toolInputValidators ?? {})) {
         if (!pluginToolNames.has(name)) {
-          return yield* new DefinitionError({
+          return yield* new AgentDefinitionError({
             message: `Tool input validator has no matching Tool: ${name}`,
           });
         }
@@ -142,7 +146,7 @@ export const validateDefinition: (definition: Definition) => Effect.Effect<void,
 
       for (const name of Object.keys(plugin.toolResultValidators ?? {})) {
         if (!pluginToolNames.has(name)) {
-          return yield* new DefinitionError({
+          return yield* new AgentDefinitionError({
             message: `Tool result validator has no matching Tool: ${name}`,
           });
         }
@@ -150,7 +154,7 @@ export const validateDefinition: (definition: Definition) => Effect.Effect<void,
 
       for (const name of Object.keys(plugin.handlers ?? {})) {
         if (handlerNames.has(name)) {
-          return yield* new DefinitionError({
+          return yield* new AgentDefinitionError({
             message: `Duplicate Tool handler name: ${name}`,
           });
         }
@@ -160,14 +164,15 @@ export const validateDefinition: (definition: Definition) => Effect.Effect<void,
 
     for (const name of requiredHandlerNames) {
       if (!handlerNames.has(name)) {
-        return yield* new DefinitionError({ message: `Missing Tool handler: ${name}` });
+        return yield* new AgentDefinitionError({ message: `Missing Tool handler: ${name}` });
       }
     }
     for (const name of handlerNames) {
       if (!toolNames.has(name)) {
-        return yield* new DefinitionError({
+        return yield* new AgentDefinitionError({
           message: `Tool handler has no matching Tool: ${name}`,
         });
       }
     }
-  });
+  },
+);

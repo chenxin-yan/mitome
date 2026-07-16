@@ -1,11 +1,11 @@
 import { Context, Deferred, Effect, Layer, Schema, Scope, Semaphore, Stream } from "effect";
 import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
-import { validateDefinition } from "./definition.js";
+import { validateAgentDefinition } from "./definition.js";
 import type {
+  AgentDefinition,
+  AgentDefinitionError,
   AnyPlugin,
-  Definition,
-  DefinitionError,
   ToolInputValidator,
   ToolResultValidator,
 } from "./definition.js";
@@ -513,11 +513,11 @@ const runEndHooks = (
   });
 
 export const createSession: (
-  definition: Definition,
-) => Effect.Effect<Session, DefinitionError | TurnError, Scope.Scope> = Effect.fn(
+  definition: AgentDefinition,
+) => Effect.Effect<Session, AgentDefinitionError | TurnError, Scope.Scope> = Effect.fn(
   "@mitome/core/createSession",
 )(function* (definition) {
-  yield* validateDefinition(definition);
+  yield* validateAgentDefinition(definition);
 
   const layer = getModelLayer(definition.model);
   if (layer === undefined) {

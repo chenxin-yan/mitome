@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Fiber, Stream } from "effect";
 import { Schema } from "effect";
 import { Response, Tool, Toolkit } from "effect/unstable/ai";
-import { createSession, type Definition } from "../src/index.js";
+import { createSession, type AgentDefinition } from "../src/index.js";
 import { makeTestModel } from "./model.js";
 
 class HookFailure extends Schema.TaggedErrorClass<HookFailure>()("HookFailure", {
@@ -74,7 +74,7 @@ describe("createSession Tool serialization", () => {
           log.push(label);
           active -= 1;
         });
-      const definition: Definition = {
+      const definition: AgentDefinition = {
         instructions: "Be concise.",
         model,
         plugins: [

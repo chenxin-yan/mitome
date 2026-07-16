@@ -12,7 +12,7 @@ import {
   logout,
   oauth,
   writeCredential,
-} from "../src/index.js";
+} from "../../src/openai-codex/index.js";
 
 // Option shapes are pinned to literals (not the exported aliases) so a leaked
 // or widened field fails to compile, matching openai.types.ts.

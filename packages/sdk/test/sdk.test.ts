@@ -33,7 +33,7 @@ const makeDeterministicModel = (output: string) =>
   });
 
 describe("@mitome/sdk", () => {
-  test("returns a canonical Definition accepted directly by Core", async () => {
+  test("returns a canonical Agent Definition accepted directly by Core", async () => {
     const fixture = await Effect.runPromise(makeDeterministicModel("hello"));
     const definition = defineAgent({
       instructions: "Be concise.",

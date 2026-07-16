@@ -7,8 +7,8 @@ import { Tool, Toolkit } from "effect/unstable/ai";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createSession, type Definition } from "@mitome/core";
-import { codex, writeCredential } from "../src/index.js";
+import { type AgentDefinition, createSession } from "@mitome/core";
+import { codex, writeCredential } from "../../src/openai-codex/index.js";
 
 const directories: Array<string> = [];
 const jwt = (accountId: string) =>
@@ -42,7 +42,7 @@ const directory = async (value = credential()) => {
   return configDirectory;
 };
 
-const definition = (model: ReturnType<typeof codex>): Definition => ({
+const definition = (model: ReturnType<typeof codex>): AgentDefinition => ({
   instructions: "Be concise.",
   model,
   plugins: [],
@@ -416,8 +416,8 @@ describe("Codex SSE", () => {
         );
       },
     });
-    const source = new URL("../src/index.ts", import.meta.url).href;
-    const core = new URL("../node_modules/@mitome/core/dist/index.js", import.meta.url).href;
+    const source = new URL("../../src/openai-codex/index.ts", import.meta.url).href;
+    const core = new URL("../../node_modules/@mitome/core/dist/index.js", import.meta.url).href;
     const child = () =>
       Bun.spawn(
         [

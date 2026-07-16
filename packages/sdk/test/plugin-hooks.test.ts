@@ -66,7 +66,7 @@ const makeToolModel = () => {
 };
 
 describe("@mitome/sdk Plugin Hooks", () => {
-  test("adapts Promise Hooks into the Core lifecycle in Definition order", async () => {
+  test("adapts Promise Hooks into the Core lifecycle in Agent Definition order", async () => {
     const log: Array<string> = [];
     const signals: Array<boolean> = [];
     const model = makeToolModel();

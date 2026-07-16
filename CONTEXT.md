@@ -25,7 +25,7 @@ A user-authored declaration of exactly one Agent and its Plugins.
 _Avoid_: Definition (bare), configuration, setup script, registry
 
 **Plugin**:
-A named, reusable extension included by a Definition to add Tools or participate in the Agent lifecycle.
+A named, reusable extension included by an Agent Definition to add Tools or participate in the Agent lifecycle.
 _Avoid_: Toolkit, package, add-on
 
 **Model**:

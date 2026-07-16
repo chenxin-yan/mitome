@@ -1,7 +1,7 @@
-// Runs inside the embedded Bun runtime with the Definition path as argv[1] and
+// Runs inside the embedded Bun runtime with the Agent Definition path as argv[1] and
 // an output file as argv[2]. index.ts embeds this file as text like host.ts:
-// Core is resolved beside the selected Definition so credentialDescriptor sees
-// the same module instance the Definition's Model was created with. Without
+// Core is resolved beside the selected Agent Definition so credentialDescriptor sees
+// the same module instance the Agent Definition's Model was created with. Without
 // further arguments it writes the Model's credential descriptor (or null) as
 // JSON to the output file; with an operation as argv[3] and the config
 // directory as argv[4] it instead delegates the interactive login/logout to
@@ -35,7 +35,7 @@ if (operation === undefined) {
     typeof credential === "string" ||
     authConfigDirectory === undefined
   ) {
-    throw new Error("Definition Model authentication is unsupported.");
+    throw new Error("Agent Definition Model authentication is unsupported.");
   }
   const capability = (await import(credential.capability.module)) as {
     readonly authenticate?: (options: {
@@ -47,7 +47,7 @@ if (operation === undefined) {
     }) => Promise<void>;
   };
   if (typeof capability.authenticate !== "function") {
-    throw new Error("Definition Model authentication is unsupported.");
+    throw new Error("Agent Definition Model authentication is unsupported.");
   }
   const reader = createInterface({ input: process.stdin, crlfDelay: Infinity });
   const lines = reader[Symbol.asyncIterator]();

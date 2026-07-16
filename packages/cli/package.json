@@ -20,6 +20,7 @@
   "devDependencies": {
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
+    "@mitome/providers": "workspace:*",
     "@types/bun": "catalog:",
     "effect": "catalog:",
     "typescript": "catalog:",
