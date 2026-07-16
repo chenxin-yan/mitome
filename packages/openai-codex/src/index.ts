@@ -372,6 +372,7 @@ export const codex = (
 
 const authPath = (configDirectory: string) => join(configDirectory, "auth.json");
 const lockPath = (configDirectory: string) => join(configDirectory, "auth.lock");
+const lockTimeout = 30_000;
 
 const isMissing = (error: unknown): boolean =>
   typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
@@ -383,7 +384,8 @@ const ensureDirectory = async (configDirectory: string): Promise<void> => {
 
 const acquireLock = async (configDirectory: string) => {
   const path = lockPath(configDirectory);
-  for (let attempt = 0; attempt < 500; attempt += 1) {
+  const deadline = Date.now() + lockTimeout;
+  while (Date.now() < deadline) {
     try {
       return await open(path, "wx", 0o600);
     } catch (error) {
@@ -399,7 +401,7 @@ const acquireLock = async (configDirectory: string) => {
     try {
       // ponytail: stat+unlink reaping can race a concurrent reaper and drop a
       // fresh lock; atomic temp+rename bounds the damage to one lost update.
-      if (Date.now() - (await stat(path)).mtimeMs > 30_000) {
+      if (Date.now() - (await stat(path)).mtimeMs > lockTimeout) {
         await unlink(path);
         continue;
       }

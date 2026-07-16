@@ -398,7 +398,8 @@ describe("Codex SSE", () => {
         }
         const refresh = (await request.formData()).get("refresh_token") as string;
         refreshes.push(refresh);
-        await Bun.sleep(100);
+        // Longer than the former 5s lock wait, but below the 15s refresh timeout.
+        await Bun.sleep(6_000);
         if (refresh !== "shared-refresh") return new Response("stale refresh", { status: 400 });
         return tokenResponse("race-account", "race-refresh");
       },
@@ -445,7 +446,7 @@ describe("Codex SSE", () => {
       void server.stop(true);
       void tokenServer.stop(true);
     }
-  }, 10_000);
+  }, 15_000);
 
   test("refreshes proactively and retries exactly once after a 401", async () => {
     const configDirectory = await directory(credential("expired-access", "rotating-refresh", 1));
