@@ -434,7 +434,7 @@ describe("compiled mitome", () => {
       stderr: "",
     });
 
-    // No config home at all: the /dev/null --env-file fallback must still suppress
+    // No config home at all: the empty --env-file fallback must still suppress
     // Bun's automatic cwd .env autoload in the host.
     expect(
       await output(
@@ -487,7 +487,7 @@ describe("compiled mitome", () => {
 
     const noHomes = await output(spawn("", [], current, { HOME: "", PATH: current.env.PATH }));
     expect(noHomes.exitCode).toBe(1);
-    expect(noHomes.stderr).toContain("XDG_CONFIG_HOME or HOME");
+    expect(noHomes.stderr).toContain("APPDATA (on Windows)");
 
     const invalid = await fixture("export default {};");
     const invalidDefinition = await output(spawn("", ["--use", invalid.definition], invalid));

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
 import { dirname, extname, join, resolve } from "node:path";
-import type { CredentialDescriptor } from "@mitome/core";
+import { resolveConfigDirectory, type CredentialDescriptor } from "@mitome/core";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
 // Bun embeds host.ts as source text at compile time; static analysis sees a module without a default export.
 // @ts-expect-error
@@ -31,10 +31,21 @@ const isCredentialDescriptor = (value: unknown): value is CredentialDescriptor =
       "module" in value.capability &&
       typeof value.capability.module === "string";
 
-const configDirectory = (): string | undefined => {
-  const home = process.env.HOME;
-  const configHome = process.env.XDG_CONFIG_HOME || (home ? join(home, ".config") : undefined);
-  return configHome === undefined ? undefined : join(configHome, "mitome");
+const configDirectoryMessage = "Set XDG_CONFIG_HOME, APPDATA (on Windows), or HOME.";
+
+const configDirectory = (): string | undefined =>
+  resolveConfigDirectory(process.env, process.platform);
+
+// Bun needs an --env-file path that exists on every platform (Windows has no
+// /dev/null); one empty process-lifetime file keeps auth/no-config children
+// from autoloading a cwd .env.
+let emptyEnv: string | undefined;
+const emptyEnvFile = async (): Promise<string> => {
+  if (emptyEnv === undefined) {
+    emptyEnv = join(await mkdtemp(join(tmpdir(), "mitome-env-")), "empty.env");
+    await writeFile(emptyEnv, "");
+  }
+  return emptyEnv;
 };
 
 const isEnoent = (error: unknown): boolean =>
@@ -55,7 +66,7 @@ const readConfigEnv = async (path: string): Promise<string> => {
 
 const requireConfigDirectory = (): string => {
   const directory = configDirectory();
-  if (directory === undefined) throw new Error("Set XDG_CONFIG_HOME or HOME.");
+  if (directory === undefined) throw new Error(configDirectoryMessage);
   return directory;
 };
 
@@ -156,7 +167,7 @@ const definitionPath = async (args: ReadonlyArray<string>): Promise<string> => {
   if (args.length === 0) {
     const directory = configDirectory();
     if (directory === undefined) {
-      throw new Error("Set XDG_CONFIG_HOME or HOME, or use --use <file>.");
+      throw new Error(`${configDirectoryMessage} Or use --use <file>.`);
     }
     selected = join(directory, "agent.ts");
   } else if (args.length === 2 && args[0] === "--use") {
@@ -236,9 +247,9 @@ const install = async (path: string): Promise<void> => {
 
 const runHost = async (path: string): Promise<void> => {
   const directory = configDirectory();
-  // Always pass --env-file: its presence (even /dev/null) suppresses Bun's automatic
-  // cwd .env autoload in the child, and Bun tolerates a missing file silently.
-  const envPath = directory === undefined ? "/dev/null" : join(directory, ".env");
+  // Always pass --env-file: its presence suppresses Bun's automatic cwd .env
+  // autoload in the child, and Bun tolerates a missing file silently.
+  const envPath = directory === undefined ? await emptyEnvFile() : join(directory, ".env");
   const child = Bun.spawn([process.execPath, `--env-file=${envPath}`, "--eval", hostSource, path], {
     env: { ...process.env, BUN_BE_BUN: "1" },
     stdin: "inherit",
@@ -258,7 +269,14 @@ const inspectCredential = async (path: string): Promise<CredentialDescriptor> =>
   const output = join(directory, "credential.json");
   try {
     const child = Bun.spawn(
-      [process.execPath, "--env-file=/dev/null", "--eval", authHostSource, path, output],
+      [
+        process.execPath,
+        `--env-file=${await emptyEnvFile()}`,
+        "--eval",
+        authHostSource,
+        path,
+        output,
+      ],
       {
         env: { ...process.env, BUN_BE_BUN: "1" },
         stdout: "ignore",
@@ -279,7 +297,7 @@ const runOAuthAuth = async (path: string, command: "login" | "logout"): Promise<
   const child = Bun.spawn(
     [
       process.execPath,
-      "--env-file=/dev/null",
+      `--env-file=${await emptyEnvFile()}`,
       "--eval",
       authHostSource,
       path,

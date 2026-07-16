@@ -1,3 +1,4 @@
+export { resolveConfigDirectory } from "./config.js";
 export { DefinitionError, defineAgent, definePlugin } from "./definition.js";
 export type {
   AnyPlugin,
