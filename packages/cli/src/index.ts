@@ -33,13 +33,8 @@ const isCredentialDescriptor = (value: unknown): value is CredentialDescriptor =
 
 const configDirectoryMessage = "Set XDG_CONFIG_HOME, APPDATA (on Windows), or HOME.";
 
-const configDirectory = (): string | undefined => {
-  try {
-    return resolveConfigDirectory(process.env, process.platform);
-  } catch {
-    return undefined;
-  }
-};
+const configDirectory = (): string | undefined =>
+  resolveConfigDirectory(process.env, process.platform);
 
 // Bun needs an --env-file path that exists on every platform (Windows has no
 // /dev/null); one empty process-lifetime file keeps auth/no-config children

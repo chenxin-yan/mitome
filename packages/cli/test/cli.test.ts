@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const binary = process.env.MITOME_BINARY ?? join(packageDir, "dist/mitome");
+const binary = join(packageDir, "dist/mitome");
 const coreDir = resolve(packageDir, "../core");
 const effectDir = dirname(createRequire(import.meta.url).resolve("effect/package.json"));
 const aiOpenaiDir = dirname(
@@ -382,11 +382,7 @@ describe("compiled mitome", () => {
     });
 
     const fallback = await fixture(definitionSource("fallback"));
-    const fallbackHome =
-      process.platform === "win32"
-        ? join(fallback.root, "appdata")
-        : join(fallback.env.HOME, ".config");
-    const fallbackDefinition = join(fallbackHome, "mitome", "agent.ts");
+    const fallbackDefinition = join(fallback.env.HOME, ".config", "mitome", "agent.ts");
     await mkdir(dirname(fallbackDefinition), { recursive: true });
     await cp(fallback.definition, fallbackDefinition);
     await cp(
@@ -398,19 +394,7 @@ describe("compiled mitome", () => {
     );
     expect(
       await output(
-        spawn(
-          "hello\n",
-          [],
-          fallback,
-          process.platform === "win32"
-            ? {
-                APPDATA: fallbackHome,
-                PATH: fallback.env.PATH,
-                // Windows children need SYSTEMROOT to start.
-                SYSTEMROOT: process.env.SYSTEMROOT!,
-              }
-            : { HOME: fallback.env.HOME, PATH: fallback.env.PATH },
-        ),
+        spawn("hello\n", [], fallback, { HOME: fallback.env.HOME, PATH: fallback.env.PATH }),
       ),
     ).toMatchObject({
       exitCode: 0,
@@ -450,7 +434,7 @@ describe("compiled mitome", () => {
       stderr: "",
     });
 
-    // No config home at all: the /dev/null --env-file fallback must still suppress
+    // No config home at all: the empty --env-file fallback must still suppress
     // Bun's automatic cwd .env autoload in the host.
     expect(
       await output(

@@ -92,7 +92,15 @@ const invalidOutput = (description: string) =>
 const networkError = (cause: unknown) =>
   providerError(cause instanceof Error ? cause.message : "Codex request failed");
 
-const defaultConfigDirectory = (): string => resolveConfigDirectory(process.env, process.platform);
+const defaultConfigDirectory = (): string => {
+  const directory = resolveConfigDirectory(process.env, process.platform);
+  if (directory === undefined) {
+    throw new Error(
+      "Set XDG_CONFIG_HOME, APPDATA (on Windows), or HOME to locate Codex credentials.",
+    );
+  }
+  return directory;
+};
 
 const contentFor = (
   content: string | ReadonlyArray<{ readonly type: string; readonly text?: string }>,
