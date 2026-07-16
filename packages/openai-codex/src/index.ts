@@ -1,6 +1,13 @@
 // Adapted from Pi (MIT License). Copyright (c) 2025 Mario Zechner.
-import { Effect, Layer, Schema } from "effect";
-import { LanguageModel } from "effect/unstable/ai";
+import { Effect, Layer, Stream } from "effect";
+import { AiError, LanguageModel, Response, Tool } from "effect/unstable/ai";
+import {
+  FetchHttpClient,
+  HttpClient,
+  HttpClientRequest,
+  HttpClientResponse,
+} from "effect/unstable/http";
+import { Sse } from "effect/unstable/encoding";
 import { chmod, mkdir, open, readFile, rename, rm, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { makeModel, type CredentialDescriptor, type Model } from "@mitome/core";
@@ -9,7 +16,18 @@ const clientId = "app_EMoamEEZ73f0CkXaXp7hrann";
 const provider = "openai-codex";
 const defaultTokenUrl = "https://auth.openai.com/oauth/token";
 
-export type ModelId = string;
+// Hand-maintained hints: the undocumented backend has no safe model-discovery API.
+// Source: https://developers.openai.com/codex/models (verified 2026-07-15).
+export type KnownModelId =
+  | "gpt-5.3-codex-spark"
+  | "gpt-5.4"
+  | "gpt-5.4-mini"
+  | "gpt-5.5"
+  | "gpt-5.6"
+  | "gpt-5.6-sol"
+  | "gpt-5.6-terra"
+  | "gpt-5.6-luna";
+export type ModelId = KnownModelId | (string & {});
 
 export type OAuthCredential = {
   readonly type: "oauth";
@@ -38,30 +56,332 @@ export interface LogoutOptions {
   readonly output?: Output;
 }
 
-class CodexTransportUnavailableError extends Schema.TaggedErrorClass<CodexTransportUnavailableError>()(
-  "CodexTransportUnavailableError",
-  { message: Schema.String },
-) {}
+export interface CodexOptions {
+  /** Unofficial ChatGPT backend root; injectable for controlled transport fixtures. */
+  readonly baseUrl?: string;
+  /** Credential directory; defaults to $XDG_CONFIG_HOME/mitome or ~/.config/mitome. */
+  readonly configDirectory?: string;
+  /** OAuth token endpoint; injectable for controlled refresh fixtures. */
+  readonly tokenUrl?: string;
+}
 
 /** Declares the single ChatGPT Credential used by a Codex Model. */
 export const oauth = (): CredentialDescriptor => ({
   capability: { module: import.meta.url },
 });
 
-/** Creates a Codex Model. Streaming transport is intentionally deferred to ticket #13. */
-export const codex = (model: ModelId, credential: CredentialDescriptor = oauth()): Model => {
-  void model;
+const providerError = (description: string) =>
+  AiError.make({
+    module: "OpenAI Codex",
+    method: "streamText",
+    reason: new AiError.UnknownError({ description }),
+  });
+
+const invalidOutput = (description: string) =>
+  AiError.make({
+    module: "OpenAI Codex",
+    method: "streamText",
+    reason: new AiError.InvalidOutputError({ description }),
+  });
+
+const networkError = (cause: unknown) =>
+  providerError(cause instanceof Error ? cause.message : "Codex request failed");
+
+const defaultConfigDirectory = (): string => {
+  const configHome =
+    process.env.XDG_CONFIG_HOME || (process.env.HOME && join(process.env.HOME, ".config"));
+  if (configHome === undefined)
+    throw new Error("Set XDG_CONFIG_HOME or HOME to locate Codex credentials.");
+  return join(configHome, "mitome");
+};
+
+const contentFor = (
+  content: string | ReadonlyArray<{ readonly type: string; readonly text?: string }>,
+) =>
+  typeof content === "string"
+    ? content
+    : content
+        .filter((part) => part.type === "text")
+        .map((part) => part.text ?? "")
+        .join("");
+
+const requestFor = (model: string, options: LanguageModel.ProviderOptions, sessionId: string) => {
+  const system = options.prompt.content.find((message) => message.role === "system");
+  const input: Array<Record<string, unknown>> = [];
+  for (const message of options.prompt.content) {
+    if (message.role === "system") continue;
+    if (message.role === "tool") {
+      for (const part of message.content) {
+        if (part.type === "tool-result") {
+          input.push({
+            type: "function_call_output",
+            call_id: part.id,
+            output: JSON.stringify(part.result),
+          });
+        }
+      }
+      continue;
+    }
+    const content = contentFor(message.content);
+    if (message.role === "assistant") {
+      if (content !== "") input.push({ role: "assistant", content });
+      for (const part of message.content) {
+        if (part.type === "tool-call") {
+          input.push({
+            type: "function_call",
+            call_id: part.id,
+            name: part.name,
+            arguments: JSON.stringify(part.params),
+          });
+        }
+      }
+      continue;
+    }
+    input.push({ role: "user", content });
+  }
+  return {
+    model,
+    store: false,
+    stream: true,
+    instructions:
+      system === undefined ? "You are a helpful assistant." : contentFor(system.content),
+    input,
+    text: { verbosity: "low" },
+    include: ["reasoning.encrypted_content"],
+    prompt_cache_key: sessionId,
+    tool_choice: "auto",
+    parallel_tool_calls: true,
+    ...(options.tools.length === 0
+      ? {}
+      : {
+          tools: options.tools.map((tool) => ({
+            type: "function",
+            name: tool.name,
+            ...(Tool.getDescription(tool) === undefined
+              ? {}
+              : { description: Tool.getDescription(tool) }),
+            parameters: Tool.getJsonSchema(tool),
+            strict: null,
+          })),
+        }),
+  };
+};
+
+type Call = { readonly id: string; readonly name: string; arguments: string };
+type StreamState = {
+  readonly events: Array<string>;
+  readonly parser: Sse.Parser;
+  readonly calls: Map<string, Call>;
+  readonly textIds: Set<string>;
+  terminal: boolean;
+};
+
+const string = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined;
+const record = (value: unknown): Record<string, unknown> | undefined =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+// The backend keys some events by item_id ("msg_…") and omits it on others
+// (output_item.added carries only output_index), so output_index is the one
+// key present on every per-item event — matching Pi's reference transport.
+const itemKey = (event: Record<string, unknown>) =>
+  typeof event.output_index === "number"
+    ? String(event.output_index)
+    : (string(event.item_id) ?? "output");
+
+const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPartEncoded> => {
+  if (data === "[DONE]") return [];
+  let event: Record<string, unknown>;
+  try {
+    event = JSON.parse(data) as Record<string, unknown>;
+  } catch {
+    throw invalidOutput("Codex sent malformed SSE JSON");
+  }
+  const type = string(event.type);
+  if (type === "error") {
+    const error = record(event.error);
+    throw providerError(string(error?.message) ?? string(event.message) ?? "Codex provider error");
+  }
+  if (type === "response.failed") {
+    const response = record(event.response);
+    const error = record(response?.error);
+    throw providerError(string(error?.message) ?? "Codex response failed");
+  }
+  if (type === "response.done" || type === "response.completed" || type === "response.incomplete") {
+    state.terminal = true;
+    return [];
+  }
+  const key = itemKey(event);
+  if (type === "response.output_item.added") {
+    const item = record(event.item);
+    if (item?.type === "message") {
+      state.textIds.add(key);
+      return [Response.makePart("text-start", { id: key })];
+    }
+    if (item?.type === "function_call") {
+      const id = string(item.call_id) ?? string(item.id);
+      const name = string(item.name);
+      if (id === undefined || name === undefined)
+        throw invalidOutput("Codex sent an incomplete Tool call");
+      const call = { id, name, arguments: "" };
+      state.calls.set(key, call);
+      // Argument deltas may arrive keyed by item_id instead of output_index.
+      const itemId = string(item.id);
+      if (itemId !== undefined) state.calls.set(itemId, call);
+      return [Response.makePart("tool-params-start", { id, name, providerExecuted: false })];
+    }
+    return [];
+  }
+  if (type === "response.output_text.delta") {
+    const delta = string(event.delta);
+    if (delta === undefined || !state.textIds.has(key))
+      throw invalidOutput("Codex sent text without a message item");
+    return [Response.makePart("text-delta", { id: key, delta })];
+  }
+  if (type === "response.function_call_arguments.delta") {
+    const call = state.calls.get(key);
+    const delta = string(event.delta);
+    if (call === undefined || delta === undefined)
+      throw invalidOutput("Codex sent arguments without a Tool call");
+    call.arguments += delta;
+    return [Response.makePart("tool-params-delta", { id: call.id, delta })];
+  }
+  if (type === "response.function_call_arguments.done") {
+    const call = state.calls.get(key);
+    const arguments_ = string(event.arguments);
+    if (call === undefined || arguments_ === undefined)
+      throw invalidOutput("Codex sent final arguments without a Tool call");
+    const delta = arguments_.startsWith(call.arguments)
+      ? arguments_.slice(call.arguments.length)
+      : "";
+    call.arguments = arguments_;
+    return delta === "" ? [] : [Response.makePart("tool-params-delta", { id: call.id, delta })];
+  }
+  if (type === "response.output_item.done") {
+    const item = record(event.item);
+    if (item?.type === "message")
+      return state.textIds.delete(key) ? [Response.makePart("text-end", { id: key })] : [];
+    if (item?.type === "function_call") {
+      const call = state.calls.get(key) ?? state.calls.get(string(item.id) ?? "");
+      if (call === undefined) throw invalidOutput("Codex completed an unknown Tool call");
+      const arguments_ = string(item.arguments) ?? call.arguments;
+      let params: unknown;
+      try {
+        params = Tool.unsafeSecureJsonParse(arguments_ || "{}");
+      } catch {
+        throw invalidOutput(`Invalid JSON arguments for Tool ${call.name}`);
+      }
+      state.calls.delete(key);
+      return [
+        Response.makePart("tool-params-end", { id: call.id }),
+        Response.makePart("tool-call", {
+          id: call.id,
+          name: call.name,
+          params,
+          providerExecuted: false,
+        }),
+      ];
+    }
+  }
+  return [];
+};
+
+const decodeStream = <R>(
+  stream: Stream.Stream<Uint8Array, AiError.AiError, R>,
+): Stream.Stream<Response.StreamPartEncoded, AiError.AiError, R> =>
+  // Suspend so a re-run (e.g. a future retry) gets fresh parser/terminal state.
+  Stream.suspend(() => {
+    const events: Array<string> = [];
+    const state: StreamState = {
+      events,
+      parser: Sse.makeParser((event) => {
+        if (event._tag === "Event") events.push(event.data);
+      }),
+      calls: new Map(),
+      textIds: new Set(),
+      terminal: false,
+    };
+    return stream.pipe(
+      Stream.decodeText,
+      Stream.mapAccumArrayEffect(
+        () => state,
+        (current, chunk) =>
+          Effect.try({
+            try: () => {
+              for (const value of chunk) current.parser.feed(value);
+              return [
+                current,
+                current.events.splice(0).flatMap((event) => decodeEvent(current, event)),
+              ] as const;
+            },
+            catch: (cause) =>
+              AiError.isAiError(cause) ? cause : invalidOutput("Codex stream failed"),
+          }),
+      ),
+      Stream.concat(
+        Stream.fromEffect(
+          Effect.suspend(() =>
+            state.terminal
+              ? Effect.void
+              : Effect.fail(invalidOutput("Codex stream ended before a terminal response event")),
+          ),
+        ).pipe(Stream.drain),
+      ),
+    );
+  });
+
+/** Creates the canonical Model backed by the unofficial ChatGPT Codex SSE Responses transport. */
+export const codex = (
+  model: ModelId,
+  credential: CredentialDescriptor = oauth(),
+  options: CodexOptions = {},
+): Model => {
+  const configDirectory = options.configDirectory ?? defaultConfigDirectory();
+  const baseUrl = (options.baseUrl ?? "https://chatgpt.com/backend-api").replace(/\/+$/, "");
+  const sessionId = crypto.randomUUID();
+  const requestStream = (
+    providerOptions: LanguageModel.ProviderOptions,
+  ): Stream.Stream<Response.StreamPartEncoded, AiError.AiError> =>
+    streamText(
+      model,
+      configDirectory,
+      baseUrl,
+      options.tokenUrl ?? defaultTokenUrl,
+      sessionId,
+      providerOptions,
+    );
   return makeModel(
     Layer.effect(
       LanguageModel.LanguageModel,
-      Effect.fail(new CodexTransportUnavailableError({ message: "Codex transport lands in #13." })),
-    ) as Layer.Layer<LanguageModel.LanguageModel, CodexTransportUnavailableError, never>,
+      Effect.tryPromise({ try: () => loadCredential(configDirectory), catch: networkError }).pipe(
+        Effect.flatMap(() =>
+          LanguageModel.make({
+            streamText: requestStream,
+            generateText: (providerOptions) =>
+              Stream.runCollect(requestStream(providerOptions)).pipe(
+                Effect.map((parts) => {
+                  const text = [...parts]
+                    .filter((part) => part.type === "text-delta")
+                    .map((part) => part.delta)
+                    .join("");
+                  return [
+                    ...(text === "" ? [] : [Response.makePart("text", { text })]),
+                    ...[...parts].filter((part) => part.type === "tool-call"),
+                  ];
+                }),
+              ),
+          }),
+        ),
+      ),
+    ),
     credential,
   );
 };
 
 const authPath = (configDirectory: string) => join(configDirectory, "auth.json");
 const lockPath = (configDirectory: string) => join(configDirectory, "auth.lock");
+const lockTimeout = 30_000;
 
 const isMissing = (error: unknown): boolean =>
   typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
@@ -73,7 +393,8 @@ const ensureDirectory = async (configDirectory: string): Promise<void> => {
 
 const acquireLock = async (configDirectory: string) => {
   const path = lockPath(configDirectory);
-  for (let attempt = 0; attempt < 500; attempt += 1) {
+  const deadline = Date.now() + lockTimeout;
+  while (Date.now() < deadline) {
     try {
       return await open(path, "wx", 0o600);
     } catch (error) {
@@ -89,7 +410,7 @@ const acquireLock = async (configDirectory: string) => {
     try {
       // ponytail: stat+unlink reaping can race a concurrent reaper and drop a
       // fresh lock; atomic temp+rename bounds the damage to one lost update.
-      if (Date.now() - (await stat(path)).mtimeMs > 30_000) {
+      if (Date.now() - (await stat(path)).mtimeMs > lockTimeout) {
         await unlink(path);
         continue;
       }
@@ -134,14 +455,16 @@ const writeAuth = async (configDirectory: string, auth: AuthFile): Promise<void>
   }
 };
 
-const updateAuth = async (
+const modifyAuth = async <A>(
   configDirectory: string,
-  update: (auth: AuthFile) => Promise<AuthFile> | AuthFile,
-): Promise<void> => {
+  update: (auth: AuthFile) => Promise<readonly [AuthFile, A]> | readonly [AuthFile, A],
+): Promise<A> => {
   await ensureDirectory(configDirectory);
   const lock = await acquireLock(configDirectory);
   try {
-    await writeAuth(configDirectory, await update(await readAuth(configDirectory)));
+    const [auth, value] = await update(await readAuth(configDirectory));
+    await writeAuth(configDirectory, auth);
+    return value;
   } finally {
     // Unlink before close: a failing close must not leave the lock behind.
     await unlink(lockPath(configDirectory)).catch((error: unknown) => {
@@ -150,6 +473,13 @@ const updateAuth = async (
     });
     await lock.close();
   }
+};
+
+const updateAuth = async (
+  configDirectory: string,
+  update: (auth: AuthFile) => Promise<AuthFile> | AuthFile,
+): Promise<void> => {
+  await modifyAuth(configDirectory, async (auth) => [await update(auth), undefined]);
 };
 
 /** Stores one provider Credential while preserving all other provider entries. */
@@ -191,6 +521,9 @@ const token = async (tokenUrl: string, form: Record<string, string>): Promise<OA
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(form),
+    // A refresh runs under the storage lock: an exchange hung past the 30s lock
+    // reap window would let another process reap a live lock, so bound it below.
+    signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error("OAuth token exchange failed.");
   const body: unknown = await response.json();
@@ -213,6 +546,86 @@ const token = async (tokenUrl: string, form: Record<string, string>): Promise<OA
     expires: Date.now() + body.expires_in * 1_000,
     accountId: accountId(body.access_token),
   };
+};
+
+// Refresh slightly early so a token expiring mid-flight doesn't cost a 401 round trip.
+const isExpired = (credential: OAuthCredential): boolean =>
+  Date.now() >= credential.expires - 60_000;
+
+const streamText = (
+  model: string,
+  configDirectory: string,
+  baseUrl: string,
+  tokenUrl: string,
+  sessionId: string,
+  options: LanguageModel.ProviderOptions,
+) => {
+  const execute = (
+    credential: OAuthCredential,
+    retried: boolean,
+  ): Effect.Effect<
+    Stream.Stream<Uint8Array, AiError.AiError>,
+    AiError.AiError,
+    HttpClient.HttpClient
+  > => {
+    const request = HttpClientRequest.post(`${baseUrl}/codex/responses`).pipe(
+      HttpClientRequest.setHeaders({
+        Authorization: `Bearer ${credential.access}`,
+        "chatgpt-account-id": credential.accountId,
+        originator: "mitome",
+        "User-Agent": `mitome (${process.platform} ${process.arch})`,
+        "OpenAI-Beta": "responses=experimental",
+        accept: "text/event-stream",
+        "content-type": "application/json",
+        "session-id": sessionId,
+        "x-client-request-id": sessionId,
+      }),
+      HttpClientRequest.bodyJsonUnsafe(requestFor(model, options, sessionId)),
+    );
+    return HttpClient.execute(request).pipe(
+      Effect.mapError(networkError),
+      Effect.flatMap((response) => {
+        if (response.status === 401 && !retried) {
+          return Effect.tryPromise({
+            try: () => refreshCredential(configDirectory, tokenUrl, credential.access, false),
+            catch: networkError,
+          }).pipe(Effect.flatMap((next) => execute(next, true)));
+        }
+        if (response.status >= 200 && response.status < 300) {
+          return Effect.succeed(
+            HttpClientResponse.stream(Effect.succeed(response)).pipe(Stream.mapError(networkError)),
+          );
+        }
+        // The backend's error detail ("model not found", quota) beats a bare status.
+        return response.text.pipe(
+          Effect.orElseSucceed(() => ""),
+          Effect.flatMap((body) =>
+            Effect.fail(
+              AiError.make({
+                module: "OpenAI Codex",
+                method: "streamText",
+                reason: AiError.reasonFromHttpStatus({
+                  status: response.status,
+                  ...(body === "" ? {} : { description: body.slice(0, 512) }),
+                }),
+              }),
+            ),
+          ),
+        );
+      }),
+    );
+  };
+  return Stream.unwrap(
+    Effect.tryPromise({
+      try: async () => {
+        const current = await loadCredential(configDirectory);
+        return isExpired(current)
+          ? refreshCredential(configDirectory, tokenUrl, undefined, true)
+          : current;
+      },
+      catch: networkError,
+    }).pipe(Effect.flatMap((credential) => execute(credential, false))),
+  ).pipe(decodeStream, Stream.provide(FetchHttpClient.layer));
 };
 
 type Authorization = {
@@ -281,20 +694,21 @@ export const login = async (options: LoginOptions): Promise<void> => {
         hostname: "localhost",
         fetch(request) {
           const url = new URL(request.url);
-          if (url.pathname !== "/auth/callback") return new Response("Not found", { status: 404 });
+          if (url.pathname !== "/auth/callback")
+            return new globalThis.Response("Not found", { status: 404 });
           const received = parseAuthorizationInput(request.url);
           // A stray or mismatched callback must not abort a login in progress.
           if (received.state !== state)
-            return new Response("Authentication failed.", { status: 400 });
+            return new globalThis.Response("Authentication failed.", { status: 400 });
           try {
             validateAuthorization(received, state);
             callback.resolve(received);
-            return new Response("Authentication complete. You can close this page.");
+            return new globalThis.Response("Authentication complete. You can close this page.");
           } catch (error) {
             // Same-state but no code (e.g. the user cancelled): this is our flow
             // failing authoritatively, so surface it instead of waiting forever.
             callback.reject(error instanceof Error ? error : new Error("OAuth callback failed."));
-            return new Response("Authentication failed.", { status: 400 });
+            return new globalThis.Response("Authentication failed.", { status: 400 });
           }
         },
       });
@@ -357,6 +771,49 @@ export const logout = async (options: LogoutOptions): Promise<void> => {
   });
   options.output?.("Logged out.\n");
 };
+
+const credentialFrom = (value: unknown): OAuthCredential => {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("type" in value) ||
+    value.type !== "oauth" ||
+    !("access" in value) ||
+    typeof value.access !== "string" ||
+    !("refresh" in value) ||
+    typeof value.refresh !== "string" ||
+    !("expires" in value) ||
+    typeof value.expires !== "number" ||
+    !("accountId" in value) ||
+    typeof value.accountId !== "string"
+  ) {
+    throw new Error("Codex Credential is unavailable.");
+  }
+  return value as OAuthCredential;
+};
+
+const loadCredential = async (configDirectory: string): Promise<OAuthCredential> =>
+  credentialFrom((await readAuth(configDirectory))[provider]);
+
+/** Refreshes the rotating Credential under the storage lock; a Credential already
+ * rotated by another process is reused instead of burning its refresh token. */
+const refreshCredential = async (
+  configDirectory: string,
+  tokenUrl: string,
+  failedAccess: string | undefined,
+  expiredOnly: boolean,
+): Promise<OAuthCredential> =>
+  modifyAuth(configDirectory, async (auth) => {
+    const current = credentialFrom(auth[provider]);
+    if (failedAccess !== undefined && current.access !== failedAccess) return [auth, current];
+    if (expiredOnly && !isExpired(current)) return [auth, current];
+    const next = await token(tokenUrl, {
+      grant_type: "refresh_token",
+      refresh_token: current.refresh,
+      client_id: clientId,
+    });
+    return [{ ...auth, [provider]: next }, next];
+  });
 
 /** Generic CLI entry point selected through Core's provider-owned capability. */
 export const authenticate = async (options: {
