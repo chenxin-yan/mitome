@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0017
+status: amended by ADR-0017, superseded by ADR-0018
 ---
 
 # Publish thin provider packages

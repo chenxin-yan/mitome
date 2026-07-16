@@ -20,17 +20,21 @@ _Avoid_: Request
 One model generation within a Turn; a Turn may require multiple Steps to resolve Tool calls.
 _Avoid_: Turn, iteration
 
-**Definition**:
+**Agent Definition**:
 A user-authored declaration of exactly one Agent and its Plugins.
-_Avoid_: Configuration, setup script, registry
+_Avoid_: Definition (bare), configuration, setup script, registry
 
 **Plugin**:
 A named, reusable extension included by a Definition to add Tools or participate in the Agent lifecycle.
 _Avoid_: Toolkit, package, add-on
 
 **Model**:
-The opaque provider-provisioned value a Definition names to generate Steps.
+The opaque provider-provisioned value an Agent Definition names to generate Steps.
 _Avoid_: Provider, LLM
+
+**Provider**:
+An external service whose API Mitome adapts to provision Models.
+_Avoid_: Vendor, backend
 
 **Toolkit**:
 A collection of configured Tools that a Plugin may contribute.
@@ -47,6 +51,10 @@ _Avoid_: Function, command
 **Approval**:
 A user decision allowing one pending Tool call to execute; the Turn stays paused until the decision is resolved or the Turn is interrupted.
 _Avoid_: Permission, confirmation
+
+**Host**:
+A program that drives Sessions on a user's behalf: starting Turns, presenting events, and resolving Approvals.
+_Avoid_: Frontend, client, harness
 
 **Credential**:
 A stored secret that authorizes Mitome to use one provider on behalf of the user.
