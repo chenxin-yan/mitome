@@ -143,11 +143,12 @@ const updateAuth = async (
   try {
     await writeAuth(configDirectory, await update(await readAuth(configDirectory)));
   } finally {
-    await lock.close();
+    // Unlink before close: a failing close must not leave the lock behind.
     await unlink(lockPath(configDirectory)).catch((error: unknown) => {
       // A stale-reaped lock is already gone; don't mask the update's own error.
       if (!isMissing(error)) throw error;
     });
+    await lock.close();
   }
 };
 
@@ -282,12 +283,17 @@ export const login = async (options: LoginOptions): Promise<void> => {
           const url = new URL(request.url);
           if (url.pathname !== "/auth/callback") return new Response("Not found", { status: 404 });
           const received = parseAuthorizationInput(request.url);
+          // A stray or mismatched callback must not abort a login in progress.
+          if (received.state !== state)
+            return new Response("Authentication failed.", { status: 400 });
           try {
             validateAuthorization(received, state);
             callback.resolve(received);
             return new Response("Authentication complete. You can close this page.");
-          } catch {
-            // A stray or mismatched callback must not abort a login in progress.
+          } catch (error) {
+            // Same-state but no code (e.g. the user cancelled): this is our flow
+            // failing authoritatively, so surface it instead of waiting forever.
+            callback.reject(error instanceof Error ? error : new Error("OAuth callback failed."));
             return new Response("Authentication failed.", { status: 400 });
           }
         },

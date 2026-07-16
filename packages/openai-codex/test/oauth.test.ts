@@ -120,6 +120,32 @@ describe("Codex OAuth", () => {
     }
   });
 
+  test("surfaces a same-state cancelled authorization instead of waiting", async () => {
+    const configDirectory = await directory();
+    const { server } = tokenServer();
+    const port = await callbackPort();
+    try {
+      await expect(
+        login({
+          configDirectory,
+          callbackPort: port,
+          tokenUrl: `http://127.0.0.1:${server.port}/oauth/token`,
+          openBrowser: (url) => {
+            const state = new URL(url).searchParams.get("state")!;
+            // login rejects and closes the server mid-response; only delivery matters.
+            void fetch(
+              `http://localhost:${port}/auth/callback?error=access_denied&state=${state}`,
+            ).catch(() => {});
+          },
+          input: async () => new Promise(() => {}),
+          output: () => {},
+        }),
+      ).rejects.toThrow("OAuth callback did not include a code");
+    } finally {
+      void server.stop(true);
+    }
+  });
+
   test("falls back to a pasted redirect and rejects mismatched state", async () => {
     const configDirectory = await directory();
     const { server } = tokenServer();
