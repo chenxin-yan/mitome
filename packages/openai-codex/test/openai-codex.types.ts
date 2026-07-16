@@ -39,7 +39,6 @@ type LiteralCodexOptions = {
   readonly baseUrl?: string;
   readonly configDirectory?: string;
   readonly tokenUrl?: string;
-  readonly fetch?: typeof fetch;
   readonly sessionId?: string;
 };
 
@@ -70,6 +69,8 @@ type PublicAuthenticate = (options: {
 
 const publicContracts: [
   Assert<Equal<ModelId, PublicModelId>>,
+  // KnownModelId must stay a literal union that still provides autocomplete.
+  Assert<Equal<string extends KnownModelId ? true : false, false>>,
   Assert<Equal<typeof oauth, PublicOAuth>>,
   Assert<Equal<typeof codex, PublicCodex>>,
   Assert<Equal<typeof login, PublicLogin>>,
@@ -80,5 +81,5 @@ const publicContracts: [
   Assert<Equal<LogoutOptions, LiteralLogoutOptions>>,
   Assert<Equal<OAuthCredential, LiteralOAuthCredential>>,
   Assert<Equal<CodexOptions, LiteralCodexOptions>>,
-] = [true, true, true, true, true, true, true, true, true, true, true];
+] = [true, true, true, true, true, true, true, true, true, true, true, true];
 void publicContracts;

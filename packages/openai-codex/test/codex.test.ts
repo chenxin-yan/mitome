@@ -25,7 +25,7 @@ const directory = async () => {
 const credential = (
   access = "synthetic-access",
   refresh = "synthetic-refresh",
-  expires = Date.now() + 60_000,
+  expires = Date.now() + 3_600_000,
 ) => ({
   type: "oauth" as const,
   access,
@@ -58,7 +58,8 @@ describe("Codex SSE", () => {
   test("sends the documented SSE request and streams text incrementally", async () => {
     const configDirectory = await directory();
     await writeCredential(configDirectory, "openai-codex", credential());
-    const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
+    const requests: Array<{ pathname: string; headers: Headers; body: Record<string, unknown> }> =
+      [];
     let release!: () => void;
     const released = new Promise<void>((resolve) => (release = resolve));
     let firstChunk!: () => void;
@@ -67,44 +68,70 @@ describe("Codex SSE", () => {
       port: 0,
       async fetch(request) {
         requests.push({
+          pathname: new URL(request.url).pathname,
           headers: request.headers,
           body: (await request.json()) as Record<string, unknown>,
+        });
+        // Mirrors the real backend: message events carry both item_id and
+        // output_index (output_item.added has no top-level item_id), and the
+        // stream is padded with lifecycle noise events plus a trailing [DONE].
+        const added = sse({
+          type: "response.output_item.added",
+          output_index: 0,
+          item: { type: "message", id: "msg-1" },
         });
         return new Response(
           new ReadableStream({
             async start(controller) {
+              controller.enqueue(sse({ type: "response.created", response: {} }));
+              controller.enqueue(sse({ type: "response.in_progress", response: {} }));
+              controller.enqueue(added.slice(0, 17));
+              controller.enqueue(added.slice(17));
               controller.enqueue(
                 sse({
-                  type: "response.output_item.added",
+                  type: "response.content_part.added",
+                  item_id: "msg-1",
                   output_index: 0,
-                  item: { type: "message" },
-                }).slice(0, 17),
+                }),
               );
               controller.enqueue(
                 sse({
-                  type: "response.output_item.added",
+                  type: "response.output_text.delta",
+                  item_id: "msg-1",
                   output_index: 0,
-                  item: { type: "message" },
-                }).slice(17),
-              );
-              controller.enqueue(
-                sse({ type: "response.output_text.delta", output_index: 0, delta: "hel" }),
+                  delta: "hel",
+                }),
               );
               firstChunk();
               await released;
               controller.enqueue(
-                sse({ type: "response.output_text.delta", output_index: 0, delta: "lo" }),
+                sse({
+                  type: "response.output_text.delta",
+                  item_id: "msg-1",
+                  output_index: 0,
+                  delta: "lo",
+                }),
+              );
+              controller.enqueue(
+                sse({
+                  type: "response.output_text.done",
+                  item_id: "msg-1",
+                  output_index: 0,
+                  text: "hello",
+                }),
               );
               controller.enqueue(
                 sse({
                   type: "response.output_item.done",
+                  item_id: "msg-1",
                   output_index: 0,
-                  item: { type: "message" },
+                  item: { type: "message", id: "msg-1" },
                 }),
               );
               controller.enqueue(
                 sse({ type: "response.completed", response: { status: "completed" } }),
               );
+              controller.enqueue(sse("[DONE]"));
               controller.close();
             },
           }),
@@ -146,11 +173,16 @@ describe("Codex SSE", () => {
       ]);
       expect(requests).toHaveLength(1);
       const request = requests[0]!;
+      expect(request.pathname).toBe("/codex/responses");
       expect(request.headers.get("authorization")).toBe("Bearer synthetic-access");
       expect(request.headers.get("chatgpt-account-id")).toBe("synthetic-account");
       expect(request.headers.get("originator")).toBe("mitome");
       expect(request.headers.get("openai-beta")).toBe("responses=experimental");
       expect(request.headers.get("accept")).toBe("text/event-stream");
+      expect(request.headers.get("content-type")).toBe("application/json");
+      expect(request.headers.get("user-agent")).toBe(
+        `mitome (${process.platform} ${process.arch})`,
+      );
       expect(request.headers.get("session-id")).toBe("fixture-session");
       expect(request.headers.get("x-client-request-id")).toBe("fixture-session");
       expect(request.headers.get("session_id")).toBeNull();
@@ -177,7 +209,9 @@ describe("Codex SSE", () => {
     let calls = 0;
     const server = Bun.serve({
       port: 0,
-      fetch() {
+      fetch(request) {
+        // The "/codex"-suffixed baseUrl must still land on /codex/responses.
+        expect(new URL(request.url).pathname).toBe("/codex/responses");
         calls += 1;
         if (calls === 1) {
           return new Response(
@@ -232,7 +266,7 @@ describe("Codex SSE", () => {
               instructions: "",
               model: codex("gpt-5.4", undefined, {
                 configDirectory,
-                baseUrl: `http://127.0.0.1:${server.port}`,
+                baseUrl: `http://127.0.0.1:${server.port}/codex`,
               }),
               plugins: [
                 {
@@ -260,14 +294,23 @@ describe("Codex SSE", () => {
   });
 
   test("fails provider errors, malformed SSE, and unterminated streams", async () => {
-    const cases = [
-      sse({ type: "error", error: { message: "subscriber rejected" } }),
-      sse({ type: "response.failed", response: { error: { message: "model rejected" } } }),
-      "data: {bad json}\n\n",
-      'data: {"type":"response.completed"}',
-      sse({ type: "response.output_item.added", output_index: 0, item: { type: "message" } }),
+    const cases: Array<[body: string, description: string]> = [
+      [sse({ type: "error", error: { message: "subscriber rejected" } }), "subscriber rejected"],
+      [
+        sse({ type: "response.failed", response: { error: { message: "model rejected" } } }),
+        "model rejected",
+      ],
+      ["data: {bad json}\n\n", "Codex sent malformed SSE JSON"],
+      [
+        'data: {"type":"response.completed"}',
+        "Codex stream ended before a terminal response event",
+      ],
+      [
+        sse({ type: "response.output_item.added", output_index: 0, item: { type: "message" } }),
+        "Codex stream ended before a terminal response event",
+      ],
     ];
-    for (const body of cases) {
+    for (const [body, description] of cases) {
       const configDirectory = await directory();
       await writeCredential(configDirectory, "openai-codex", credential());
       const server = Bun.serve({
@@ -292,6 +335,7 @@ describe("Codex SSE", () => {
         );
         expect(Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty)).toMatchObject({
           _tag: "TurnError",
+          cause: { reason: { description } },
         });
       } finally {
         void server.stop(true);
@@ -328,6 +372,8 @@ describe("Codex SSE", () => {
       );
       expect(Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty)).toMatchObject({
         _tag: "TurnError",
+        // The backend's rejection body must survive into the surfaced error.
+        cause: { reason: { description: expect.stringContaining("model not found") } },
       });
       expect(requests).toBe(1);
     } finally {
@@ -343,9 +389,20 @@ describe("Codex SSE", () => {
       credential("expired-access", "shared-refresh", 1),
     );
     const refreshes: Array<string> = [];
+    // Startup barrier: both children must arrive before either may refresh,
+    // guaranteeing lock contention instead of leaving it to spawn timing.
+    let arrivals = 0;
+    let releaseBarrier!: () => void;
+    const barrier = new Promise<void>((resolve) => (releaseBarrier = resolve));
     const tokenServer = Bun.serve({
       port: 0,
       async fetch(request) {
+        if (new URL(request.url).pathname === "/barrier") {
+          arrivals += 1;
+          if (arrivals === 2) releaseBarrier();
+          await barrier;
+          return new Response("go");
+        }
         const refresh = (await request.formData()).get("refresh_token") as string;
         refreshes.push(refresh);
         await Bun.sleep(100);
@@ -353,7 +410,7 @@ describe("Codex SSE", () => {
         return Response.json({
           access_token: jwt("race-account"),
           refresh_token: "race-refresh",
-          expires_in: 60,
+          expires_in: 3_600,
         });
       },
     });
@@ -376,13 +433,17 @@ describe("Codex SSE", () => {
         [
           process.execPath,
           "-e",
-          `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); const model = codex("gpt-5.4", undefined, ${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ instructions: "", model, plugins: [] }); yield* Stream.runDrain(session.prompt("Hi")); })));`,
+          `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const model = codex("gpt-5.4", undefined, ${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ instructions: "", model, plugins: [] }); yield* Stream.runDrain(session.prompt("Hi")); })));`,
         ],
         { stdout: "pipe", stderr: "pipe" },
       );
     try {
       const children = [child(), child()];
-      expect(await Promise.all(children.map((process) => process.exited))).toEqual([0, 0]);
+      const exits = await Promise.all(children.map((process) => process.exited));
+      if (exits.some((code) => code !== 0)) {
+        for (const failed of children) console.error(await new Response(failed.stderr).text());
+      }
+      expect(exits).toEqual([0, 0]);
       expect(refreshes).toEqual(["shared-refresh"]);
       expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toMatchObject({
         "openai-codex": {
@@ -412,7 +473,7 @@ describe("Codex SSE", () => {
         return Response.json({
           access_token: jwt("refreshed-account"),
           refresh_token: "rotated-refresh",
-          expires_in: 60,
+          expires_in: 3_600,
         });
       },
     });
@@ -420,6 +481,7 @@ describe("Codex SSE", () => {
     const server = Bun.serve({
       port: 0,
       fetch(request) {
+        expect(new URL(request.url).pathname).toBe("/codex/responses");
         requests += 1;
         if (requests === 1) return new Response("", { status: 401 });
         expect(request.headers.get("authorization")).toBe(`Bearer ${jwt("refreshed-account")}`);
@@ -438,7 +500,8 @@ describe("Codex SSE", () => {
         run(
           codex("gpt-5.4", undefined, {
             configDirectory,
-            baseUrl: `http://127.0.0.1:${server.port}`,
+            // A fully-suffixed baseUrl must be used verbatim.
+            baseUrl: `http://127.0.0.1:${server.port}/codex/responses`,
             tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token`,
           }),
         ),
@@ -448,6 +511,48 @@ describe("Codex SSE", () => {
       expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toMatchObject({
         "openai-codex": { refresh: "rotated-refresh", accountId: "refreshed-account" },
       });
+    } finally {
+      void server.stop(true);
+      void tokenServer.stop(true);
+    }
+  });
+
+  test("fails after one refresh when the backend keeps rejecting with 401", async () => {
+    const configDirectory = await directory();
+    await writeCredential(configDirectory, "openai-codex", credential());
+    const refreshes: Array<string> = [];
+    const tokenServer = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        refreshes.push((await request.formData()).get("refresh_token") as string);
+        return Response.json({
+          access_token: jwt("revoked-account"),
+          refresh_token: "rotated-refresh",
+          expires_in: 3_600,
+        });
+      },
+    });
+    let requests = 0;
+    const server = Bun.serve({
+      port: 0,
+      fetch() {
+        requests += 1;
+        return new Response("", { status: 401 });
+      },
+    });
+    try {
+      await expect(
+        run(
+          codex("gpt-5.4", undefined, {
+            configDirectory,
+            baseUrl: `http://127.0.0.1:${server.port}`,
+            tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token`,
+          }),
+        ),
+      ).rejects.toMatchObject({ _tag: "TurnError" });
+      // The retried flag must bound the refresh→401 cycle to one round trip.
+      expect(requests).toBe(2);
+      expect(refreshes).toEqual(["synthetic-refresh"]);
     } finally {
       void server.stop(true);
       void tokenServer.stop(true);

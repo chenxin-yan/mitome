@@ -54,7 +54,6 @@ export interface CodexOptions {
   readonly configDirectory?: string;
   /** OAuth token endpoint; injectable for controlled refresh fixtures. */
   readonly tokenUrl?: string;
-  readonly fetch?: typeof fetch;
   /** Correlates a Session request with the backend when supplied. */
   readonly sessionId?: string;
 }
@@ -99,11 +98,7 @@ const contentFor = (
         .map((part) => part.text ?? "")
         .join("");
 
-const requestFor = (
-  model: string,
-  options: LanguageModel.ProviderOptions,
-  sessionId: string | undefined,
-) => {
+const requestFor = (model: string, options: LanguageModel.ProviderOptions, sessionId: string) => {
   const system = options.prompt.content.find((message) => message.role === "system");
   const input: Array<Record<string, unknown>> = [];
   for (const message of options.prompt.content) {
@@ -146,7 +141,7 @@ const requestFor = (
     input,
     text: { verbosity: "low" },
     include: ["reasoning.encrypted_content"],
-    ...(sessionId === undefined ? {} : { prompt_cache_key: sessionId }),
+    prompt_cache_key: sessionId,
     tool_choice: "auto",
     parallel_tool_calls: true,
     ...(options.tools.length === 0
@@ -186,9 +181,13 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+// The backend keys some events by item_id ("msg_…") and omits it on others
+// (output_item.added carries only output_index), so output_index is the one
+// key present on every per-item event — matching Pi's reference transport.
 const itemKey = (event: Record<string, unknown>) =>
-  string(event.item_id) ??
-  (typeof event.output_index === "number" ? String(event.output_index) : "output");
+  typeof event.output_index === "number"
+    ? String(event.output_index)
+    : (string(event.item_id) ?? "output");
 
 const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPartEncoded> => {
   if (data === "[DONE]") return [];
@@ -226,7 +225,9 @@ const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPar
         throw invalidOutput("Codex sent an incomplete Tool call");
       const call = { id, name, arguments: "" };
       state.calls.set(key, call);
-      if (string(item.id) !== undefined) state.calls.set(string(item.id)!, call);
+      // Argument deltas may arrive keyed by item_id instead of output_index.
+      const itemId = string(item.id);
+      if (itemId !== undefined) state.calls.set(itemId, call);
       return [Response.makePart("tool-params-start", { id, name, providerExecuted: false })];
     }
     return [];
@@ -287,45 +288,47 @@ const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPar
 
 const decodeStream = <R>(
   stream: Stream.Stream<Uint8Array, AiError.AiError, R>,
-): Stream.Stream<Response.StreamPartEncoded, AiError.AiError, R> => {
-  const events: Array<string> = [];
-  const state: StreamState = {
-    events,
-    parser: Sse.makeParser((event) => {
-      if (event._tag === "Event") events.push(event.data);
-    }),
-    calls: new Map(),
-    textIds: new Set(),
-    terminal: false,
-  };
-  return stream.pipe(
-    Stream.decodeText,
-    Stream.mapAccumArrayEffect(
-      () => state,
-      (current, chunk) =>
-        Effect.try({
-          try: () => {
-            for (const value of chunk) current.parser.feed(value);
-            return [
-              current,
-              current.events.splice(0).flatMap((event) => decodeEvent(current, event)),
-            ] as const;
-          },
-          catch: (cause) =>
-            AiError.isAiError(cause) ? cause : invalidOutput("Codex stream failed"),
-        }),
-    ),
-    Stream.concat(
-      Stream.fromEffect(
-        Effect.suspend(() =>
-          state.terminal
-            ? Effect.void
-            : Effect.fail(invalidOutput("Codex stream ended before a terminal response event")),
-        ),
-      ).pipe(Stream.drain),
-    ),
-  );
-};
+): Stream.Stream<Response.StreamPartEncoded, AiError.AiError, R> =>
+  // Suspend so a re-run (e.g. a future retry) gets fresh parser/terminal state.
+  Stream.suspend(() => {
+    const events: Array<string> = [];
+    const state: StreamState = {
+      events,
+      parser: Sse.makeParser((event) => {
+        if (event._tag === "Event") events.push(event.data);
+      }),
+      calls: new Map(),
+      textIds: new Set(),
+      terminal: false,
+    };
+    return stream.pipe(
+      Stream.decodeText,
+      Stream.mapAccumArrayEffect(
+        () => state,
+        (current, chunk) =>
+          Effect.try({
+            try: () => {
+              for (const value of chunk) current.parser.feed(value);
+              return [
+                current,
+                current.events.splice(0).flatMap((event) => decodeEvent(current, event)),
+              ] as const;
+            },
+            catch: (cause) =>
+              AiError.isAiError(cause) ? cause : invalidOutput("Codex stream failed"),
+          }),
+      ),
+      Stream.concat(
+        Stream.fromEffect(
+          Effect.suspend(() =>
+            state.terminal
+              ? Effect.void
+              : Effect.fail(invalidOutput("Codex stream ended before a terminal response event")),
+          ),
+        ).pipe(Stream.drain),
+      ),
+    );
+  });
 
 /** Creates the canonical Model backed by the unofficial ChatGPT Codex SSE Responses transport. */
 export const codex = (
@@ -335,7 +338,6 @@ export const codex = (
 ): Model => {
   const configDirectory = options.configDirectory ?? defaultConfigDirectory();
   const baseUrl = options.baseUrl ?? "https://chatgpt.com/backend-api";
-  const fetcher = options.fetch ?? fetch;
   const sessionId = options.sessionId ?? crypto.randomUUID();
   const requestStream = (
     providerOptions: LanguageModel.ProviderOptions,
@@ -345,7 +347,6 @@ export const codex = (
       configDirectory,
       baseUrl,
       options.tokenUrl ?? defaultTokenUrl,
-      fetcher,
       sessionId,
       providerOptions,
     );
@@ -512,15 +513,14 @@ const accountId = (access: string): string => {
   return id;
 };
 
-const token = async (
-  tokenUrl: string,
-  form: Record<string, string>,
-  fetcher: typeof fetch = fetch,
-): Promise<OAuthCredential> => {
-  const response = await fetcher(tokenUrl, {
+const token = async (tokenUrl: string, form: Record<string, string>): Promise<OAuthCredential> => {
+  const response = await fetch(tokenUrl, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(form),
+    // A refresh runs under the storage lock: an exchange hung past the 30s lock
+    // reap window would let another process reap a live lock, so bound it below.
+    signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error("OAuth token exchange failed.");
   const body: unknown = await response.json();
@@ -545,13 +545,16 @@ const token = async (
   };
 };
 
+// Refresh slightly early so a token expiring mid-flight doesn't cost a 401 round trip.
+const isExpired = (credential: OAuthCredential): boolean =>
+  Date.now() >= credential.expires - 60_000;
+
 const streamText = (
   model: string,
   configDirectory: string,
   baseUrl: string,
   tokenUrl: string,
-  fetcher: typeof fetch,
-  sessionId: string | undefined,
+  sessionId: string,
   options: LanguageModel.ProviderOptions,
 ) => {
   const execute = (
@@ -571,9 +574,8 @@ const streamText = (
         "OpenAI-Beta": "responses=experimental",
         accept: "text/event-stream",
         "content-type": "application/json",
-        ...(sessionId === undefined
-          ? {}
-          : { "session-id": sessionId, "x-client-request-id": sessionId }),
+        "session-id": sessionId,
+        "x-client-request-id": sessionId,
       }),
       HttpClientRequest.bodyJsonUnsafe(requestFor(model, options, sessionId)),
     );
@@ -582,8 +584,7 @@ const streamText = (
       Effect.flatMap((response) => {
         if (response.status === 401 && !retried) {
           return Effect.tryPromise({
-            try: () =>
-              refreshCredential(configDirectory, tokenUrl, fetcher, credential.access, false),
+            try: () => refreshCredential(configDirectory, tokenUrl, credential.access, false),
             catch: networkError,
           }).pipe(Effect.flatMap((next) => execute(next, true)));
         }
@@ -592,12 +593,21 @@ const streamText = (
             HttpClientResponse.stream(Effect.succeed(response)).pipe(Stream.mapError(networkError)),
           );
         }
-        return Effect.fail(
-          AiError.make({
-            module: "OpenAI Codex",
-            method: "streamText",
-            reason: AiError.reasonFromHttpStatus({ status: response.status }),
-          }),
+        // The backend's error detail ("model not found", quota) beats a bare status.
+        return response.text.pipe(
+          Effect.orElseSucceed(() => ""),
+          Effect.flatMap((body) =>
+            Effect.fail(
+              AiError.make({
+                module: "OpenAI Codex",
+                method: "streamText",
+                reason: AiError.reasonFromHttpStatus({
+                  status: response.status,
+                  ...(body === "" ? {} : { description: body.slice(0, 512) }),
+                }),
+              }),
+            ),
+          ),
         );
       }),
     );
@@ -606,16 +616,13 @@ const streamText = (
     Effect.tryPromise({
       try: async () => {
         const current = await loadCredential(configDirectory);
-        return Date.now() >= current.expires
-          ? refreshCredential(configDirectory, tokenUrl, fetcher, undefined, true)
+        return isExpired(current)
+          ? refreshCredential(configDirectory, tokenUrl, undefined, true)
           : current;
       },
       catch: networkError,
     }).pipe(Effect.flatMap((credential) => execute(credential, false))),
-  ).pipe(decodeStream, Stream.provide(FetchHttpClient.layer)) as Stream.Stream<
-    Response.StreamPartEncoded,
-    AiError.AiError
-  >;
+  ).pipe(decodeStream, Stream.provide(FetchHttpClient.layer));
 };
 
 type Authorization = {
@@ -790,19 +797,18 @@ const loadCredential = async (configDirectory: string): Promise<OAuthCredential>
 const refreshCredential = async (
   configDirectory: string,
   tokenUrl: string,
-  fetcher: typeof fetch,
   failedAccess: string | undefined,
   expiredOnly: boolean,
 ): Promise<OAuthCredential> =>
   modifyAuth(configDirectory, async (auth) => {
     const current = credentialFrom(auth[provider]);
     if (failedAccess !== undefined && current.access !== failedAccess) return [auth, current];
-    if (expiredOnly && Date.now() < current.expires) return [auth, current];
-    const next = await token(
-      tokenUrl,
-      { grant_type: "refresh_token", refresh_token: current.refresh, client_id: clientId },
-      fetcher,
-    );
+    if (expiredOnly && !isExpired(current)) return [auth, current];
+    const next = await token(tokenUrl, {
+      grant_type: "refresh_token",
+      refresh_token: current.refresh,
+      client_id: clientId,
+    });
     return [{ ...auth, [provider]: next }, next];
   });
 
