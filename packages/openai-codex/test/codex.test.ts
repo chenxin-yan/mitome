@@ -16,12 +16,6 @@ const jwt = (accountId: string) =>
 const sse = (data: unknown) =>
   `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
 
-const directory = async () => {
-  const value = await mkdtemp(join(tmpdir(), "mitome-codex-sse-"));
-  directories.push(value);
-  return value;
-};
-
 const credential = (
   access = "synthetic-access",
   refresh = "synthetic-refresh",
@@ -33,6 +27,20 @@ const credential = (
   expires,
   accountId: "synthetic-account",
 });
+
+const tokenResponse = (accountId: string, refresh: string) =>
+  Response.json({
+    access_token: jwt(accountId),
+    refresh_token: refresh,
+    expires_in: 3_600,
+  });
+
+const directory = async (value = credential()) => {
+  const configDirectory = await mkdtemp(join(tmpdir(), "mitome-codex-sse-"));
+  directories.push(configDirectory);
+  await writeCredential(configDirectory, "openai-codex", value);
+  return configDirectory;
+};
 
 const definition = (model: ReturnType<typeof codex>): Definition => ({
   instructions: "Be concise.",
@@ -57,13 +65,10 @@ afterAll(async () => {
 describe("Codex SSE", () => {
   test("sends the documented SSE request and streams text incrementally", async () => {
     const configDirectory = await directory();
-    await writeCredential(configDirectory, "openai-codex", credential());
     const requests: Array<{ pathname: string; headers: Headers; body: Record<string, unknown> }> =
       [];
     let release!: () => void;
     const released = new Promise<void>((resolve) => (release = resolve));
-    let firstChunk!: () => void;
-    const firstSent = new Promise<void>((resolve) => (firstChunk = resolve));
     const server = Bun.serve({
       port: 0,
       async fetch(request) {
@@ -102,7 +107,6 @@ describe("Codex SSE", () => {
                   delta: "hel",
                 }),
               );
-              firstChunk();
               await released;
               controller.enqueue(
                 sse({
@@ -143,7 +147,6 @@ describe("Codex SSE", () => {
       const model = codex("future-private-model", undefined, {
         configDirectory,
         baseUrl: `http://127.0.0.1:${server.port}`,
-        sessionId: "fixture-session",
       });
       const events: Array<unknown> = [];
       let firstOutput!: () => void;
@@ -161,7 +164,6 @@ describe("Codex SSE", () => {
           }),
         ),
       );
-      await firstSent;
       await output;
       expect(events).toEqual([{ type: "model-output", text: "hel" }]);
       release();
@@ -183,8 +185,8 @@ describe("Codex SSE", () => {
       expect(request.headers.get("user-agent")).toBe(
         `mitome (${process.platform} ${process.arch})`,
       );
-      expect(request.headers.get("session-id")).toBe("fixture-session");
-      expect(request.headers.get("x-client-request-id")).toBe("fixture-session");
+      const sessionId = request.headers.get("session-id");
+      expect(request.headers.get("x-client-request-id")).toBe(sessionId);
       expect(request.headers.get("session_id")).toBeNull();
       expect(request.body).toMatchObject({
         model: "future-private-model",
@@ -194,7 +196,7 @@ describe("Codex SSE", () => {
         input: [{ role: "user", content: "Hi" }],
         text: { verbosity: "low" },
         include: ["reasoning.encrypted_content"],
-        prompt_cache_key: "fixture-session",
+        prompt_cache_key: sessionId,
         tool_choice: "auto",
         parallel_tool_calls: true,
       });
@@ -205,12 +207,10 @@ describe("Codex SSE", () => {
 
   test("maps function-call SSE events through the Core Tool loop", async () => {
     const configDirectory = await directory();
-    await writeCredential(configDirectory, "openai-codex", credential());
     let calls = 0;
     const server = Bun.serve({
       port: 0,
       fetch(request) {
-        // The "/codex"-suffixed baseUrl must still land on /codex/responses.
         expect(new URL(request.url).pathname).toBe("/codex/responses");
         calls += 1;
         if (calls === 1) {
@@ -266,7 +266,7 @@ describe("Codex SSE", () => {
               instructions: "",
               model: codex("gpt-5.4", undefined, {
                 configDirectory,
-                baseUrl: `http://127.0.0.1:${server.port}/codex`,
+                baseUrl: `http://127.0.0.1:${server.port}`,
               }),
               plugins: [
                 {
@@ -312,7 +312,6 @@ describe("Codex SSE", () => {
     ];
     for (const [body, description] of cases) {
       const configDirectory = await directory();
-      await writeCredential(configDirectory, "openai-codex", credential());
       const server = Bun.serve({
         port: 0,
         fetch: () => new Response(body, { headers: { "content-type": "text/event-stream" } }),
@@ -345,7 +344,6 @@ describe("Codex SSE", () => {
 
   test("passes model rejection through after one request without a catalog", async () => {
     const configDirectory = await directory();
-    await writeCredential(configDirectory, "openai-codex", credential());
     let requests = 0;
     const server = Bun.serve({
       port: 0,
@@ -382,12 +380,7 @@ describe("Codex SSE", () => {
   });
 
   test("never reuses a stale rotating refresh token across processes", async () => {
-    const configDirectory = await directory();
-    await writeCredential(
-      configDirectory,
-      "openai-codex",
-      credential("expired-access", "shared-refresh", 1),
-    );
+    const configDirectory = await directory(credential("expired-access", "shared-refresh", 1));
     const refreshes: Array<string> = [];
     // Startup barrier: both children must arrive before either may refresh,
     // guaranteeing lock contention instead of leaving it to spawn timing.
@@ -407,11 +400,7 @@ describe("Codex SSE", () => {
         refreshes.push(refresh);
         await Bun.sleep(100);
         if (refresh !== "shared-refresh") return new Response("stale refresh", { status: 400 });
-        return Response.json({
-          access_token: jwt("race-account"),
-          refresh_token: "race-refresh",
-          expires_in: 3_600,
-        });
+        return tokenResponse("race-account", "race-refresh");
       },
     });
     const server = Bun.serve({
@@ -459,22 +448,13 @@ describe("Codex SSE", () => {
   }, 10_000);
 
   test("refreshes proactively and retries exactly once after a 401", async () => {
-    const configDirectory = await directory();
-    await writeCredential(
-      configDirectory,
-      "openai-codex",
-      credential("expired-access", "rotating-refresh", 1),
-    );
+    const configDirectory = await directory(credential("expired-access", "rotating-refresh", 1));
     const refreshes: Array<string> = [];
     const tokenServer = Bun.serve({
       port: 0,
       async fetch(request) {
         refreshes.push((await request.formData()).get("refresh_token") as string);
-        return Response.json({
-          access_token: jwt("refreshed-account"),
-          refresh_token: "rotated-refresh",
-          expires_in: 3_600,
-        });
+        return tokenResponse("refreshed-account", "rotated-refresh");
       },
     });
     let requests = 0;
@@ -500,8 +480,7 @@ describe("Codex SSE", () => {
         run(
           codex("gpt-5.4", undefined, {
             configDirectory,
-            // A fully-suffixed baseUrl must be used verbatim.
-            baseUrl: `http://127.0.0.1:${server.port}/codex/responses`,
+            baseUrl: `http://127.0.0.1:${server.port}`,
             tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token`,
           }),
         ),
@@ -519,17 +498,12 @@ describe("Codex SSE", () => {
 
   test("fails after one refresh when the backend keeps rejecting with 401", async () => {
     const configDirectory = await directory();
-    await writeCredential(configDirectory, "openai-codex", credential());
     const refreshes: Array<string> = [];
     const tokenServer = Bun.serve({
       port: 0,
       async fetch(request) {
         refreshes.push((await request.formData()).get("refresh_token") as string);
-        return Response.json({
-          access_token: jwt("revoked-account"),
-          refresh_token: "rotated-refresh",
-          expires_in: 3_600,
-        });
+        return tokenResponse("revoked-account", "rotated-refresh");
       },
     });
     let requests = 0;

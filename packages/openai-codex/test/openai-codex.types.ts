@@ -39,7 +39,6 @@ type LiteralCodexOptions = {
   readonly baseUrl?: string;
   readonly configDirectory?: string;
   readonly tokenUrl?: string;
-  readonly sessionId?: string;
 };
 
 type Equal<A, B> =

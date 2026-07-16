@@ -54,8 +54,6 @@ export interface CodexOptions {
   readonly configDirectory?: string;
   /** OAuth token endpoint; injectable for controlled refresh fixtures. */
   readonly tokenUrl?: string;
-  /** Correlates a Session request with the backend when supplied. */
-  readonly sessionId?: string;
 }
 
 /** Declares the single ChatGPT Credential used by a Codex Model. */
@@ -158,12 +156,6 @@ const requestFor = (model: string, options: LanguageModel.ProviderOptions, sessi
           })),
         }),
   };
-};
-
-const responsesUrl = (baseUrl: string): string => {
-  const value = baseUrl.replace(/\/$/, "");
-  if (value.endsWith("/codex/responses")) return value;
-  return value.endsWith("/codex") ? `${value}/responses` : `${value}/codex/responses`;
 };
 
 type Call = { readonly id: string; readonly name: string; arguments: string };
@@ -337,8 +329,8 @@ export const codex = (
   options: CodexOptions = {},
 ): Model => {
   const configDirectory = options.configDirectory ?? defaultConfigDirectory();
-  const baseUrl = options.baseUrl ?? "https://chatgpt.com/backend-api";
-  const sessionId = options.sessionId ?? crypto.randomUUID();
+  const baseUrl = (options.baseUrl ?? "https://chatgpt.com/backend-api").replace(/\/+$/, "");
+  const sessionId = crypto.randomUUID();
   const requestStream = (
     providerOptions: LanguageModel.ProviderOptions,
   ): Stream.Stream<Response.StreamPartEncoded, AiError.AiError> =>
@@ -565,7 +557,7 @@ const streamText = (
     AiError.AiError,
     HttpClient.HttpClient
   > => {
-    const request = HttpClientRequest.post(responsesUrl(baseUrl)).pipe(
+    const request = HttpClientRequest.post(`${baseUrl}/codex/responses`).pipe(
       HttpClientRequest.setHeaders({
         Authorization: `Bearer ${credential.access}`,
         "chatgpt-account-id": credential.accountId,
