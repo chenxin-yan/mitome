@@ -8,8 +8,11 @@ export interface Model {
   readonly [ModelTypeId]: typeof ModelTypeId;
 }
 
-/** Provider-owned environment variable name available without starting a Session. */
-export type CredentialDescriptor = string;
+/**
+ * Provider-owned credential metadata available without starting a Session: an
+ * environment variable name, or a reference to an OAuth capability module.
+ */
+export type CredentialDescriptor = string | { readonly capability: { readonly module: string } };
 
 /** A provider credential sourced from the environment. */
 export interface Credential {
@@ -33,7 +36,7 @@ export const makeModel = (
   return model;
 };
 
-/** Returns the provider-owned environment variable name without constructing the provider Layer. */
+/** Returns the Model's credential descriptor (env var name or OAuth capability) without constructing the provider Layer. */
 export const credentialDescriptor = (model: Model): CredentialDescriptor | undefined =>
   modelCredentials.get(model);
 

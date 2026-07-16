@@ -94,6 +94,22 @@
         "@mitome/core": "workspace:*",
       },
     },
+    "packages/openai-codex": {
+      "name": "@mitome/openai-codex",
+      "version": "0.0.0",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@mitome/config": "workspace:*",
+        "@mitome/core": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@mitome/core": "workspace:*",
+      },
+    },
     "packages/openai-compatible": {
       "name": "@mitome/openai-compatible",
       "version": "0.0.0",
@@ -285,6 +301,8 @@
     "@mitome/docs": ["@mitome/docs@workspace:apps/docs"],
 
     "@mitome/openai": ["@mitome/openai@workspace:packages/openai"],
+
+    "@mitome/openai-codex": ["@mitome/openai-codex@workspace:packages/openai-codex"],
 
     "@mitome/openai-compatible": ["@mitome/openai-compatible@workspace:packages/openai-compatible"],
 
