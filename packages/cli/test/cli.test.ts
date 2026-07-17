@@ -29,6 +29,9 @@ const aiOpenaiDir = dirname(
     "@effect/ai-openai/package.json",
   ),
 );
+const cliPackage = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as {
+  version: string;
+};
 const corePackage = JSON.parse(await readFile(join(coreDir, "package.json"), "utf8")) as {
   version: string;
 };
@@ -37,6 +40,19 @@ const effectPackage = JSON.parse(await readFile(join(effectDir, "package.json"),
   exports: Record<string, string>;
 };
 const temporaryDirectories: Array<string> = [];
+
+const promptEchoDefinitionSource = (): string => `
+import { Layer, Stream } from "effect";
+import { LanguageModel, Response } from "effect/unstable/ai";
+import { makeModel } from "@mitome/core";
+
+const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+  streamText: () => Stream.succeed(Response.makePart("text-delta", {
+    id: "prompt", delta: process.argv[2]!,
+  })),
+}));
+export default { instructions: "", model, plugins: [] };
+`;
 
 const definitionSource = (
   output: string,
@@ -220,7 +236,7 @@ const installFixture = async (options: { readonly core?: boolean } = {}): Promis
 };
 
 const spawn = (
-  input: string,
+  input: string | undefined,
   args: ReadonlyArray<string>,
   current: Fixture,
   env: Record<string, string> = current.env,
@@ -230,7 +246,7 @@ const spawn = (
     env,
     stdio: ["pipe", "pipe", "pipe"],
   });
-  child.stdin.end(input);
+  if (input !== undefined) child.stdin.end(input);
   return child;
 };
 
@@ -284,6 +300,53 @@ afterEach(async () => {
 });
 
 describe("compiled mitome", () => {
+  test("supports native help, version, and completions without command side effects", async () => {
+    const current = await scaffold("mitome-native-actions-");
+
+    const help = await output(spawn("", ["--help"], current));
+    expect(help).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(help.stdout).toContain("USAGE\n  mitome");
+
+    expect(await output(spawn("", ["--version"], current))).toMatchObject({
+      exitCode: 0,
+      stdout: `mitome v${cliPackage.version}\n`,
+      stderr: "",
+    });
+
+    const completions = await output(spawn("", ["--completions", "bash"], current));
+    expect(completions).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(completions.stdout).toContain("mitome");
+
+    expect(await output(spawn("", ["init", "--help"], current))).toMatchObject({
+      exitCode: 0,
+      stderr: "",
+    });
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts"))).toBe(false);
+
+    const escaped = await fixture(promptEchoDefinitionSource());
+    expect(
+      await output(spawn("", ["--use", escaped.definition, "--", "--use"], escaped)),
+    ).toMatchObject({ exitCode: 0, stdout: "--use\n", stderr: "" });
+
+    for (const args of [
+      ["auth", "bogus"],
+      ["init", "extra"],
+      ["install", "--use"],
+    ]) {
+      const result = await output(spawn("", args, current));
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain("USAGE");
+      expect(result.stderr).toContain("ERROR");
+    }
+  });
+
+  test("exits 130 when a native prompt is interrupted by closed input", async () => {
+    const current = await scaffold("mitome-prompt-interrupt-");
+
+    expect(await output(spawn("", ["init"], current))).toMatchObject({ exitCode: 130 });
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts"))).toBe(false);
+  });
+
   test("installs Agent Definition dependencies without Bun on PATH or executing it", async () => {
     const current = await installFixture();
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
@@ -480,7 +543,7 @@ describe("compiled mitome", () => {
 
     const implicit = await output(spawn("", [], current));
     expect(implicit.exitCode).toBe(1);
-    expect(implicit.stderr).toContain("--use <file>");
+    expect(implicit.stderr).toContain("Missing required argument: prompt");
 
     const noHomes = await output(
       spawn("", ["hello"], current, { HOME: "", PATH: current.env.PATH }),
@@ -719,7 +782,17 @@ export default {
     await writeFile(join(config, "bunfig.toml"), `[install]\nregistry = "${registryUrl}"\n`);
 
     const key = "synthetic-init-credential";
-    const result = await output(spawn(`fixture-model\n${key}\n`, ["init"], current)).finally(
+    const child = spawn(undefined, ["init"], current);
+    child.stdin.write("fixture-model\n");
+    // Prompt.run consumes keypress events while active; feed the second answer
+    // after the installer has completed and the password prompt is listening.
+    const installedCore = join(config, "node_modules", "@mitome", "core", "package.json");
+    for (let attempt = 0; !(await exists(installedCore)); attempt += 1) {
+      if (attempt === 500) throw new Error("Agent Definition dependencies were not installed");
+      await delay(10);
+    }
+    child.stdin.end(`${key}\n`);
+    const result = await output(child).finally(
       () => new Promise<void>((done) => registry.close(() => done())),
     );
     expect(result).toMatchObject({ exitCode: 0 });
@@ -833,7 +906,7 @@ export default {
     const current = await fixture();
     const result = await output(spawn("", ["auth", "bogus"], current));
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("Usage: mitome auth <login|logout>");
+    expect(result.stderr).toContain('Unknown subcommand "bogus"');
   });
 
   test("auth delegates generic OAuth capabilities without a provider registry", async () => {

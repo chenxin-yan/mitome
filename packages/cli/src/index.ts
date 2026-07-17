@@ -1,9 +1,13 @@
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { createInterface } from "node:readline";
 import { dirname, extname, join, resolve } from "node:path";
+import * as BunRuntime from "@effect/platform-bun/BunRuntime";
+import * as BunServices from "@effect/platform-bun/BunServices";
 import { resolveConfigDirectory, type CredentialDescriptor } from "@mitome/core";
+import { Console, Effect, Layer, Option, Redacted, Runtime, Terminal } from "effect";
+import { Argument, CliError, CliOutput, Command, Flag, Prompt } from "effect/unstable/cli";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
+import cliPackage from "../package.json" with { type: "json" };
 // Bun embeds host.ts as source text at compile time; static analysis sees a module without a default export.
 // @ts-expect-error
 // oxlint-disable-next-line import/default
@@ -15,6 +19,10 @@ import authHost from "./auth-host.ts" with { type: "text" };
 type Package = {
   readonly version?: unknown;
 };
+
+class ReportedError extends Error {
+  override readonly [Runtime.errorReported] = false;
+}
 
 const hostSource: string = definitionHost;
 const authHostSource: string = authHost;
@@ -113,78 +121,18 @@ const removeConfigEnv = async (name: string): Promise<void> => {
   await writeConfigEnv(kept.length === 0 ? "" : kept.join("\n") + "\n");
 };
 
-// Same readline shape host.ts uses; a lone \r (raw-mode Enter) emits a line
-// immediately, so the masked prompt works without a hand-rolled reader.
-const makeInput = (): (() => Promise<string | undefined>) => {
-  const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })[
-    Symbol.asyncIterator
-  ]();
-  return async () => {
-    const next = await lines.next();
-    return next.done ? undefined : next.value;
-  };
-};
-
-const prompt = async (
-  message: string,
-  input: () => Promise<string | undefined>,
-): Promise<string> => {
-  process.stdout.write(message);
-  const value = await input();
-  if (value === undefined) throw new Error("Input closed.");
-  return value;
-};
-
-const maskedPrompt = async (
-  message: string,
-  input: () => Promise<string | undefined>,
-): Promise<string> => {
-  const stdin = process.stdin;
-  const raw = stdin.isTTY;
-  if (raw) stdin.setRawMode(true);
-  try {
-    const value = await prompt(message, input);
-    // ponytail: raw mode disables terminal SIGINT, and the line reader only
-    // surfaces ^C once Enter flushes the line; per-byte abort needs a raw reader.
-    if (value.includes("\u0003")) throw new Error("Credential input cancelled.");
-    let secret = "";
-    for (const character of value) {
-      secret =
-        character === "\b" || character === "\u007f" ? secret.slice(0, -1) : secret + character;
-    }
-    if (secret === "") throw new Error("Credential value is required.");
-    return secret;
-  } finally {
-    if (raw) {
-      stdin.setRawMode(false);
-      process.stdout.write("\n");
-    }
+const definitionPath = async (use: Option.Option<string>): Promise<string> => {
+  const selected = Option.getOrUndefined(use);
+  if (selected === undefined && configDirectory() === undefined) {
+    throw new Error(`${configDirectoryMessage} Or use --use <file>.`);
   }
-};
-
-const promptUsage = 'mitome "prompt" [--use <file>]';
-
-const definitionPath = async (args: ReadonlyArray<string>): Promise<string> => {
-  let selected: string;
-  if (args.length === 0) {
-    const directory = configDirectory();
-    if (directory === undefined) {
-      throw new Error(`${configDirectoryMessage} Or use --use <file>.`);
-    }
-    selected = join(directory, "agent.ts");
-  } else if (args.length === 2 && args[0] === "--use") {
-    selected = args[1]!;
-  } else {
-    throw new Error(`Usage: ${promptUsage} | mitome [install|init|auth <login|logout>] [--use <file>]`);
-  }
-
-  const path = resolve(selected);
+  const path = resolve(selected ?? join(configDirectory()!, "agent.ts"));
   let file;
   try {
     file = await stat(path);
   } catch {
     throw new Error(
-      args.length === 0
+      selected === undefined
         ? "No Agent Definition found; run mitome init first or use --use <file>."
         : `Agent Definition not found at ${path}; check the --use path.`,
     );
@@ -263,8 +211,11 @@ const runHost = async (path: string, prompt: string): Promise<void> => {
   );
   const forwardSigint = () => child.kill("SIGINT");
   process.once("SIGINT", forwardSigint);
-  process.exitCode = await child.exited;
-  process.off("SIGINT", forwardSigint);
+  try {
+    process.exitCode = await child.exited;
+  } finally {
+    process.off("SIGINT", forwardSigint);
+  }
 };
 
 const inspectCredential = async (path: string): Promise<CredentialDescriptor> => {
@@ -321,7 +272,7 @@ const runOAuthAuth = async (path: string, command: "login" | "logout"): Promise<
   if ((await child.exited) !== 0) throw new Error("Provider authentication failed.");
 };
 
-const init = async (): Promise<void> => {
+const initializationPath = async (): Promise<string> => {
   const directory = requireConfigDirectory();
   const path = join(directory, "agent.ts");
   for (const file of [path, join(directory, "package.json")]) {
@@ -335,10 +286,11 @@ const init = async (): Promise<void> => {
       );
     }
   }
+  return path;
+};
 
-  const input = makeInput();
-  const model = (await prompt("OpenAI model identifier: ", input)).trim();
-  if (model === "") throw new Error("OpenAI model identifier is required.");
+const initialize = async (path: string, model: string): Promise<void> => {
+  const directory = dirname(path);
   await mkdir(directory, { recursive: true });
   await writeFile(
     path,
@@ -362,54 +314,205 @@ const init = async (): Promise<void> => {
     )}\n`,
   );
   await install(path);
+};
+
+const attempt = <A>(promise: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: promise,
+    catch: (error) => new ReportedError(error instanceof Error ? error.message : String(error)),
+  }).pipe(Effect.tapError((error) => Console.error(error.message)));
+
+const waitForChild = <A>(promise: () => Promise<A>) => Effect.uninterruptible(attempt(promise));
+
+const fail = (message: string) =>
+  Console.error(message).pipe(Effect.andThen(Effect.fail(new ReportedError(message))));
+
+// Prompt.run hangs when beta.97's Bun terminal sees stdin EOF. Defer the
+// interruption one tick so a final buffered line can still submit first.
+const runNativePrompt = <A>(prompt: Prompt.Prompt<A>) =>
+  Prompt.run(prompt).pipe(
+    Effect.raceFirst(
+      Effect.callback<never, Terminal.QuitError>((resume) => {
+        let pending: ReturnType<typeof setImmediate> | undefined;
+        const quit = () => resume(Effect.fail(new Terminal.QuitError({})));
+        const onEnd = () => {
+          pending = setImmediate(quit);
+        };
+        if (process.stdin.readableEnded) onEnd();
+        else process.stdin.once("end", onEnd);
+        return Effect.sync(() => {
+          process.stdin.off("end", onEnd);
+          if (pending !== undefined) clearImmediate(pending);
+        });
+      }),
+    ),
+  );
+
+const useFlag = Flag.string("use").pipe(
+  Flag.withDescription("Path to an Agent Definition TypeScript entry file"),
+  Flag.optional,
+);
+
+// Effect beta.97 ignores unconsumed positionals, so consume them all and
+// validate cardinality inside the native argument parser.
+const noArguments = Argument.string("argument").pipe(
+  Argument.variadic(),
+  Argument.mapEffect((arguments_) =>
+    arguments_.length === 0
+      ? Effect.void
+      : Effect.fail(
+          new CliError.InvalidValue({
+            option: "argument",
+            value: arguments_[0]!,
+            expected: "no additional arguments",
+            kind: "argument",
+          }),
+        ),
+  ),
+);
+
+const missingUseFlag = Flag.boolean("__mitome-missing-use").pipe(
+  Flag.withHidden,
+  Flag.mapEffect((missing) =>
+    missing ? Effect.fail(new CliError.MissingOption({ option: "use" })) : Effect.void,
+  ),
+);
+
+const promptArgument = Argument.string("prompt").pipe(
+  Argument.variadic(),
+  Argument.mapEffect((prompts) =>
+    prompts.length === 1
+      ? Effect.succeed(prompts[0]!)
+      : prompts.length === 0
+        ? Effect.fail(new CliError.MissingArgument({ argument: "prompt" }))
+        : Effect.fail(
+            new CliError.InvalidValue({
+              option: "prompt",
+              value: prompts[1]!,
+              expected: "exactly one prompt",
+              kind: "argument",
+            }),
+          ),
+  ),
+  Argument.withDescription("Prompt to send to the Agent"),
+);
+
+const runPrompt = ({
+  prompt,
+  use,
+}: {
+  readonly prompt: string;
+  readonly use: Option.Option<string>;
+}) =>
+  Effect.gen(function* () {
+    const path = yield* attempt(() => definitionPath(use));
+    yield* attempt(() => checkRuntime(path));
+    yield* waitForChild(() => runHost(path, prompt));
+  });
+
+const runInstall = ({ use }: { readonly use: Option.Option<string> }) =>
+  Effect.gen(function* () {
+    const path = yield* attempt(() => definitionPath(use));
+    yield* waitForChild(() => install(path));
+  });
+
+const runInit = Effect.gen(function* () {
+  const path = yield* attempt(initializationPath);
+  const model = (yield* runNativePrompt(
+    Prompt.text({ message: "OpenAI model identifier" }),
+  )).trim();
+  if (model === "") return yield* fail("OpenAI model identifier is required.");
+  yield* waitForChild(() => initialize(path, model));
   if (process.exitCode !== 0) return;
-  await updateConfigEnv("OPENAI_API_KEY", await maskedPrompt("OpenAI API key: ", input));
-};
-
-const auth = async (command: string | undefined, args: ReadonlyArray<string>): Promise<void> => {
-  if (command !== "login" && command !== "logout") {
-    throw new Error("Usage: mitome auth <login|logout> [--use <file>]");
-  }
-  const path = await definitionPath(args);
-  await checkRuntime(path);
-  const credential = await inspectCredential(path);
-  if (typeof credential !== "string") {
-    await runOAuthAuth(path, command);
-    return;
-  }
-  if (command === "logout") {
-    await removeConfigEnv(credential);
-    return;
-  }
-  const input = makeInput();
-  await updateConfigEnv(credential, await maskedPrompt(`${credential}: `, input));
-};
-
-const main = async (): Promise<void> => {
-  const args = process.argv.slice(2);
-  if (args[0] === "install") {
-    await install(await definitionPath(args.slice(1)));
-    return;
-  }
-  if (args[0] === "init") {
-    if (args.length !== 1) throw new Error("Usage: mitome init");
-    await init();
-    return;
-  }
-  if (args[0] === "auth") {
-    await auth(args[1], args.slice(2));
-    return;
-  }
-  const [prompt, ...definitionArgs] = args;
-  if (prompt === undefined || prompt === "--use") {
-    throw new Error(`Usage: ${promptUsage}`);
-  }
-  const path = await definitionPath(definitionArgs);
-  await checkRuntime(path);
-  await runHost(path, prompt);
-};
-
-void main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
+  const credential = Redacted.value(
+    yield* runNativePrompt(Prompt.password({ message: "OpenAI API key" })),
+  );
+  if (credential === "") return yield* fail("Credential value is required.");
+  yield* attempt(() => updateConfigEnv("OPENAI_API_KEY", credential));
 });
+
+const runAuth = (command: "login" | "logout", use: Option.Option<string>) =>
+  Effect.gen(function* () {
+    const path = yield* attempt(() => definitionPath(use));
+    yield* attempt(() => checkRuntime(path));
+    const credential = yield* waitForChild(() => inspectCredential(path));
+    if (typeof credential !== "string") {
+      yield* waitForChild(() => runOAuthAuth(path, command));
+      return;
+    }
+    if (command === "logout") {
+      yield* attempt(() => removeConfigEnv(credential));
+      return;
+    }
+    const value = Redacted.value(yield* runNativePrompt(Prompt.password({ message: credential })));
+    if (value === "") return yield* fail("Credential value is required.");
+    yield* attempt(() => updateConfigEnv(credential, value));
+  });
+
+const definitionCommandConfig = {
+  arguments: noArguments,
+  missingUse: missingUseFlag,
+  use: useFlag,
+};
+
+const installCommand = Command.make("install", definitionCommandConfig, runInstall).pipe(
+  Command.withDescription("Install Agent Definition dependencies"),
+);
+const initCommand = Command.make("init", { arguments: noArguments }, () => runInit).pipe(
+  Command.withDescription("Create a default Agent Definition"),
+);
+const loginCommand = Command.make("login", definitionCommandConfig, ({ use }) =>
+  runAuth("login", use),
+);
+const logoutCommand = Command.make("logout", definitionCommandConfig, ({ use }) =>
+  runAuth("logout", use),
+);
+const authCommand = Command.make("auth", {}, () =>
+  fail("Usage: mitome auth <login|logout> [--use <file>]"),
+).pipe(
+  Command.withDescription("Manage Agent Definition authentication"),
+  Command.withSubcommands([loginCommand, logoutCommand]),
+);
+
+export const command = Command.make(
+  "mitome",
+  {
+    missingUse: missingUseFlag,
+    prompt: promptArgument,
+    use: useFlag,
+  },
+  runPrompt,
+).pipe(
+  Command.withDescription("Run an Agent Definition"),
+  Command.withSubcommands([installCommand, initCommand, authCommand]),
+);
+
+const nativeRunCli = Command.runWith(command, { version: cliPackage.version });
+const normalizeMissingUseValue = (args: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const terminator = args.indexOf("--");
+  const optionCount = terminator === -1 ? args.length : terminator;
+  const missing = args.findIndex(
+    (arg, index) =>
+      index < optionCount &&
+      arg === "--use" &&
+      (args[index + 1] === undefined || args[index + 1]!.startsWith("-")),
+  );
+  return missing === -1
+    ? args
+    : args.map((arg, index) => (index === missing ? "--__mitome-missing-use" : arg));
+};
+
+export const runCli = (args: ReadonlyArray<string>) => nativeRunCli(normalizeMissingUseValue(args));
+
+if (import.meta.main) {
+  const services = Layer.merge(BunServices.layer, CliOutput.layer(CliOutput.defaultFormatter()));
+  const args = process.argv.slice(2);
+  const normalizedArgs = normalizeMissingUseValue(args);
+  // beta.97 drops a trailing string flag instead of reporting its missing value.
+  const program = (
+    normalizedArgs === args
+      ? Command.run(command, { version: cliPackage.version })
+      : nativeRunCli(normalizedArgs)
+  ).pipe(Effect.provide(services));
+  BunRuntime.runMain(program);
+}

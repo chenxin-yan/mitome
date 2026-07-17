@@ -18,6 +18,7 @@
     "test": "vitest run --testTimeout 15000"
   },
   "devDependencies": {
+    "@effect/platform-bun": "catalog:",
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
     "@mitome/providers": "workspace:*",
