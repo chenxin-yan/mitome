@@ -4,6 +4,8 @@ import { dirname, extname, join, resolve } from "node:path";
 import * as BunRuntime from "@effect/platform-bun/BunRuntime";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { resolveConfigDirectory, type CredentialDescriptor } from "@mitome/core";
+import { knownModelIds as codexModelIds } from "@mitome/providers/openai-codex";
+import { knownModelIds as openAiModelIds } from "@mitome/providers/openai";
 import { Console, Effect, Layer, Option, Redacted, Runtime, Terminal } from "effect";
 import { Argument, CliError, CliOutput, Command, Flag, Prompt } from "effect/unstable/cli";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
@@ -19,6 +21,10 @@ import authHost from "./auth-host.ts" with { type: "text" };
 type Package = {
   readonly version?: unknown;
 };
+
+type InitProvider = "openai" | "openai-codex";
+
+const customModel = Symbol("custom-model");
 
 class ReportedError extends Error {
   override readonly [Runtime.errorReported] = false;
@@ -289,12 +295,20 @@ const initializationPath = async (): Promise<string> => {
   return path;
 };
 
-const initialize = async (path: string, model: string): Promise<void> => {
+const initialize = async (path: string, provider: InitProvider, model: string): Promise<void> => {
   const directory = dirname(path);
+  const providerImport =
+    provider === "openai"
+      ? 'import { env, openai } from "@mitome/providers/openai";'
+      : 'import { codex } from "@mitome/providers/openai-codex";';
+  const modelExpression =
+    provider === "openai"
+      ? `openai(${JSON.stringify(model)}, env("OPENAI_API_KEY"))`
+      : `codex(${JSON.stringify(model)})`;
   await mkdir(directory, { recursive: true });
   await writeFile(
     path,
-    `import { defineAgent } from "@mitome/sdk";\nimport { env, openai } from "@mitome/providers/openai";\n\nexport default defineAgent({\n  instructions: "You are a helpful Agent.",\n  model: openai(${JSON.stringify(model)}, env("OPENAI_API_KEY")),\n  plugins: [],\n});\n`,
+    `import { defineAgent } from "@mitome/sdk";\n${providerImport}\n\nexport default defineAgent({\n  instructions: "You are a helpful Agent.",\n  model: ${modelExpression},\n  plugins: [],\n});\n`,
   );
   await writeFile(
     join(directory, "package.json"),
@@ -418,12 +432,36 @@ const runInstall = ({ use }: { readonly use: Option.Option<string> }) =>
 
 const runInit = Effect.gen(function* () {
   const path = yield* attempt(initializationPath);
-  const model = (yield* runNativePrompt(
-    Prompt.text({ message: "OpenAI model identifier" }),
-  )).trim();
-  if (model === "") return yield* fail("OpenAI model identifier is required.");
-  yield* waitForChild(() => initialize(path, model));
+  const provider = yield* runNativePrompt(
+    Prompt.select<InitProvider>({
+      message: "Provider",
+      choices: [
+        { title: "OpenAI API", value: "openai" },
+        { title: "OpenAI Codex (ChatGPT)", value: "openai-codex" },
+      ],
+    }),
+  );
+  const knownModels: ReadonlyArray<string> = provider === "openai" ? openAiModelIds : codexModelIds;
+  const modelChoice = yield* runNativePrompt(
+    Prompt.select<string | typeof customModel>({
+      message: "Model",
+      choices: [
+        ...knownModels.map((model) => ({ title: model, value: model })),
+        { title: "Custom model ID", value: customModel },
+      ],
+    }),
+  );
+  const model =
+    modelChoice === customModel
+      ? (yield* runNativePrompt(Prompt.text({ message: "Model identifier" }))).trim()
+      : modelChoice;
+  if (model === "") return yield* fail("Model identifier is required.");
+  yield* waitForChild(() => initialize(path, provider, model));
   if (process.exitCode !== 0) return;
+  if (provider === "openai-codex") {
+    yield* waitForChild(() => runOAuthAuth(path, "login"));
+    return;
+  }
   const credential = Redacted.value(
     yield* runNativePrompt(Prompt.password({ message: "OpenAI API key" })),
   );

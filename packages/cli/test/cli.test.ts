@@ -783,8 +783,10 @@ export default {
 
     const key = "synthetic-init-credential";
     const child = spawn(undefined, ["init"], current);
-    child.stdin.write("fixture-model\n");
-    // Prompt.run consumes keypress events while active; feed the second answer
+    child.stdin.write("\n");
+    await delay(500);
+    child.stdin.write("\n");
+    // Prompt.run consumes keypress events while active; feed the Credential
     // after the installer has completed and the password prompt is listening.
     const installedCore = join(config, "node_modules", "@mitome", "core", "package.json");
     for (let attempt = 0; !(await exists(installedCore)); attempt += 1) {
@@ -802,7 +804,7 @@ export default {
     const definition = await readFile(join(config, "agent.ts"), "utf8");
     expect(definition).toContain('import { defineAgent } from "@mitome/sdk"');
     expect(definition).toContain('import { env, openai } from "@mitome/providers/openai"');
-    expect(definition).toContain('openai("fixture-model", env("OPENAI_API_KEY"))');
+    expect(definition).toContain('openai("gpt-5.6", env("OPENAI_API_KEY"))');
     expect(definition).toContain("plugins: []");
     expect(definition).not.toContain(key);
     expect(JSON.parse(await readFile(join(config, "package.json"), "utf8"))).toMatchObject({
@@ -852,24 +854,55 @@ export default {
     expect(await exists(join(config, "agent.ts"))).toBe(false);
   });
 
-  test("init skips the Credential prompt when the installer fails", async () => {
+  test("initializes Codex without requesting an API key", async () => {
     const current = await scaffold("mitome-cli-");
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
     await mkdir(config, { recursive: true });
-    // Unroutable registry: bun install must fail before any Credential is collected.
+    // Unroutable registry stops before OAuth while preserving the generated Definition for inspection.
     await writeFile(join(config, "bunfig.toml"), '[install]\nregistry = "http://127.0.0.1:1/"\n');
     const key = "synthetic-never-stored";
-    const result = await output(spawn(`fixture-model\n${key}\n`, ["init"], current));
+    const child = spawn(undefined, ["init"], current);
+    child.stdin.write("j\n");
+    await delay(500);
+    child.stdin.end(`\n${key}\n`);
+    const result = await output(child);
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout + result.stderr).not.toContain(key);
+    expect(await readFile(join(config, "agent.ts"), "utf8")).toContain(
+      'import { codex } from "@mitome/providers/openai-codex"',
+    );
     expect(await exists(join(config, ".env"))).toBe(false);
   });
 
-  test("init requires a non-blank model identifier", async () => {
+  test("accepts a custom model identifier", async () => {
     const current = await scaffold("mitome-cli-");
-    const result = await output(spawn("   \n", ["init"], current));
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await mkdir(config, { recursive: true });
+    await writeFile(join(config, "bunfig.toml"), '[install]\nregistry = "http://127.0.0.1:1/"\n');
+    const child = spawn(undefined, ["init"], current);
+    child.stdin.write("\n");
+    await delay(500);
+    child.stdin.write(`${"j".repeat(10)}\n`);
+    await delay(500);
+    child.stdin.end("private-model\n");
+    const result = await output(child);
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("OpenAI model identifier is required.");
+    expect(await readFile(join(config, "agent.ts"), "utf8")).toContain(
+      'openai("private-model", env("OPENAI_API_KEY"))',
+    );
+  });
+
+  test("rejects a blank custom model identifier", async () => {
+    const current = await scaffold("mitome-cli-");
+    const child = spawn(undefined, ["init"], current);
+    child.stdin.write("\n");
+    await delay(500);
+    child.stdin.write(`${"j".repeat(10)}\n`);
+    await delay(500);
+    child.stdin.end("   \n");
+    const result = await output(child);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Model identifier is required.");
     expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts"))).toBe(false);
   });
 
@@ -950,10 +983,6 @@ export default { instructions: "", model, plugins: [] };`,
     expect(await readFile(marker, "utf8")).toBe(
       "login:http://localhost:1455/auth/callback?code=ac_9rn3xKq&state=deadbeef:browser=false\nlogout:logout:browser=false\n",
     );
-    // The CLI source must contain no Codex branch (the provider name is spelled
-    // indirectly so this test file itself doesn't trip the scan).
-    const source = await readFile(join(packageDir, "src", "index.ts"), "utf8");
-    expect(source).not.toContain(["code", "x"].join(""));
   });
 
   test("auth logout without a stored Credential is a no-op", async () => {
