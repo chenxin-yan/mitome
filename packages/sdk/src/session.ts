@@ -31,7 +31,7 @@ const toSdkEvent = (event: CoreTurnEvent): TurnEvent => {
   };
 };
 
-// beta.97's Stream.toAsyncIterable().return() only closes its Scope, never Fiber.interrupts an in-flight pull.
+// beta.98's Stream.toAsyncIterable().return() only closes its Scope, never Fiber.interrupts an in-flight pull.
 // This bridge makes iterator return()/throw() interrupt active model/tool work.
 const toAsyncIterable = (
   stream: Stream.Stream<CoreTurnEvent, unknown>,

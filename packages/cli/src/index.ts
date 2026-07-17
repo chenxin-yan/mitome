@@ -327,7 +327,7 @@ const waitForChild = <A>(promise: () => Promise<A>) => Effect.uninterruptible(at
 const fail = (message: string) =>
   Console.error(message).pipe(Effect.andThen(Effect.fail(new ReportedError(message))));
 
-// Prompt.run hangs when beta.97's Bun terminal sees stdin EOF. Defer the
+// Prompt.run hangs when beta.98's Bun terminal sees stdin EOF. Defer the
 // interruption one tick so a final buffered line can still submit first.
 const runNativePrompt = <A>(prompt: Prompt.Prompt<A>) =>
   Prompt.run(prompt).pipe(
@@ -353,7 +353,7 @@ const useFlag = Flag.string("use").pipe(
   Flag.optional,
 );
 
-// Effect beta.97 ignores unconsumed positionals, so consume them all and
+// Effect beta.98 ignores unconsumed positionals, so consume them all and
 // validate cardinality inside the native argument parser.
 const noArguments = Argument.string("argument").pipe(
   Argument.variadic(),
@@ -508,7 +508,7 @@ if (import.meta.main) {
   const services = Layer.merge(BunServices.layer, CliOutput.layer(CliOutput.defaultFormatter()));
   const args = process.argv.slice(2);
   const normalizedArgs = normalizeMissingUseValue(args);
-  // beta.97 drops a trailing string flag instead of reporting its missing value.
+  // beta.98 drops a trailing string flag instead of reporting its missing value.
   const program = (
     normalizedArgs === args
       ? Command.run(command, { version: cliPackage.version })
