@@ -242,7 +242,7 @@ describe("Codex OAuth", () => {
     expect((await stat(join(configDirectory, "auth.json"))).mode & 0o777).toBe(0o600);
   });
 
-  test("recovers from a stale storage lock", async () => {
+  test("does not reap a stale storage lock", async () => {
     const configDirectory = await directory();
     await mkdir(configDirectory, { recursive: true });
     const lock = join(configDirectory, "auth.lock");
@@ -250,12 +250,16 @@ describe("Codex OAuth", () => {
     const stale = new Date(Date.now() - 31_000);
     await utimes(lock, stale, stale);
 
-    await writeCredential(configDirectory, "other", credential("stale"));
+    const write = writeCredential(configDirectory, "other", credential("stale"));
+    await Bun.sleep(50);
+    expect(await readFile(lock, "utf8")).toBe("");
 
+    await rm(lock);
+    await write;
     expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toMatchObject({
       other: { type: "oauth" },
     });
-  }, 10_000);
+  });
 
   test("never emits authorization or Credential values", async () => {
     const configDirectory = await directory();

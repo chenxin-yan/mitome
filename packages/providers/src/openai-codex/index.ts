@@ -8,7 +8,7 @@ import {
   HttpClientResponse,
 } from "effect/unstable/http";
 import { Sse } from "effect/unstable/encoding";
-import { chmod, mkdir, open, readFile, rename, rm, stat, unlink } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rename, rm, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import {
   makeModel,
@@ -416,18 +416,6 @@ const acquireLock = async (configDirectory: string) => {
       ) {
         throw error;
       }
-    }
-    try {
-      // ponytail: stat+unlink reaping can race a concurrent reaper and drop a
-      // fresh lock; atomic temp+rename bounds the damage to one lost update.
-      if (Date.now() - (await stat(path)).mtimeMs > lockTimeout) {
-        await unlink(path);
-        continue;
-      }
-    } catch (error) {
-      // The lock vanished between checks; retry immediately.
-      if (isMissing(error)) continue;
-      throw error;
     }
     await Bun.sleep(10);
   }
