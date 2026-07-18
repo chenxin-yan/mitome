@@ -10,4 +10,4 @@ mise install
 bun install
 ```
 
-Start the development server with `bun run dev`.
+Run the CLI with `bun run dev:cli` or the docs site with `bun run dev:docs`.
