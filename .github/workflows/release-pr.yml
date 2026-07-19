@@ -10,6 +10,8 @@ on:
         required: true
         type: string
 
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
 permissions:
   contents: read
 
@@ -23,6 +25,7 @@ jobs:
       release-version: ${{ steps.release.outputs.version || inputs.version }}
     steps:
       - uses: actions/checkout@v7
+        if: github.event_name == 'push'
         with:
           fetch-depth: 0
       - id: release
