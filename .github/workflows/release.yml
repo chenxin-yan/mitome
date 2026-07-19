@@ -1,20 +1,61 @@
 name: Release
 
 on:
-  workflow_call:
+  push:
+    branches: [main]
+  workflow_dispatch:
     inputs:
-      tag:
+      version:
+        description: Existing package version to retry
         required: true
         type: string
 
-env:
-  RELEASE_TAG: ${{ inputs.tag }}
+concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 permissions:
   contents: read
 
 jobs:
+  version-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release-version: ${{ steps.release.outputs.version || inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name == 'push'
+        with:
+          fetch-depth: 0
+      - id: release
+        if: github.event_name == 'push'
+        name: Detect a merged version change
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          previous=$(git show "$before:packages/core/package.json" 2>/dev/null || true)
+          test -n "$previous" || exit 0
+          current_version=$(node -p 'require("./packages/core/package.json").version')
+          previous_version=$(node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version' <<<"$previous")
+          test "$current_version" != "$previous_version" || exit 0
+          echo "version=$current_version" >> "$GITHUB_OUTPUT"
+      - uses: jdx/mise-action@v4
+        if: github.event_name == 'push'
+      - run: bun install --frozen-lockfile
+        if: github.event_name == 'push'
+      # v1.9.0; version PRs only. Publishing stays in the publish job so Bun packs catalogs.
+      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d
+        if: github.event_name == 'push'
+        with:
+          version: bun run version-packages
+          commit: "chore(release): version packages"
+          title: "chore(release): version packages"
+
   build-binaries:
+    needs: version-pr
+    if: needs.version-pr.outputs.release-version != ''
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -31,12 +72,14 @@ jobs:
           path: packages/cli/dist/release
 
   publish:
-    needs: build-binaries
+    needs: [version-pr, build-binaries]
     runs-on: ubuntu-24.04
     environment: release
     permissions:
       contents: write
       id-token: write
+    env:
+      RELEASE_TAG: v${{ needs.version-pr.outputs.release-version }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -60,6 +103,7 @@ jobs:
           set -euo pipefail
           mkdir packages-to-publish
           for package in core sdk providers cli; do
+            cp LICENSE "packages/$package/"
             (cd "packages/$package" && bun pm pack --destination "$GITHUB_WORKSPACE/packages-to-publish" --ignore-scripts)
           done
       - name: Create version tag
@@ -79,7 +123,7 @@ jobs:
           for package in core sdk providers cli; do
             archive="packages-to-publish/mitome-${package}-${RELEASE_TAG#v}.tgz"
             test -f "$archive"
-            npm publish "$archive" --access public --provenance
+            npm publish "$archive" --access public
           done
       - name: Create the immutable tagged release
         env:
