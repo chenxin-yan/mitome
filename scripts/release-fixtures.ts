@@ -25,6 +25,8 @@ const archiveFor = async (name: string): Promise<string> => {
 
 try {
   for (const name of publicPackages) {
+    // The root LICENSE is the single source; tarballs need a per-package copy.
+    await cp(join(rootDirectory, "LICENSE"), join(rootDirectory, "packages", name, "LICENSE"));
     await run(
       [process.execPath, "pm", "pack", "--destination", archivesDirectory, "--ignore-scripts"],
       join(rootDirectory, "packages", name),
