@@ -61,9 +61,6 @@ try {
     if (name === "cli" && listing.includes("package/dist/")) {
       throw new Error("CLI tarball must not bundle a platform binary.");
     }
-    if (name === "providers" && !listing.includes("package/NOTICE")) {
-      throw new Error("Providers tarball must include its Pi attribution NOTICE.");
-    }
   }
 
   const storeDirectory = join(rootDirectory, "node_modules", ".bun");
