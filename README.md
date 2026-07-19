@@ -1,5 +1,9 @@
 # Mitome
 
+## Installation
+
+To install the CLI, see [`@mitome/cli`](packages/cli/README.md).
+
 ## Development
 
 Install [mise](https://mise.jdx.dev/getting-started.html) and activate it in your shell, then run:
