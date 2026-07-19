@@ -27,11 +27,11 @@ const sha256 = async (path: string): Promise<string> =>
     .digest("hex");
 
 await rm(outputDirectory, { recursive: true, force: true });
+await mkdir(outputDirectory, { recursive: true });
 
 const checksums: Array<string> = [];
 for (const target of targets) {
-  const artifact = join(outputDirectory, target, artifactName(target));
-  await mkdir(join(outputDirectory, target), { recursive: true });
+  const artifact = join(outputDirectory, artifactName(target));
   const child = Bun.spawn(
     [
       process.execPath,
@@ -45,7 +45,7 @@ for (const target of targets) {
     { cwd: packageDirectory, stdout: "inherit", stderr: "inherit" },
   );
   if ((await child.exited) !== 0) throw new Error(`Build failed for ${target}`);
-  checksums.push(`${await sha256(artifact)}  ${target}/${artifactName(target)}`);
+  checksums.push(`${await sha256(artifact)}  ${artifactName(target)}`);
 }
 
 await Bun.write(join(outputDirectory, "checksums.sha256"), `${checksums.join("\n")}\n`);

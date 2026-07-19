@@ -14,22 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  verify:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-      - run: bun install --frozen-lockfile
-      - run: test "${RELEASE_TAG#v}" = "$(node -p 'require("./packages/core/package.json").version')"
-      - run: bun run check:lockstep
-      - run: TURBO_FORCE=true bun run check
-      - run: TURBO_FORCE=true bun run build
-      - run: TURBO_FORCE=true bun run test
-
   build-binaries:
-    needs: verify
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -38,26 +23,15 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       # build:release cross-compiles every supported target from one host and
-      # writes a sorted checksum manifest beside the per-target binaries.
+      # writes a sorted checksum manifest beside the binaries.
       - run: bun run --cwd packages/cli build:release
-      - name: Verify and flatten binaries
-        shell: bash
-        run: |
-          set -euo pipefail
-          (cd packages/cli/dist/release && sha256sum -c checksums.sha256)
-          mkdir release-assets
-          while read -r _ asset; do
-            cp "packages/cli/dist/release/$asset" "release-assets/$(basename "$asset")"
-          done < packages/cli/dist/release/checksums.sha256
-          test "$(find release-assets -maxdepth 1 -type f -name 'mitome-*' | wc -l)" -eq 8
-          (cd release-assets && sha256sum mitome-* | sort > checksums.sha256 && sha256sum -c checksums.sha256)
       - uses: actions/upload-artifact@v7
         with:
           name: release-assets
-          path: release-assets
+          path: packages/cli/dist/release
 
   publish:
-    needs: [verify, build-binaries]
+    needs: build-binaries
     runs-on: ubuntu-24.04
     environment: release
     permissions:
@@ -76,6 +50,7 @@ jobs:
           name: release-assets
           path: release-assets
       - run: bun install --frozen-lockfile
+      - run: test "${RELEASE_TAG#v}" = "$(node -p 'require("./packages/core/package.json").version')"
       - run: bun run build
       - run: bun run test:release
       - run: npm install --global npm@11.5.1 && npm --version

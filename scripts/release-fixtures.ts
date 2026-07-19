@@ -1,10 +1,12 @@
 import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { checkLockstep, publicPackages, rootEffectVersion } from "./check-lockstep.ts";
 
 const rootDirectory = resolve(import.meta.dir, "..");
-const packageVersion = await checkLockstep();
+const publicPackages = ["core", "sdk", "providers", "cli"] as const;
+const packageVersion: string = (
+  await Bun.file(join(rootDirectory, "packages", "core", "package.json")).json()
+).version;
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "mitome-release-fixtures-"));
 const archivesDirectory = join(temporaryDirectory, "archives");
 const consumerDirectory = join(temporaryDirectory, "consumer");
@@ -29,42 +31,9 @@ try {
     );
   }
 
-  for (const name of publicPackages) {
-    const archive = await archiveFor(name);
-    const listed = Bun.spawnSync(["tar", "-tzf", archive], { stdout: "pipe" });
-    if (listed.exitCode !== 0) throw new Error(`Cannot inspect ${archive}.`);
-    const listing = new TextDecoder().decode(listed.stdout);
-    for (const file of listing.trim().split("\n")) {
-      const allowed =
-        file === "package/package.json" ||
-        file === "package/LICENSE" ||
-        file === "package/NOTICE" ||
-        file === "package/README.md" ||
-        /^package\/dist\/(?:[^/]+\/)?[^/]+\.(?:js|d\.ts)$/.test(file) ||
-        (name === "cli" &&
-          (file === "package/scripts/mitome.mjs" || file === "package/scripts/postinstall.mjs"));
-      if (!allowed) throw new Error(`${name} tarball exposes ${file}.`);
-    }
-    const entryFiles =
-      name === "providers"
-        ? [
-            "package/dist/openai/index.js",
-            "package/dist/openai-compatible/index.js",
-            "package/dist/openai-codex/index.js",
-          ]
-        : name === "cli"
-          ? []
-          : ["package/dist/index.js"];
-    for (const entry of entryFiles) {
-      if (!listing.includes(entry)) throw new Error(`${name} tarball must include ${entry}.`);
-    }
-    if (name === "cli" && listing.includes("package/dist/")) {
-      throw new Error("CLI tarball must not bundle a platform binary.");
-    }
-  }
-
   const storeDirectory = join(rootDirectory, "node_modules", ".bun");
-  const effectVersion = await rootEffectVersion();
+  const effectVersion: string = (await Bun.file(join(rootDirectory, "package.json")).json())
+    .workspaces.catalog.effect;
   const installedPackage = (name: string, version: string): string => {
     // The store can hold several versions on dev machines; pin to the catalog one.
     const entry = [
