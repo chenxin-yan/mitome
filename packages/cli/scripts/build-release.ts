@@ -1,37 +1,23 @@
-import { mkdir, rm } from "node:fs/promises";
-import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 
 const packageDirectory = resolve(import.meta.dir, "..");
-const outputDirectory = join(packageDirectory, "dist", "release");
 
-// Every supported OS/arch/libc family; x64 ships baseline-only. Sorted so the
-// checksum manifest is deterministic.
-const targets = [
-  "bun-darwin-arm64",
-  "bun-darwin-x64-baseline",
-  "bun-linux-arm64",
-  "bun-linux-arm64-musl",
-  "bun-linux-x64-baseline",
-  "bun-linux-x64-musl-baseline",
-  "bun-windows-arm64",
-  "bun-windows-x64-baseline",
-];
+// Every supported OS/arch/libc family; x64 ships baseline-only. Each Bun
+// compile target maps onto the platform package that publishes its binary.
+const targets: Record<string, string> = {
+  "bun-darwin-arm64": "cli-darwin-arm64",
+  "bun-darwin-x64-baseline": "cli-darwin-x64",
+  "bun-linux-arm64": "cli-linux-arm64",
+  "bun-linux-arm64-musl": "cli-linux-arm64-musl",
+  "bun-linux-x64-baseline": "cli-linux-x64",
+  "bun-linux-x64-musl-baseline": "cli-linux-x64-musl",
+  "bun-windows-arm64": "cli-win32-arm64",
+  "bun-windows-x64-baseline": "cli-win32-x64",
+};
 
-const artifactName = (target: string): string =>
-  `mitome-${target}${target.startsWith("bun-windows-") ? ".exe" : ""}`;
-
-const sha256 = async (path: string): Promise<string> =>
-  createHash("sha256")
-    .update(new Uint8Array(await Bun.file(path).arrayBuffer()))
-    .digest("hex");
-
-await rm(outputDirectory, { recursive: true, force: true });
-await mkdir(outputDirectory, { recursive: true });
-
-const checksums: Array<string> = [];
-for (const target of targets) {
-  const artifact = join(outputDirectory, artifactName(target));
+for (const [target, packageName] of Object.entries(targets)) {
+  const executable = target.startsWith("bun-windows-") ? "mitome.exe" : "mitome";
+  const artifact = join(packageDirectory, "npm", packageName, "bin", executable);
   const child = Bun.spawn(
     [
       process.execPath,
@@ -45,8 +31,6 @@ for (const target of targets) {
     { cwd: packageDirectory, stdout: "inherit", stderr: "inherit" },
   );
   if ((await child.exited) !== 0) throw new Error(`Build failed for ${target}`);
-  checksums.push(`${await sha256(artifact)}  ${artifactName(target)}`);
 }
 
-await Bun.write(join(outputDirectory, "checksums.sha256"), `${checksums.join("\n")}\n`);
-console.log(`Built ${targets.length} release binaries in ${outputDirectory}.`);
+console.log(`Built ${Object.keys(targets).length} platform package binaries.`);

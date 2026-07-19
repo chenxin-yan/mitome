@@ -61,6 +61,48 @@
         "typescript": "catalog:",
         "vitest": "catalog:",
       },
+      "optionalDependencies": {
+        "@mitome/cli-darwin-arm64": "workspace:*",
+        "@mitome/cli-darwin-x64": "workspace:*",
+        "@mitome/cli-linux-arm64": "workspace:*",
+        "@mitome/cli-linux-arm64-musl": "workspace:*",
+        "@mitome/cli-linux-x64": "workspace:*",
+        "@mitome/cli-linux-x64-musl": "workspace:*",
+        "@mitome/cli-win32-arm64": "workspace:*",
+        "@mitome/cli-win32-x64": "workspace:*",
+      },
+    },
+    "packages/cli/npm/cli-darwin-arm64": {
+      "name": "@mitome/cli-darwin-arm64",
+      "version": "0.0.0",
+    },
+    "packages/cli/npm/cli-darwin-x64": {
+      "name": "@mitome/cli-darwin-x64",
+      "version": "0.0.0",
+    },
+    "packages/cli/npm/cli-linux-arm64": {
+      "name": "@mitome/cli-linux-arm64",
+      "version": "0.0.0",
+    },
+    "packages/cli/npm/cli-linux-arm64-musl": {
+      "name": "@mitome/cli-linux-arm64-musl",
+      "version": "0.0.0",
+    },
+    "packages/cli/npm/cli-linux-x64": {
+      "name": "@mitome/cli-linux-x64",
+      "version": "0.0.0",
+    },
+    "packages/cli/npm/cli-linux-x64-musl": {
+      "name": "@mitome/cli-linux-x64-musl",
+      "version": "0.0.0",
+    },
+    "packages/cli/npm/cli-win32-arm64": {
+      "name": "@mitome/cli-win32-arm64",
+      "version": "0.0.0",
+    },
+    "packages/cli/npm/cli-win32-x64": {
+      "name": "@mitome/cli-win32-x64",
+      "version": "0.0.0",
     },
     "packages/config": {
       "name": "@mitome/config",
@@ -311,6 +353,22 @@
     "@mdx-js/mdx": ["@mdx-js/mdx@3.1.1", "", { "dependencies": { "@types/estree": "^1.0.0", "@types/estree-jsx": "^1.0.0", "@types/hast": "^3.0.0", "@types/mdx": "^2.0.0", "acorn": "^8.0.0", "collapse-white-space": "^2.0.0", "devlop": "^1.0.0", "estree-util-is-identifier-name": "^3.0.0", "estree-util-scope": "^1.0.0", "estree-walker": "^3.0.0", "hast-util-to-jsx-runtime": "^2.0.0", "markdown-extensions": "^2.0.0", "recma-build-jsx": "^1.0.0", "recma-jsx": "^1.0.0", "recma-stringify": "^1.0.0", "rehype-recma": "^1.0.0", "remark-mdx": "^3.0.0", "remark-parse": "^11.0.0", "remark-rehype": "^11.0.0", "source-map": "^0.7.0", "unified": "^11.0.0", "unist-util-position-from-estree": "^2.0.0", "unist-util-stringify-position": "^4.0.0", "unist-util-visit": "^5.0.0", "vfile": "^6.0.0" } }, "sha512-f6ZO2ifpwAQIpzGWaBQT2TXxPv6z3RBzQKpVftEWN78Vl/YweF1uwussDx8ECAXVtr3Rs89fKyG9YlzUs9DyGQ=="],
 
     "@mitome/cli": ["@mitome/cli@workspace:packages/cli"],
+
+    "@mitome/cli-darwin-arm64": ["@mitome/cli-darwin-arm64@workspace:packages/cli/npm/cli-darwin-arm64"],
+
+    "@mitome/cli-darwin-x64": ["@mitome/cli-darwin-x64@workspace:packages/cli/npm/cli-darwin-x64"],
+
+    "@mitome/cli-linux-arm64": ["@mitome/cli-linux-arm64@workspace:packages/cli/npm/cli-linux-arm64"],
+
+    "@mitome/cli-linux-arm64-musl": ["@mitome/cli-linux-arm64-musl@workspace:packages/cli/npm/cli-linux-arm64-musl"],
+
+    "@mitome/cli-linux-x64": ["@mitome/cli-linux-x64@workspace:packages/cli/npm/cli-linux-x64"],
+
+    "@mitome/cli-linux-x64-musl": ["@mitome/cli-linux-x64-musl@workspace:packages/cli/npm/cli-linux-x64-musl"],
+
+    "@mitome/cli-win32-arm64": ["@mitome/cli-win32-arm64@workspace:packages/cli/npm/cli-win32-arm64"],
+
+    "@mitome/cli-win32-x64": ["@mitome/cli-win32-x64@workspace:packages/cli/npm/cli-win32-x64"],
 
     "@mitome/config": ["@mitome/config@workspace:packages/config"],
 

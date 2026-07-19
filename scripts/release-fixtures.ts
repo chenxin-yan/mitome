@@ -71,7 +71,9 @@ try {
       dereference: true,
     },
   );
-  await run([process.execPath, "install"], consumerDirectory);
+  // Platform binary packages are release-time artifacts; the fixture gates
+  // the JS packages, so skip the (unpublished) optional dependencies.
+  await run([process.execPath, "install", "--omit=optional"], consumerDirectory);
   if (!(await Bun.file(join(nodeModules, ".bin", "mitome")).exists())) {
     throw new Error("Bun install did not link the CLI launcher.");
   }

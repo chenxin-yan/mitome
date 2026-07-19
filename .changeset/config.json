@@ -2,7 +2,22 @@
   "$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [["@mitome/core", "@mitome/sdk", "@mitome/providers", "@mitome/cli"]],
+  "fixed": [
+    [
+      "@mitome/core",
+      "@mitome/sdk",
+      "@mitome/providers",
+      "@mitome/cli",
+      "@mitome/cli-darwin-arm64",
+      "@mitome/cli-darwin-x64",
+      "@mitome/cli-linux-arm64",
+      "@mitome/cli-linux-arm64-musl",
+      "@mitome/cli-linux-x64",
+      "@mitome/cli-linux-x64-musl",
+      "@mitome/cli-win32-arm64",
+      "@mitome/cli-win32-x64"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",

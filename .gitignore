@@ -6,3 +6,5 @@
 .env.*
 !.env.example
 packages/*/LICENSE
+packages/cli/npm/*/LICENSE
+packages/cli/npm/*/bin/
