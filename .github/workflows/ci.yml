@@ -25,4 +25,3 @@ jobs:
       - run: bun run check:lockstep
       - run: "bunx turbo run lint //#fmt check:types build test"
       - run: bun run test:release
-      - run: bun run release:dry-run

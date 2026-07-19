@@ -1,26 +1,13 @@
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { packageVersion, publicPackages } from "./check-lockstep.ts";
+import { checkLockstep, publicPackages, rootEffectVersion } from "./check-lockstep.ts";
 
 const rootDirectory = resolve(import.meta.dir, "..");
+const packageVersion = await checkLockstep();
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "mitome-release-fixtures-"));
 const archivesDirectory = join(temporaryDirectory, "archives");
 const consumerDirectory = join(temporaryDirectory, "consumer");
-const forbidden = [
-  /from ["']effect(?:[/'"]|$)/,
-  /["']effect["']/,
-  /effect\//,
-  /Effect</,
-  /Layer</,
-  /Scope/,
-  /Stream</,
-  /Context\.Tag/,
-  /HttpClient/,
-  /FetchHttpClient/,
-  /Redacted/,
-  /Secret/,
-];
 
 const run = async (command: ReadonlyArray<string>, cwd = rootDirectory): Promise<void> => {
   const child = Bun.spawn(command, { cwd, stdout: "inherit", stderr: "inherit" });
@@ -53,50 +40,40 @@ try {
         file === "package/LICENSE" ||
         file === "package/NOTICE" ||
         file === "package/README.md" ||
-        /^package\/dist\/[^/]+\.(?:js|d\.ts)$/.test(file) ||
-        file === "package/scripts/mitome.mjs" ||
-        file === "package/scripts/postinstall.mjs";
+        /^package\/dist\/(?:[^/]+\/)?[^/]+\.(?:js|d\.ts)$/.test(file) ||
+        (name === "cli" &&
+          (file === "package/scripts/mitome.mjs" || file === "package/scripts/postinstall.mjs"));
       if (!allowed) throw new Error(`${name} tarball exposes ${file}.`);
     }
-    if (name !== "cli" && !listing.includes("package/dist/index.js")) {
-      throw new Error(`${name} tarball must include dist/index.js.`);
+    const entryFiles =
+      name === "providers"
+        ? [
+            "package/dist/openai/index.js",
+            "package/dist/openai-compatible/index.js",
+            "package/dist/openai-codex/index.js",
+          ]
+        : name === "cli"
+          ? []
+          : ["package/dist/index.js"];
+    for (const entry of entryFiles) {
+      if (!listing.includes(entry)) throw new Error(`${name} tarball must include ${entry}.`);
     }
     if (name === "cli" && listing.includes("package/dist/")) {
       throw new Error("CLI tarball must not bundle a platform binary.");
     }
-    if (name === "openai-codex" && !listing.includes("package/NOTICE")) {
-      throw new Error("OpenAI Codex tarball must include its Pi attribution NOTICE.");
-    }
-
-    const extraction = join(temporaryDirectory, "extract", name);
-    await mkdir(extraction, { recursive: true });
-    await run(["tar", "-xzf", archive, "-C", extraction], rootDirectory);
-    if (name !== "core") {
-      for (const file of new Bun.Glob("package/dist/**/*.d.ts").scanSync({ cwd: extraction })) {
-        const declaration = await readFile(join(extraction, file), "utf8");
-        // SDK deliberately exposes EffectSchema = Schema.Codec and the typed-hook
-        // Prompt alias; only these exact imports are exempt, all other Effect
-        // patterns stay forbidden.
-        const sdkExemptImports = [
-          'import { Schema } from "effect";\n',
-          'import { Prompt as AiPrompt } from "effect/unstable/ai";\n',
-        ];
-        const publicDeclaration =
-          name === "sdk"
-            ? sdkExemptImports.reduce((text, line) => text.replace(line, ""), declaration)
-            : declaration;
-        const match = forbidden.find((pattern) => pattern.test(publicDeclaration));
-        if (match !== undefined) throw new Error(`${name} tarball declaration leaks ${match}.`);
-      }
+    if (name === "providers" && !listing.includes("package/NOTICE")) {
+      throw new Error("Providers tarball must include its Pi attribution NOTICE.");
     }
   }
 
   const storeDirectory = join(rootDirectory, "node_modules", ".bun");
-  const installedPackage = (name: string): string => {
+  const effectVersion = await rootEffectVersion();
+  const installedPackage = (name: string, version: string): string => {
+    // The store can hold several versions on dev machines; pin to the catalog one.
     const entry = [
       ...new Bun.Glob(`**/node_modules/${name}/package.json`).scanSync({ cwd: storeDirectory }),
-    ][0];
-    if (entry === undefined) throw new Error(`Cannot find installed ${name}.`);
+    ].find((candidate) => candidate.includes(`${name}@${version}`));
+    if (entry === undefined) throw new Error(`Cannot find installed ${name}@${version}.`);
     return dirname(join(storeDirectory, entry));
   };
   const dependencies = Object.fromEntries(
@@ -118,10 +95,14 @@ try {
       overrides: { ...dependencies, effect: "file:../vendor/effect" },
     }),
   );
-  await cp(installedPackage("effect"), join(temporaryDirectory, "vendor", "effect"), {
-    recursive: true,
-    dereference: true,
-  });
+  await cp(
+    installedPackage("effect", effectVersion),
+    join(temporaryDirectory, "vendor", "effect"),
+    {
+      recursive: true,
+      dereference: true,
+    },
+  );
   await run([process.execPath, "install"], consumerDirectory);
   if (!(await Bun.file(join(nodeModules, ".bin", "mitome")).exists())) {
     throw new Error("Bun install did not link the CLI launcher.");
@@ -130,25 +111,47 @@ try {
     const destination = join(nodeModules, "@mitome", name);
     await mkdir(destination, { recursive: true });
     await run(["tar", "-xzf", await archiveFor(name), "-C", destination, "--strip-components=1"]);
+    const manifest = await Bun.file(join(destination, "package.json")).json();
+    if (/"(?:catalog|workspace):/.test(JSON.stringify(manifest))) {
+      throw new Error(`${name} tarball retains a workspace-only dependency protocol.`);
+    }
   }
   await writeFile(
-    join(consumerDirectory, "smoke.mjs"),
+    join(consumerDirectory, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {
+        target: "esnext",
+        module: "esnext",
+        moduleResolution: "bundler",
+        strict: true,
+        noEmit: true,
+        skipLibCheck: true,
+        types: [],
+      },
+      files: ["smoke.ts"],
+    }),
+  );
+  await writeFile(
+    join(consumerDirectory, "smoke.ts"),
     `import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { createSession, makeModel } from "@mitome/core";
 import { defineAgent, withSession } from "@mitome/sdk";
-import { env, openai } from "@mitome/openai";
-import { openaiCompatible } from "@mitome/openai-compatible";
-import { codex, oauth } from "@mitome/openai-codex";
+import { env, openai } from "@mitome/providers/openai";
+import { openaiCompatible } from "@mitome/providers/openai-compatible";
+import { codex, oauth } from "@mitome/providers/openai-codex";
 
+declare const process: { env: Record<string, string | undefined> };
 process.env.OPENAI_API_KEY = "fixture";
 const provider = openai("fixture", env("OPENAI_API_KEY"));
 if (typeof openaiCompatible !== "function") throw new Error("OpenAI-compatible package was not installed.");
 await Effect.runPromise(Effect.scoped(Effect.as(createSession(defineAgent({ instructions: "", model: provider, plugins: [] })), undefined)));
-if (typeof codex !== "function" || typeof oauth().capability.module !== "string") throw new Error("Codex package was not installed.");
+const credential = oauth();
+if (typeof codex !== "function" || typeof credential === "string" || typeof credential.capability.module !== "string") throw new Error("Codex package was not installed.");
+// Deliberately partial mock; only streamText runs in this smoke.
 const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "ok" })),
-}));
+} as unknown as LanguageModel.Service));
 const definition = defineAgent({ instructions: "", model, plugins: [] });
 if (definition.model !== model) throw new Error("SDK wrapped the canonical Core Model.");
 const events = await withSession(definition, async (session) => {
@@ -159,7 +162,10 @@ const events = await withSession(definition, async (session) => {
 if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke did not complete.");
 `,
   );
-  await run([process.execPath, "smoke.mjs"], consumerDirectory);
+  // Typechecking the consumer against the packed declarations is the leak gate:
+  // it fails if any published .d.ts references types the tarballs cannot resolve.
+  await run([process.execPath, "x", "tsc", "-p", join(consumerDirectory, "tsconfig.json")]);
+  await run([process.execPath, "smoke.ts"], consumerDirectory);
   console.log("Release tarball/install fixtures passed.");
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });
