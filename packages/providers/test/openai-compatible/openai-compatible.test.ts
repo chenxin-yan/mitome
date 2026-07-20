@@ -1,10 +1,8 @@
-// Bun
-// Bun's async matchers are typed void but must be awaited to stay within the test.
-// oxlint-disable typescript/await-thenable
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { type AgentDefinition, createSession, credentialDescriptor } from "@mitome/core";
+import { serve } from "../support.js";
 import { env, openaiCompatible } from "../../src/openai-compatible/index.js";
 
 const key = "MITOME_OPENAI_COMPATIBLE_TEST_KEY";
@@ -49,8 +47,7 @@ describe("openaiCompatible", () => {
     const secondReleased = new Promise<void>((resolve) => (releaseSecond = resolve));
     let firstChunk!: () => void;
     const firstChunkSent = new Promise<void>((resolve) => (firstChunk = resolve));
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       fetch: async (request) => {
         expect(new URL(request.url).pathname).toBe("/v1/chat/completions");
         const body = (await request.json()) as { model: string; stream: boolean };
@@ -60,13 +57,15 @@ describe("openaiCompatible", () => {
           authorization: request.headers.get("authorization"),
         });
         return new Response(
-          new ReadableStream({
+          new ReadableStream<Uint8Array>({
             async start(controller) {
-              controller.enqueue(sse(chunk({ content: "hel" })));
+              const enqueue = (value: string) =>
+                controller.enqueue(new TextEncoder().encode(value));
+              enqueue(sse(chunk({ content: "hel" })));
               firstChunk();
               await secondReleased;
-              controller.enqueue(sse(chunk({ content: "lo" }, "stop")));
-              controller.enqueue(sse("[DONE]"));
+              enqueue(sse(chunk({ content: "lo" }, "stop")));
+              enqueue(sse("[DONE]"));
               controller.close();
             },
           }),
@@ -148,8 +147,7 @@ describe("openaiCompatible", () => {
 
   test("surfaces backend model rejection after the request without preflight", async () => {
     let requests = 0;
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       fetch: async () => {
         requests += 1;
         return Response.json({ error: { message: "model not found" } }, { status: 404 });
@@ -188,8 +186,7 @@ describe("openaiCompatible", () => {
         readonly content?: unknown;
       }>;
     } = {};
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       fetch: async (request) => {
         const body = (await request.json()) as {
           readonly tools?: ReadonlyArray<unknown>;

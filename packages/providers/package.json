@@ -33,7 +33,7 @@
     "check:types": "tsc",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "test": "bun test test"
+    "test": "vitest run"
   },
   "dependencies": {
     "@effect/ai-openai": "catalog:",
@@ -43,13 +43,14 @@
   "devDependencies": {
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "@types/node": "^24.0.0",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "peerDependencies": {
     "@mitome/core": "workspace:*"
   },
   "engines": {
-    "bun": ">=1.3.10"
+    "node": ">=24"
   }
 }

@@ -1,13 +1,12 @@
-// Bun
-// Bun's async matchers are typed void but must be awaited to stay within the test.
-// oxlint-disable typescript/await-thenable
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "vitest";
+import { setTimeout } from "node:timers/promises";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { type AgentDefinition, createSession } from "@mitome/core";
+import { serve, spawnRuntime } from "../support.js";
 import { codex, writeCredential } from "../../src/openai-codex/index.js";
 
 const directories: Array<string> = [];
@@ -69,8 +68,7 @@ describe("Codex SSE", () => {
       [];
     let release!: () => void;
     const released = new Promise<void>((resolve) => (release = resolve));
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       async fetch(request) {
         requests.push({
           pathname: new URL(request.url).pathname,
@@ -86,20 +84,22 @@ describe("Codex SSE", () => {
           item: { type: "message", id: "msg-1" },
         });
         return new Response(
-          new ReadableStream({
+          new ReadableStream<Uint8Array>({
             async start(controller) {
-              controller.enqueue(sse({ type: "response.created", response: {} }));
-              controller.enqueue(sse({ type: "response.in_progress", response: {} }));
-              controller.enqueue(added.slice(0, 17));
-              controller.enqueue(added.slice(17));
-              controller.enqueue(
+              const enqueue = (value: string) =>
+                controller.enqueue(new TextEncoder().encode(value));
+              enqueue(sse({ type: "response.created", response: {} }));
+              enqueue(sse({ type: "response.in_progress", response: {} }));
+              enqueue(added.slice(0, 17));
+              enqueue(added.slice(17));
+              enqueue(
                 sse({
                   type: "response.content_part.added",
                   item_id: "msg-1",
                   output_index: 0,
                 }),
               );
-              controller.enqueue(
+              enqueue(
                 sse({
                   type: "response.output_text.delta",
                   item_id: "msg-1",
@@ -108,7 +108,7 @@ describe("Codex SSE", () => {
                 }),
               );
               await released;
-              controller.enqueue(
+              enqueue(
                 sse({
                   type: "response.output_text.delta",
                   item_id: "msg-1",
@@ -116,7 +116,7 @@ describe("Codex SSE", () => {
                   delta: "lo",
                 }),
               );
-              controller.enqueue(
+              enqueue(
                 sse({
                   type: "response.output_text.done",
                   item_id: "msg-1",
@@ -124,7 +124,7 @@ describe("Codex SSE", () => {
                   text: "hello",
                 }),
               );
-              controller.enqueue(
+              enqueue(
                 sse({
                   type: "response.output_item.done",
                   item_id: "msg-1",
@@ -132,10 +132,8 @@ describe("Codex SSE", () => {
                   item: { type: "message", id: "msg-1" },
                 }),
               );
-              controller.enqueue(
-                sse({ type: "response.completed", response: { status: "completed" } }),
-              );
-              controller.enqueue(sse("[DONE]"));
+              enqueue(sse({ type: "response.completed", response: { status: "completed" } }));
+              enqueue(sse("[DONE]"));
               controller.close();
             },
           }),
@@ -208,8 +206,7 @@ describe("Codex SSE", () => {
   test("maps function-call SSE events through the Core Tool loop", async () => {
     const configDirectory = await directory();
     let calls = 0;
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       fetch(request) {
         expect(new URL(request.url).pathname).toBe("/codex/responses");
         calls += 1;
@@ -312,8 +309,7 @@ describe("Codex SSE", () => {
     ];
     for (const [body, description] of cases) {
       const configDirectory = await directory();
-      const server = Bun.serve({
-        port: 0,
+      const server = await serve({
         fetch: () => new Response(body, { headers: { "content-type": "text/event-stream" } }),
       });
       try {
@@ -345,8 +341,7 @@ describe("Codex SSE", () => {
   test("passes model rejection through after one request without a catalog", async () => {
     const configDirectory = await directory();
     let requests = 0;
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       fetch() {
         requests += 1;
         return Response.json({ error: { message: "model not found" } }, { status: 404 });
@@ -387,8 +382,7 @@ describe("Codex SSE", () => {
     let arrivals = 0;
     let releaseBarrier!: () => void;
     const barrier = new Promise<void>((resolve) => (releaseBarrier = resolve));
-    const tokenServer = Bun.serve({
-      port: 0,
+    const tokenServer = await serve({
       async fetch(request) {
         if (new URL(request.url).pathname === "/barrier") {
           arrivals += 1;
@@ -399,13 +393,12 @@ describe("Codex SSE", () => {
         const refresh = (await request.formData()).get("refresh_token") as string;
         refreshes.push(refresh);
         // Longer than the former 5s lock wait, but below the 15s refresh timeout.
-        await Bun.sleep(6_000);
+        await setTimeout(6_000);
         if (refresh !== "shared-refresh") return new Response("stale refresh", { status: 400 });
         return tokenResponse("race-account", "race-refresh");
       },
     });
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       fetch(request) {
         expect(request.headers.get("authorization")).toBe(`Bearer ${jwt("race-account")}`);
         return new Response(
@@ -416,17 +409,13 @@ describe("Codex SSE", () => {
         );
       },
     });
-    const source = new URL("../../src/openai-codex/index.ts", import.meta.url).href;
+    const source = new URL("../../dist/openai-codex/index.js", import.meta.url).href;
     const core = new URL("../../node_modules/@mitome/core/dist/index.js", import.meta.url).href;
     const child = () =>
-      Bun.spawn(
-        [
-          process.execPath,
-          "-e",
-          `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const model = codex("gpt-5.4", undefined, ${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ instructions: "", model, plugins: [] }); yield* Stream.runDrain(session.prompt("Hi")); })));`,
-        ],
-        { stdout: "pipe", stderr: "pipe" },
-      );
+      spawnRuntime([
+        "-e",
+        `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const model = codex("gpt-5.4", undefined, ${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ instructions: "", model, plugins: [] }); yield* Stream.runDrain(session.prompt("Hi")); })));`,
+      ]);
     try {
       const children = [child(), child()];
       const exits = await Promise.all(children.map((process) => process.exited));
@@ -451,16 +440,14 @@ describe("Codex SSE", () => {
   test("refreshes proactively and retries exactly once after a 401", async () => {
     const configDirectory = await directory(credential("expired-access", "rotating-refresh", 1));
     const refreshes: Array<string> = [];
-    const tokenServer = Bun.serve({
-      port: 0,
+    const tokenServer = await serve({
       async fetch(request) {
         refreshes.push((await request.formData()).get("refresh_token") as string);
         return tokenResponse("refreshed-account", "rotated-refresh");
       },
     });
     let requests = 0;
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       fetch(request) {
         expect(new URL(request.url).pathname).toBe("/codex/responses");
         requests += 1;
@@ -500,16 +487,14 @@ describe("Codex SSE", () => {
   test("fails after one refresh when the backend keeps rejecting with 401", async () => {
     const configDirectory = await directory();
     const refreshes: Array<string> = [];
-    const tokenServer = Bun.serve({
-      port: 0,
+    const tokenServer = await serve({
       async fetch(request) {
         refreshes.push((await request.formData()).get("refresh_token") as string);
         return tokenResponse("revoked-account", "rotated-refresh");
       },
     });
     let requests = 0;
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       fetch() {
         requests += 1;
         return new Response("", { status: 401 });

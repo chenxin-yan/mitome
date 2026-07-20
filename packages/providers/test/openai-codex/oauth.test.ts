@@ -1,11 +1,10 @@
-// Bun
-// Bun's async matchers are typed void but must be awaited to stay within the test.
-// oxlint-disable typescript/await-thenable
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "vitest";
+import { setTimeout } from "node:timers/promises";
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { credentialDescriptor } from "@mitome/core";
+import { serve, spawnRuntime } from "../support.js";
 import { codex, login, logout, writeCredential } from "../../src/openai-codex/index.js";
 
 const temporaryDirectories: Array<string> = [];
@@ -32,16 +31,15 @@ const jwt = (accountId: string) =>
   ).toString("base64url")}.signature`;
 
 const callbackPort = async (): Promise<number> => {
-  const server = Bun.serve({ port: 0, fetch: () => new Response() });
+  const server = await serve({ fetch: () => new Response() });
   const port = server.port!;
   await server.stop(true);
   return port;
 };
 
-const tokenServer = () => {
+const tokenServer = async () => {
   const requests: Array<Record<string, string>> = [];
-  const server = Bun.serve({
-    port: 0,
+  const server = await serve({
     async fetch(request) {
       const form = Object.fromEntries(await request.formData()) as Record<string, string>;
       requests.push(form);
@@ -68,7 +66,7 @@ describe("Codex OAuth", () => {
 
   test("uses documented PKCE parameters and stores a callback Credential", async () => {
     const configDirectory = await directory();
-    const { server, requests } = tokenServer();
+    const { server, requests } = await tokenServer();
     const port = await callbackPort();
     let authorization = "";
     try {
@@ -122,7 +120,7 @@ describe("Codex OAuth", () => {
 
   test("surfaces a same-state cancelled authorization instead of waiting", async () => {
     const configDirectory = await directory();
-    const { server } = tokenServer();
+    const { server } = await tokenServer();
     const port = await callbackPort();
     try {
       await expect(
@@ -148,8 +146,8 @@ describe("Codex OAuth", () => {
 
   test("falls back to a pasted redirect and rejects mismatched state", async () => {
     const configDirectory = await directory();
-    const { server } = tokenServer();
-    const occupied = Bun.serve({ port: 0, fetch: () => new Response("occupied") });
+    const { server } = await tokenServer();
+    const occupied = await serve({ fetch: () => new Response("occupied") });
     const occupiedPort = occupied.port!;
     let state = "";
     try {
@@ -210,16 +208,12 @@ describe("Codex OAuth", () => {
       join(configDirectory, "auth.json"),
       JSON.stringify({ other: { retained: true } }),
     );
-    const source = new URL("../../src/openai-codex/index.ts", import.meta.url).href;
+    const source = new URL("../../dist/openai-codex/index.js", import.meta.url).href;
     const writer = (providerKey: string) =>
-      Bun.spawn(
-        [
-          process.execPath,
-          "-e",
-          `const { writeCredential } = await import(${JSON.stringify(source)}); await writeCredential(${JSON.stringify(configDirectory)}, ${JSON.stringify(providerKey)}, ${JSON.stringify(credential(providerKey))});`,
-        ],
-        { stdout: "pipe", stderr: "pipe" },
-      );
+      spawnRuntime([
+        "-e",
+        `const { writeCredential } = await import(${JSON.stringify(source)}); await writeCredential(${JSON.stringify(configDirectory)}, ${JSON.stringify(providerKey)}, ${JSON.stringify(credential(providerKey))});`,
+      ]);
     const writers = [writer("first"), writer("second")];
     expect(await Promise.all(writers.map((writer) => writer.exited))).toEqual([0, 0]);
     const contents = await readFile(join(configDirectory, "auth.json"), "utf8");
@@ -251,7 +245,7 @@ describe("Codex OAuth", () => {
     await utimes(lock, stale, stale);
 
     const write = writeCredential(configDirectory, "other", credential("stale"));
-    await Bun.sleep(50);
+    await setTimeout(50);
     expect(await readFile(lock, "utf8")).toBe("");
 
     await rm(lock);
@@ -263,7 +257,7 @@ describe("Codex OAuth", () => {
 
   test("never emits authorization or Credential values", async () => {
     const configDirectory = await directory();
-    const { server } = tokenServer();
+    const { server } = await tokenServer();
     let state = "";
     const output: Array<string> = [];
     try {

@@ -1,10 +1,8 @@
-// Bun
-// Bun's async matchers are typed void but must be awaited to stay within the test.
-// oxlint-disable typescript/await-thenable
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { type AgentDefinition, createSession, credentialDescriptor } from "@mitome/core";
+import { serve } from "../support.js";
 import { env, openai } from "../../src/openai/index.js";
 
 const key = "MITOME_OPENAI_TEST_KEY";
@@ -103,8 +101,7 @@ describe("openai", () => {
     const secondReleased = new Promise<void>((resolve) => (releaseSecond = resolve));
     let firstChunk!: () => void;
     const firstChunkSent = new Promise<void>((resolve) => (firstChunk = resolve));
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       fetch: async (request) => {
         expect(new URL(request.url).pathname).toBe("/v1/responses");
         const body = (await request.json()) as {
@@ -118,13 +115,15 @@ describe("openai", () => {
         });
         const frames = textStream("resp-1", "msg-1", ["hel", "lo"]);
         return new Response(
-          new ReadableStream({
+          new ReadableStream<Uint8Array>({
             async start(controller) {
+              const enqueue = (value: string) =>
+                controller.enqueue(new TextEncoder().encode(value));
               // frames[0..2]: created, item added, first delta.
-              for (const frame of frames.slice(0, 3)) controller.enqueue(frame);
+              for (const frame of frames.slice(0, 3)) enqueue(frame);
               firstChunk();
               await secondReleased;
-              for (const frame of frames.slice(3)) controller.enqueue(frame);
+              for (const frame of frames.slice(3)) enqueue(frame);
               controller.close();
             },
           }),
@@ -199,8 +198,7 @@ describe("openai", () => {
 
   test("surfaces backend model rejection after the request without preflight", async () => {
     let requests = 0;
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       fetch: () => {
         requests += 1;
         return Response.json({ error: { message: "model not found" } }, { status: 404 });
@@ -237,8 +235,7 @@ describe("openai", () => {
   test("maps Responses function calls through the Core Tool loop", async () => {
     let calls = 0;
     let followUp: { readonly input?: ReadonlyArray<Record<string, unknown>> } = {};
-    const server = Bun.serve({
-      port: 0,
+    const server = await serve({
       fetch: async (request) => {
         const body = (await request.json()) as {
           readonly tools?: ReadonlyArray<unknown>;

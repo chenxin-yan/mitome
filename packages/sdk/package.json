@@ -33,7 +33,7 @@
   "devDependencies": {
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
-    "@types/bun": "catalog:",
+    "@types/node": "^24.0.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
@@ -41,6 +41,6 @@
     "@mitome/core": "workspace:*"
   },
   "engines": {
-    "bun": ">=1.3.10"
+    "node": ">=24"
   }
 }
