@@ -1,4 +1,4 @@
-import { spawn as spawnChild, type ChildProcess } from "node:child_process";
+import { spawn as spawnChild } from "node:child_process";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
@@ -19,6 +19,8 @@ import { text } from "node:stream/consumers";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
+import { knownModelIds as codexModelIds } from "@mitome/providers/openai-codex";
+import { knownModelIds as openAiModelIds } from "@mitome/providers/openai";
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const binary = join(packageDir, "dist/local/mitome");
@@ -182,6 +184,15 @@ const scaffold = async (prefix: string): Promise<Fixture> => {
   };
 };
 
+const cachedModelHints = async (current: Fixture): Promise<void> => {
+  const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+  await mkdir(config, { recursive: true });
+  await writeFile(
+    join(config, "models-cache.json"),
+    `${JSON.stringify({ openai: openAiModelIds, "openai-codex": codexModelIds, fetchedAt: Date.now() })}\n`,
+  );
+};
+
 const fixture = async (source = definitionSource("first")): Promise<Fixture> => {
   const current = await scaffold("mitome-cli-");
   const nodeModules = join(dirname(current.definition), "node_modules");
@@ -250,11 +261,15 @@ const spawn = (
   return child;
 };
 
-const exited = (child: ChildProcess) => {
+const exited = (child: ReturnType<typeof spawnChild>) => {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(child.exitCode);
+  const events = child as unknown as {
+    once(event: "error", listener: (error: Error) => void): void;
+    once(event: "close", listener: (code: number | null) => void): void;
+  };
   return new Promise<number | null>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", resolve);
+    events.once("error", reject);
+    events.once("close", resolve);
   });
 };
 
@@ -724,7 +739,7 @@ export default {
   test("initializes an Agent Definition and stores a masked Credential", async () => {
     const current = await scaffold("mitome-cli-");
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
-    await mkdir(config, { recursive: true });
+    await cachedModelHints(current);
     const localPackages = join(current.root, "local-packages");
     const archives = new Map<string, Buffer>();
     for (const packageName of ["core", "providers", "sdk"] as const) {
@@ -857,7 +872,7 @@ export default {
   test("initializes Codex without requesting an API key", async () => {
     const current = await scaffold("mitome-cli-");
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
-    await mkdir(config, { recursive: true });
+    await cachedModelHints(current);
     // Unroutable registry stops before OAuth while preserving the generated Definition for inspection.
     await writeFile(join(config, "bunfig.toml"), '[install]\nregistry = "http://127.0.0.1:1/"\n');
     const key = "synthetic-never-stored";
@@ -877,7 +892,7 @@ export default {
   test("accepts a custom model identifier", async () => {
     const current = await scaffold("mitome-cli-");
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
-    await mkdir(config, { recursive: true });
+    await cachedModelHints(current);
     await writeFile(join(config, "bunfig.toml"), '[install]\nregistry = "http://127.0.0.1:1/"\n');
     const child = spawn(undefined, ["init"], current);
     child.stdin.write("\n");
@@ -894,6 +909,7 @@ export default {
 
   test("rejects a blank custom model identifier", async () => {
     const current = await scaffold("mitome-cli-");
+    await cachedModelHints(current);
     const child = spawn(undefined, ["init"], current);
     child.stdin.write("\n");
     await delay(500);

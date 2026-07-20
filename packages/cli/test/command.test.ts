@@ -5,8 +5,8 @@ import { CliOutput } from "effect/unstable/cli";
 import { describe, expect, test, vi } from "vitest";
 import cliPackage from "../package.json" with { type: "json" };
 
-vi.mock("../src/host.ts", () => ({ default: "" }));
-vi.mock("../src/auth-host.ts", () => ({ default: "" }));
+vi.mock("../src/hosts/host.ts", () => ({ default: "" }));
+vi.mock("../src/hosts/auth-host.ts", () => ({ default: "" }));
 
 import { runCli } from "../src/index.ts";
 

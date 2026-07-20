@@ -1,5 +1,5 @@
 // Runs inside the embedded Bun runtime with the Agent Definition path as argv[1] and
-// an output file as argv[2]. index.ts embeds this file as text like host.ts:
+// an output file as argv[2]. child-host.ts embeds this file as text like host.ts:
 // Core is resolved beside the selected Agent Definition so credentialDescriptor sees
 // the same module instance the Agent Definition's Model was created with. Without
 // further arguments it writes the Model's credential descriptor (or null) as

@@ -1,5 +1,5 @@
 // Runs inside the embedded Bun runtime with the Agent Definition path as argv[1].
-// index.ts embeds this file as text and never bundles it: Core and Effect are
+// child-host.ts embeds this file as text and never bundles it: Core and Effect are
 // resolved beside the selected Agent Definition at runtime so the host shares the
 // exact module instances the Agent Definition was installed against. The static
 // imports below are type-only or node builtins, so nothing else is pulled in.
