@@ -30,6 +30,7 @@
     "@mitome/core": "workspace:*",
     "@mitome/providers": "workspace:*",
     "@types/bun": "catalog:",
+    "create-mitome": "workspace:*",
     "effect": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

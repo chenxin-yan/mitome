@@ -2,7 +2,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Effect, Redacted } from "effect";
 import { Prompt } from "effect/unstable/cli";
-import corePackage from "@mitome/core/package.json" with { type: "json" };
+import { agentDefinitionSource, agentPackageSource } from "create-mitome/template";
 import { knownModelIds as codexModelIds } from "@mitome/providers/openai-codex";
 import { knownModelIds as openAiModelIds } from "@mitome/providers/openai";
 import { modelCatalog } from "../catalog.js";
@@ -32,35 +32,9 @@ const initializationPath = async (): Promise<string> => {
 
 const initialize = async (path: string, provider: InitProvider, model: string): Promise<void> => {
   const directory = dirname(path);
-  const providerImport =
-    provider === "openai"
-      ? 'import { env, openai } from "@mitome/providers/openai";'
-      : 'import { codex } from "@mitome/providers/openai-codex";';
-  const modelExpression =
-    provider === "openai"
-      ? `openai(${JSON.stringify(model)}, env("OPENAI_API_KEY"))`
-      : `codex(${JSON.stringify(model)})`;
   await mkdir(directory, { recursive: true });
-  await writeFile(
-    path,
-    `import { defineAgent } from "@mitome/sdk";\n${providerImport}\n\nexport default defineAgent({\n  instructions: "You are a helpful Agent.",\n  model: ${modelExpression},\n  plugins: [],\n});\n`,
-  );
-  await writeFile(
-    join(directory, "package.json"),
-    `${JSON.stringify(
-      {
-        name: "mitome-agent",
-        private: true,
-        type: "module",
-        dependencies: {
-          "@mitome/providers": corePackage.version,
-          "@mitome/sdk": corePackage.version,
-        },
-      },
-      null,
-      2,
-    )}\n`,
-  );
+  await writeFile(path, agentDefinitionSource({ flavor: "promise", provider, model }));
+  await writeFile(join(directory, "package.json"), agentPackageSource());
   await install(path);
 };
 

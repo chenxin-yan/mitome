@@ -1,0 +1,42 @@
+{
+  "name": "create-mitome",
+  "version": "0.0.0",
+  "license": "MIT",
+  "repository": "https://github.com/chenxin-yan/mitome",
+  "bin": {
+    "create-mitome": "./dist/index.js"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "LICENSE",
+    "README.md"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./template": {
+      "types": "./dist/template.d.ts",
+      "default": "./dist/template.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "check:types": "tsc",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@mitome/config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

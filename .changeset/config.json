@@ -15,7 +15,8 @@
       "@mitome/cli-linux-x64",
       "@mitome/cli-linux-x64-musl",
       "@mitome/cli-win32-arm64",
-      "@mitome/cli-win32-x64"
+      "@mitome/cli-win32-x64",
+      "create-mitome"
     ]
   ],
   "linked": [],

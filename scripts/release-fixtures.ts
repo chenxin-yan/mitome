@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const rootDirectory = resolve(import.meta.dir, "..");
-const publicPackages = ["core", "sdk", "providers", "cli"] as const;
+const publicPackages = ["core", "sdk", "providers", "cli", "create-mitome"] as const;
+type PublicPackage = (typeof publicPackages)[number];
+const packageName = (name: PublicPackage): string =>
+  name === "create-mitome" ? name : `@mitome/${name}`;
 const packageVersion: string = (
   await Bun.file(join(rootDirectory, "packages", "core", "package.json")).json()
 ).version;
@@ -11,14 +14,28 @@ const temporaryDirectory = await mkdtemp(join(tmpdir(), "mitome-release-fixtures
 const archivesDirectory = join(temporaryDirectory, "archives");
 const consumerDirectory = join(temporaryDirectory, "consumer");
 
-const run = async (command: ReadonlyArray<string>, cwd = rootDirectory): Promise<void> => {
-  const child = Bun.spawn(command, { cwd, stdout: "inherit", stderr: "inherit" });
+const run = async (
+  command: ReadonlyArray<string>,
+  cwd = rootDirectory,
+  input?: string,
+): Promise<void> => {
+  const child = Bun.spawn(command, {
+    cwd,
+    stdin: input === undefined ? "ignore" : "pipe",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  if (input !== undefined) {
+    child.stdin.write(input);
+    child.stdin.end();
+  }
   if ((await child.exited) !== 0) throw new Error(`Command failed: ${command.join(" ")}`);
 };
 
-const archiveFor = async (name: string): Promise<string> => {
+const archiveFor = async (name: PublicPackage): Promise<string> => {
   const files = await readdir(archivesDirectory);
-  const archive = files.find((file) => file === `mitome-${name}-${packageVersion}.tgz`);
+  const stem = name === "create-mitome" ? name : `mitome-${name}`;
+  const archive = files.find((file) => file === `${stem}-${packageVersion}.tgz`);
   if (archive === undefined) throw new Error(`Missing ${name} tarball.`);
   return join(archivesDirectory, archive);
 };
@@ -46,7 +63,7 @@ try {
   };
   const dependencies = Object.fromEntries(
     await Promise.all(
-      publicPackages.map(async (name) => [`@mitome/${name}`, `file:${await archiveFor(name)}`]),
+      publicPackages.map(async (name) => [packageName(name), `file:${await archiveFor(name)}`]),
     ),
   );
   const nodeModules = join(consumerDirectory, "node_modules");
@@ -74,11 +91,14 @@ try {
   // Platform binary packages are release-time artifacts; the fixture gates
   // the JS packages, so skip the (unpublished) optional dependencies.
   await run([process.execPath, "install", "--omit=optional"], consumerDirectory);
-  if (!(await Bun.file(join(nodeModules, ".bin", "mitome")).exists())) {
-    throw new Error("Bun install did not link the CLI launcher.");
+  for (const bin of ["mitome", "create-mitome"]) {
+    if (!(await Bun.file(join(nodeModules, ".bin", bin)).exists())) {
+      throw new Error(`Bun install did not link the ${bin} launcher.`);
+    }
   }
   for (const name of publicPackages) {
-    const destination = join(nodeModules, "@mitome", name);
+    const destination =
+      name === "create-mitome" ? join(nodeModules, name) : join(nodeModules, "@mitome", name);
     await mkdir(destination, { recursive: true });
     await run(["tar", "-xzf", await archiveFor(name), "-C", destination, "--strip-components=1"]);
     const manifest = await Bun.file(join(destination, "package.json")).json();
@@ -139,6 +159,13 @@ if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke 
   // it fails if any published .d.ts references types the tarballs cannot resolve.
   await run([process.execPath, "x", "tsc", "-p", join(consumerDirectory, "tsconfig.json")]);
   await run([process.execPath, "smoke.ts"], consumerDirectory);
+  const createdDirectory = join(temporaryDirectory, "created-agent");
+  await mkdir(createdDirectory);
+  await run(["node", join(nodeModules, ".bin", "create-mitome")], createdDirectory, "1\n1\n1\n");
+  const createdPackage = await Bun.file(join(createdDirectory, "package.json")).json();
+  if (Object.keys(createdPackage.dependencies).join(",") !== "@mitome/providers,@mitome/sdk") {
+    throw new Error("create-mitome generated unexpected dependencies.");
+  }
   console.log("Release tarball/install fixtures passed.");
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });
