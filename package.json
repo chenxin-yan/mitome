@@ -4,7 +4,8 @@
   "workspaces": {
     "packages": [
       "apps/*",
-      "packages/*"
+      "packages/*",
+      "packages/cli/npm/*"
     ],
     "catalog": {
       "typescript": "^7.0.0",
@@ -32,12 +33,15 @@
     "build": "turbo run build",
     "build:pkgs": "turbo run build --filter='./packages/*'",
     "build:docs": "turbo run build --filter=@mitome/docs",
+    "test:release": "bun scripts/release-fixtures.ts",
+    "version-packages": "changeset version && bun install --lockfile-only",
     "prepare": "effect-tsgo patch"
   },
   "dependencies": {
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@changesets/cli": "2.31.1",
     "@effect/tsgo": "0.18.1",
     "oxfmt": "^0.58.0",
     "oxlint": "^1.73.0",

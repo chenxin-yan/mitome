@@ -1,0 +1,22 @@
+{
+  "name": "@mitome/cli-linux-arm64",
+  "version": "0.0.0",
+  "description": "The mitome CLI binary for linux-arm64",
+  "license": "MIT",
+  "repository": "https://github.com/chenxin-yan/mitome",
+  "files": [
+    "bin"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

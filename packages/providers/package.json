@@ -1,9 +1,13 @@
 {
   "name": "@mitome/providers",
   "version": "0.0.0",
-  "private": true,
+  "license": "MIT",
+  "repository": "https://github.com/chenxin-yan/mitome",
   "files": [
-    "dist"
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "LICENSE",
+    "NOTICE"
   ],
   "type": "module",
   "sideEffects": false,
@@ -20,6 +24,9 @@
       "types": "./dist/openai-codex/index.d.ts",
       "default": "./dist/openai-codex/index.js"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
@@ -41,5 +48,8 @@
   },
   "peerDependencies": {
     "@mitome/core": "workspace:*"
+  },
+  "engines": {
+    "bun": ">=1.3.10"
   }
 }

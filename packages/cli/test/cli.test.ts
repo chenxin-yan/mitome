@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const binary = join(packageDir, "dist/mitome");
+const binary = join(packageDir, "dist/local/mitome");
 const coreDir = resolve(packageDir, "../core");
 const effectDir = dirname(createRequire(import.meta.url).resolve("effect/package.json"));
 const aiOpenaiDir = dirname(

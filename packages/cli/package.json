@@ -1,17 +1,23 @@
 {
   "name": "@mitome/cli",
   "version": "0.0.0",
-  "private": true,
+  "license": "MIT",
+  "repository": "https://github.com/chenxin-yan/mitome",
   "bin": {
-    "mitome": "./dist/mitome"
+    "mitome": "./scripts/mitome.mjs"
   },
   "files": [
-    "dist"
+    "scripts/mitome.mjs",
+    "LICENSE"
   ],
   "type": "module",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "bun ./src/index.ts",
-    "build": "bun build --compile --no-compile-autoload-dotenv src/index.ts --outfile dist/mitome",
+    "build": "bun build --compile --no-compile-autoload-dotenv src/index.ts --outfile dist/local/mitome",
     "build:release": "bun scripts/build-release.ts",
     "check:types": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint .",
@@ -27,5 +33,18 @@
     "effect": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "optionalDependencies": {
+    "@mitome/cli-darwin-arm64": "workspace:*",
+    "@mitome/cli-darwin-x64": "workspace:*",
+    "@mitome/cli-linux-arm64": "workspace:*",
+    "@mitome/cli-linux-arm64-musl": "workspace:*",
+    "@mitome/cli-linux-x64": "workspace:*",
+    "@mitome/cli-linux-x64-musl": "workspace:*",
+    "@mitome/cli-win32-arm64": "workspace:*",
+    "@mitome/cli-win32-x64": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22.14.0"
   }
 }
