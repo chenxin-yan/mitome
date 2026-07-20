@@ -16,9 +16,10 @@ export {
   ApprovalResolutionError,
   SessionBusyError,
   SessionReleasedError,
-  ToolExecutionDenied,
   TurnError,
   TurnStepLimitError,
-  createSession,
-} from "./session.js";
-export type { Session, TurnEvent } from "./session.js";
+} from "./errors.js";
+export { ToolExecutionDenied } from "./events.js";
+export type { TurnEvent } from "./events.js";
+export { createSession } from "./session.js";
+export type { Session } from "./session.js";

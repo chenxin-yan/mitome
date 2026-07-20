@@ -1,8 +1,10 @@
 import { posix, win32 } from "node:path";
 
 /**
- * Resolves Mitome's shared Agent Definition and Credential directory without reading
- * process globals; undefined when no config root variable is set.
+ * Resolves Mitome's shared config directory (`$XDG_CONFIG_HOME/mitome`, with
+ * APPDATA/HOME fallbacks). Consumers store their own files under it: the CLI's
+ * default `agent.ts` and `.env`, and provider-owned credential stores like
+ * `auth.json`. Pure of process globals; undefined when no config root is set.
  */
 export const resolveConfigDirectory = (
   env: Readonly<Record<string, string | undefined>>,
