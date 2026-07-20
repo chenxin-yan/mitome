@@ -2,7 +2,11 @@
 
 ## Installation
 
-To install the CLI, see [`@mitome/cli`](packages/cli/README.md).
+```sh
+npm install @mitome/sdk @mitome/providers
+```
+
+Import Promise-first APIs from `@mitome/sdk` or Effect-native APIs from `@mitome/sdk/effect`. To install the CLI, see [`@mitome/cli`](packages/cli/README.md).
 
 ## Development
 

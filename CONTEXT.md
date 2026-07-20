@@ -2,6 +2,12 @@
 
 Mitome exists to let people define and run AI agents for their own use cases.
 
+## Public interface
+
+Users install `@mitome/sdk` with `@mitome/providers`. Promise-first APIs are imported from `@mitome/sdk`; Effect-native APIs are imported from `@mitome/sdk/effect`. `@mitome/core` is the published internal runtime engine, not a documented authoring surface.
+
+The root SDK and its Effect subpath intentionally expose different `TurnEvent` shapes for their respective runtimes.
+
 ## Language
 
 **Agent**:

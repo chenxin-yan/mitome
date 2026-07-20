@@ -105,8 +105,10 @@ try {
     join(consumerDirectory, "smoke.ts"),
     `import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
+import * as core from "@mitome/core";
 import { createSession, makeModel } from "@mitome/core";
 import { defineAgent, withSession } from "@mitome/sdk";
+import * as sdkEffect from "@mitome/sdk/effect";
 import { env, openai } from "@mitome/providers/openai";
 import { openaiCompatible } from "@mitome/providers/openai-compatible";
 import { codex, oauth } from "@mitome/providers/openai-codex";
@@ -114,6 +116,7 @@ import { codex, oauth } from "@mitome/providers/openai-codex";
 declare const process: { env: Record<string, string | undefined> };
 process.env.OPENAI_API_KEY = "fixture";
 const provider = openai("fixture", env("OPENAI_API_KEY"));
+if (sdkEffect.createSession !== core.createSession) throw new Error("SDK Effect facade duplicated the Core runtime.");
 if (typeof openaiCompatible !== "function") throw new Error("OpenAI-compatible package was not installed.");
 await Effect.runPromise(Effect.scoped(Effect.as(createSession(defineAgent({ instructions: "", model: provider, plugins: [] })), undefined)));
 const credential = oauth();

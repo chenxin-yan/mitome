@@ -53,7 +53,6 @@ const initialize = async (path: string, provider: InitProvider, model: string): 
         private: true,
         type: "module",
         dependencies: {
-          "@mitome/core": corePackage.version,
           "@mitome/providers": corePackage.version,
           "@mitome/sdk": corePackage.version,
         },

@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0014 and ADR-0015
+status: amended by ADR-0014, ADR-0015, and ADR-0022
 ---
 
 # Publish core and CLI packages

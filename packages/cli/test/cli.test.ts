@@ -757,6 +757,8 @@ export default {
             packageName === "providers"
               ? { "./openai": "./dist/openai/index.js" }
               : { ".": "./dist/index.js" },
+          peerDependencies:
+            packageName === "core" ? undefined : { "@mitome/core": corePackage.version },
         }),
       );
       const archive = join(localPackages, `${packageName}.tgz`);
@@ -786,6 +788,8 @@ export default {
             [corePackage.version]: {
               name,
               version: corePackage.version,
+              peerDependencies:
+                name === "@mitome/core" ? undefined : { "@mitome/core": corePackage.version },
               dist: { tarball: `${registryUrl}${encodeURIComponent(name)}.tgz` },
             },
           },
@@ -822,12 +826,9 @@ export default {
     expect(definition).toContain('openai("gpt-5.6", env("OPENAI_API_KEY"))');
     expect(definition).toContain("plugins: []");
     expect(definition).not.toContain(key);
-    expect(JSON.parse(await readFile(join(config, "package.json"), "utf8"))).toMatchObject({
-      dependencies: {
-        "@mitome/core": corePackage.version,
-        "@mitome/providers": corePackage.version,
-        "@mitome/sdk": corePackage.version,
-      },
+    expect(JSON.parse(await readFile(join(config, "package.json"), "utf8")).dependencies).toEqual({
+      "@mitome/providers": corePackage.version,
+      "@mitome/sdk": corePackage.version,
     });
     expect(await readFile(join(config, ".env"), "utf8")).toBe(`OPENAI_API_KEY=${key}\n`);
     expect((await stat(join(config, ".env"))).mode & 0o777).toBe(0o600);

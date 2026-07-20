@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Layer, Ref, Schema, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
+import * as core from "@mitome/core";
 import { createSession, makeModel } from "@mitome/core";
+import * as sdkEffect from "../src/effect.js";
 import { TurnError, defineAgent, withSession } from "../src/index.js";
 import { makeTestModel, testLanguageModel } from "./model.js";
 
@@ -33,6 +35,10 @@ const makeDeterministicModel = (output: string) =>
   });
 
 describe("@mitome/sdk", () => {
+  test("re-exports the canonical Effect runtime", () => {
+    expect(sdkEffect.createSession).toBe(core.createSession);
+  });
+
   test("returns a canonical Agent Definition accepted directly by Core", async () => {
     const fixture = await Effect.runPromise(makeDeterministicModel("hello"));
     const definition = defineAgent({
