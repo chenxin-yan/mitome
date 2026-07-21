@@ -8,7 +8,6 @@ import {
   SessionBusyError,
   SessionReleasedError,
   TurnError,
-  TurnStepLimitError,
 } from "./errors.js";
 import type { TurnEvent } from "./events.js";
 import {
@@ -23,17 +22,12 @@ import { getModelLayer } from "./model.js";
 import { providePlugin, transformPrompt } from "./tool-runtime.js";
 import { makeToolkit } from "./toolkit.js";
 
-const maximumTurnSteps = 16;
-
 type ApprovalDecision = { readonly approved: boolean; readonly reason?: string };
 
 export interface Session {
   readonly prompt: (
     text: string,
-  ) => Stream.Stream<
-    TurnEvent,
-    SessionBusyError | SessionReleasedError | TurnStepLimitError | TurnError
-  >;
+  ) => Stream.Stream<TurnEvent, SessionBusyError | SessionReleasedError | TurnError>;
   readonly history: () => ReadonlyArray<Prompt.Message>;
   readonly released: () => boolean;
 }
@@ -110,20 +104,9 @@ export const createSession: (
 
   type StepEvent = TurnEvent | { readonly type: "turn-complete"; readonly history: Prompt.Prompt };
 
-  const runStep = (
-    prompt: Prompt.Prompt,
-    step: number,
-  ): Stream.Stream<StepEvent, TurnStepLimitError | TurnError> => {
-    if (step >= maximumTurnSteps) {
-      return Stream.fail(
-        new TurnStepLimitError({
-          message: `Turn exceeded the ${maximumTurnSteps} model Step limit`,
-        }),
-      );
-    }
-
+  const runStep = (prompt: Prompt.Prompt) => {
     const parts: Array<Response.AnyPart> = [];
-    const toolCalls = new Map<string, { readonly name: string; readonly params: unknown }>();
+    const toolCalls = new Map<string, Response.ToolCallPart<string, unknown>>();
     const decisions: Array<Prompt.ToolApprovalResponsePart> = [];
     return Stream.unwrap(
       runStartHooks(
@@ -154,7 +137,7 @@ export const createSession: (
                     if (part.type === "text-delta")
                       return Stream.succeed({ type: "model-output", text: part.delta });
                     if (part.type === "tool-call") {
-                      toolCalls.set(part.id, { name: part.name, params: part.params });
+                      toolCalls.set(part.id, part);
                       return Stream.succeed({ type: "tool-call", id: part.id, name: part.name });
                     }
                     if (part.type === "tool-result") {
@@ -267,12 +250,11 @@ export const createSession: (
                                 Prompt.makeMessage("tool", { content: decisions }),
                               ]),
                             );
-                      const next: Stream.Stream<StepEvent, TurnStepLimitError | TurnError> =
-                        parts.some(
-                          (part) => part.type === "tool-call" && part.providerExecuted !== true,
-                        )
-                          ? runStep(nextPrompt, step + 1)
-                          : Stream.succeed({ type: "turn-complete", history: nextPrompt });
+                      const next: Stream.Stream<StepEvent, TurnError> = parts.some(
+                        (part) => part.type === "tool-call" && part.providerExecuted !== true,
+                      )
+                        ? runStep(nextPrompt)
+                        : Stream.succeed({ type: "turn-complete", history: nextPrompt });
                       return Stream.concat(
                         Stream.fromEffectDrain(
                           runEndHooks(
@@ -305,11 +287,7 @@ export const createSession: (
 
   return {
     prompt: (text) =>
-      Stream.suspend<
-        TurnEvent,
-        SessionBusyError | SessionReleasedError | TurnStepLimitError | TurnError,
-        never
-      >(() => {
+      Stream.suspend<TurnEvent, SessionBusyError | SessionReleasedError | TurnError, never>(() => {
         if (isReleased) {
           return Stream.fail(
             new SessionReleasedError({ message: "Session scope has been released" }),
@@ -332,8 +310,8 @@ export const createSession: (
             Effect.map(() => {
               const startedPlugins = definition.plugins;
               const endProgress: HookProgress = { dispatched: 0 };
-              return runStep(Prompt.concat(history, text), 0).pipe(
-                Stream.mapEffect((event): Effect.Effect<TurnEvent, TurnError> => {
+              return runStep(Prompt.concat(history, text)).pipe(
+                Stream.mapEffect((event) => {
                   if (event.type !== "turn-complete") return Effect.succeed(event);
                   return runEndHooks(
                     startedPlugins,

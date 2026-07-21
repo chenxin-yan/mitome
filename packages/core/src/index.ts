@@ -17,7 +17,6 @@ export {
   SessionBusyError,
   SessionReleasedError,
   TurnError,
-  TurnStepLimitError,
 } from "./errors.js";
 export { ToolExecutionDenied } from "./events.js";
 export type { TurnEvent } from "./events.js";

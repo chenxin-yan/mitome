@@ -1,13 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import { AiError, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { Schema } from "effect";
-import {
-  type AgentDefinition,
-  createSession,
-  definePlugin,
-  TurnStepLimitError,
-} from "../src/index.js";
+import { type AgentDefinition, createSession, definePlugin } from "../src/index.js";
 import { makeTestModel } from "./model.js";
 
 const makeToolModel = () => {
@@ -116,7 +111,7 @@ describe("createSession Tool Turn", () => {
     }),
   );
 
-  it.effect("fails after the fixed 16 model Step limit", () =>
+  it.effect("allows more than sixteen Steps", () =>
     Effect.gen(function* () {
       let calls = 0;
       const echo = Tool.make("echo", { success: Schema.String });
@@ -145,52 +140,9 @@ describe("createSession Tool Turn", () => {
           },
         ],
       });
-      const exit = yield* Effect.exit(Stream.runDrain(session.prompt("Start")));
-      const history = session.history();
-      const reuseEvents = yield* Stream.runCollect(session.prompt("Again"));
-
-      expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined).toBeInstanceOf(
-        TurnStepLimitError,
-      );
-      expect(history).toHaveLength(1);
-      expect(reuseEvents.at(-1)).toEqual({ type: "response-complete" });
-      expect(calls).toBe(17);
-    }),
-  );
-
-  it.effect("allows exactly sixteen Steps", () =>
-    Effect.gen(function* () {
-      let calls = 0;
-      const echo = Tool.make("echo", { success: Schema.String });
-      const model = makeTestModel(() => {
-        calls += 1;
-        if (calls === 16) {
-          return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-        }
-        return Stream.succeed(
-          Response.makePart("tool-call", {
-            id: `call-${calls}`,
-            name: "echo",
-            params: {},
-            providerExecuted: false,
-          }),
-        );
-      });
-
-      const session = yield* createSession({
-        instructions: "Keep calling.",
-        model,
-        plugins: [
-          {
-            name: "echo",
-            toolkit: Toolkit.make(echo),
-            handlers: { echo: () => Effect.succeed("echo") },
-          },
-        ],
-      });
       const events = yield* Stream.runCollect(session.prompt("Start"));
 
-      expect(calls).toBe(16);
+      expect(calls).toBe(17);
       expect(events.at(-1)).toEqual({ type: "response-complete" });
     }),
   );

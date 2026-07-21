@@ -5,7 +5,6 @@ export {
   SessionReleasedError,
   ToolExecutionDenied,
   TurnError,
-  TurnStepLimitError,
   defineAgent,
 } from "@mitome/core";
 export type {

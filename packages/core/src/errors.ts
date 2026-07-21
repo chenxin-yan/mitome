@@ -12,12 +12,6 @@ export class SessionReleasedError extends Schema.TaggedErrorClass<SessionRelease
   { message: Schema.String },
 ) {}
 
-/** A Turn reached ADR-0003's fixed model Step limit. */
-export class TurnStepLimitError extends Schema.TaggedErrorClass<TurnStepLimitError>()(
-  "TurnStepLimitError",
-  { message: Schema.String },
-) {}
-
 /** A model, Tool, or Plugin Hook failed while completing a Turn. */
 export class TurnError extends Schema.TaggedErrorClass<TurnError>()("TurnError", {
   message: Schema.String,
