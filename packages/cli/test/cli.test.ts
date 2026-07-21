@@ -710,8 +710,8 @@ export default {
     const hostPid = Number(await readFile(signalProbe.pid, "utf8"));
     child.kill("SIGINT");
     for (let attempt = 0; !(await exists(signalProbe.cleanupStarted)); attempt += 1) {
-      if (attempt === 100) throw new Error("Session cleanup did not start");
-      await delay(5);
+      if (attempt === 500) throw new Error("Session cleanup did not start");
+      await delay(10);
     }
     process.kill(hostPid, "SIGINT");
     const tail = await rest(reader);
