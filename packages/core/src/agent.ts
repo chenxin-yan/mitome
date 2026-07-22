@@ -4,7 +4,7 @@ import type { Model } from "./model.js";
 import type { AnyPlugin } from "./plugin.js";
 
 export interface AgentDefinition {
-  readonly instructions: string;
+  readonly instructions?: string;
   readonly model: Model;
   readonly plugins: ReadonlyArray<AnyPlugin>;
 }

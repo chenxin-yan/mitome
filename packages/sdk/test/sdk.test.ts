@@ -4,7 +4,7 @@ import { LanguageModel, Response } from "effect/unstable/ai";
 import * as core from "@mitome/core";
 import { createSession, makeModel } from "@mitome/core";
 import * as sdkEffect from "../src/effect.js";
-import { TurnError, defineAgent, withSession } from "../src/index.js";
+import { TurnError, defineAgent, definePlugin, withSession } from "../src/index.js";
 import { makeTestModel, testLanguageModel } from "./model.js";
 
 class ModelFailure extends Schema.TaggedErrorClass<ModelFailure>()("ModelFailure", {
@@ -54,6 +54,27 @@ describe("@mitome/sdk", () => {
         Effect.gen(function* () {
           const session = yield* createSession(definition);
           return yield* Stream.runDrain(session.prompt("Hi"));
+        }),
+      ),
+    );
+  });
+
+  test("adapts SDK Plugin Instructions into Core Session history", async () => {
+    const fixture = await Effect.runPromise(makeDeterministicModel("hello"));
+    const definition = defineAgent({
+      model: fixture.model,
+      plugins: [
+        definePlugin({ name: "instructions", instructions: "SDK Instructions", tools: [] }),
+      ],
+    });
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession(definition);
+          expect(session.history().map(({ role, content }) => ({ role, content }))).toEqual([
+            { role: "system", content: "SDK Instructions" },
+          ]);
         }),
       ),
     );

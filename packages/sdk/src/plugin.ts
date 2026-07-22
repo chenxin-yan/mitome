@@ -151,6 +151,7 @@ const adaptHooks = <Resource>(
 
 export interface PluginDefinition<Resource = never> {
   readonly name: string;
+  readonly instructions?: string;
   readonly tools: ReadonlyArray<Tool<any, unknown, Resource>>;
   readonly hooks?: PluginHooksDefinition<Resource>;
   readonly setup?: (context: Pick<HookContext<Resource>, "signal">) => Promise<Resource>;
@@ -241,6 +242,7 @@ export function definePlugin<Resource = never>(
 
   return {
     name: definition.name,
+    ...(definition.instructions === undefined ? {} : { instructions: definition.instructions }),
     ...(service === undefined
       ? {}
       : {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Cause, Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
+import { LanguageModel, Prompt, Response } from "effect/unstable/ai";
 import {
   type AgentDefinition,
   createSession,
@@ -50,6 +50,51 @@ describe("createSession", () => {
         { type: "model-output", text: "from the caller" },
         { type: "response-complete" },
       ]);
+    }),
+  );
+
+  it.effect("composes Definition and Plugin Instructions into model input and history", () =>
+    Effect.gen(function* () {
+      let modelPrompt: ReadonlyArray<Prompt.Message> = [];
+      const model = makeTestModel(({ prompt }) => {
+        modelPrompt = prompt.content;
+        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+      });
+      const session = yield* createSession({
+        instructions: "Definition Instructions",
+        model,
+        plugins: [
+          { name: "first", instructions: "First Plugin" },
+          { name: "empty", instructions: "" },
+          { name: "missing" },
+          { name: "last", instructions: "Last Plugin" },
+        ],
+      });
+      const expected = [
+        {
+          role: "system" as const,
+          content: "Definition Instructions\n\nFirst Plugin\n\nLast Plugin",
+        },
+      ];
+
+      expect(session.history().map(({ role, content }) => ({ role, content }))).toEqual(expected);
+      yield* Stream.runDrain(session.prompt("Hi"));
+      expect(modelPrompt[0]).toMatchObject(expected[0]!);
+      expect(modelPrompt.map((message) => message.role)).toEqual(["system", "user"]);
+      expect(session.history()[0]).toMatchObject(expected[0]!);
+      expect(session.history().map((message) => message.role)).toEqual(["system", "user"]);
+    }),
+  );
+
+  it.effect("starts without a system message when no Instructions contribute", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDeterministicModel("hello");
+      const session = yield* createSession({
+        model: fixture.model,
+        plugins: [{ name: "empty", instructions: "" }, { name: "missing" }],
+      });
+
+      expect(session.history().map((message) => message.role)).toEqual([]);
     }),
   );
 

@@ -32,6 +32,7 @@ export type ToolResultValidator = (result: unknown) => Effect.Effect<unknown, un
 
 export interface Plugin<Resource = never, ResourceError = never> {
   readonly name: string;
+  readonly instructions?: string;
   /** Required at runtime whenever hooks or handlers use a Resource; hooks run unprovided (missing-service defect) without it. */
   readonly resource?: Layer.Layer<Resource, ResourceError, never>;
   readonly toolkit?: Toolkit.Any;
@@ -75,6 +76,7 @@ export function definePlugin<Resource = never, ResourceError = never>(
 ): NoInfer<Plugin<Resource, ResourceError>>;
 export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
   readonly name: string;
+  readonly instructions?: string;
   readonly toolkit: ToolkitValue;
   readonly handlers: Toolkit.HandlersFrom<Toolkit.Tools<NoInfer<ToolkitValue>>> &
     ServiceFree<Toolkit.Tools<NoInfer<ToolkitValue>>>;
