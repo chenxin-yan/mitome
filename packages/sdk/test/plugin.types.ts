@@ -85,7 +85,7 @@ const resourceInferencePlugin = definePlugin({
       handler: async () => true,
     }),
   ],
-  setup: async () => ({ db: "connection" }),
+  setup: async () => ({ db: "connection", cache: 1 }),
   hooks: {
     sessionStart: async ({ resource }) => {
       const db: string = resource.db;
@@ -119,6 +119,40 @@ definePlugin({
     }),
   ],
   setup: async () => ({ cache: 1 }),
+});
+
+// @ts-expect-error Setup Resource must satisfy every Tool Resource.
+definePlugin({
+  name: "partial-resource",
+  tools: [
+    tool<string, string, { readonly db: string }>({
+      name: "query",
+      inputSchema: Schema.String,
+      outputSchema: Schema.String,
+      handler: async (_input, { resource }) => resource.db,
+    }),
+    tool<string, string, { readonly cache: number }>({
+      name: "cache",
+      inputSchema: Schema.String,
+      outputSchema: Schema.String,
+      handler: async (_input, { resource }) => String(resource.cache),
+    }),
+  ],
+  setup: async () => ({ db: "connection" }),
+});
+
+// @ts-expect-error A Resource with optional fields cannot satisfy a Tool requiring them.
+definePlugin({
+  name: "optional-resource",
+  tools: [
+    tool<string, string, { readonly db: string }>({
+      name: "query",
+      inputSchema: Schema.String,
+      outputSchema: Schema.String,
+      handler: async (_input, { resource }) => resource.db,
+    }),
+  ],
+  setup: async (): Promise<{ readonly db?: string }> => ({}),
 });
 
 // @ts-expect-error Any Tool Resource requires setup, including mixed Tool tuples.

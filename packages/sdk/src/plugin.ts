@@ -170,6 +170,16 @@ type ToolResource<Value extends Tool<any, any, never, string>> = Value extends u
 type ToolResources<Tools extends ReadonlyArray<Tool<any, any, never, string>>> = ToolResource<
   Tools[number]
 >;
+type UnsatisfiedToolResources<
+  Resource,
+  Value extends Tool<any, any, never, string>,
+> = Value extends unknown
+  ? [ToolResource<Value>] extends [never]
+    ? never
+    : Resource extends ToolResource<Value>
+      ? never
+      : ToolResource<Value>
+  : never;
 
 type ToolContributions<Tools extends ReadonlyArray<Tool<any, any, never, string>>> = {
   readonly [Value in Tools[number] as Value["name"]]: ToolContribution<
@@ -201,7 +211,7 @@ export function definePlugin<
   >,
 >(
   definition: PluginDefinition<Resource, Tools> &
-    ([ToolResources<Tools>] extends [Resource] ? unknown : never) &
+    ([UnsatisfiedToolResources<Resource, Tools[number]>] extends [never] ? unknown : never) &
     ([Resource | ToolResources<Tools>] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : {
