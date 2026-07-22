@@ -25,7 +25,11 @@ const isAgentDefinition = (value: unknown): value is AgentDefinition => {
     candidate.model !== undefined &&
     Array.isArray(candidate.plugins) &&
     candidate.plugins.every(
-      (plugin) => typeof plugin === "object" && plugin !== null && typeof plugin.name === "string",
+      (plugin) =>
+        typeof plugin === "object" &&
+        plugin !== null &&
+        typeof plugin.name === "string" &&
+        (plugin.instructions === undefined || typeof plugin.instructions === "string"),
     )
   );
 };

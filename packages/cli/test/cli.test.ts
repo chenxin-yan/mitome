@@ -590,6 +590,24 @@ describe("compiled mitome", () => {
     expect(invalidInstructions.exitCode).toBe(1);
     expect(invalidInstructions.stderr).toContain("Agent Definition must default-export an Agent");
 
+    const nonStringPluginInstructions = await fixture(
+      promptEchoDefinitionSource().replace(
+        "plugins: []",
+        'plugins: [{ name: "bad", instructions: 1 }]',
+      ),
+    );
+    const invalidPluginInstructions = await output(
+      spawn(
+        "",
+        ["hello", "--use", nonStringPluginInstructions.definition],
+        nonStringPluginInstructions,
+      ),
+    );
+    expect(invalidPluginInstructions.exitCode).toBe(1);
+    expect(invalidPluginInstructions.stderr).toContain(
+      "Agent Definition must default-export an Agent",
+    );
+
     const javascript = join(current.root, "agent.js");
     await writeFile(javascript, "export default {};");
     const nonTypescript = await output(spawn("", ["hello", "--use", javascript], current));
