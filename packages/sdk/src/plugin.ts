@@ -160,22 +160,25 @@ const adaptHooks = <Resource>(
   return adapted;
 };
 
-type ToolResources<Tools extends ReadonlyArray<Tool<any, any, never, string>>> = [
-  Tools[number],
-] extends [never]
-  ? never
-  : Tools[number]["handler"] extends (
-        input: any,
-        context: HookContext<infer Resource>,
-      ) => Promise<any>
-    ? Resource
+type ToolResource<Value> =
+  Value extends Tool<any, any, infer Resource, string>
+    ? 0 extends 1 & Resource
+      ? never
+      : Resource
     : never;
+type ToolResources<Tools extends ReadonlyArray<Tool<any, any, never, string>>> = ToolResource<
+  Tools[number]
+>;
 
 type ToolContributions<Tools extends ReadonlyArray<Tool<any, any, never, string>>> = {
-  readonly [Value in Tools[number] as Value["name"]]: ToolContribution<
-    Value["inputSchema"] extends InputSchema<infer Input> ? Input : never,
-    Value["outputSchema"] extends OutputSchema<infer Output> ? Output : never
-  >;
+  readonly [Value in Tools[number] as Value["name"]]: Value extends Tool<
+    infer Input,
+    infer Output,
+    infer _Resource,
+    infer _Name
+  >
+    ? ToolContribution<Input, Output>
+    : never;
 };
 
 export interface PluginDefinition<
@@ -201,6 +204,7 @@ export function definePlugin<
   >,
 >(
   definition: PluginDefinition<Resource, Tools> &
+    ([ToolResources<Tools>] extends [Resource] ? unknown : never) &
     ([Resource | ToolResources<Tools>] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : {

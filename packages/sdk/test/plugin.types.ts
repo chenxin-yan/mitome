@@ -93,6 +93,39 @@ definePlugin({
   ],
 });
 
+// @ts-expect-error Tool Resource must match setup Resource.
+definePlugin({
+  name: "resource-mismatch",
+  tools: [
+    tool<string, string, { readonly db: string }>({
+      name: "query",
+      inputSchema: Schema.String,
+      outputSchema: Schema.String,
+      handler: async (_input, { resource }) => resource.db,
+    }),
+  ],
+  setup: async () => ({ cache: 1 }),
+});
+
+// @ts-expect-error Any Tool Resource requires setup, including mixed Tool tuples.
+definePlugin({
+  name: "mixed-without-setup",
+  tools: [
+    tool<string, string, { readonly db: string }>({
+      name: "query",
+      inputSchema: Schema.String,
+      outputSchema: Schema.String,
+      handler: async (_input, { resource }) => resource.db,
+    }),
+    tool({
+      name: "health",
+      inputSchema: Schema.String,
+      outputSchema: Schema.Boolean,
+      handler: async () => true,
+    }),
+  ],
+});
+
 // @ts-expect-error dispose requires setup.
 definePlugin({
   name: "dispose-without-setup",
@@ -140,6 +173,28 @@ export type SdkFormatInput = Expect<
   Equal<SdkContributions["format"]["input"], typeof formatInputSchema.Type>
 >;
 export type SdkEnabledOutput = Expect<Equal<SdkContributions["enabled"]["output"], boolean>>;
+const mixedResourcePlugin = definePlugin({
+  name: "mixed-resource",
+  tools: [
+    tool({
+      name: "query",
+      inputSchema: Schema.String,
+      outputSchema: Schema.String,
+      handler: async (_input, { resource }: { resource: { readonly db: string } }) => resource.db,
+    }),
+    tool({
+      name: "health",
+      inputSchema: Schema.String,
+      outputSchema: Schema.Boolean,
+      handler: async () => true,
+    }),
+  ],
+  setup: async () => ({ db: "connection" }),
+});
+type MixedContributions = ContributionsOf<typeof mixedResourcePlugin>;
+export type MixedContributionKeys = Expect<Equal<keyof MixedContributions, "query" | "health">>;
+export type MixedQueryInput = Expect<Equal<MixedContributions["query"]["input"], string>>;
+export type MixedHealthOutput = Expect<Equal<MixedContributions["health"]["output"], boolean>>;
 const sdkToolkitlessPlugin = definePlugin({ name: "sdk-toolkitless", tools: [] });
 const sdkDefinition = defineAgent({
   model,
