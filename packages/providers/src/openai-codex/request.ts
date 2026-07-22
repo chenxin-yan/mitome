@@ -80,8 +80,7 @@ export const requestFor = (
     model,
     store: false,
     stream: true,
-    instructions:
-      system === undefined ? "You are a helpful assistant." : contentFor(system.content),
+    instructions: system === undefined ? "" : contentFor(system.content),
     input,
     text: { verbosity: "low" },
     include: ["reasoning.encrypted_content"],
