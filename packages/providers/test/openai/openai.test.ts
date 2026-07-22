@@ -253,12 +253,7 @@ describe("openai", () => {
       upgrades += 1;
       authorizations.push(request.headers.authorization ?? null);
       socket.on("message", (raw) => {
-        const text = Array.isArray(raw)
-          ? Buffer.concat(raw).toString()
-          : raw instanceof ArrayBuffer
-            ? Buffer.from(new Uint8Array(raw)).toString()
-            : raw.toString();
-        const frame = JSON.parse(text) as Record<string, unknown>;
+        const frame = JSON.parse((raw as Buffer).toString()) as Record<string, unknown>;
         frames.push(frame);
         if (frames.length === 1) {
           const functionCall = {
