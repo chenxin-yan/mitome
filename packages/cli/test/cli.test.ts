@@ -53,7 +53,7 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
     id: "prompt", delta: process.argv[2]!,
   })),
 }));
-export default { instructions: "", model, plugins: [] };
+export default { model, plugins: [] };
 `;
 
 const definitionSource = (
@@ -81,7 +81,7 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
     ${options.block ? 'Stream.fromEffect(Effect.sleep(10_000).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))' : 'Stream.fromEffect(Effect.sleep(100).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))'},
   ),
 }));
-export default { instructions: "Reply with the fixture output.", model, plugins: ${
+export default { model, plugins: ${
   options.signalProbe
     ? `[{ name: "cleanup", hooks: { sessionEnd: Effect.sync(() => {
       writeFileSync(${JSON.stringify(options.signalProbe.cleanupStarted)}, "");
@@ -109,7 +109,7 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
     ].join(":"),
   })),
 }));
-export default { instructions: "", model, plugins: [] };
+export default { model, plugins: [] };
 `;
 
 const precedenceDefinitionSource = (name: string): string => `
@@ -122,7 +122,7 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
     id: "credential", delta: process.env[${JSON.stringify(name)}] ?? "missing",
   })),
 }), ${JSON.stringify(name)});
-export default { instructions: "", model, plugins: [] };
+export default { model, plugins: [] };
 `;
 
 const approvalDefinitionSource = (marker: string): string => `
@@ -148,7 +148,6 @@ const dangerous = Tool.make("dangerous", {
   needsApproval: true,
 });
 export default {
-  instructions: "Approve the fixture Tool.",
   model,
   plugins: [{
     name: "dangerous",
@@ -573,22 +572,25 @@ describe("compiled mitome", () => {
     expect(invalidDefinition.exitCode).toBe(1);
     expect(invalidDefinition.stderr).toContain("Agent Definition must default-export an Agent");
 
-    const withoutInstructions = await fixture(
-      promptEchoDefinitionSource().replace('instructions: "", ', ""),
-    );
+    const accepted = await fixture(promptEchoDefinitionSource());
     const acceptedDefinition = await output(
-      spawn("", ["hello", "--use", withoutInstructions.definition], withoutInstructions),
+      spawn("", ["hello", "--use", accepted.definition], accepted),
     );
     expect(acceptedDefinition).toMatchObject({ exitCode: 0, stdout: "hello\n", stderr: "" });
 
-    const nonStringInstructions = await fixture(
-      promptEchoDefinitionSource().replace('instructions: "",', "instructions: 1,"),
-    );
-    const invalidInstructions = await output(
-      spawn("", ["hello", "--use", nonStringInstructions.definition], nonStringInstructions),
-    );
-    expect(invalidInstructions.exitCode).toBe(1);
-    expect(invalidInstructions.stderr).toContain("Agent Definition must default-export an Agent");
+    for (const value of ['"old"', "undefined"]) {
+      const oldInstructions = await fixture(
+        promptEchoDefinitionSource().replace(
+          "model, plugins",
+          `instructions: ${value}, model, plugins`,
+        ),
+      );
+      const invalidInstructions = await output(
+        spawn("", ["hello", "--use", oldInstructions.definition], oldInstructions),
+      );
+      expect(invalidInstructions.exitCode).toBe(1);
+      expect(invalidInstructions.stderr).toContain("Agent Definition must default-export an Agent");
+    }
 
     const nonStringPluginInstructions = await fixture(
       promptEchoDefinitionSource().replace(
@@ -624,7 +626,7 @@ import { makeModel } from "@mitome/core";
 const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.fail(new Error("provider boom")),
 }));
-export default { instructions: "Reply with the fixture output.", model, plugins: [] };
+export default { model, plugins: [] };
 `);
     const result = await output(spawn("", ["hello", "--use", current.definition], current));
     expect(result.exitCode).toBe(1);
@@ -676,7 +678,6 @@ const echo = Tool.make("echo", {
   success: Schema.String,
 });
 export default {
-  instructions: "Reply with the fixture output.",
   model,
   plugins: [definePlugin({
     name: "echo",
@@ -777,7 +778,7 @@ export default {
     await cachedModelHints(current);
     const localPackages = join(current.root, "local-packages");
     const archives = new Map<string, Buffer>();
-    for (const packageName of ["core", "providers", "sdk"] as const) {
+    for (const packageName of ["core", "plugins", "providers", "sdk"] as const) {
       const source = resolve(packageDir, "..", packageName);
       // npm tarballs root entries under package/; staging the layout keeps tar
       // invocation portable (GNU --transform is unavailable on BSD/macOS tar).
@@ -852,19 +853,23 @@ export default {
       () => new Promise<void>((done) => registry.close(() => done())),
     );
     expect(result).toMatchObject({ exitCode: 0 });
-    // 3 packages × (metadata + tarball), pinned by the isolated fixture HOME.
-    expect(requests).toHaveLength(6);
+    // 4 packages × (metadata + tarball), pinned by the isolated fixture HOME.
+    expect(requests).toHaveLength(8);
     expect(result.stdout + result.stderr).not.toContain(key);
     const definition = await readFile(join(config, "agent.ts"), "utf8");
     expect(definition).toContain('import { defineAgent } from "@mitome/sdk"');
     expect(definition).toContain('import { env, openai } from "@mitome/providers/openai"');
     expect(definition).toContain('openai("gpt-5.6", env("OPENAI_API_KEY"))');
-    expect(definition).toContain("plugins: []");
+    expect(definition).toContain('plugins: [instructionFiles({ paths: ["./instructions.md"] })]');
     expect(definition).not.toContain(key);
     expect(JSON.parse(await readFile(join(config, "package.json"), "utf8")).dependencies).toEqual({
+      "@mitome/plugins": corePackage.version,
       "@mitome/providers": corePackage.version,
       "@mitome/sdk": corePackage.version,
     });
+    expect(await readFile(join(config, "instructions.md"), "utf8")).toBe(
+      "You are a helpful Agent.\n",
+    );
     expect(await readFile(join(config, ".env"), "utf8")).toBe(`OPENAI_API_KEY=${key}\n`);
     expect((await stat(join(config, ".env"))).mode & 0o777).toBe(0o600);
     expect(await exists(join(config, ".env.example"))).toBe(false);
@@ -1008,7 +1013,7 @@ export default {
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { makeModel } from "@mitome/core";
 const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, { streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "unused" })) }), { capability: { module: ${JSON.stringify(new URL(`file://${capability}`).href)} } });
-export default { instructions: "", model, plugins: [] };`,
+export default { model, plugins: [] };`,
     );
     expect(
       await output(

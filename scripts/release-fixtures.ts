@@ -139,7 +139,9 @@ process.env.OPENAI_API_KEY = "fixture";
 const provider = openai("fixture", env("OPENAI_API_KEY"));
 if (sdkEffect.createSession !== core.createSession) throw new Error("SDK Effect facade duplicated the Core runtime.");
 if (typeof openaiCompatible !== "function") throw new Error("OpenAI-compatible package was not installed.");
-await Effect.runPromise(Effect.scoped(Effect.as(createSession(defineAgent({ instructions: "", model: provider, plugins: [] })), undefined)));
+await Effect.runPromise(
+  Effect.scoped(Effect.as(createSession(defineAgent({ model: provider, plugins: [] })), undefined)),
+);
 const credential = oauth();
 if (typeof codex !== "function" || typeof credential === "string" || typeof credential.capability.module !== "string") throw new Error("Codex package was not installed.");
 // Deliberately partial mock; only streamText runs in this smoke.
@@ -165,8 +167,17 @@ if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke 
   await mkdir(createdDirectory);
   await run(["node", join(nodeModules, ".bin", "create-mitome")], createdDirectory, "1\n1\n1\n");
   const createdPackage = await Bun.file(join(createdDirectory, "package.json")).json();
-  if (Object.keys(createdPackage.dependencies).join(",") !== "@mitome/providers,@mitome/sdk") {
+  if (
+    Object.keys(createdPackage.dependencies).join(",") !==
+    "@mitome/plugins,@mitome/providers,@mitome/sdk"
+  ) {
     throw new Error("create-mitome generated unexpected dependencies.");
+  }
+  if (!(await Bun.file(join(createdDirectory, "instructions.md")).exists())) {
+    throw new Error("create-mitome did not generate instructions.md.");
+  }
+  if (!(await Bun.file(join(createdDirectory, "agent.ts")).text()).includes("instructionFiles")) {
+    throw new Error("create-mitome did not load instructions.md through @mitome/plugins.");
   }
   console.log("Release tarball/install fixtures passed.");
 } finally {

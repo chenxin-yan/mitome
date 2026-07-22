@@ -75,7 +75,6 @@ describe("createSession Tool serialization", () => {
           active -= 1;
         });
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model,
         plugins: [
           {

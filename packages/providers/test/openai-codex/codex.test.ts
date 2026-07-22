@@ -42,7 +42,6 @@ const directory = async (value = credential()) => {
 };
 
 const definition = (model: ReturnType<typeof codex>): AgentDefinition => ({
-  instructions: "Be concise.",
   model,
   plugins: [],
 });
@@ -190,7 +189,6 @@ describe("Codex SSE", () => {
         model: "future-private-model",
         store: false,
         stream: true,
-        instructions: "Be concise.",
         input: [{ role: "user", content: "Hi" }],
         text: { verbosity: "low" },
         include: ["reasoning.encrypted_content"],
@@ -264,7 +262,6 @@ describe("Codex SSE", () => {
         Effect.scoped(
           Effect.gen(function* () {
             const session = yield* createSession({
-              instructions: "",
               model: codex("gpt-5.4", undefined, {
                 configDirectory,
                 baseUrl: `http://127.0.0.1:${server.port}`,
@@ -419,7 +416,7 @@ describe("Codex SSE", () => {
     const child = () =>
       spawnRuntime([
         "-e",
-        `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const model = codex("gpt-5.4", undefined, ${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ instructions: "", model, plugins: [] }); yield* Stream.runDrain(session.prompt("Hi")); })));`,
+        `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const model = codex("gpt-5.4", undefined, ${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ model, plugins: [] }); yield* Stream.runDrain(session.prompt("Hi")); })));`,
       ]);
     try {
       const children = [child(), child()];

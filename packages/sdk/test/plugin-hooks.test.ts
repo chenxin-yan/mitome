@@ -121,9 +121,8 @@ describe("@mitome/sdk Plugin Hooks", () => {
       },
     });
 
-    const events = await withSession(
-      defineAgent({ instructions: "Be concise.", model, plugins: [core, sdk] }),
-      (session) => Array.fromAsync(session.prompt("Hi")),
+    const events = await withSession(defineAgent({ model, plugins: [core, sdk] }), (session) =>
+      Array.fromAsync(session.prompt("Hi")),
     );
 
     expect(log).toEqual([
@@ -158,7 +157,6 @@ describe("@mitome/sdk Plugin Hooks", () => {
   test("rejects invalid pre-Step output before calling the model", async () => {
     let modelCalls = 0;
     const agent = defineAgent({
-      instructions: "Be concise.",
       model: makeTestModel(() => {
         modelCalls += 1;
         return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
@@ -185,7 +183,6 @@ describe("@mitome/sdk Plugin Hooks", () => {
     });
     let aborted = false;
     const agent = defineAgent({
-      instructions: "Be concise.",
       model: makeToolModel(),
       plugins: [
         definePlugin({
@@ -228,7 +225,6 @@ describe("@mitome/sdk Plugin Hooks", () => {
     let aborted = false;
     let laterCompleted = false;
     const agent = defineAgent({
-      instructions: "Be concise.",
       model: makeTestModel(() =>
         Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
       ),
@@ -276,7 +272,6 @@ describe("@mitome/sdk Plugin Hooks", () => {
   test("preserves the original rejected Hook error as the TurnError cause", async () => {
     const original = new Error("hook failed");
     const agent = defineAgent({
-      instructions: "Be concise.",
       model: makeTestModel(() =>
         Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
       ),
@@ -307,7 +302,6 @@ describe("@mitome/sdk Plugin Hooks", () => {
       },
     };
     const failing = defineAgent({
-      instructions: "Be concise.",
       model: makeToolModel(),
       plugins: [
         core,
@@ -333,7 +327,6 @@ describe("@mitome/sdk Plugin Hooks", () => {
     expect(events.at(-1)).toEqual({ type: "response-complete" });
 
     const invalid = defineAgent({
-      instructions: "Be concise.",
       model: makeToolModel(),
       plugins: [
         { name: "core", hooks: { postTool: () => Effect.succeed(1) } },

@@ -83,7 +83,6 @@ describe("Plugin Hooks", () => {
           },
         });
         const definition: AgentDefinition = {
-          instructions: "Be concise.",
           model: textModel((prompt) => (modelPrompt = prompt)),
           plugins: [plugin("first", true), plugin("second")],
         };
@@ -126,7 +125,6 @@ describe("Plugin Hooks", () => {
         success: Schema.String,
       });
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [
           {
@@ -156,7 +154,6 @@ describe("Plugin Hooks", () => {
       const prompts: Array<Prompt.Prompt> = [];
       let history: ReadonlyArray<Prompt.Message> = [];
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model: textModel((prompt) => void prompts.push(prompt)),
         plugins: [
           {
@@ -192,7 +189,6 @@ describe("Plugin Hooks", () => {
         failureMode: "return",
       });
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [
           {
@@ -238,7 +234,6 @@ describe("Plugin Hooks", () => {
         success: Schema.String,
       });
       const valid: AgentDefinition = {
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [
           {
@@ -281,7 +276,7 @@ describe("Plugin Hooks", () => {
       failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
       history = invalidSession.history();
       expect(failure).toBeInstanceOf(TurnError);
-      expect(history).toHaveLength(1);
+      expect(history).toHaveLength(0);
     }),
   );
 
@@ -290,7 +285,6 @@ describe("Plugin Hooks", () => {
       let sessionEnds = 0;
       const startupExit = yield* Effect.exit(
         createSession({
-          instructions: "Be concise.",
           model: textModel(() => undefined),
           plugins: [
             {
@@ -309,7 +303,6 @@ describe("Plugin Hooks", () => {
       let laterTurnStarts = 0;
       let turnEnds = 0;
       const turnSession = yield* createSession({
-        instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [
           {
@@ -334,7 +327,6 @@ describe("Plugin Hooks", () => {
 
       const stepLog: Array<string> = [];
       const stepSession = yield* createSession({
-        instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [
           {
@@ -357,7 +349,6 @@ describe("Plugin Hooks", () => {
       const sessionLog: Array<string> = [];
       yield* Effect.exit(
         createSession({
-          instructions: "Be concise.",
           model: textModel(() => undefined),
           plugins: [
             {
@@ -383,7 +374,6 @@ describe("Plugin Hooks", () => {
 
       const turnLog: Array<string> = [];
       const turnSession = yield* createSession({
-        instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [
           {
@@ -410,7 +400,6 @@ describe("Plugin Hooks", () => {
 
       const stepLog: Array<string> = [];
       const stepSession = yield* createSession({
-        instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [
           {
@@ -442,7 +431,6 @@ describe("Plugin Hooks", () => {
       const sessionLog: Array<string> = [];
       yield* Effect.scoped(
         createSession({
-          instructions: "Be concise.",
           model: textModel(() => undefined),
           plugins: [
             {
@@ -467,7 +455,6 @@ describe("Plugin Hooks", () => {
       const turnLog: Array<string> = [];
       const failingModel = makeTestModel(() => Stream.fail(new HookFailure({ message: "model" })));
       const session = yield* createSession({
-        instructions: "Be concise.",
         model: failingModel,
         plugins: [
           {
@@ -501,7 +488,6 @@ describe("Plugin Hooks", () => {
     Effect.gen(function* () {
       const log: Array<string> = [];
       const session = yield* createSession({
-        instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [
           {
@@ -524,7 +510,6 @@ describe("Plugin Hooks", () => {
       const events: Array<string> = [];
       let history: ReadonlyArray<Prompt.Message> = [];
       const session = yield* createSession({
-        instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [
           {
@@ -543,7 +528,7 @@ describe("Plugin Hooks", () => {
       history = session.history();
       expect(Exit.isFailure(exit)).toBe(true);
       expect(events).toEqual(["model-output"]);
-      expect(history).toHaveLength(1);
+      expect(history).toHaveLength(0);
     }),
   );
 
@@ -570,7 +555,6 @@ describe("Plugin Hooks", () => {
           success: Schema.String,
         });
         const session = yield* createSession({
-          instructions: "Be concise.",
           model: fixture.model,
           plugins: [
             { name: "bad", hooks },
@@ -604,7 +588,6 @@ describe("Plugin Hooks", () => {
     Effect.gen(function* () {
       const startup = new HookFailure({ message: "startup" });
       const startupDefinition: AgentDefinition = {
-        instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [{ name: "bad", hooks: { sessionStart: Effect.fail(startup) } }],
       };
@@ -618,7 +601,6 @@ describe("Plugin Hooks", () => {
 
       const turn = new HookFailure({ message: "turn" });
       const turnDefinition: AgentDefinition = {
-        instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [{ name: "bad", hooks: { turnStart: () => Effect.fail(turn) } }],
       };
@@ -630,7 +612,6 @@ describe("Plugin Hooks", () => {
       });
 
       const recovered: AgentDefinition = {
-        instructions: "Be concise.",
         model: textModel(() => undefined),
         plugins: [
           {

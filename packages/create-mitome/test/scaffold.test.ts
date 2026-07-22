@@ -18,30 +18,32 @@ afterEach(async () => {
 });
 
 describe("create-mitome scaffold", () => {
-  test("creates a Promise-first OpenAI Agent project", async () => {
+  test.each([
+    ["promise", "openai", '@mitome/sdk";', 'openai("gpt-5.6", env("OPENAI_API_KEY"))'],
+    ["promise", "openai-codex", '@mitome/sdk";', 'codex("gpt-5.6")'],
+    ["effect", "openai", '@mitome/sdk/effect";', 'openai("gpt-5.6", env("OPENAI_API_KEY"))'],
+    ["effect", "openai-codex", '@mitome/sdk/effect";', 'codex("gpt-5.6")'],
+  ] as const)("creates a %s %s Agent project", async (flavor, provider, sdk, model) => {
     const path = await directory();
-
-    await scaffold(path, { flavor: "promise", provider: "openai", model: "gpt-5.6" });
+    await scaffold(path, { flavor, provider, model: "gpt-5.6" });
 
     expect(JSON.parse(await contents(path, "package.json"))).toEqual({
       name: "mitome-agent",
       private: true,
       type: "module",
       dependencies: {
+        "@mitome/plugins": "0.0.0",
         "@mitome/providers": "0.0.0",
         "@mitome/sdk": "0.0.0",
       },
     });
-    expect(await contents(path, "agent.ts")).toContain(
-      'import { defineAgent } from "@mitome/sdk";',
-    );
-    expect(await contents(path, "agent.ts")).toContain('openai("gpt-5.6", env("OPENAI_API_KEY"))');
-    expect(JSON.parse(await contents(path, "tsconfig.json"))).toMatchObject({
-      include: ["agent.ts"],
-    });
-    expect(await contents(path, "README.md")).toContain('mitome "hi" --use ./agent.ts');
-    expect(await contents(path, "README.md")).toContain("mitome auth login --use ./agent.ts");
-    expect(await contents(path, "README.md")).toContain("withSession");
+    const agent = await contents(path, "agent.ts");
+    expect(agent).toContain(`import { defineAgent } from "${sdk}`);
+    expect(agent).toContain(model);
+    expect(agent).toContain('import { instructionFiles } from "@mitome/plugins";');
+    expect(agent).toContain('plugins: [instructionFiles({ paths: ["./instructions.md"] })]');
+    expect(agent).not.toContain('instructions: "You are a helpful Agent."');
+    expect(await contents(path, "instructions.md")).toBe("You are a helpful Agent.\n");
   });
 
   test("creates an Effect-native Codex project without overwriting files", async () => {
@@ -63,5 +65,14 @@ describe("create-mitome scaffold", () => {
       scaffold(path, { flavor: "promise", provider: "openai", model: "gpt-5.6" }),
     ).rejects.toThrow("package.json already exists");
     expect(await contents(path, "agent.ts")).toBe("hand-written\n");
+  });
+
+  test("refuses to overwrite instructions.md", async () => {
+    const path = await directory();
+    await writeFile(join(path, "instructions.md"), "hand-written\n");
+
+    await expect(
+      scaffold(path, { flavor: "promise", provider: "openai", model: "gpt-5.6" }),
+    ).rejects.toThrow("instructions.md already exists");
   });
 });

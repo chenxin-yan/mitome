@@ -90,7 +90,6 @@ describe("@mitome/sdk Tool Approval", () => {
     const fixture = approvalModel();
     let handlerCalls = 0;
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [
         definePlugin({
@@ -138,7 +137,6 @@ describe("@mitome/sdk Tool Approval", () => {
     let handlerCalls = 0;
     let seen: unknown;
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [
         definePlugin({
@@ -187,7 +185,6 @@ describe("@mitome/sdk Tool Approval", () => {
     let approvalParams: unknown;
     let handlerInput: unknown;
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [
         definePlugin({
@@ -225,7 +222,6 @@ describe("@mitome/sdk Tool Approval", () => {
     const fixture = approvalModel();
     let handlerCalls = 0;
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [
         definePlugin({
@@ -270,7 +266,6 @@ describe("@mitome/sdk Tool Approval", () => {
     const fixture = approvalModel();
     let handlerCalls = 0;
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [
         definePlugin({

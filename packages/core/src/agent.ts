@@ -4,7 +4,6 @@ import type { Model } from "./model.js";
 import type { AnyPlugin } from "./plugin.js";
 
 export interface AgentDefinition {
-  readonly instructions?: string;
   readonly model: Model;
   readonly plugins: ReadonlyArray<AnyPlugin>;
 }
@@ -14,8 +13,9 @@ export class AgentDefinitionError extends Schema.TaggedErrorClass<AgentDefinitio
   { message: Schema.String },
 ) {}
 
-export const defineAgent = <const Value extends AgentDefinition>(definition: Value): Value =>
-  definition;
+export const defineAgent = <const Value extends AgentDefinition>(
+  definition: Value & Record<Exclude<keyof Value, keyof AgentDefinition>, never>,
+): Value => definition;
 
 const toolRequiresHandler = (tool: Tool.Any): boolean =>
   Tool.isProviderDefined(tool) ? tool.requiresHandler : true;

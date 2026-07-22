@@ -55,7 +55,6 @@ describe("createSession Tool Turn", () => {
         failureMode: "return",
       });
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [
           definePlugin({
@@ -77,7 +76,6 @@ describe("createSession Tool Turn", () => {
       ]);
       expect(fixture.calls()).toBe(2);
       expect(fixture.prompt()?.content.map((message) => message.role)).toEqual([
-        "system",
         "user",
         "assistant",
         "tool",
@@ -100,7 +98,7 @@ describe("createSession Tool Turn", () => {
         );
       });
 
-      const session = yield* createSession({ instructions: "Search.", model, plugins: [] });
+      const session = yield* createSession({ model, plugins: [] });
       const events = yield* Stream.runCollect(session.prompt("Find it"));
 
       expect([...events]).toEqual([
@@ -130,7 +128,6 @@ describe("createSession Tool Turn", () => {
       });
 
       const session = yield* createSession({
-        instructions: "Keep calling.",
         model,
         plugins: [
           {
@@ -160,7 +157,6 @@ describe("createSession Tool Turn", () => {
         failureMode: "return",
       });
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [
           {
@@ -212,7 +208,6 @@ describe("createSession Tool Turn", () => {
         failureMode: "return",
       });
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [
           {

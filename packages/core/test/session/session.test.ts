@@ -16,7 +16,6 @@ describe("createSession", () => {
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicModel("hello");
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [],
       };
@@ -41,7 +40,7 @@ describe("createSession", () => {
           ),
         ),
       );
-      const session = yield* createSession({ instructions: "", model, plugins: [] });
+      const session = yield* createSession({ model, plugins: [] });
       const events = yield* Stream.runCollect(session.prompt("Hi")).pipe(
         Effect.provideService(Greeting, { text: "from the caller" }),
       );
@@ -53,7 +52,7 @@ describe("createSession", () => {
     }),
   );
 
-  it.effect("composes Definition and Plugin Instructions into model input and history", () =>
+  it.effect("composes Plugin Instructions into model input and history", () =>
     Effect.gen(function* () {
       let modelPrompt: ReadonlyArray<Prompt.Message> = [];
       const model = makeTestModel(({ prompt }) => {
@@ -61,7 +60,6 @@ describe("createSession", () => {
         return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
       });
       const session = yield* createSession({
-        instructions: "Definition Instructions",
         model,
         plugins: [
           { name: "first", instructions: "First Plugin" },
@@ -73,7 +71,7 @@ describe("createSession", () => {
       const expected = [
         {
           role: "system" as const,
-          content: "Definition Instructions\n\nFirst Plugin\n\nLast Plugin",
+          content: "First Plugin\n\nLast Plugin",
         },
       ];
 
@@ -110,9 +108,7 @@ describe("createSession", () => {
           Effect.fail(new ProvisionFailure({ message: "no credential" })),
         ),
       );
-      const error = yield* Effect.flip(
-        Effect.scoped(createSession({ instructions: "", model, plugins: [] })),
-      );
+      const error = yield* Effect.flip(Effect.scoped(createSession({ model, plugins: [] })));
       expect(error).toBeInstanceOf(TurnError);
       expect(error).toMatchObject({ _tag: "TurnError", message: "no credential" });
     }),
@@ -122,7 +118,6 @@ describe("createSession", () => {
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicModel("hello");
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [],
       };
@@ -131,8 +126,8 @@ describe("createSession", () => {
           const first = yield* createSession(definition);
           const second = yield* createSession(definition);
           yield* Stream.runDrain(first.prompt("first"));
-          expect(first.history().map((message) => message.role)).toEqual(["system", "user"]);
-          expect(second.history().map((message) => message.role)).toEqual(["system"]);
+          expect(first.history().map((message) => message.role)).toEqual(["user"]);
+          expect(second.history().map((message) => message.role)).toEqual([]);
           return first;
         }),
       );
@@ -146,7 +141,6 @@ describe("createSession", () => {
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicModel("hello");
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [],
       };
@@ -180,11 +174,11 @@ describe("createSession", () => {
         return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
       });
 
-      const session = yield* createSession({ instructions: "Be concise.", model, plugins: [] });
+      const session = yield* createSession({ model, plugins: [] });
       const first = yield* Effect.forkChild(Stream.runDrain(session.prompt("first")));
       yield* Effect.promise(() => started);
       yield* Fiber.interrupt(first);
-      expect(session.history().map((message) => message.role)).toEqual(["system"]);
+      expect(session.history().map((message) => message.role)).toEqual([]);
       const events = yield* Stream.runCollect(session.prompt("second"));
 
       expect([...events]).toEqual([
@@ -199,7 +193,6 @@ describe("createSession", () => {
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicModel("hello");
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [],
       };
@@ -207,7 +200,7 @@ describe("createSession", () => {
       yield* Stream.runDrain(session.prompt("first"));
       yield* Stream.runDrain(session.prompt("second"));
       // The deterministic fixture emits bare text-deltas, which record no assistant message.
-      expect(session.history().map((message) => message.role)).toEqual(["system", "user", "user"]);
+      expect(session.history().map((message) => message.role)).toEqual(["user", "user"]);
       expect(yield* fixture.calls).toBe(2);
     }),
   );
@@ -216,7 +209,6 @@ describe("createSession", () => {
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicModel("hello");
       const definition: AgentDefinition = {
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [],
       };

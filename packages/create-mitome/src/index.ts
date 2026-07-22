@@ -8,6 +8,7 @@ import { createInterface } from "node:readline";
 import {
   agentDefinitionSource,
   agentPackageSource,
+  instructionsSource,
   type Flavor,
   type ScaffoldOptions,
 } from "./template.js";
@@ -38,7 +39,13 @@ const knownModelIds = {
   ],
 } as const;
 
-const files = ["package.json", "agent.ts", "tsconfig.json", "README.md"] as const;
+const files = [
+  "package.json",
+  "agent.ts",
+  "instructions.md",
+  "tsconfig.json",
+  "README.md",
+] as const;
 
 const exists = async (path: string): Promise<boolean> => {
   try {
@@ -68,6 +75,7 @@ export const scaffold = async (directory: string, options: ScaffoldOptions): Pro
   await Promise.all([
     writeFile(join(directory, "package.json"), agentPackageSource()),
     writeFile(join(directory, "agent.ts"), agentDefinitionSource(options)),
+    writeFile(join(directory, "instructions.md"), instructionsSource),
     writeFile(
       join(directory, "tsconfig.json"),
       `${JSON.stringify(
