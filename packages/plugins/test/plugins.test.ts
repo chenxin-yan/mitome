@@ -1,0 +1,117 @@
+import { afterEach, describe, expect, test } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Effect, Layer, Stream } from "effect";
+import { LanguageModel, Response } from "effect/unstable/ai";
+import { createSession, makeModel } from "@mitome/core";
+import { defineAgent as definePromiseAgent } from "@mitome/sdk";
+import { defineAgent as defineEffectAgent } from "@mitome/sdk/effect";
+import { instructionFiles, instructions } from "../src/index.js";
+
+const cwd = process.cwd();
+const temporaryDirectories: Array<string> = [];
+
+afterEach(() => {
+  process.chdir(cwd);
+  for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true });
+});
+
+const temporaryDirectory = (): string => {
+  const directory = mkdtempSync(join(tmpdir(), "mitome-plugins-"));
+  temporaryDirectories.push(directory);
+  return directory;
+};
+
+const model = () =>
+  makeModel(
+    Layer.succeed(LanguageModel.LanguageModel, {
+      streamText: () =>
+        Stream.succeed(Response.makePart("text-delta", { id: "test", delta: "done" })),
+    } as unknown as LanguageModel.Service),
+  );
+
+describe("@mitome/plugins", () => {
+  test("uses inline Instructions as the Session system message", async () => {
+    const history = await Effect.runPromise(
+      Effect.scoped(
+        Effect.map(
+          createSession({ model: model(), plugins: [instructions("Be helpful.")] }),
+          (session) => session.history(),
+        ),
+      ),
+    );
+
+    expect(history).toMatchObject([{ role: "system", content: "Be helpful." }]);
+  });
+
+  test("resolves explicit paths relative to the defining module", () => {
+    expect(instructionFiles({ paths: ["./fixtures/instructions.md"] })).toEqual({
+      name: "instruction-files",
+      instructions: "Sibling instructions.\n",
+    });
+  });
+
+  test("fails synchronously for invalid explicit paths", () => {
+    expect(() => instructionFiles({ paths: ["./fixtures/missing.md"] })).toThrow(
+      /Instruction file does not exist: .*fixtures[\\/]missing\.md/,
+    );
+    expect(() => instructionFiles({ paths: ["./fixtures"] })).toThrow(
+      /Instruction path is not a file: .*fixtures/,
+    );
+  });
+
+  test("discovers all repository matches outermost-first", () => {
+    const root = temporaryDirectory();
+    const nested = join(root, "nested");
+    const cwd = join(nested, "agent");
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(join(root, ".git"));
+    writeFileSync(join(root, "AGENTS.md"), "Root instructions.");
+    writeFileSync(join(nested, "AGENTS.md"), "Nested instructions.");
+    process.chdir(cwd);
+
+    expect(instructionFiles({ discover: ["AGENTS.md"] })).toEqual({
+      name: "instruction-files",
+      instructions: "Root instructions.\n\nNested instructions.",
+    });
+  });
+
+  test("skips absent discovered names and only searches the cwd outside a repository", () => {
+    const outside = temporaryDirectory();
+    const cwd = join(outside, "child");
+    mkdirSync(cwd);
+    writeFileSync(join(outside, "AGENTS.md"), "Parent instructions.");
+    writeFileSync(join(cwd, "LOCAL.md"), "Cwd instructions.");
+    process.chdir(cwd);
+
+    expect(instructionFiles({ discover: ["AGENTS.md"] })).toEqual({ name: "instruction-files" });
+    expect(instructionFiles({ discover: ["LOCAL.md"] })).toEqual({
+      name: "instruction-files",
+      instructions: "Cwd instructions.",
+    });
+  });
+
+  test("rejects discovered values that are not bare filenames", () => {
+    expect(() => instructionFiles({ discover: ["nested/AGENTS.md"] })).toThrow(
+      "Discovered instruction file must be a bare filename: nested/AGENTS.md",
+    );
+    expect(() => instructionFiles({ discover: [".."] })).toThrow(
+      "Discovered instruction file must be a bare filename: ..",
+    );
+  });
+
+  test("accepts Plugins from both SDK definition surfaces", () => {
+    const promiseDefinition = definePromiseAgent({
+      model: model(),
+      plugins: [instructions("Promise SDK")],
+    });
+    const effectDefinition = defineEffectAgent({
+      model: model(),
+      plugins: [instructionFiles({ paths: ["./fixtures/instructions.md"] })],
+    });
+
+    expect(promiseDefinition.plugins[0]?.instructions).toBe("Promise SDK");
+    expect(effectDefinition.plugins[0]?.instructions).toBe("Sibling instructions.\n");
+  });
+});
