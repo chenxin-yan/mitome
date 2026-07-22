@@ -26,7 +26,7 @@ export type ModelId = KnownModelId | (string & {});
 export interface OpenAiOptions {
   /** OpenAI Responses API root, primarily for controlled endpoints and proxies. */
   readonly baseUrl?: string;
-  /** Response transport; HTTP/SSE remains the default. */
+  /** Response transport; defaults to WebSocket on Bun/Node and HTTP elsewhere. */
   readonly transport?: "http" | "websocket";
 }
 
@@ -43,11 +43,10 @@ export const openai = (
   credential: Credential,
   options: OpenAiOptions = {},
 ): Model => {
-  if (
-    options.transport === "websocket" &&
-    !("Bun" in globalThis) &&
-    (typeof process === "undefined" || process.versions.node === undefined)
-  ) {
+  const supportsWebSocketHeaders =
+    "Bun" in globalThis || (typeof process !== "undefined" && process.versions.node !== undefined);
+  const transport = options.transport ?? (supportsWebSocketHeaders ? "websocket" : "http");
+  if (transport === "websocket" && !supportsWebSocketHeaders) {
     throw new Error("OpenAI WebSocket transport requires a Bun or Node server runtime");
   }
   const baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
@@ -69,7 +68,7 @@ export const openai = (
   );
   const languageModel = OpenAiLanguageModel.layer({ model });
   const modelLayer =
-    options.transport === "websocket"
+    transport === "websocket"
       ? Layer.merge(languageModel, OpenAiClient.layerWebSocketMode).pipe(
           Layer.provide(client),
           // Node and Bun accept the non-standard constructor options used for

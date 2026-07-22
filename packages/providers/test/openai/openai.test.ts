@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { type AddressInfo } from "node:net";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
@@ -141,6 +141,7 @@ describe("openai", () => {
           instructions: "Be concise.",
           model: openai(model, env(key), {
             baseUrl: `http://127.0.0.1:${server.port}/v1/`,
+            transport: "http",
           }),
           plugins: [],
         });
@@ -183,6 +184,19 @@ describe("openai", () => {
     }
   });
 
+  test("accepts the default but rejects explicit WebSocket outside Bun and Node", () => {
+    const nodeProcess = globalThis.process;
+    vi.stubGlobal("process", undefined);
+    try {
+      expect(() => openai("gpt-5.6", env(key))).not.toThrow();
+      expect(() => openai("gpt-5.6", env(key), { transport: "websocket" })).toThrow(
+        "OpenAI WebSocket transport requires a Bun or Node server runtime",
+      );
+    } finally {
+      vi.stubGlobal("process", nodeProcess);
+    }
+  });
+
   test("fails session startup when its environment credential is missing", async () => {
     const previous = process.env[key];
     delete process.env[key];
@@ -211,6 +225,7 @@ describe("openai", () => {
       await withKey(async () => {
         const model = openai("future-private-model", env(key), {
           baseUrl: `http://127.0.0.1:${server.port}/v1`,
+          transport: "http",
         });
         const exit = await Effect.runPromise(
           Effect.scoped(
@@ -235,7 +250,7 @@ describe("openai", () => {
     }
   });
 
-  test("uses one Responses WebSocket for Tool continuations", async () => {
+  test("uses one Responses WebSocket by default for Tool continuations", async () => {
     let upgrades = 0;
     let httpRequests = 0;
     const authorizations: Array<string | null> = [];
@@ -297,7 +312,6 @@ describe("openai", () => {
                 instructions: "",
                 model: openai("gpt-5.6", env(key), {
                   baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
-                  transport: "websocket",
                 }),
                 plugins: [
                   {
@@ -395,6 +409,7 @@ describe("openai", () => {
           instructions: "",
           model: openai("gpt-5.6", env(key), {
             baseUrl: `http://127.0.0.1:${server.port}/v1`,
+            transport: "http",
           }),
           plugins: [
             {

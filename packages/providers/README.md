@@ -10,8 +10,8 @@ Import a provider from `@mitome/providers/openai`, `@mitome/providers/openai-com
 
 ## OpenAI Responses transport
 
-OpenAI uses HTTP/SSE by default. Opt into Responses WebSocket mode on Bun or Node with
-`{ transport: "websocket" }`. Standards-only edge WebSocket constructors cannot attach the
-required authorization header and are rejected; HTTP remains edge-capable. A custom `baseUrl`
-must accept a WebSocket upgrade at `/responses` with authorization headers. WebSocket failures
-do not downgrade to SSE.
+OpenAI uses Responses WebSocket mode by default on Bun and Node, reusing one connection across
+Tool continuations. Other runtimes use HTTP/SSE because standards-only WebSocket constructors
+cannot attach the required authorization header. Pass `{ transport: "http" }` for HTTP-only
+proxies; a WebSocket `baseUrl` must accept an authenticated upgrade at `/responses`. WebSocket
+failures do not replay the request over HTTP.
