@@ -25,6 +25,17 @@ void exactAgentDefinitionKeys;
 defineAgent({ instructions: "old", model, plugins: [] });
 
 describe("Agent Definition validation", () => {
+  it.effect("rejects the retired Instructions field from structural callers", () =>
+    Effect.gen(function* () {
+      const legacy = { instructions: "old", model, plugins: [] };
+      const definition: AgentDefinition = legacy;
+
+      expect(yield* getAgentDefinitionError(definition)).toMatchObject({
+        message: "Agent Definition Instructions must be contributed by Plugins",
+      });
+    }),
+  );
+
   it.effect("rejects duplicate Plugin and Tool names before Session startup", () =>
     Effect.gen(function* () {
       const duplicatePlugins: AgentDefinition = {

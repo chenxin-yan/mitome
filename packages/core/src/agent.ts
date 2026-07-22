@@ -24,6 +24,11 @@ export const validateAgentDefinition: (
   definition: AgentDefinition,
 ) => Effect.Effect<void, AgentDefinitionError> = Effect.fn("@mitome/core/validateAgentDefinition")(
   function* (definition) {
+    if ("instructions" in definition) {
+      return yield* new AgentDefinitionError({
+        message: "Agent Definition Instructions must be contributed by Plugins",
+      });
+    }
     const pluginNames = new Set<string>();
     const toolNames = new Set<string>();
     const handlerNames = new Set<string>();
