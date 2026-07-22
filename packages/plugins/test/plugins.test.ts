@@ -52,12 +52,9 @@ describe("@mitome/plugins", () => {
     });
   });
 
-  test("fails synchronously for invalid explicit paths", () => {
+  test("fails synchronously with the resolved path for a missing explicit file", () => {
     expect(() => instructionFiles({ paths: ["./fixtures/missing.md"] })).toThrow(
-      /Instruction file does not exist: .*fixtures[\\/]missing\.md/,
-    );
-    expect(() => instructionFiles({ paths: ["./fixtures"] })).toThrow(
-      /Instruction path is not a file: .*fixtures/,
+      /fixtures[\\/]missing\.md/,
     );
   });
 

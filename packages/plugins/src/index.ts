@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "@mitome/core";
@@ -32,12 +32,6 @@ const callingModule = (): string => {
     Error.prepareStackTrace = previous;
   }
   throw new Error("Could not resolve the module calling instructionFiles().");
-};
-
-const readPath = (path: string): string => {
-  if (!existsSync(path)) throw new Error(`Instruction file does not exist: ${path}`);
-  if (!statSync(path).isFile()) throw new Error(`Instruction path is not a file: ${path}`);
-  return readFileSync(path, "utf8");
 };
 
 const discoveryDirectories = (): ReadonlyArray<string> => {
@@ -81,7 +75,7 @@ export const instructions = (text: string): Plugin => ({
 export const instructionFiles = (options: InstructionFilesOptions = {}): Plugin => {
   const paths = explicitPaths(options.paths);
   const files = [...paths, ...(options.discover?.flatMap(discoveredPaths) ?? [])];
-  const fragments = files.map(readPath);
+  const fragments = files.map((path) => readFileSync(path, "utf8"));
   return fragments.length === 0
     ? { name: "instruction-files" }
     : { name: "instruction-files", instructions: fragments.join("\n\n") };
