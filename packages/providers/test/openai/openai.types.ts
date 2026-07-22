@@ -20,7 +20,9 @@ const publicContracts: [
   >,
   Assert<Equal<typeof env, (name: string) => Credential>>,
   Assert<Equal<Credential, { readonly name: string }>>,
-  Assert<Equal<OpenAiOptions, { readonly baseUrl?: string }>>,
+  Assert<
+    Equal<OpenAiOptions, { readonly baseUrl?: string; readonly transport?: "http" | "websocket" }>
+  >,
   Assert<Equal<ModelId, KnownModelId | (string & {})>>,
   // KnownModelId must stay a literal union that still provides autocomplete.
   Assert<Equal<string extends KnownModelId ? true : false, false>>,

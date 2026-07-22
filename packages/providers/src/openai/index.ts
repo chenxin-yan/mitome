@@ -1,6 +1,7 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai";
 import { Effect, Layer, Redacted, Schema } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
+import { Socket } from "effect/unstable/socket";
 import { type Credential, makeModel, type Model } from "@mitome/core";
 
 export { env } from "@mitome/core";
@@ -25,6 +26,8 @@ export type ModelId = KnownModelId | (string & {});
 export interface OpenAiOptions {
   /** OpenAI Responses API root, primarily for controlled endpoints and proxies. */
   readonly baseUrl?: string;
+  /** Response transport; defaults to WebSocket on Bun/Node and HTTP elsewhere. */
+  readonly transport?: "http" | "websocket";
 }
 
 // Deliberately unexported: it never appears in a public signature, and exporting it
@@ -40,6 +43,12 @@ export const openai = (
   credential: Credential,
   options: OpenAiOptions = {},
 ): Model => {
+  const supportsWebSocketHeaders =
+    "Bun" in globalThis || (typeof process !== "undefined" && process.versions.node !== undefined);
+  const transport = options.transport ?? (supportsWebSocketHeaders ? "websocket" : "http");
+  if (transport === "websocket" && !supportsWebSocketHeaders) {
+    throw new Error("OpenAI WebSocket transport requires a Bun or Node server runtime");
+  }
   const baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
   const client = Layer.unwrap(
     Effect.gen(function* () {
@@ -57,8 +66,15 @@ export const openai = (
       }).pipe(Layer.provide(FetchHttpClient.layer));
     }),
   );
-  return makeModel(
-    OpenAiLanguageModel.layer({ model }).pipe(Layer.provide(client)),
-    credential.name,
-  );
+  const languageModel = OpenAiLanguageModel.layer({ model });
+  const modelLayer =
+    transport === "websocket"
+      ? Layer.merge(languageModel, OpenAiClient.layerWebSocketMode).pipe(
+          Layer.provide(client),
+          // Node and Bun accept the non-standard constructor options used for
+          // Authorization headers; standards-only edge constructors do not.
+          Layer.provide(Socket.layerWebSocketConstructorGlobal),
+        )
+      : languageModel.pipe(Layer.provide(client));
+  return makeModel(modelLayer, credential.name);
 };

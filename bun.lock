@@ -148,8 +148,10 @@
         "@mitome/config": "workspace:*",
         "@mitome/core": "workspace:*",
         "@types/node": "^24.0.0",
+        "@types/ws": "^8.18.1",
         "typescript": "catalog:",
         "vitest": "catalog:",
+        "ws": "^8.21.0",
       },
       "peerDependencies": {
         "@mitome/core": "workspace:*",

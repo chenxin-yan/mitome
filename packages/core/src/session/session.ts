@@ -119,6 +119,7 @@ export const createSession: (
                     toolkit: approvalToolkit.toolkit,
                   }) as Stream.Stream<Response.StreamPart<Record<string, Tool.Any>>, unknown>
                 ).pipe(
+                  Stream.provideContext(context),
                   Stream.mapError(modelTurnError),
                   Stream.tap((part) => Effect.sync(() => parts.push(part))),
                   Stream.flatMap((part): Stream.Stream<StepEvent, TurnError> => {
