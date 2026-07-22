@@ -2,7 +2,7 @@
 /** @effect-diagnostics missingEffectContext:skip-file */
 import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import { definePlugin, type AnyPlugin, type Plugin } from "../src/index.js";
+import { definePlugin, type AnyPlugin, type Plugin } from "../../src/index.js";
 
 class Dependency extends Context.Service<Dependency, { readonly value: string }>()(
   "@mitome/core/test/Dependency",

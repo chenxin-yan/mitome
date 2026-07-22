@@ -9,8 +9,8 @@ import {
   createSession,
   type Plugin,
   type PluginHooks,
-} from "../src/index.js";
-import { makeTestModel } from "./model.js";
+} from "../../src/index.js";
+import { makeTestModel } from "../support/model.js";
 
 class HookFailure extends Schema.TaggedErrorClass<HookFailure>()("HookFailure", {
   message: Schema.String,

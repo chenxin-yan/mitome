@@ -2,8 +2,8 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Fiber, Stream } from "effect";
 import { Schema } from "effect";
 import { Response, Tool, Toolkit } from "effect/unstable/ai";
-import { createSession, type AgentDefinition } from "../src/index.js";
-import { makeTestModel } from "./model.js";
+import { createSession, type AgentDefinition } from "../../src/index.js";
+import { makeTestModel } from "../support/model.js";
 
 class HookFailure extends Schema.TaggedErrorClass<HookFailure>()("HookFailure", {
   message: Schema.String,

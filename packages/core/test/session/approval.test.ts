@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
-import { type AgentDefinition, createSession, makeModel, type TurnEvent } from "../src/index.js";
+import { type AgentDefinition, createSession, makeModel, type TurnEvent } from "../../src/index.js";
 
 const approvalModel = () => {
   let calls = 0;

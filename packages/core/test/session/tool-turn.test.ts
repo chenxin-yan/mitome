@@ -2,8 +2,8 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Stream } from "effect";
 import { AiError, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { Schema } from "effect";
-import { type AgentDefinition, createSession, definePlugin } from "../src/index.js";
-import { makeTestModel } from "./model.js";
+import { type AgentDefinition, createSession, definePlugin } from "../../src/index.js";
+import { makeTestModel } from "../support/model.js";
 
 const makeToolModel = () => {
   let calls = 0;

@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { createSession, AgentDefinitionError, type AgentDefinition } from "../src/index.js";
-import { makeTestModel } from "./model.js";
+import { makeTestModel } from "./support/model.js";
 
 const model = makeTestModel(() => Stream.empty);
 const getAgentDefinitionError = (definition: AgentDefinition) =>

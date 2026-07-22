@@ -1,22 +1,71 @@
 import { Effect, Schema, Semaphore, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import type { AnyPlugin, ToolInputValidator, ToolResultValidator } from "./definition.js";
-import {
-  type PluginContexts,
-  type PreparedTool,
-  failureResult,
-  hookAiError,
-  providePlugin,
-  toolAiError,
-  validateResult,
-} from "./tool-runtime.js";
+import type {
+  AnyPlugin,
+  PluginContexts,
+  ToolInputValidator,
+  ToolResultValidator,
+} from "../plugin.js";
+import { providePlugin } from "../plugin.js";
+import { hookAiError, toolAiError } from "./errors.js";
+import type { ToolExecutionDenied } from "./events.js";
+
+type PreparedTool =
+  | {
+      readonly _tag: "ok";
+      readonly key: string;
+      readonly toolCallId: string;
+      readonly params: unknown;
+      readonly veto: string | undefined;
+    }
+  | {
+      readonly _tag: "failure";
+      readonly key: string;
+      readonly toolCallId: string;
+      readonly params: unknown;
+      readonly hookFailure: unknown;
+    };
+
+const failureResult = (reason: string): Tool.HandlerResult<Tool.Any> => {
+  const result: ToolExecutionDenied = { type: "execution-denied", reason };
+  return {
+    result,
+    encodedResult: result,
+    isFailure: true,
+    preliminary: false,
+  } as Tool.HandlerResult<Tool.Any>;
+};
+
+const validateResult = (
+  tool: Tool.Any,
+  handlerResult: Tool.HandlerResult<Tool.Any>,
+  result: unknown,
+  validator: ToolResultValidator | undefined,
+): Effect.Effect<Tool.HandlerResult<Tool.Any>, unknown> =>
+  Effect.gen(function* () {
+    const validated = validator === undefined ? result : yield* validator(result);
+    const schema = handlerResult.isFailure ? tool.failureSchema : tool.successSchema;
+    const encodedResult = yield* Schema.encodeUnknownEffect(schema)(validated);
+    return {
+      result: validated,
+      encodedResult,
+      isFailure: handlerResult.isFailure,
+      preliminary: handlerResult.preliminary,
+    } as Tool.HandlerResult<Tool.Any>;
+  }) as Effect.Effect<Tool.HandlerResult<Tool.Any>, unknown>;
+
+type ApprovalOutcome =
+  | { readonly _tag: "hook-failure"; readonly cause: unknown }
+  | { readonly _tag: "veto"; readonly reason: string }
+  | {
+      readonly _tag: "approval";
+      readonly params: { readonly value: unknown } | undefined;
+      readonly discard: () => void;
+    };
 
 export type ApprovalToolkit = {
   readonly toolkit: Toolkit.WithHandler<Record<string, Tool.Any>>;
-  readonly vetoReason: (toolCallId: string) => string | undefined;
-  readonly preToolFailure: (toolCallId: string) => { readonly cause: unknown } | undefined;
-  readonly preparedParams: (toolCallId: string) => { readonly value: unknown } | undefined;
-  readonly discardPrepared: (toolCallId: string) => void;
+  readonly approvalOutcome: (toolCallId: string) => ApprovalOutcome;
   readonly clearPrepared: () => void;
 };
 
@@ -232,27 +281,22 @@ export const makeToolkit = (
           )) as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
         return {
           toolkit: { tools: handlers.tools, handle: wrappedHandle },
-          vetoReason: (toolCallId) => {
+          approvalOutcome: (toolCallId) => {
             const prepared = preparedByCallId.get(toolCallId);
-            if (prepared !== undefined && prepared._tag === "ok" && prepared.veto !== undefined) {
+            if (prepared?._tag === "failure") {
               discardPrepared(toolCallId);
-              return prepared.veto;
+              return { _tag: "hook-failure", cause: prepared.hookFailure };
             }
-            return undefined;
-          },
-          preToolFailure: (toolCallId) => {
-            const prepared = preparedByCallId.get(toolCallId);
-            if (prepared !== undefined && prepared._tag === "failure") {
+            if (prepared?.veto !== undefined) {
               discardPrepared(toolCallId);
-              return { cause: prepared.hookFailure };
+              return { _tag: "veto", reason: prepared.veto };
             }
-            return undefined;
+            return {
+              _tag: "approval",
+              params: prepared === undefined ? undefined : { value: prepared.params },
+              discard: () => discardPrepared(toolCallId),
+            };
           },
-          preparedParams: (toolCallId) => {
-            const prepared = preparedByCallId.get(toolCallId);
-            return prepared === undefined ? undefined : { value: prepared.params };
-          },
-          discardPrepared,
           clearPrepared: () => {
             preparedByKey.clear();
             preparedByCallId.clear();

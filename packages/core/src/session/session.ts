@@ -1,25 +1,21 @@
 import { Context, Deferred, Effect, Layer, Scope, Semaphore, Stream } from "effect";
 import { LanguageModel, Prompt, Tool } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
-import { validateAgentDefinition } from "./definition.js";
-import type { AgentDefinition, AgentDefinitionError, AnyPlugin } from "./definition.js";
+import { validateAgentDefinition } from "../agent.js";
+import type { AgentDefinition, AgentDefinitionError } from "../agent.js";
+import { getModelLayer } from "../model.js";
+import { providePlugin } from "../plugin.js";
+import type { AnyPlugin } from "../plugin.js";
 import {
   ApprovalResolutionError,
   SessionBusyError,
   SessionReleasedError,
   TurnError,
-} from "./errors.js";
-import type { TurnEvent } from "./events.js";
-import {
-  type HookProgress,
   hookTurnError,
   modelTurnError,
-  runCleanupHooks,
-  runEndHooks,
-  runStartHooks,
-} from "./hooks.js";
-import { getModelLayer } from "./model.js";
-import { providePlugin, transformPrompt } from "./tool-runtime.js";
+} from "./errors.js";
+import type { TurnEvent } from "./events.js";
+import { beginHookPhase, transformPrompt } from "./hooks.js";
 import { makeToolkit } from "./toolkit.js";
 
 type ApprovalDecision = { readonly approved: boolean; readonly reason?: string };
@@ -86,21 +82,15 @@ export const createSession: (
     }),
   );
 
-  yield* runStartHooks(
+  const sessionHooks = yield* beginHookPhase(
     definition.plugins,
     (plugin) => inContext(plugin, plugin.hooks?.sessionStart),
     (plugin) => inContext(plugin, plugin.hooks?.sessionEnd),
     "Session end Hook failed",
   ).pipe(hookTurnError("Session start Hook failed"));
 
-  yield* Effect.addFinalizer(() =>
-    // A failing sessionEnd Hook must not fail scope close or skip later cleanup.
-    runCleanupHooks(
-      definition.plugins,
-      (plugin) => inContext(plugin, plugin.hooks?.sessionEnd),
-      "Session end Hook failed",
-    ),
-  );
+  // A failing sessionEnd Hook must not fail scope close or skip later cleanup.
+  yield* Effect.addFinalizer(() => sessionHooks.cleanup);
 
   type StepEvent = TurnEvent | { readonly type: "turn-complete"; readonly history: Prompt.Prompt };
 
@@ -108,18 +98,16 @@ export const createSession: (
     const parts: Array<Response.AnyPart> = [];
     const toolCalls = new Map<string, Response.ToolCallPart<string, unknown>>();
     const decisions: Array<Prompt.ToolApprovalResponsePart> = [];
+    let endPrompt = prompt;
     return Stream.unwrap(
-      runStartHooks(
+      beginHookPhase(
         definition.plugins,
         (plugin) => inContext(plugin, plugin.hooks?.stepStart?.(prompt)),
-        (plugin) => inContext(plugin, plugin.hooks?.stepEnd?.(prompt)),
+        (plugin) => inContext(plugin, plugin.hooks?.stepEnd?.(endPrompt)),
         "Step end Hook failed",
       ).pipe(
         hookTurnError("Step start Hook failed"),
-        Effect.map(() => {
-          const startedPlugins = definition.plugins;
-          const endProgress: HookProgress = { dispatched: 0 };
-          let endPrompt = prompt;
+        Effect.map((stepHooks) => {
           return Stream.unwrap(
             transformPrompt(definition.plugins, pluginContexts, prompt).pipe(
               hookTurnError("Pre-Step Hook failed"),
@@ -151,22 +139,21 @@ export const createSession: (
                     }
                     if (part.type !== "tool-approval-request") return Stream.empty;
 
-                    const preToolFailure = approvalToolkit.preToolFailure(part.toolCallId);
-                    if (preToolFailure !== undefined) {
+                    const approval = approvalToolkit.approvalOutcome(part.toolCallId);
+                    if (approval._tag === "hook-failure") {
                       return Stream.fail(
                         new TurnError({
                           message: "Pre-Tool Hook failed",
-                          cause: preToolFailure.cause,
+                          cause: approval.cause,
                         }),
                       );
                     }
-                    const veto = approvalToolkit.vetoReason(part.toolCallId);
-                    if (veto !== undefined) {
+                    if (approval._tag === "veto") {
                       decisions.push(
                         Prompt.toolApprovalResponsePart({
                           approvalId: part.approvalId,
                           approved: false,
-                          reason: veto,
+                          reason: approval.reason,
                         }),
                       );
                       return Stream.empty;
@@ -180,7 +167,6 @@ export const createSession: (
                         }),
                       );
                     }
-                    const preparedParams = approvalToolkit.preparedParams(part.toolCallId);
                     return Stream.unwrap(
                       Deferred.make<ApprovalDecision>().pipe(
                         Effect.map((deferred) => {
@@ -203,7 +189,7 @@ export const createSession: (
                               toolCallId: part.toolCallId,
                               name: call.name,
                               params:
-                                preparedParams === undefined ? call.params : preparedParams.value,
+                                approval.params === undefined ? call.params : approval.params.value,
                               approve: () => resolve({ approved: true }),
                               deny: (reason) =>
                                 resolve({ approved: false, reason: reason ?? "Approval denied" }),
@@ -221,8 +207,7 @@ export const createSession: (
                                           : { reason: decision.reason }),
                                       }),
                                     );
-                                    if (!decision.approved)
-                                      approvalToolkit.discardPrepared(part.toolCallId);
+                                    if (!decision.approved) approval.discard();
                                   }),
                                 ),
                                 Effect.ensuring(
@@ -257,12 +242,7 @@ export const createSession: (
                         : Stream.succeed({ type: "turn-complete", history: nextPrompt });
                       return Stream.concat(
                         Stream.fromEffectDrain(
-                          runEndHooks(
-                            startedPlugins,
-                            (plugin) => inContext(plugin, plugin.hooks?.stepEnd?.(transformed)),
-                            endProgress,
-                            "Step end Hook failed",
-                          ).pipe(hookTurnError("Step end Hook failed")),
+                          stepHooks.end.pipe(hookTurnError("Step end Hook failed")),
                         ),
                         next,
                       );
@@ -271,15 +251,7 @@ export const createSession: (
                 );
               }),
             ),
-          ).pipe(
-            Stream.onExit(() =>
-              runCleanupHooks(
-                startedPlugins.slice(endProgress.dispatched),
-                (plugin) => inContext(plugin, plugin.hooks?.stepEnd?.(endPrompt)),
-                "Step end Hook failed",
-              ),
-            ),
-          );
+          ).pipe(Stream.onExit(() => stepHooks.cleanup));
         }),
       ),
     );
@@ -300,25 +272,18 @@ export const createSession: (
         }
         isTurnActive = true;
         return Stream.unwrap(
-          runStartHooks(
+          beginHookPhase(
             definition.plugins,
             (plugin) => inContext(plugin, plugin.hooks?.turnStart?.(text)),
             (plugin) => inContext(plugin, plugin.hooks?.turnEnd?.(text)),
             "Turn end Hook failed",
           ).pipe(
             hookTurnError("Turn start Hook failed"),
-            Effect.map(() => {
-              const startedPlugins = definition.plugins;
-              const endProgress: HookProgress = { dispatched: 0 };
-              return runStep(Prompt.concat(history, text)).pipe(
+            Effect.map((turnHooks) =>
+              runStep(Prompt.concat(history, text)).pipe(
                 Stream.mapEffect((event) => {
                   if (event.type !== "turn-complete") return Effect.succeed(event);
-                  return runEndHooks(
-                    startedPlugins,
-                    (plugin) => inContext(plugin, plugin.hooks?.turnEnd?.(text)),
-                    endProgress,
-                    "Turn end Hook failed",
-                  ).pipe(
+                  return turnHooks.end.pipe(
                     hookTurnError("Turn end Hook failed"),
                     Effect.map(() => {
                       history = event.history;
@@ -326,15 +291,9 @@ export const createSession: (
                     }),
                   );
                 }),
-                Stream.onExit(() =>
-                  runCleanupHooks(
-                    startedPlugins.slice(endProgress.dispatched),
-                    (plugin) => inContext(plugin, plugin.hooks?.turnEnd?.(text)),
-                    "Turn end Hook failed",
-                  ),
-                ),
-              );
-            }),
+                Stream.onExit(() => turnHooks.cleanup),
+              ),
+            ),
           ),
         ).pipe(
           Stream.ensuring(

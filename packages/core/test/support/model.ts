@@ -1,6 +1,6 @@
 import { Effect, Layer, Ref, Stream } from "effect";
 import { LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
-import { makeModel } from "../src/index.js";
+import { makeModel } from "../../src/index.js";
 
 interface TestModelOptions {
   readonly prompt: Prompt.Prompt;

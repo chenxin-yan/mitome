@@ -8,8 +8,8 @@ import {
   SessionBusyError,
   SessionReleasedError,
   TurnError,
-} from "../src/index.js";
-import { makeDeterministicModel, makeTestModel } from "./model.js";
+} from "../../src/index.js";
+import { makeDeterministicModel, makeTestModel } from "../support/model.js";
 
 describe("createSession", () => {
   it.effect("streams one model Step before completion", () =>
