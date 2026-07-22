@@ -1,7 +1,7 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai";
-import * as BunSocket from "@effect/platform-bun/BunSocket";
 import { Effect, Layer, Redacted, Schema } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
+import { Socket } from "effect/unstable/socket";
 import { type Credential, makeModel, type Model } from "@mitome/core";
 
 export { env } from "@mitome/core";
@@ -65,7 +65,9 @@ export const openai = (
     options.transport === "websocket"
       ? Layer.merge(languageModel, OpenAiClient.layerWebSocketMode).pipe(
           Layer.provide(client),
-          Layer.provide(BunSocket.layerWebSocketConstructor),
+          // globalThis.WebSocket exists in Bun, Node >=22, and edge runtimes, keeping
+          // this subpath edge-capable per ADR-0021 without a platform-bun dependency.
+          Layer.provide(Socket.layerWebSocketConstructorGlobal),
         )
       : languageModel.pipe(Layer.provide(client));
   return makeModel(modelLayer, credential.name);

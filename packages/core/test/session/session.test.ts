@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
+import { Cause, Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import {
   type AgentDefinition,
@@ -28,6 +28,28 @@ describe("createSession", () => {
         { type: "response-complete" },
       ]);
       expect(yield* fixture.calls).toBe(1);
+    }),
+  );
+
+  it.effect("keeps caller-provided services visible during stream execution", () =>
+    Effect.gen(function* () {
+      class Greeting extends Context.Service<Greeting, { readonly text: string }>()("Greeting") {}
+      const model = makeTestModel(() =>
+        Stream.fromEffect(
+          Effect.map(Effect.service(Greeting), ({ text }) =>
+            Response.makePart("text-delta", { id: "caller", delta: text }),
+          ),
+        ),
+      );
+      const session = yield* createSession({ instructions: "", model, plugins: [] });
+      const events = yield* Stream.runCollect(session.prompt("Hi")).pipe(
+        Effect.provideService(Greeting, { text: "from the caller" }),
+      );
+
+      expect([...events]).toEqual([
+        { type: "model-output", text: "from the caller" },
+        { type: "response-complete" },
+      ]);
     }),
   );
 
