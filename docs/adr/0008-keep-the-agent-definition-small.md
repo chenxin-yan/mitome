@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0016
+status: amended by ADR-0016 and ADR-0024
 ---
 
 # Keep the Agent Definition small

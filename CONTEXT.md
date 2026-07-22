@@ -31,8 +31,12 @@ A user-authored declaration of exactly one Agent and its Plugins.
 _Avoid_: Definition (bare), configuration, setup script, registry
 
 **Plugin**:
-A named, reusable extension included by an Agent Definition to add Tools or participate in the Agent lifecycle.
+A named, reusable extension included by an Agent Definition to add Tools, contribute Instructions, or participate in the Agent lifecycle.
 _Avoid_: Toolkit, package, add-on
+
+**Instructions**:
+A static markdown fragment a Plugin contributes to an Agent's system prompt, composed in Plugin definition order at Session creation.
+_Avoid_: System prompt (the composed whole), prompt fragment
 
 **Model**:
 The opaque provider-provisioned value an Agent Definition names to generate Steps.
