@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "vitest";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { createSession, makeModel } from "@mitome/core";
@@ -49,6 +51,23 @@ describe("@mitome/plugins", () => {
     expect(instructionFiles({ paths: ["./fixtures/instructions.md"] })).toEqual({
       name: "instruction-files",
       instructions: "Sibling instructions.\n",
+    });
+  });
+
+  test("resolves explicit paths from a bundled defining module", () => {
+    const root = temporaryDirectory();
+    const entry = join(root, "agent.ts");
+    const bundle = join(root, "agent.mjs");
+    writeFileSync(join(root, "instructions.md"), "Bundled instructions.");
+    writeFileSync(
+      entry,
+      `import { instructionFiles } from ${JSON.stringify(fileURLToPath(new URL("../src/index.ts", import.meta.url)))};\nconsole.log(JSON.stringify(instructionFiles({ paths: ["./instructions.md"] })));\n`,
+    );
+    execFileSync("bun", ["build", entry, "--outfile", bundle, "--target", "node"]);
+
+    expect(JSON.parse(execFileSync(process.execPath, [bundle], { encoding: "utf8" }))).toEqual({
+      name: "instruction-files",
+      instructions: "Bundled instructions.",
     });
   });
 

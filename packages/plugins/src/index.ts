@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "@mitome/core";
 
@@ -7,8 +7,6 @@ export interface InstructionFilesOptions {
   readonly paths?: ReadonlyArray<string>;
   readonly discover?: ReadonlyArray<string>;
 }
-
-const sourceDirectory = dirname(fileURLToPath(import.meta.url));
 
 const sourcePath = (fileName: string): string =>
   fileName.startsWith("file:") ? fileURLToPath(fileName) : fileName;
@@ -20,13 +18,13 @@ const callingModule = (): string => {
   try {
     Error.prepareStackTrace = (_, stack) => stack;
     const error = new Error();
-    Error.captureStackTrace(error, callingModule);
+    Error.captureStackTrace(error, instructionFiles);
     const stack = error.stack as unknown as ReadonlyArray<NodeJS.CallSite>;
     for (const callsite of stack) {
       const fileName = callsite.getFileName() ?? callsite.getScriptNameOrSourceURL();
       if (fileName === null || fileName === undefined) continue;
       const path = sourcePath(fileName);
-      if (!path.startsWith(`${sourceDirectory}${sep}`) && isAbsolute(path)) return path;
+      if (isAbsolute(path)) return path;
     }
   } finally {
     Error.prepareStackTrace = previous;
@@ -74,11 +72,11 @@ export const instructions = (text: string): Plugin => ({
  * Creates a Plugin from synchronous instruction files at definition load time.
  * ADR-0025 intentionally confines these node:fs reads to this first-party package.
  */
-export const instructionFiles = (options: InstructionFilesOptions = {}): Plugin => {
+export function instructionFiles(options: InstructionFilesOptions = {}): Plugin {
   const paths = explicitPaths(options.paths);
   const files = [...paths, ...discoveredPaths(options.discover ?? [])];
   const fragments = files.map((path) => readFileSync(path, "utf8"));
   return fragments.length === 0
     ? { name: "instruction-files" }
     : { name: "instruction-files", instructions: fragments.join("\n\n") };
-};
+}
