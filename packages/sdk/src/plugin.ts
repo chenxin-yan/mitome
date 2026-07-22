@@ -160,25 +160,22 @@ const adaptHooks = <Resource>(
   return adapted;
 };
 
-type ToolResource<Value> =
-  Value extends Tool<any, any, infer Resource, string>
+type ToolResource<Value extends Tool<any, any, never, string>> = Value extends unknown
+  ? Parameters<Value["handler"]>[1] extends HookContext<infer Resource>
     ? 0 extends 1 & Resource
       ? never
       : Resource
-    : never;
+    : never
+  : never;
 type ToolResources<Tools extends ReadonlyArray<Tool<any, any, never, string>>> = ToolResource<
   Tools[number]
 >;
 
 type ToolContributions<Tools extends ReadonlyArray<Tool<any, any, never, string>>> = {
-  readonly [Value in Tools[number] as Value["name"]]: Value extends Tool<
-    infer Input,
-    infer Output,
-    infer _Resource,
-    infer _Name
-  >
-    ? ToolContribution<Input, Output>
-    : never;
+  readonly [Value in Tools[number] as Value["name"]]: ToolContribution<
+    Parameters<Value["handler"]>[0],
+    Awaited<ReturnType<Value["handler"]>>
+  >;
 };
 
 export interface PluginDefinition<

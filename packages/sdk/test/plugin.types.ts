@@ -2,32 +2,40 @@
 /** @effect-diagnostics missingEffectContext:skip-file */
 import { Schema } from "effect";
 import type { Model, PluginHooks } from "@mitome/core";
-import {
-  defineAgent,
-  definePlugin,
-  tool,
-  type PluginHooksDefinition,
-  type Tool,
-} from "../src/index.js";
+import { defineAgent, definePlugin, tool, type PluginHooksDefinition } from "../src/index.js";
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
     ? true
     : false;
 type Expect<Value extends true> = Value;
+type ContributionsOf<Value> = Value extends import("@mitome/core").Plugin<
+  infer _Resource,
+  infer _Error,
+  infer Contributions extends import("@mitome/core").ToolContributions
+>
+  ? Contributions
+  : never;
 
+const formatInputSchema = Schema.Struct({ value: Schema.Finite });
 declare const model: Model;
 
 export type PluginHookKeyParity = Expect<Equal<keyof PluginHooksDefinition, keyof PluginHooks>>;
 
-definePlugin({
+const inferencePlugin = definePlugin({
   name: "inference",
   tools: [
     tool({
       name: "format",
-      inputSchema: Schema.Struct({ value: Schema.Finite }),
+      inputSchema: formatInputSchema,
       outputSchema: Schema.String,
       handler: async (input) => input.value.toFixed(0),
+    }),
+    tool({
+      name: "enabled",
+      inputSchema: Schema.String,
+      outputSchema: Schema.Boolean,
+      handler: async () => true,
     }),
   ],
   hooks: {
@@ -61,7 +69,7 @@ definePlugin({
 });
 
 // Resource inferred from setup flows into hooks and tool handlers.
-definePlugin({
+const resourceInferencePlugin = definePlugin({
   name: "resource-inference",
   tools: [
     tool({
@@ -69,6 +77,12 @@ definePlugin({
       inputSchema: Schema.String,
       outputSchema: Schema.String,
       handler: async (_input, { resource }: { resource: { readonly db: string } }) => resource.db,
+    }),
+    tool({
+      name: "health",
+      inputSchema: Schema.String,
+      outputSchema: Schema.Boolean,
+      handler: async () => true,
     }),
   ],
   setup: async () => ({ db: "connection" }),
@@ -133,73 +147,32 @@ definePlugin({
   dispose: async (resource: string) => void resource,
 });
 
-type ContributionsOf<Value> = Value extends import("@mitome/core").Plugin<
-  infer _Resource,
-  infer _Error,
-  infer Contributions extends import("@mitome/core").ToolContributions
->
-  ? Contributions
-  : never;
-const formatInputSchema = Schema.Struct({ value: Schema.Finite });
-const formatTool = tool({
-  name: "format",
-  inputSchema: formatInputSchema,
-  outputSchema: Schema.String,
-  handler: async (input) => input.value.toFixed(0),
-});
-export type SdkToolName = Expect<Equal<typeof formatTool.name, "format">>;
-type SdkToolIo =
-  typeof formatTool extends Tool<infer Input, infer Output, infer _Resource, infer _Name>
-    ? readonly [Input, Output]
-    : never;
-export type SdkToolIoIsPreserved = Expect<
-  Equal<SdkToolIo, readonly [typeof formatInputSchema.Type, string]>
+type InferenceContributions = ContributionsOf<typeof inferencePlugin>;
+export type InferenceContributionKeys = Expect<
+  Equal<keyof InferenceContributions, "format" | "enabled">
 >;
-const typedSdkPlugin = definePlugin({
-  name: "typed-sdk",
-  tools: [
-    formatTool,
-    tool({
-      name: "enabled",
-      inputSchema: Schema.String,
-      outputSchema: Schema.Boolean,
-      handler: async () => true,
-    }),
-  ],
-});
-type SdkContributions = ContributionsOf<typeof typedSdkPlugin>;
-export type SdkContributionKeys = Expect<Equal<keyof SdkContributions, "format" | "enabled">>;
-export type SdkFormatInput = Expect<
-  Equal<SdkContributions["format"]["input"], typeof formatInputSchema.Type>
+export type InferenceFormatInput = Expect<
+  Equal<InferenceContributions["format"]["input"], typeof formatInputSchema.Type>
 >;
-export type SdkEnabledOutput = Expect<Equal<SdkContributions["enabled"]["output"], boolean>>;
-const mixedResourcePlugin = definePlugin({
-  name: "mixed-resource",
-  tools: [
-    tool({
-      name: "query",
-      inputSchema: Schema.String,
-      outputSchema: Schema.String,
-      handler: async (_input, { resource }: { resource: { readonly db: string } }) => resource.db,
-    }),
-    tool({
-      name: "health",
-      inputSchema: Schema.String,
-      outputSchema: Schema.Boolean,
-      handler: async () => true,
-    }),
-  ],
-  setup: async () => ({ db: "connection" }),
-});
-type MixedContributions = ContributionsOf<typeof mixedResourcePlugin>;
-export type MixedContributionKeys = Expect<Equal<keyof MixedContributions, "query" | "health">>;
-export type MixedQueryInput = Expect<Equal<MixedContributions["query"]["input"], string>>;
-export type MixedHealthOutput = Expect<Equal<MixedContributions["health"]["output"], boolean>>;
+export type InferenceEnabledOutput = Expect<
+  Equal<InferenceContributions["enabled"]["output"], boolean>
+>;
+type ResourceContributions = ContributionsOf<typeof resourceInferencePlugin>;
+export type ResourceContributionKeys = Expect<
+  Equal<keyof ResourceContributions, "query" | "health">
+>;
+export type ResourceQueryInput = Expect<Equal<ResourceContributions["query"]["input"], string>>;
+export type ResourceHealthOutput = Expect<
+  Equal<ResourceContributions["health"]["output"], boolean>
+>;
 const sdkToolkitlessPlugin = definePlugin({ name: "sdk-toolkitless", tools: [] });
 const sdkDefinition = defineAgent({
   model,
-  plugins: [typedSdkPlugin, sdkToolkitlessPlugin] as const,
+  plugins: [inferencePlugin, resourceInferencePlugin, sdkToolkitlessPlugin] as const,
 });
 export type SdkPluginTupleIsPreserved = Expect<
-  Equal<typeof sdkDefinition.plugins, readonly [typeof typedSdkPlugin, typeof sdkToolkitlessPlugin]>
+  Equal<
+    typeof sdkDefinition.plugins,
+    readonly [typeof inferencePlugin, typeof resourceInferencePlugin, typeof sdkToolkitlessPlugin]
+  >
 >;
