@@ -1,4 +1,7 @@
+import { createServer } from "node:http";
+import { type AddressInfo } from "node:net";
 import { describe, expect, test } from "vitest";
+import { WebSocketServer } from "ws";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { type AgentDefinition, createSession, credentialDescriptor } from "@mitome/core";
@@ -229,6 +232,124 @@ describe("openai", () => {
       expect(requests).toBe(1);
     } finally {
       void server.stop(true);
+    }
+  });
+
+  test("uses one Responses WebSocket for Tool continuations", async () => {
+    let upgrades = 0;
+    let httpRequests = 0;
+    const authorizations: Array<string | null> = [];
+    const frames: Array<Record<string, unknown>> = [];
+    const streamEvents = (
+      ...stream: ReadonlyArray<string>
+    ): ReadonlyArray<Record<string, unknown>> =>
+      stream.map((frame) => JSON.parse(frame.slice("data: ".length)) as Record<string, unknown>);
+    const server = createServer((_request, response) => {
+      httpRequests += 1;
+      response.writeHead(500).end("WebSocket upgrade required");
+    });
+    const webSocketServer = new WebSocketServer({ server, path: "/v1/responses" });
+    webSocketServer.on("connection", (socket, request) => {
+      upgrades += 1;
+      authorizations.push(request.headers.authorization ?? null);
+      socket.on("message", (raw) => {
+        const text = Array.isArray(raw)
+          ? Buffer.concat(raw).toString()
+          : raw instanceof ArrayBuffer
+            ? Buffer.from(new Uint8Array(raw)).toString()
+            : raw.toString();
+        const frame = JSON.parse(text) as Record<string, unknown>;
+        frames.push(frame);
+        if (frames.length === 1) {
+          const functionCall = {
+            type: "function_call",
+            id: "fc-1",
+            call_id: "call-1",
+            name: "echo",
+            arguments: '{"text":"hello"}',
+            status: "completed",
+          };
+          for (const event of streamEvents(
+            ...itemStream(
+              "resp-tool",
+              { ...functionCall, arguments: "", status: "in_progress" },
+              "response.function_call_arguments.delta",
+              ['{"text":"hello"}'],
+              functionCall,
+            ),
+          ))
+            socket.send(JSON.stringify(event));
+          return;
+        }
+        for (const event of streamEvents(...textStream("resp-done", "msg-done", ["done"])))
+          socket.send(JSON.stringify(event));
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    try {
+      await withKey(async () => {
+        const echo = Tool.make("echo", {
+          parameters: Schema.Struct({ text: Schema.String }),
+          success: Schema.String,
+        });
+        const events = await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const session = yield* createSession({
+                instructions: "",
+                model: openai("gpt-5.6", env(key), {
+                  baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
+                  transport: "websocket",
+                }),
+                plugins: [
+                  {
+                    name: "echo",
+                    toolkit: Toolkit.make(echo),
+                    handlers: {
+                      echo: (params) => Effect.succeed((params as { text: string }).text),
+                    },
+                  },
+                ],
+              });
+              return yield* Stream.runCollect(session.prompt("Hi"));
+            }),
+          ),
+        );
+        expect([...events]).toEqual([
+          { type: "tool-call", id: "call-1", name: "echo" },
+          {
+            type: "tool-result",
+            id: "call-1",
+            name: "echo",
+            result: "hello",
+            isFailure: false,
+          },
+          { type: "model-output", text: "done" },
+          { type: "response-complete" },
+        ]);
+      });
+      expect(upgrades).toBe(1);
+      expect(authorizations).toEqual(["Bearer synthetic-key"]);
+      expect(httpRequests).toBe(0);
+      expect(frames).toHaveLength(2);
+      expect(frames.map((frame) => frame.type)).toEqual(["response.create", "response.create"]);
+      expect(frames.every((frame) => !("stream" in frame) && !("background" in frame))).toBe(true);
+      expect(frames[1]).toMatchObject({ previous_response_id: "resp-tool" });
+      expect(frames[1]?.input).toEqual([
+        {
+          type: "function_call_output",
+          call_id: "call-1",
+          output: '"hello"',
+        },
+      ]);
+    } finally {
+      webSocketServer.clients.forEach((socket) => socket.terminate());
+      webSocketServer.close();
+      server.closeAllConnections();
+      server.close();
     }
   });
 

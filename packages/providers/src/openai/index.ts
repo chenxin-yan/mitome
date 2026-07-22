@@ -1,4 +1,5 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai";
+import * as BunSocket from "@effect/platform-bun/BunSocket";
 import { Effect, Layer, Redacted, Schema } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
 import { type Credential, makeModel, type Model } from "@mitome/core";
@@ -25,6 +26,8 @@ export type ModelId = KnownModelId | (string & {});
 export interface OpenAiOptions {
   /** OpenAI Responses API root, primarily for controlled endpoints and proxies. */
   readonly baseUrl?: string;
+  /** Response transport; HTTP/SSE remains the default. */
+  readonly transport?: "http" | "websocket";
 }
 
 // Deliberately unexported: it never appears in a public signature, and exporting it
@@ -57,8 +60,13 @@ export const openai = (
       }).pipe(Layer.provide(FetchHttpClient.layer));
     }),
   );
-  return makeModel(
-    OpenAiLanguageModel.layer({ model }).pipe(Layer.provide(client)),
-    credential.name,
-  );
+  const languageModel = OpenAiLanguageModel.layer({ model });
+  const modelLayer =
+    options.transport === "websocket"
+      ? Layer.merge(languageModel, OpenAiClient.layerWebSocketMode).pipe(
+          Layer.provide(client),
+          Layer.provide(BunSocket.layerWebSocketConstructor),
+        )
+      : languageModel.pipe(Layer.provide(client));
+  return makeModel(modelLayer, credential.name);
 };
