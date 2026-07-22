@@ -53,13 +53,15 @@ const explicitPaths = (paths: ReadonlyArray<string> | undefined): ReadonlyArray<
   return paths.map((path) => resolve(caller, path));
 };
 
-const discoveredPaths = (name: string): ReadonlyArray<string> => {
-  if (name === "." || name === ".." || name.includes("/") || name.includes("\\")) {
-    throw new Error(`Discovered instruction file must be a bare filename: ${name}`);
+const discoveredPaths = (names: ReadonlyArray<string>): ReadonlyArray<string> => {
+  for (const name of names) {
+    if (name === "." || name === ".." || name.includes("/") || name.includes("\\")) {
+      throw new Error(`Discovered instruction file must be a bare filename: ${name}`);
+    }
   }
-  return discoveryDirectories()
-    .map((directory) => resolve(directory, name))
-    .filter(existsSync);
+  return discoveryDirectories().flatMap((directory) =>
+    names.map((name) => resolve(directory, name)).filter(existsSync),
+  );
 };
 
 /** Creates a Plugin with a static inline Instructions fragment. */
@@ -74,7 +76,7 @@ export const instructions = (text: string): Plugin => ({
  */
 export const instructionFiles = (options: InstructionFilesOptions = {}): Plugin => {
   const paths = explicitPaths(options.paths);
-  const files = [...paths, ...(options.discover?.flatMap(discoveredPaths) ?? [])];
+  const files = [...paths, ...discoveredPaths(options.discover ?? [])];
   const fragments = files.map((path) => readFileSync(path, "utf8"));
   return fragments.length === 0
     ? { name: "instruction-files" }

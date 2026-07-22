@@ -65,12 +65,14 @@ describe("@mitome/plugins", () => {
     mkdirSync(cwd, { recursive: true });
     mkdirSync(join(root, ".git"));
     writeFileSync(join(root, "AGENTS.md"), "Root instructions.");
+    writeFileSync(join(root, "RULES.md"), "Root rules.");
     writeFileSync(join(nested, "AGENTS.md"), "Nested instructions.");
+    writeFileSync(join(nested, "RULES.md"), "Nested rules.");
     process.chdir(cwd);
 
-    expect(instructionFiles({ discover: ["AGENTS.md"] })).toEqual({
+    expect(instructionFiles({ discover: ["AGENTS.md", "RULES.md"] })).toEqual({
       name: "instruction-files",
-      instructions: "Root instructions.\n\nNested instructions.",
+      instructions: "Root instructions.\n\nRoot rules.\n\nNested instructions.\n\nNested rules.",
     });
   });
 
