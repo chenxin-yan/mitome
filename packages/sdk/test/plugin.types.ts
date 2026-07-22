@@ -1,14 +1,22 @@
 // oxlint-disable-next-line jsdoc/check-tag-names
 /** @effect-diagnostics missingEffectContext:skip-file */
 import { Schema } from "effect";
-import type { PluginHooks } from "@mitome/core";
-import { definePlugin, tool, type PluginHooksDefinition } from "../src/index.js";
+import type { Model, PluginHooks } from "@mitome/core";
+import {
+  defineAgent,
+  definePlugin,
+  tool,
+  type PluginHooksDefinition,
+  type Tool,
+} from "../src/index.js";
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
     ? true
     : false;
 type Expect<Value extends true> = Value;
+
+declare const model: Model;
 
 export type PluginHookKeyParity = Expect<Equal<keyof PluginHooksDefinition, keyof PluginHooks>>;
 
@@ -91,3 +99,52 @@ definePlugin({
   tools: [],
   dispose: async (resource: string) => void resource,
 });
+
+type ContributionsOf<Value> = Value extends import("@mitome/core").Plugin<
+  infer _Resource,
+  infer _Error,
+  infer Contributions extends import("@mitome/core").ToolContributions
+>
+  ? Contributions
+  : never;
+const formatInputSchema = Schema.Struct({ value: Schema.Finite });
+const formatTool = tool({
+  name: "format",
+  inputSchema: formatInputSchema,
+  outputSchema: Schema.String,
+  handler: async (input) => input.value.toFixed(0),
+});
+export type SdkToolName = Expect<Equal<typeof formatTool.name, "format">>;
+type SdkToolIo =
+  typeof formatTool extends Tool<infer Input, infer Output, infer _Resource, infer _Name>
+    ? readonly [Input, Output]
+    : never;
+export type SdkToolIoIsPreserved = Expect<
+  Equal<SdkToolIo, readonly [typeof formatInputSchema.Type, string]>
+>;
+const typedSdkPlugin = definePlugin({
+  name: "typed-sdk",
+  tools: [
+    formatTool,
+    tool({
+      name: "enabled",
+      inputSchema: Schema.String,
+      outputSchema: Schema.Boolean,
+      handler: async () => true,
+    }),
+  ],
+});
+type SdkContributions = ContributionsOf<typeof typedSdkPlugin>;
+export type SdkContributionKeys = Expect<Equal<keyof SdkContributions, "format" | "enabled">>;
+export type SdkFormatInput = Expect<
+  Equal<SdkContributions["format"]["input"], typeof formatInputSchema.Type>
+>;
+export type SdkEnabledOutput = Expect<Equal<SdkContributions["enabled"]["output"], boolean>>;
+const sdkToolkitlessPlugin = definePlugin({ name: "sdk-toolkitless", tools: [] });
+const sdkDefinition = defineAgent({
+  model,
+  plugins: [typedSdkPlugin, sdkToolkitlessPlugin] as const,
+});
+export type SdkPluginTupleIsPreserved = Expect<
+  Equal<typeof sdkDefinition.plugins, readonly [typeof typedSdkPlugin, typeof sdkToolkitlessPlugin]>
+>;
