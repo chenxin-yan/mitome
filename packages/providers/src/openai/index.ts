@@ -43,6 +43,13 @@ export const openai = (
   credential: Credential,
   options: OpenAiOptions = {},
 ): Model => {
+  if (
+    options.transport === "websocket" &&
+    !("Bun" in globalThis) &&
+    (typeof process === "undefined" || process.versions.node === undefined)
+  ) {
+    throw new Error("OpenAI WebSocket transport requires a Bun or Node server runtime");
+  }
   const baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
   const client = Layer.unwrap(
     Effect.gen(function* () {
@@ -65,8 +72,8 @@ export const openai = (
     options.transport === "websocket"
       ? Layer.merge(languageModel, OpenAiClient.layerWebSocketMode).pipe(
           Layer.provide(client),
-          // globalThis.WebSocket exists in Bun, Node >=22, and edge runtimes, keeping
-          // this subpath edge-capable per ADR-0021 without a platform-bun dependency.
+          // Node and Bun accept the non-standard constructor options used for
+          // Authorization headers; standards-only edge constructors do not.
           Layer.provide(Socket.layerWebSocketConstructorGlobal),
         )
       : languageModel.pipe(Layer.provide(client));
