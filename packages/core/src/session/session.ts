@@ -64,7 +64,13 @@ export const createSession: (
   }
   const semaphore = yield* Semaphore.make(1);
   const approvalToolkit = yield* makeToolkit(definition.plugins, pluginContexts, semaphore);
-  let history = Prompt.make([{ role: "system", content: definition.instructions }]);
+  const instructions = [
+    definition.instructions,
+    ...definition.plugins.map((plugin) => plugin.instructions),
+  ]
+    .filter((fragment) => fragment !== undefined && fragment !== "")
+    .join("\n\n");
+  let history = Prompt.make(instructions === "" ? [] : [{ role: "system", content: instructions }]);
   let isReleased = false;
   let isTurnActive = false;
 

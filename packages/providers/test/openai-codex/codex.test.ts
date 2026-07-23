@@ -206,9 +206,13 @@ describe("Codex SSE", () => {
   test("maps function-call SSE events through the Core Tool loop", async () => {
     const configDirectory = await directory();
     let calls = 0;
+    const instructionValues: Array<unknown> = [];
     const server = await serve({
-      fetch(request) {
+      async fetch(request) {
         expect(new URL(request.url).pathname).toBe("/codex/responses");
+        instructionValues.push(
+          ((await request.json()) as { readonly instructions?: unknown }).instructions,
+        );
         calls += 1;
         if (calls === 1) {
           return new Response(
@@ -285,6 +289,7 @@ describe("Codex SSE", () => {
         { type: "model-output", text: "done" },
         { type: "response-complete" },
       ]);
+      expect(instructionValues).toEqual(["", ""]);
     } finally {
       void server.stop(true);
     }
