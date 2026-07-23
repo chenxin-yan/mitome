@@ -1,4 +1,3 @@
-// Adapted from Pi (MIT License). Copyright (c) 2025 Mario Zechner.
 import { type AuthCapability, type CredentialDescriptor, type Model } from "@mitome/core";
 import { logout } from "./credential-store.js";
 import { login } from "./login.js";

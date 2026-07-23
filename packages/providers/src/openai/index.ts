@@ -1,8 +1,7 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai";
-import { Effect, Layer, Redacted, Schema } from "effect";
-import { FetchHttpClient } from "effect/unstable/http";
-import { Socket } from "effect/unstable/socket";
 import { type Credential, makeModel, type Model } from "@mitome/core";
+import { makeApiKeyClient } from "../internal/api-key-client.js";
+import { transportLayer } from "./transport.js";
 
 export { env } from "@mitome/core";
 export type { Credential } from "@mitome/core";
@@ -30,51 +29,16 @@ export interface OpenAiOptions {
   readonly transport?: "http" | "websocket";
 }
 
-// Deliberately unexported: it never appears in a public signature, and exporting it
-// would drag Effect Schema/Cause types into the generated declarations.
-class MissingCredentialError extends Schema.TaggedErrorClass<MissingCredentialError>()(
-  "MissingCredentialError",
-  { message: Schema.String },
-) {}
-
 /** Creates the canonical Model backed by OpenAI Responses streaming. */
 export const openai = (
   model: ModelId,
   credential: Credential,
   options: OpenAiOptions = {},
 ): Model => {
-  const supportsWebSocketHeaders =
-    "Bun" in globalThis || (typeof process !== "undefined" && process.versions.node !== undefined);
-  const transport = options.transport ?? (supportsWebSocketHeaders ? "websocket" : "http");
-  if (transport === "websocket" && !supportsWebSocketHeaders) {
-    throw new Error("OpenAI WebSocket transport requires a Bun or Node server runtime");
-  }
   const baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
-  const client = Layer.unwrap(
-    Effect.gen(function* () {
-      // Read live rather than via Config: Effect's default ConfigProvider snapshots
-      // process.env at first access, which would miss keys set after startup.
-      const value = process.env[credential.name];
-      if (value === undefined || value === "") {
-        return yield* new MissingCredentialError({
-          message: `Environment variable ${credential.name} is not set or empty`,
-        });
-      }
-      return OpenAiClient.layer({
-        apiKey: Redacted.make(value),
-        apiUrl: baseUrl,
-      }).pipe(Layer.provide(FetchHttpClient.layer));
-    }),
+  const client = makeApiKeyClient(credential, baseUrl, OpenAiClient.layer);
+  return makeModel(
+    transportLayer(options.transport, OpenAiLanguageModel.layer({ model }), client),
+    credential.name,
   );
-  const languageModel = OpenAiLanguageModel.layer({ model });
-  const modelLayer =
-    transport === "websocket"
-      ? Layer.merge(languageModel, OpenAiClient.layerWebSocketMode).pipe(
-          Layer.provide(client),
-          // Node and Bun accept the non-standard constructor options used for
-          // Authorization headers; standards-only edge constructors do not.
-          Layer.provide(Socket.layerWebSocketConstructorGlobal),
-        )
-      : languageModel.pipe(Layer.provide(client));
-  return makeModel(modelLayer, credential.name);
 };
