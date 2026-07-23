@@ -14,6 +14,29 @@ export interface Model {
  */
 export type CredentialDescriptor = string | { readonly capability: { readonly module: string } };
 
+/**
+ * Host-facing options a Host passes to an Auth capability's `authenticate`.
+ * Not used when authoring Agent Definitions.
+ */
+export interface AuthenticateOptions {
+  readonly operation: "login" | "logout";
+  readonly configDirectory: string;
+  readonly input: () => Promise<string | undefined>;
+  readonly output: (text: string) => void;
+  readonly openBrowser?: false;
+}
+
+/**
+ * Host-facing contract of the Auth capability module a Credential descriptor
+ * names: implemented by a Provider, invoked by Hosts to run interactive login
+ * or logout. Promise-based because capability modules load in plain child
+ * processes outside any Effect runtime. Not used when authoring Agent
+ * Definitions.
+ */
+export interface AuthCapability {
+  readonly authenticate: (options: AuthenticateOptions) => Promise<void>;
+}
+
 /** A provider credential sourced from the environment. */
 export interface Credential {
   readonly name: string;

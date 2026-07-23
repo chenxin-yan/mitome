@@ -1,10 +1,16 @@
 import { Effect, Layer, Stream } from "effect";
 import { AiError, LanguageModel, Response } from "effect/unstable/ai";
-import { makeModel, type CredentialDescriptor, type Model } from "@mitome/core";
+import {
+  configDirectory as processConfigDirectory,
+  configDirectoryMessage,
+  makeModel,
+  type CredentialDescriptor,
+  type Model,
+} from "@mitome/core";
 import { defaultTokenUrl } from "./constants.js";
 import { loadCredential } from "./credential-store.js";
 import { type ModelId } from "./models.js";
-import { defaultConfigDirectory, networkError } from "./request.js";
+import { networkError } from "./request.js";
 import { streamText } from "./transport.js";
 import { type CodexOptions } from "./types.js";
 
@@ -14,7 +20,8 @@ export const makeCodex = (
   credential: CredentialDescriptor,
   options: CodexOptions = {},
 ): Model => {
-  const configDirectory = options.configDirectory ?? defaultConfigDirectory();
+  const configDirectory = options.configDirectory ?? processConfigDirectory();
+  if (configDirectory === undefined) throw new Error(configDirectoryMessage);
   const baseUrl = (options.baseUrl ?? "https://chatgpt.com/backend-api").replace(/\/+$/, "");
   const sessionId = crypto.randomUUID();
   const requestStream = (

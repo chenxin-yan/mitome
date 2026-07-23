@@ -10,7 +10,7 @@ import { writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
-import type { Model } from "@mitome/core";
+import type { AuthCapability, Model } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
 const outputPath = process.argv[2]!;
@@ -33,19 +33,12 @@ if (operation === undefined) {
   if (
     credential === undefined ||
     typeof credential === "string" ||
-    authConfigDirectory === undefined
+    authConfigDirectory === undefined ||
+    (operation !== "login" && operation !== "logout")
   ) {
     throw new Error("Agent Definition Model authentication is unsupported.");
   }
-  const capability = (await import(credential.capability.module)) as {
-    readonly authenticate?: (options: {
-      readonly operation: string;
-      readonly configDirectory: string;
-      readonly input: () => Promise<string | undefined>;
-      readonly output: (text: string) => void;
-      readonly openBrowser?: false;
-    }) => Promise<void>;
-  };
+  const capability = (await import(credential.capability.module)) as Partial<AuthCapability>;
   if (typeof capability.authenticate !== "function") {
     throw new Error("Agent Definition Model authentication is unsupported.");
   }

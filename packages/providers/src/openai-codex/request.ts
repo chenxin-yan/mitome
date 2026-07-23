@@ -1,5 +1,4 @@
 import { AiError, LanguageModel, Tool } from "effect/unstable/ai";
-import { resolveConfigDirectory } from "@mitome/core";
 
 export const providerError = (description: string) =>
   AiError.make({
@@ -17,16 +16,6 @@ export const invalidOutput = (description: string) =>
 
 export const networkError = (cause: unknown) =>
   providerError(cause instanceof Error ? cause.message : "Codex request failed");
-
-export const defaultConfigDirectory = (): string => {
-  const directory = resolveConfigDirectory(process.env, process.platform);
-  if (directory === undefined) {
-    throw new Error(
-      "Set XDG_CONFIG_HOME, APPDATA (on Windows), or HOME to locate Codex credentials.",
-    );
-  }
-  return directory;
-};
 
 const contentFor = (
   content: string | ReadonlyArray<{ readonly type: string; readonly text?: string }>,
