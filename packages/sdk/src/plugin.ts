@@ -191,7 +191,7 @@ type ToolContributions<Tools extends ReadonlyArray<Tool<any, any, never, string>
 export interface PluginDefinition<
   Resource = never,
   Tools extends ReadonlyArray<Tool<any, any, never, string>> = ReadonlyArray<
-    Tool<any, any, never, string>
+    Tool<any, any, Resource, string>
   >,
 > {
   readonly name: string;
@@ -207,7 +207,7 @@ export interface PluginDefinition<
 export function definePlugin<
   Resource = never,
   const Tools extends ReadonlyArray<Tool<any, any, never, string>> = ReadonlyArray<
-    Tool<any, any, never, string>
+    Tool<any, any, Resource, string>
   >,
 >(
   definition: PluginDefinition<Resource, Tools> &

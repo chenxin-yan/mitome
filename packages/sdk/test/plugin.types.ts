@@ -121,6 +121,20 @@ definePlugin({
   setup: async () => ({ cache: 1 }),
 });
 
+definePlugin<{ readonly db: string }>({
+  name: "explicit-resource-mismatch",
+  tools: [
+    // @ts-expect-error An explicit Plugin Resource must constrain every Tool Resource.
+    tool<string, string, { readonly cache: number }>({
+      name: "cache",
+      inputSchema: Schema.String,
+      outputSchema: Schema.String,
+      handler: async (_input, { resource }) => String(resource.cache),
+    }),
+  ],
+  setup: async () => ({ db: "connection" }),
+});
+
 // @ts-expect-error Setup Resource must satisfy every Tool Resource.
 definePlugin({
   name: "partial-resource",
