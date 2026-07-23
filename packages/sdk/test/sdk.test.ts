@@ -1,38 +1,14 @@
 import { describe, expect, test } from "vitest";
-import { Effect, Layer, Ref, Schema, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
+import { Effect, Schema, Stream } from "effect";
 import * as core from "@mitome/core";
-import { createSession, makeModel } from "@mitome/core";
+import { createSession } from "@mitome/core";
 import * as sdkEffect from "../src/effect.js";
 import { TurnError, defineAgent, definePlugin, withSession } from "../src/index.js";
-import { makeTestModel, testLanguageModel } from "./model.js";
+import { makeDeterministicModel, makeTestModel } from "./model.js";
 
 class ModelFailure extends Schema.TaggedErrorClass<ModelFailure>()("ModelFailure", {
   message: Schema.String,
 }) {}
-
-const makeDeterministicModel = (output: string) =>
-  Effect.gen(function* () {
-    const calls = yield* Ref.make(0);
-    const released = yield* Ref.make(false);
-    const layer = Layer.effect(
-      LanguageModel.LanguageModel,
-      Effect.acquireRelease(
-        Effect.succeed(
-          testLanguageModel(() =>
-            Stream.fromEffect(Ref.update(calls, (count) => count + 1)).pipe(
-              Stream.map(() =>
-                Response.makePart("text-delta", { id: "deterministic", delta: output }),
-              ),
-            ),
-          ),
-        ),
-        () => Ref.set(released, true),
-      ),
-    );
-
-    return { model: makeModel(layer), calls: Ref.get(calls), released: Ref.get(released) };
-  });
 
 describe("@mitome/sdk", () => {
   test("re-exports the canonical Effect runtime", () => {
