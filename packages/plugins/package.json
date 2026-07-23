@@ -1,0 +1,44 @@
+{
+  "name": "@mitome/plugins",
+  "version": "0.0.0",
+  "license": "MIT",
+  "repository": "https://github.com/chenxin-yan/mitome",
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "check:types": "tsc",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@mitome/config": "workspace:*",
+    "@mitome/core": "workspace:*",
+    "@mitome/sdk": "workspace:*",
+    "@types/node": "^24.0.0",
+    "effect": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "@mitome/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

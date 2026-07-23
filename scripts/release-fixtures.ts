@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const rootDirectory = resolve(import.meta.dir, "..");
-const publicPackages = ["core", "sdk", "providers", "cli", "create-mitome"] as const;
+const publicPackages = ["core", "sdk", "providers", "plugins", "cli", "create-mitome"] as const;
 type PublicPackage = (typeof publicPackages)[number];
 const packageName = (name: PublicPackage): string =>
   name === "create-mitome" ? name : `@mitome/${name}`;
@@ -132,6 +132,7 @@ import * as sdkEffect from "@mitome/sdk/effect";
 import { env, openai } from "@mitome/providers/openai";
 import { openaiCompatible } from "@mitome/providers/openai-compatible";
 import { codex, oauth } from "@mitome/providers/openai-codex";
+import { instructions } from "@mitome/plugins";
 
 declare const process: { env: Record<string, string | undefined> };
 process.env.OPENAI_API_KEY = "fixture";
@@ -145,8 +146,9 @@ if (typeof codex !== "function" || typeof credential === "string" || typeof cred
 const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "ok" })),
 } as unknown as LanguageModel.Service));
-const definition = defineAgent({ instructions: "", model, plugins: [] });
+const definition = defineAgent({ model, plugins: [instructions("Release fixture")] });
 if (definition.model !== model) throw new Error("SDK wrapped the canonical Core Model.");
+if (definition.plugins[0]?.instructions !== "Release fixture") throw new Error("Plugins package was not installed.");
 const events = await withSession(definition, async (session) => {
   const values = [];
   for await (const event of session.prompt("hello")) values.push(event);
