@@ -77,3 +77,7 @@ _Avoid_: Frontend, client, harness
 **Credential**:
 A stored secret that authorizes Mitome to use one provider on behalf of the user.
 _Avoid_: Token, key, login
+
+**Auth capability**:
+The module a Credential descriptor names; its `authenticate` export lets the Host run a Provider's interactive login or logout.
+_Avoid_: Auth plugin, login module

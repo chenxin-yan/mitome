@@ -16,3 +16,10 @@ export const resolveConfigDirectory = (
     (platform === "win32" ? env.APPDATA : env.HOME && path.join(env.HOME, ".config"));
   return root ? path.join(root, "mitome") : undefined;
 };
+
+/** The canonical remedy shown when no config root is set. */
+export const configDirectoryMessage = "Set XDG_CONFIG_HOME, APPDATA (on Windows), or HOME.";
+
+/** Resolves the shared config directory from the current process environment. */
+export const configDirectory = (): string | undefined =>
+  resolveConfigDirectory(process.env, process.platform);

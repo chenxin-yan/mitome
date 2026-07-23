@@ -1,12 +1,7 @@
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveConfigDirectory } from "@mitome/core";
-
-export const configDirectoryMessage = "Set XDG_CONFIG_HOME, APPDATA (on Windows), or HOME.";
-
-export const configDirectory = (): string | undefined =>
-  resolveConfigDirectory(process.env, process.platform);
+import { configDirectory, configDirectoryMessage } from "@mitome/core";
 
 // Bun needs an --env-file path that exists on every platform (Windows has no
 // /dev/null); one empty process-lifetime file keeps auth/no-config children

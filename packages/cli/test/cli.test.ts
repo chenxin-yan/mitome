@@ -19,7 +19,6 @@ import { text } from "node:stream/consumers";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
-import { knownModelIds as codexModelIds } from "@mitome/providers/openai-codex";
 import { knownModelIds as openAiModelIds } from "@mitome/providers/openai";
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -188,7 +187,7 @@ const cachedModelHints = async (current: Fixture): Promise<void> => {
   await mkdir(config, { recursive: true });
   await writeFile(
     join(config, "models-cache.json"),
-    `${JSON.stringify({ openai: openAiModelIds, "openai-codex": codexModelIds, fetchedAt: Date.now() })}\n`,
+    `${JSON.stringify({ openai: openAiModelIds, fetchedAt: Date.now() })}\n`,
   );
 };
 
@@ -885,7 +884,7 @@ export default {
     const definition = await readFile(join(config, "index.ts"), "utf8");
     expect(definition).toContain('import { defineAgent } from "@mitome/sdk"');
     expect(definition).toContain('import { env, openai } from "@mitome/providers/openai"');
-    expect(definition).toContain('openai("gpt-5.6", env("OPENAI_API_KEY"))');
+    expect(definition).toContain(`openai("${openAiModelIds[0]}", env("OPENAI_API_KEY"))`);
     expect(definition).toContain(
       'plugins: [instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })]',
     );
@@ -979,7 +978,7 @@ export default {
     const child = spawn(undefined, ["init"], current);
     child.stdin.write("\n");
     await delay(500);
-    child.stdin.write(`${"j".repeat(10)}\n`);
+    child.stdin.write(`${"j".repeat(openAiModelIds.length)}\n`);
     await delay(500);
     child.stdin.end("private-model\n");
     const result = await output(child);
@@ -995,7 +994,7 @@ export default {
     const child = spawn(undefined, ["init"], current);
     child.stdin.write("\n");
     await delay(500);
-    child.stdin.write(`${"j".repeat(10)}\n`);
+    child.stdin.write(`${"j".repeat(openAiModelIds.length)}\n`);
     await delay(500);
     child.stdin.end("   \n");
     const result = await output(child);

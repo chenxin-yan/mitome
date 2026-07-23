@@ -1,8 +1,8 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type CredentialDescriptor } from "@mitome/core";
-import { configDirectory, emptyEnvFile, requireConfigDirectory } from "./config.js";
+import { configDirectory, type CredentialDescriptor } from "@mitome/core";
+import { emptyEnvFile, requireConfigDirectory } from "./config.js";
 // Bun embeds hosts as source text at compile time; static analysis sees modules without default exports.
 // @ts-expect-error
 // oxlint-disable-next-line import/default

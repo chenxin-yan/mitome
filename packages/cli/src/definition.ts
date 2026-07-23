@@ -2,7 +2,8 @@ import { stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import { Option } from "effect";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
-import { configDirectory, configDirectoryMessage, isEnoent } from "./config.js";
+import { configDirectory, configDirectoryMessage } from "@mitome/core";
+import { isEnoent } from "./config.js";
 
 type Package = { readonly version?: unknown };
 

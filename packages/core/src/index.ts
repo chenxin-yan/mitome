@@ -1,4 +1,4 @@
-export { resolveConfigDirectory } from "./config.js";
+export { configDirectory, configDirectoryMessage, resolveConfigDirectory } from "./config.js";
 export { AgentDefinitionError, defineAgent } from "./agent.js";
 export type { AgentDefinition } from "./agent.js";
 export { definePlugin } from "./plugin.js";
@@ -14,7 +14,13 @@ export type {
   ToolResultValidator,
 } from "./plugin.js";
 export { credentialDescriptor, env, makeModel } from "./model.js";
-export type { Credential, CredentialDescriptor, Model } from "./model.js";
+export type {
+  AuthCapability,
+  AuthenticateOptions,
+  Credential,
+  CredentialDescriptor,
+  Model,
+} from "./model.js";
 export {
   ApprovalResolutionError,
   SessionBusyError,

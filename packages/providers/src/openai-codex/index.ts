@@ -1,5 +1,4 @@
-// Adapted from Pi (MIT License). Copyright (c) 2025 Mario Zechner.
-import { type CredentialDescriptor, type Model } from "@mitome/core";
+import { type AuthCapability, type CredentialDescriptor, type Model } from "@mitome/core";
 import { logout } from "./credential-store.js";
 import { login } from "./login.js";
 import { makeCodex } from "./model.js";
@@ -23,17 +22,8 @@ export const codex = (
   options: CodexOptions = {},
 ): Model => makeCodex(model, credential, options);
 
-type Input = () => Promise<string | undefined>;
-type Output = (text: string) => void;
-
-/** Generic CLI entry point selected through Core's provider-owned capability. */
-export const authenticate = async (options: {
-  readonly operation: "login" | "logout";
-  readonly configDirectory: string;
-  readonly input: Input;
-  readonly output: Output;
-  readonly openBrowser?: false;
-}): Promise<void> => {
+/** Generic Host entry point satisfying Core's Auth capability contract. */
+export const authenticate: AuthCapability["authenticate"] = async (options) => {
   if (options.operation === "logout") {
     await logout(options);
     return;

@@ -1,8 +1,19 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
+    "//#generate:hints": {
+      "inputs": [
+        "$TURBO_ROOT$/scripts/generate-model-hints.ts",
+        "$TURBO_ROOT$/scripts/models-dev.snapshot.json",
+        "$TURBO_ROOT$/packages/providers/src/openai-codex/models.ts"
+      ],
+      "outputs": [
+        "packages/providers/src/openai/models.ts",
+        "packages/create-mitome/src/model-hints.ts"
+      ]
+    },
     "build": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#generate:hints"],
       "outputs": ["dist/**"]
     },
     "dev": {
@@ -13,7 +24,7 @@
       "outputs": []
     },
     "lint": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#generate:hints"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.oxlintrc.json"],
       "outputs": []
     },
@@ -28,7 +39,7 @@
       "cache": false
     },
     "check:types": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#generate:hints"],
       "outputs": []
     }
   }
