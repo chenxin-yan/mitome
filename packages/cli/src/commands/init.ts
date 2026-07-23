@@ -54,13 +54,12 @@ export const runInit = Effect.gen(function* () {
       ],
     }),
   );
-  const catalog = yield* attempt(() =>
-    modelCatalog({
-      directory: dirname(path),
-      fallback: { openai: openAiModelIds, "openai-codex": codexModelIds },
-    }),
-  );
-  const knownModels = catalog[provider];
+  // models.dev only describes the OpenAI API; the Codex backend has no
+  // discovery source, so its hand-maintained hints are used directly.
+  const knownModels =
+    provider === "openai-codex"
+      ? codexModelIds
+      : yield* attempt(() => modelCatalog({ directory: dirname(path), fallback: openAiModelIds }));
   const modelChoice = yield* runNativePrompt(
     Prompt.select<string | typeof customModel>({
       message: "Model",

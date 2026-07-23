@@ -3,24 +3,11 @@ import { type Credential, makeModel, type Model } from "@mitome/core";
 import { makeApiKeyClient } from "../internal/api-key-client.js";
 import { transportLayer } from "./transport.js";
 
+import { type ModelId } from "./models.js";
+
 export { env } from "@mitome/core";
 export type { Credential } from "@mitome/core";
-
-export const knownModelIds = [
-  "gpt-5.6",
-  "gpt-5.6-sol",
-  "gpt-5.6-terra",
-  "gpt-5.6-luna",
-  "gpt-5.5",
-  "gpt-5.5-pro",
-  "gpt-5.4",
-  "gpt-5.4-pro",
-  "gpt-5.4-mini",
-  "gpt-5.4-nano",
-] as const;
-
-export type KnownModelId = (typeof knownModelIds)[number];
-export type ModelId = KnownModelId | (string & {});
+export { knownModelIds, type KnownModelId, type ModelId } from "./models.js";
 
 export interface OpenAiOptions {
   /** OpenAI Responses API root, primarily for controlled endpoints and proxies. */

@@ -2,17 +2,15 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { modelCatalog, type ModelCatalog } from "../src/catalog.ts";
+import { modelCatalog } from "../src/catalog.ts";
 
-const fallback: ModelCatalog = {
-  openai: ["fallback-openai"],
-  "openai-codex": ["fallback-codex"],
-};
+const fallback = ["fallback-openai"];
 const payload = {
   openai: {
     models: {
-      "gpt-5": { id: "gpt-5" },
-      "gpt-5-codex": { id: "gpt-5-codex" },
+      "gpt-5": { id: "gpt-5", tool_call: true },
+      "gpt-5-codex": { id: "gpt-5-codex", tool_call: true },
+      "gpt-image": { id: "gpt-image", tool_call: false },
     },
   },
 };
@@ -35,7 +33,7 @@ describe("models.dev catalog", () => {
     const path = await directory();
     await writeFile(
       join(path, "models-cache.json"),
-      JSON.stringify({ ...fallback, fetchedAt: 1_000 }),
+      JSON.stringify({ openai: fallback, fetchedAt: 1_000 }),
     );
     const fetch = vi.fn();
 
@@ -45,20 +43,26 @@ describe("models.dev catalog", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  test("refreshes an expired cache from models.dev", async () => {
+  test("refreshes an expired cache with tool-capable models from models.dev", async () => {
     const path = await directory();
-    await writeFile(join(path, "models-cache.json"), JSON.stringify({ ...fallback, fetchedAt: 0 }));
+    await writeFile(
+      join(path, "models-cache.json"),
+      JSON.stringify({ openai: fallback, fetchedAt: 0 }),
+    );
     const fetch = vi.fn(async () => new Response(JSON.stringify(payload)));
 
     await expect(
       modelCatalog({ directory: path, fallback, fetch, now: () => 24 * 60 * 60 * 1_000 }),
-    ).resolves.toEqual({ openai: ["gpt-5", "gpt-5-codex"], "openai-codex": ["gpt-5-codex"] });
+    ).resolves.toEqual(["gpt-5", "gpt-5-codex"]);
     expect(fetch).toHaveBeenCalledOnce();
   });
 
   test("uses stale cache when fetching fails", async () => {
     const path = await directory();
-    await writeFile(join(path, "models-cache.json"), JSON.stringify({ ...fallback, fetchedAt: 0 }));
+    await writeFile(
+      join(path, "models-cache.json"),
+      JSON.stringify({ openai: fallback, fetchedAt: 0 }),
+    );
 
     await expect(
       modelCatalog({
@@ -79,7 +83,7 @@ describe("models.dev catalog", () => {
 
     await expect(
       modelCatalog({ directory: join(blocked, "sub"), fallback, fetch }),
-    ).resolves.toEqual({ openai: ["gpt-5", "gpt-5-codex"], "openai-codex": ["gpt-5-codex"] });
+    ).resolves.toEqual(["gpt-5", "gpt-5-codex"]);
   });
 
   test("uses hardcoded hints when no cache and fetching fails", async () => {

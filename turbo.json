@@ -1,8 +1,11 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
+    "//#generate:hints": {
+      "cache": false
+    },
     "build": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#generate:hints"],
       "outputs": ["dist/**"]
     },
     "dev": {
@@ -13,7 +16,7 @@
       "outputs": []
     },
     "lint": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#generate:hints"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.oxlintrc.json"],
       "outputs": []
     },
@@ -28,7 +31,7 @@
       "cache": false
     },
     "check:types": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#generate:hints"],
       "outputs": []
     }
   }
