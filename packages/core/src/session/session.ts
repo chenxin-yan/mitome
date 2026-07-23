@@ -1,4 +1,4 @@
-import { Context, Deferred, Effect, Layer, Scope, Semaphore, Stream } from "effect";
+import { Context, Effect, Layer, Scope, Stream } from "effect";
 import { LanguageModel, Prompt, Tool } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
 import { validateAgentDefinition } from "../agent.js";
@@ -6,8 +6,8 @@ import type { AgentDefinition, AgentDefinitionError } from "../agent.js";
 import { getModelLayer } from "../model.js";
 import { providePlugin } from "../plugin.js";
 import type { AnyPlugin } from "../plugin.js";
+import { makeApprovals } from "./approval.js";
 import {
-  ApprovalResolutionError,
   SessionBusyError,
   SessionReleasedError,
   TurnError,
@@ -17,8 +17,6 @@ import {
 import type { TurnEvent } from "./events.js";
 import { beginHookPhase, transformPrompt } from "./hooks.js";
 import { makeToolkit } from "./toolkit.js";
-
-type ApprovalDecision = { readonly approved: boolean; readonly reason?: string };
 
 export interface Session {
   readonly prompt: (
@@ -62,8 +60,11 @@ export const createSession: (
       );
     }
   }
-  const semaphore = yield* Semaphore.make(1);
-  const approvalToolkit = yield* makeToolkit(definition.plugins, pluginContexts, semaphore);
+  const approvals = yield* makeApprovals(
+    definition.plugins,
+    pluginContexts,
+    yield* makeToolkit(definition.plugins, pluginContexts),
+  );
   const instructions = definition.plugins
     .map((plugin) => plugin.instructions)
     .filter((fragment) => fragment !== undefined && fragment !== "")
@@ -120,7 +121,7 @@ export const createSession: (
                 return (
                   model.streamText({
                     prompt: transformed,
-                    toolkit: approvalToolkit.toolkit,
+                    toolkit: approvals.toolkit,
                   }) as Stream.Stream<Response.StreamPart<Record<string, Tool.Any>>, unknown>
                 ).pipe(
                   Stream.provideContext(context),
@@ -144,25 +145,6 @@ export const createSession: (
                     }
                     if (part.type !== "tool-approval-request") return Stream.empty;
 
-                    const approval = approvalToolkit.approvalOutcome(part.toolCallId);
-                    if (approval._tag === "hook-failure") {
-                      return Stream.fail(
-                        new TurnError({
-                          message: "Pre-Tool Hook failed",
-                          cause: approval.cause,
-                        }),
-                      );
-                    }
-                    if (approval._tag === "veto") {
-                      decisions.push(
-                        Prompt.toolApprovalResponsePart({
-                          approvalId: part.approvalId,
-                          approved: false,
-                          reason: approval.reason,
-                        }),
-                      );
-                      return Stream.empty;
-                    }
                     const call = toolCalls.get(part.toolCallId);
                     if (call === undefined) {
                       return Stream.fail(
@@ -172,60 +154,8 @@ export const createSession: (
                         }),
                       );
                     }
-                    return Stream.unwrap(
-                      Deferred.make<ApprovalDecision>().pipe(
-                        Effect.map((deferred) => {
-                          const resolve = (decision: ApprovalDecision) =>
-                            Deferred.succeed(deferred, decision).pipe(
-                              Effect.flatMap((resolved) =>
-                                resolved
-                                  ? Effect.void
-                                  : Effect.fail(
-                                      new ApprovalResolutionError({
-                                        message: "Approval decision has already been resolved",
-                                      }),
-                                    ),
-                              ),
-                            );
-                          return Stream.concat(
-                            Stream.succeed({
-                              type: "approval-required",
-                              approvalId: part.approvalId,
-                              toolCallId: part.toolCallId,
-                              name: call.name,
-                              params:
-                                approval.params === undefined ? call.params : approval.params.value,
-                              approve: () => resolve({ approved: true }),
-                              deny: (reason) =>
-                                resolve({ approved: false, reason: reason ?? "Approval denied" }),
-                            } satisfies TurnEvent),
-                            Stream.fromEffect(
-                              Deferred.await(deferred).pipe(
-                                Effect.tap((decision) =>
-                                  Effect.sync(() => {
-                                    decisions.push(
-                                      Prompt.toolApprovalResponsePart({
-                                        approvalId: part.approvalId,
-                                        approved: decision.approved,
-                                        ...(decision.reason === undefined
-                                          ? {}
-                                          : { reason: decision.reason }),
-                                      }),
-                                    );
-                                    if (!decision.approved) approval.discard();
-                                  }),
-                                ),
-                                Effect.ensuring(
-                                  Deferred.succeed(deferred, {
-                                    approved: false,
-                                    reason: "Approval decision is no longer pending",
-                                  }).pipe(Effect.asVoid),
-                                ),
-                              ),
-                            ).pipe(Stream.drain),
-                          );
-                        }),
-                      ),
+                    return approvals.onApprovalRequest(part, call, (decision) =>
+                      decisions.push(decision),
                     );
                   }),
                   Stream.concat(
@@ -303,7 +233,7 @@ export const createSession: (
         ).pipe(
           Stream.ensuring(
             Effect.sync(() => {
-              approvalToolkit.clearPrepared();
+              approvals.reset();
               isTurnActive = false;
             }),
           ),
