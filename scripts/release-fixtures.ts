@@ -176,7 +176,7 @@ if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke 
   if (!(await Bun.file(join(createdDirectory, "instructions.md")).exists())) {
     throw new Error("create-mitome did not generate instructions.md.");
   }
-  if (!(await Bun.file(join(createdDirectory, "agent.ts")).text()).includes("instructionFiles")) {
+  if (!(await Bun.file(join(createdDirectory, "index.ts")).text()).includes("instructionFiles")) {
     throw new Error("create-mitome did not load instructions.md through @mitome/plugins.");
   }
   console.log("Release tarball/install fixtures passed.");

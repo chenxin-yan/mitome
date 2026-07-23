@@ -1,3 +1,7 @@
+---
+status: amended by ADR-0027
+---
+
 # Separate project and default Agent bootstrap
 
 Mitome has two bootstrap personas. `npm create mitome` scaffolds a visible Agent project in the current working directory; `mitome init` keeps scaffolding the hidden default Agent Definition under the XDG config directory established by ADR-0007. Neither command replaces or redirects the other.

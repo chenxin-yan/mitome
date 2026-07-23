@@ -19,7 +19,7 @@ const customModel = Symbol("custom-model");
 
 const initializationPath = async (): Promise<string> => {
   const directory = requireConfigDirectory();
-  const path = join(directory, "agent.ts");
+  const path = join(directory, "index.ts");
   for (const file of [path, join(directory, "AGENTS.md"), join(directory, "package.json")]) {
     const existing = await stat(file).catch((error: unknown) => {
       if (!isEnoent(error)) throw error;

@@ -37,13 +37,14 @@ describe("create-mitome scaffold", () => {
         "@mitome/sdk": "0.0.0",
       },
     });
-    const agent = await contents(path, "agent.ts");
+    const agent = await contents(path, "index.ts");
     expect(agent).toContain(`import { defineAgent } from "${sdk}`);
     expect(agent).toContain(model);
     expect(agent).toContain('import { instructionFiles } from "@mitome/plugins";');
     expect(agent).toContain('plugins: [instructionFiles({ paths: ["./instructions.md"] })]');
     expect(agent).not.toContain('instructions: "You are a helpful Agent."');
     expect(await contents(path, "instructions.md")).toBe("You are a helpful Agent.\n");
+    expect(JSON.parse(await contents(path, "tsconfig.json")).include).toEqual(["index.ts"]);
   });
 
   test("creates an Effect-native Codex project without overwriting files", async () => {
@@ -51,20 +52,23 @@ describe("create-mitome scaffold", () => {
 
     await scaffold(path, { flavor: "effect", provider: "openai-codex", model: "gpt-5.6" });
 
-    expect(await contents(path, "agent.ts")).toContain(
+    expect(await contents(path, "index.ts")).toContain(
       'import { defineAgent } from "@mitome/sdk/effect";',
     );
-    expect(await contents(path, "agent.ts")).toContain(
+    expect(await contents(path, "index.ts")).toContain(
       'import { codex } from "@mitome/providers/openai-codex";',
     );
-    expect(await contents(path, "README.md")).toContain("npm install effect");
-    expect(await contents(path, "README.md")).toContain("createSession");
+    const readme = await contents(path, "README.md");
+    expect(readme).toContain("npm install effect");
+    expect(readme).toContain("createSession");
+    expect(readme).toContain("mitome auth login --use .\n");
+    expect(readme).toContain('mitome "hi" --use .\n');
 
-    await writeFile(join(path, "agent.ts"), "hand-written\n");
+    await writeFile(join(path, "index.ts"), "hand-written\n");
     await expect(
       scaffold(path, { flavor: "promise", provider: "openai", model: "gpt-5.6" }),
     ).rejects.toThrow("package.json already exists");
-    expect(await contents(path, "agent.ts")).toBe("hand-written\n");
+    expect(await contents(path, "index.ts")).toBe("hand-written\n");
   });
 
   test("refuses to overwrite instructions.md", async () => {

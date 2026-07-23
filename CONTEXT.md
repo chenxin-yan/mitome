@@ -30,6 +30,14 @@ _Avoid_: Turn, iteration
 A user-authored declaration of exactly one Agent and its Plugins.
 _Avoid_: Definition (bare), configuration, setup script, registry
 
+**Agent Definition module**:
+A TypeScript module whose default export is one Agent Definition.
+_Avoid_: Agent Definition, entry file, setup script
+
+**Agent Definition directory**:
+A directory selected as a load target whose Agent Definition module is `index.ts`.
+_Avoid_: Agent Definition, folder
+
 **Plugin**:
 A named, reusable extension included by an Agent Definition to add Tools, contribute Instructions, or participate in the Agent lifecycle.
 _Avoid_: Toolkit, package, add-on

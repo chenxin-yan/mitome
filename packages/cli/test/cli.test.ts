@@ -335,7 +335,7 @@ describe("compiled mitome", () => {
       exitCode: 0,
       stderr: "",
     });
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts"))).toBe(false);
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
 
     const escaped = await fixture(promptEchoDefinitionSource());
     expect(
@@ -358,7 +358,7 @@ describe("compiled mitome", () => {
     const current = await scaffold("mitome-prompt-interrupt-");
 
     expect(await output(spawn("", ["init"], current))).toMatchObject({ exitCode: 130 });
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts"))).toBe(false);
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
   });
 
   test("installs Agent Definition dependencies without Bun on PATH or executing it", async () => {
@@ -413,6 +413,18 @@ describe("compiled mitome", () => {
     });
   });
 
+  test("loads an Agent Definition directory through index.ts", async () => {
+    const current = await fixture();
+    const directory = dirname(current.definition);
+    await writeFile(join(directory, "index.ts"), definitionSource("directory"));
+
+    expect(await output(spawn("", ["hello", "--use", directory], current))).toMatchObject({
+      exitCode: 0,
+      stdout: "directory second\n",
+      stderr: "",
+    });
+  });
+
   test("preserves failed installer output and status", async () => {
     const current = await installFixture();
     await writeFile(join(dirname(current.definition), "package.json"), '{"name":');
@@ -422,9 +434,9 @@ describe("compiled mitome", () => {
     expect(result.stderr).toContain("package.json");
   });
 
-  test("loads only XDG or explicit TypeScript Agent Definitions without Bun on PATH", async () => {
+  test("loads only XDG index.ts or explicit Agent Definition modules without Bun on PATH", async () => {
     const current = await fixture(definitionSource("default"));
-    const configDefinition = join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts");
+    const configDefinition = join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts");
     await mkdir(dirname(configDefinition), { recursive: true });
     await cp(current.definition, configDefinition);
     await cp(
@@ -435,7 +447,7 @@ describe("compiled mitome", () => {
       },
     );
     await writeFile(
-      join(current.root, "agent.ts"),
+      join(current.root, "index.ts"),
       'throw new Error("project Agent Definition was imported");',
     );
 
@@ -454,7 +466,7 @@ describe("compiled mitome", () => {
     });
 
     const fallback = await fixture(definitionSource("fallback"));
-    const fallbackDefinition = join(fallback.env.HOME, ".config", "mitome", "agent.ts");
+    const fallbackDefinition = join(fallback.env.HOME, ".config", "mitome", "index.ts");
     await mkdir(dirname(fallbackDefinition), { recursive: true });
     await cp(fallback.definition, fallbackDefinition);
     await cp(
@@ -473,6 +485,18 @@ describe("compiled mitome", () => {
       stdout: "fallback second\n",
       stderr: "",
     });
+  });
+
+  test("does not fall back to the legacy XDG agent.ts", async () => {
+    const current = await scaffold("mitome-cli-");
+    const legacy = join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts");
+    await mkdir(dirname(legacy), { recursive: true });
+    await writeFile(legacy, definitionSource("legacy"));
+
+    const result = await output(spawn("", ["hello"], current));
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("No Agent Definition found");
   });
 
   test("loads exported and quoted config .env values without cwd leakage, and preserves process values", async () => {
@@ -553,7 +577,9 @@ describe("compiled mitome", () => {
       spawn("", ["hello", "--use", dirname(current.definition)], current),
     );
     expect(directory.exitCode).toBe(1);
-    expect(directory.stderr).toContain("TypeScript entry file");
+    expect(directory.stderr).toContain(
+      `No Agent Definition module found at ${join(dirname(current.definition), "index.ts")}`,
+    );
 
     const implicit = await output(spawn("", [], current));
     expect(implicit.exitCode).toBe(1);
@@ -614,7 +640,7 @@ describe("compiled mitome", () => {
     await writeFile(javascript, "export default {};");
     const nonTypescript = await output(spawn("", ["hello", "--use", javascript], current));
     expect(nonTypescript.exitCode).toBe(1);
-    expect(nonTypescript.stderr).toContain("must be a TypeScript entry file");
+    expect(nonTypescript.stderr).toContain("must be a TypeScript module");
   });
 
   test("reports a failed Turn with its cause", async () => {
@@ -856,7 +882,7 @@ export default {
     // 4 packages × (metadata + tarball), pinned by the isolated fixture HOME.
     expect(requests).toHaveLength(8);
     expect(result.stdout + result.stderr).not.toContain(key);
-    const definition = await readFile(join(config, "agent.ts"), "utf8");
+    const definition = await readFile(join(config, "index.ts"), "utf8");
     expect(definition).toContain('import { defineAgent } from "@mitome/sdk"');
     expect(definition).toContain('import { env, openai } from "@mitome/providers/openai"');
     expect(definition).toContain('openai("gpt-5.6", env("OPENAI_API_KEY"))');
@@ -890,7 +916,7 @@ export default {
 
   test("refuses to clobber an existing default Agent Definition", async () => {
     const current = await fixture();
-    const path = join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts");
+    const path = join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts");
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, "export default {};\n");
     const result = await output(spawn("fixture-model\n", ["init"], current));
@@ -908,7 +934,7 @@ export default {
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("already exists");
     expect(await readFile(join(config, "package.json"), "utf8")).toBe('{"name":"hand-edited"}\n');
-    expect(await exists(join(config, "agent.ts"))).toBe(false);
+    expect(await exists(join(config, "index.ts"))).toBe(false);
   });
 
   test("refuses to clobber a global AGENTS.md", async () => {
@@ -922,7 +948,7 @@ export default {
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("AGENTS.md already exists");
     expect(await readFile(join(config, "AGENTS.md"), "utf8")).toBe("hand-written\n");
-    expect(await exists(join(config, "agent.ts"))).toBe(false);
+    expect(await exists(join(config, "index.ts"))).toBe(false);
   });
 
   test("initializes Codex without requesting an API key", async () => {
@@ -939,7 +965,7 @@ export default {
     const result = await output(child);
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout + result.stderr).not.toContain(key);
-    expect(await readFile(join(config, "agent.ts"), "utf8")).toContain(
+    expect(await readFile(join(config, "index.ts"), "utf8")).toContain(
       'import { codex } from "@mitome/providers/openai-codex"',
     );
     expect(await exists(join(config, ".env"))).toBe(false);
@@ -958,7 +984,7 @@ export default {
     child.stdin.end("private-model\n");
     const result = await output(child);
     expect(result.exitCode).not.toBe(0);
-    expect(await readFile(join(config, "agent.ts"), "utf8")).toContain(
+    expect(await readFile(join(config, "index.ts"), "utf8")).toContain(
       'openai("private-model", env("OPENAI_API_KEY"))',
     );
   });
@@ -975,7 +1001,7 @@ export default {
     const result = await output(child);
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("Model identifier is required.");
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts"))).toBe(false);
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
   });
 
   test("auth delegates to the Agent Definition credential descriptor without exposing Credentials", async () => {

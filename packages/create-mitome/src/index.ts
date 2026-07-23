@@ -41,7 +41,7 @@ const knownModelIds = {
 
 const files = [
   "package.json",
-  "agent.ts",
+  "index.ts",
   "instructions.md",
   "tsconfig.json",
   "README.md",
@@ -62,10 +62,10 @@ const exists = async (path: string): Promise<boolean> => {
 const readme = (flavor: Flavor): string => {
   const embed =
     flavor === "promise"
-      ? `import agent from "./agent.js";\nimport { withSession } from "@mitome/sdk";\n\nawait withSession(agent, async (session) => {\n  for await (const event of session.prompt("Hi")) console.log(event);\n});`
-      : `import { Effect, Stream } from "effect";\nimport agent from "./agent.js";\nimport { createSession } from "@mitome/sdk/effect";\n\nawait Effect.runPromise(\n  Effect.scoped(\n    Effect.gen(function* () {\n      const session = yield* createSession(agent);\n      yield* Stream.runForEach(session.prompt("Hi"), (event) => Effect.log(event));\n    }),\n  ),\n);`;
+      ? `import agent from "./index.js";\nimport { withSession } from "@mitome/sdk";\n\nawait withSession(agent, async (session) => {\n  for await (const event of session.prompt("Hi")) console.log(event);\n});`
+      : `import { Effect, Stream } from "effect";\nimport agent from "./index.js";\nimport { createSession } from "@mitome/sdk/effect";\n\nawait Effect.runPromise(\n  Effect.scoped(\n    Effect.gen(function* () {\n      const session = yield* createSession(agent);\n      yield* Stream.runForEach(session.prompt("Hi"), (event) => Effect.log(event));\n    }),\n  ),\n);`;
   const effectInstall = flavor === "effect" ? "```sh\nnpm install effect\n```\n\n" : "";
-  return `# Mitome Agent\n\n## Next steps\n\n\`\`\`sh\nnpm install\nnpm install -g @mitome/cli\nmitome auth login --use ./agent.ts\nmitome "hi" --use ./agent.ts\n\`\`\`\n\n## Embed the Agent\n\n${effectInstall}\`\`\`ts\n${embed}\n\`\`\`\n`;
+  return `# Mitome Agent\n\n## Next steps\n\n\`\`\`sh\nnpm install\nnpm install -g @mitome/cli\nmitome auth login --use .\nmitome "hi" --use .\n\`\`\`\n\n## Embed the Agent\n\n${effectInstall}\`\`\`ts\n${embed}\n\`\`\`\n`;
 };
 
 export const scaffold = async (directory: string, options: ScaffoldOptions): Promise<void> => {
@@ -74,7 +74,7 @@ export const scaffold = async (directory: string, options: ScaffoldOptions): Pro
   }
   await Promise.all([
     writeFile(join(directory, "package.json"), agentPackageSource()),
-    writeFile(join(directory, "agent.ts"), agentDefinitionSource(options)),
+    writeFile(join(directory, "index.ts"), agentDefinitionSource(options)),
     writeFile(join(directory, "instructions.md"), instructionsSource),
     writeFile(
       join(directory, "tsconfig.json"),
@@ -87,7 +87,7 @@ export const scaffold = async (directory: string, options: ScaffoldOptions): Pro
             strict: true,
             noEmit: true,
           },
-          include: ["agent.ts"],
+          include: ["index.ts"],
         },
         null,
         2,

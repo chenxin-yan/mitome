@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { Argument, CliError, Flag } from "effect/unstable/cli";
 
 export const useFlag = Flag.string("use").pipe(
-  Flag.withDescription("Path to an Agent Definition TypeScript entry file"),
+  Flag.withDescription("Path to an Agent Definition module or directory"),
   Flag.optional,
 );
 
