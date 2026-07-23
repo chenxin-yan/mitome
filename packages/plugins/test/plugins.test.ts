@@ -71,6 +71,17 @@ describe("@mitome/plugins", () => {
     });
   });
 
+  test("does not load an explicit file again when discovery finds it", () => {
+    process.chdir(fileURLToPath(new URL("./fixtures", import.meta.url)));
+
+    expect(
+      instructionFiles({ paths: ["./fixtures/instructions.md"], discover: ["instructions.md"] }),
+    ).toEqual({
+      name: "instruction-files",
+      instructions: "Sibling instructions.\n",
+    });
+  });
+
   test("fails synchronously with the resolved path for a missing explicit file", () => {
     expect(() => instructionFiles({ paths: ["./fixtures/missing.md"] })).toThrow(
       /fixtures[\\/]missing\.md/,

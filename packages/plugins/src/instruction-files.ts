@@ -68,7 +68,10 @@ const discoveredPaths = (names: ReadonlyArray<string>): ReadonlyArray<string> =>
  */
 export function instructionFiles(options: InstructionFilesOptions = {}): Plugin {
   const paths = explicitPaths(options.paths);
-  const files = [...paths, ...discoveredPaths(options.discover ?? [])];
+  const files = [
+    ...paths,
+    ...discoveredPaths(options.discover ?? []).filter((path) => !paths.includes(path)),
+  ];
   const fragments = files.map((path) => readFileSync(path, "utf8"));
   return fragments.length === 0
     ? { name: "instruction-files" }

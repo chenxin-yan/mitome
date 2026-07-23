@@ -860,16 +860,17 @@ export default {
     expect(definition).toContain('import { defineAgent } from "@mitome/sdk"');
     expect(definition).toContain('import { env, openai } from "@mitome/providers/openai"');
     expect(definition).toContain('openai("gpt-5.6", env("OPENAI_API_KEY"))');
-    expect(definition).toContain('plugins: [instructionFiles({ paths: ["./instructions.md"] })]');
+    expect(definition).toContain(
+      'plugins: [instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })]',
+    );
     expect(definition).not.toContain(key);
     expect(JSON.parse(await readFile(join(config, "package.json"), "utf8")).dependencies).toEqual({
       "@mitome/plugins": corePackage.version,
       "@mitome/providers": corePackage.version,
       "@mitome/sdk": corePackage.version,
     });
-    expect(await readFile(join(config, "instructions.md"), "utf8")).toBe(
-      "You are a helpful Agent.\n",
-    );
+    expect(await readFile(join(config, "AGENTS.md"), "utf8")).toBe("You are a helpful Agent.\n");
+    expect(await exists(join(config, "instructions.md"))).toBe(false);
     expect(await readFile(join(config, ".env"), "utf8")).toBe(`OPENAI_API_KEY=${key}\n`);
     expect((await stat(join(config, ".env"))).mode & 0o777).toBe(0o600);
     expect(await exists(join(config, ".env.example"))).toBe(false);
@@ -907,6 +908,20 @@ export default {
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("already exists");
     expect(await readFile(join(config, "package.json"), "utf8")).toBe('{"name":"hand-edited"}\n');
+    expect(await exists(join(config, "agent.ts"))).toBe(false);
+  });
+
+  test("refuses to clobber a global AGENTS.md", async () => {
+    const current = await scaffold("mitome-cli-");
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await mkdir(config, { recursive: true });
+    await writeFile(join(config, "AGENTS.md"), "hand-written\n");
+
+    const result = await output(spawn("fixture-model\n", ["init"], current));
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("AGENTS.md already exists");
+    expect(await readFile(join(config, "AGENTS.md"), "utf8")).toBe("hand-written\n");
     expect(await exists(join(config, "agent.ts"))).toBe(false);
   });
 
