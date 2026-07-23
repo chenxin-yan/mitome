@@ -21,7 +21,8 @@ export const makeCodex = (
   options: CodexOptions = {},
 ): Model => {
   const configDirectory = options.configDirectory ?? processConfigDirectory();
-  if (configDirectory === undefined) throw new Error(configDirectoryMessage);
+  if (configDirectory === undefined)
+    throw new Error(`${configDirectoryMessage} Required to locate Codex credentials.`);
   const baseUrl = (options.baseUrl ?? "https://chatgpt.com/backend-api").replace(/\/+$/, "");
   const sessionId = crypto.randomUUID();
   const requestStream = (
