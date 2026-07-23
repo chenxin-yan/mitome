@@ -4,7 +4,6 @@ import type { Model } from "./model.js";
 import type { AnyPlugin } from "./plugin.js";
 
 export interface AgentDefinition {
-  readonly instructions?: string;
   readonly model: Model;
   readonly plugins: ReadonlyArray<AnyPlugin>;
 }
@@ -14,8 +13,9 @@ export class AgentDefinitionError extends Schema.TaggedErrorClass<AgentDefinitio
   { message: Schema.String },
 ) {}
 
-export const defineAgent = <const Value extends AgentDefinition>(definition: Value): Value =>
-  definition;
+export const defineAgent = <const Value extends AgentDefinition>(
+  definition: Value & Record<Exclude<keyof Value, keyof AgentDefinition>, never>,
+): Value => definition;
 
 const toolRequiresHandler = (tool: Tool.Any): boolean =>
   Tool.isProviderDefined(tool) ? tool.requiresHandler : true;
@@ -24,6 +24,11 @@ export const validateAgentDefinition: (
   definition: AgentDefinition,
 ) => Effect.Effect<void, AgentDefinitionError> = Effect.fn("@mitome/core/validateAgentDefinition")(
   function* (definition) {
+    if ("instructions" in definition) {
+      return yield* new AgentDefinitionError({
+        message: "Agent Definition Instructions must be contributed by Plugins",
+      });
+    }
     const pluginNames = new Set<string>();
     const toolNames = new Set<string>();
     const handlerNames = new Set<string>();

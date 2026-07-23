@@ -70,7 +70,6 @@ const definition = (
     fixture,
     counts: () => ({ handlerCalls, postCalls }),
     definition: {
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [
         {
@@ -248,7 +247,6 @@ describe("Tool Approval", () => {
         needsApproval: false,
       });
       const session = yield* createSession({
-        instructions: "Be concise.",
         model,
         plugins: [
           {
@@ -291,7 +289,6 @@ describe("Tool Approval", () => {
         needsApproval: false,
       });
       const session = yield* createSession({
-        instructions: "Be concise.",
         model: fixture.model,
         plugins: [
           {
@@ -327,7 +324,6 @@ describe("Tool Approval", () => {
         } as never),
       );
       const session = yield* createSession({
-        instructions: "Be concise.",
         model,
         plugins: [],
       });

@@ -138,7 +138,6 @@ describe("openai", () => {
     try {
       await withKey(async () => {
         const definition = (model: string): AgentDefinition => ({
-          instructions: "Be concise.",
           model: openai(model, env(key), {
             baseUrl: `http://127.0.0.1:${server.port}/v1/`,
             transport: "http",
@@ -203,7 +202,7 @@ describe("openai", () => {
     try {
       const model = openai("gpt-5.6", env(key));
       await expect(
-        Effect.runPromise(Effect.scoped(createSession({ instructions: "", model, plugins: [] }))),
+        Effect.runPromise(Effect.scoped(createSession({ model, plugins: [] }))),
       ).rejects.toMatchObject({
         _tag: "TurnError",
         message: `Environment variable ${key} is not set or empty`,
@@ -231,7 +230,6 @@ describe("openai", () => {
           Effect.scoped(
             Effect.gen(function* () {
               const session = yield* createSession({
-                instructions: "",
                 model,
                 plugins: [],
               });
@@ -309,7 +307,6 @@ describe("openai", () => {
           Effect.scoped(
             Effect.gen(function* () {
               const session = yield* createSession({
-                instructions: "",
                 model: openai("gpt-5.6", env(key), {
                   baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
                 }),
@@ -406,7 +403,6 @@ describe("openai", () => {
           success: Schema.String,
         });
         const definition: AgentDefinition = {
-          instructions: "",
           model: openai("gpt-5.6", env(key), {
             baseUrl: `http://127.0.0.1:${server.port}/v1`,
             transport: "http",

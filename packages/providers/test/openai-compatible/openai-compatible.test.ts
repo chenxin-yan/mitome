@@ -77,7 +77,6 @@ describe("openaiCompatible", () => {
     try {
       await withKey(async () => {
         const definition = (model: string): AgentDefinition => ({
-          instructions: "Be concise.",
           // Trailing slash pins baseUrl normalization.
           model: openaiCompatible(model, env(key), {
             baseUrl: `http://127.0.0.1:${server.port}/v1/`,
@@ -135,7 +134,7 @@ describe("openaiCompatible", () => {
     try {
       const model = openaiCompatible("gpt-4o-mini", env(key), { baseUrl: "http://127.0.0.1/v1" });
       await expect(
-        Effect.runPromise(Effect.scoped(createSession({ instructions: "", model, plugins: [] }))),
+        Effect.runPromise(Effect.scoped(createSession({ model, plugins: [] }))),
       ).rejects.toMatchObject({
         _tag: "TurnError",
         message: `Environment variable ${key} is not set or empty`,
@@ -161,7 +160,7 @@ describe("openaiCompatible", () => {
         const exit = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
-              const session = yield* createSession({ instructions: "", model, plugins: [] });
+              const session = yield* createSession({ model, plugins: [] });
               return yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
             }),
           ),
@@ -235,7 +234,6 @@ describe("openaiCompatible", () => {
           success: Schema.String,
         });
         const definition: AgentDefinition = {
-          instructions: "",
           model: openaiCompatible("gpt-4o-mini", env(key), {
             baseUrl: `http://127.0.0.1:${server.port}/v1`,
           }),

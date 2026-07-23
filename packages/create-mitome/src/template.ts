@@ -9,7 +9,10 @@ export interface ScaffoldOptions {
   readonly model: string;
 }
 
-export const agentDefinitionSource = ({ flavor, provider, model }: ScaffoldOptions): string => {
+const definitionSource = (
+  { flavor, provider, model }: ScaffoldOptions,
+  instructionFilesOptions: string,
+): string => {
   const sdk = flavor === "effect" ? "@mitome/sdk/effect" : "@mitome/sdk";
   const providerImport =
     provider === "openai"
@@ -19,8 +22,19 @@ export const agentDefinitionSource = ({ flavor, provider, model }: ScaffoldOptio
     provider === "openai"
       ? `openai(${JSON.stringify(model)}, env("OPENAI_API_KEY"))`
       : `codex(${JSON.stringify(model)})`;
-  return `import { defineAgent } from ${JSON.stringify(sdk)};\n${providerImport}\n\nexport default defineAgent({\n  instructions: "You are a helpful Agent.",\n  model: ${modelExpression},\n  plugins: [],\n});\n`;
+  return `import { defineAgent } from ${JSON.stringify(sdk)};\nimport { instructionFiles } from "@mitome/plugins";\n${providerImport}\n\nexport default defineAgent({\n  model: ${modelExpression},\n  plugins: [instructionFiles(${instructionFilesOptions})],\n});\n`;
 };
+
+export const agentDefinitionSource = (options: ScaffoldOptions): string =>
+  definitionSource(options, '{ paths: ["./instructions.md"] }');
+
+export const defaultAgentDefinitionSource = (options: Omit<ScaffoldOptions, "flavor">): string =>
+  definitionSource(
+    { ...options, flavor: "promise" },
+    '{ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] }',
+  );
+
+export const instructionsSource = "You are a helpful Agent.\n";
 
 export const agentPackageSource = (): string =>
   `${JSON.stringify(
@@ -29,6 +43,7 @@ export const agentPackageSource = (): string =>
       private: true,
       type: "module",
       dependencies: {
+        "@mitome/plugins": packageJson.version,
         "@mitome/providers": packageJson.version,
         "@mitome/sdk": packageJson.version,
       },

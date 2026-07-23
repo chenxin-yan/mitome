@@ -93,7 +93,6 @@ describe("@mitome/sdk Plugin resources", () => {
 
     await withSession(
       defineAgent({
-        instructions: "Be concise.",
         model: textModel(),
         plugins: [plugin("first"), plugin("second"), plugin("third")],
       }),
@@ -139,7 +138,7 @@ describe("@mitome/sdk Plugin resources", () => {
 
     await expect(
       withSession(
-        defineAgent({ instructions: "Be concise.", model: textModel(), plugins: [first, second] }),
+        defineAgent({ model: textModel(), plugins: [first, second] }),
         async () => undefined,
       ),
     ).rejects.toMatchObject({ _tag: "TurnError", cause: setupFailure });
@@ -167,7 +166,6 @@ describe("@mitome/sdk Plugin resources", () => {
     await expect(
       withSession(
         defineAgent({
-          instructions: "Be concise.",
           model: textModel(),
           plugins: [plugin("first"), plugin("second", true)],
         }),
@@ -216,7 +214,6 @@ describe("@mitome/sdk Plugin resources", () => {
 
     const events = await withSession(
       defineAgent({
-        instructions: "Be concise.",
         model: toolModel("alpha-tool"),
         plugins: [alpha, beta],
       }),
@@ -274,9 +271,8 @@ describe("@mitome/sdk Plugin resources", () => {
       },
     });
 
-    await withSession(
-      defineAgent({ instructions: "Be concise.", model: toolModel("res-tool"), plugins: [plugin] }),
-      (session) => Array.fromAsync(session.prompt("Hi")),
+    await withSession(defineAgent({ model: toolModel("res-tool"), plugins: [plugin] }), (session) =>
+      Array.fromAsync(session.prompt("Hi")),
     );
 
     expect(log).toEqual([
@@ -318,7 +314,6 @@ describe("@mitome/sdk Plugin resources", () => {
         Effect.scoped(
           createSession(
             defineAgent({
-              instructions: "Be concise.",
               model: textModel(),
               plugins: [owner, intruder],
             }),
@@ -336,7 +331,6 @@ describe("@mitome/sdk Plugin resources", () => {
     const model = toolModel("wait", 3);
     let disposed = 0;
     const definition = defineAgent({
-      instructions: "Be concise.",
       model,
       plugins: [
         definePlugin({
@@ -427,7 +421,7 @@ describe("@mitome/sdk Plugin resources", () => {
     });
 
     await withSession(
-      defineAgent({ instructions: "Be concise.", model: textModel(), plugins: [core, sdk] }),
+      defineAgent({ model: textModel(), plugins: [core, sdk] }),
       async () => undefined,
     );
     expect(log).toEqual([
@@ -496,9 +490,8 @@ describe("@mitome/sdk Plugin resources", () => {
       );
     });
 
-    const events = await withSession(
-      defineAgent({ instructions: "Be concise.", model, plugins: [native] }),
-      (session) => Array.fromAsync(session.prompt("Hi")),
+    const events = await withSession(defineAgent({ model, plugins: [native] }), (session) =>
+      Array.fromAsync(session.prompt("Hi")),
     );
 
     expect(events).toContainEqual({
@@ -514,7 +507,6 @@ describe("@mitome/sdk Plugin resources", () => {
   test("keeps disposer failure loud with its original cause", async () => {
     const disposeFailure = new Error("dispose failed");
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: textModel(),
       plugins: [
         definePlugin({
@@ -560,12 +552,9 @@ describe("@mitome/sdk Plugin resources", () => {
     });
 
     await expect(
-      withSession(
-        defineAgent({ instructions: "Be concise.", model: textModel(), plugins: [plugin] }),
-        async () => {
-          throw primary;
-        },
-      ),
+      withSession(defineAgent({ model: textModel(), plugins: [plugin] }), async () => {
+        throw primary;
+      }),
     ).rejects.toBe(primary);
     expect(log).toEqual(["dispose:resource"]);
   });

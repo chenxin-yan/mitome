@@ -72,7 +72,6 @@ describe("@mitome/sdk Tool", () => {
   test("validates Standard Schema input/output and completes a second Step", async () => {
     const fixture = makeToolModel();
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [
         definePlugin({
@@ -103,7 +102,6 @@ describe("@mitome/sdk Tool", () => {
     ]);
     expect(fixture.calls()).toBe(2);
     expect(fixture.prompt()?.content.map((message) => message.role)).toEqual([
-      "system",
       "user",
       "assistant",
       "tool",
@@ -149,7 +147,6 @@ describe("@mitome/sdk Tool", () => {
       );
     });
     const definition = defineAgent({
-      instructions: "Be concise.",
       model,
       plugins: [
         definePlugin({
@@ -200,7 +197,7 @@ describe("@mitome/sdk Tool", () => {
       { type: "model-output", text: "done" },
       { type: "response-complete" },
     ]);
-    expect(secondPrompt?.content.map((message) => message.role)).toEqual(["system", "user"]);
+    expect(secondPrompt?.content.map((message) => message.role)).toEqual(["user"]);
   });
 
   test("aborts an abandoned iterator's active handler before withSession resolves", async () => {
@@ -234,7 +231,6 @@ describe("@mitome/sdk Tool", () => {
       );
     });
     const definition = defineAgent({
-      instructions: "Be concise.",
       model,
       plugins: [
         definePlugin({
@@ -278,7 +274,6 @@ describe("@mitome/sdk Tool", () => {
   test("accepts Effect Schema without manual Standard Schema adapters", async () => {
     const fixture = makeToolModel();
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [
         definePlugin({
@@ -335,7 +330,6 @@ describe("@mitome/sdk Tool", () => {
   test("returns a generic failure result when a Promise handler rejects", async () => {
     const fixture = makeToolModel();
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [
         definePlugin({

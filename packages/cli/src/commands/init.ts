@@ -2,7 +2,11 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Effect, Redacted } from "effect";
 import { Prompt } from "effect/unstable/cli";
-import { agentDefinitionSource, agentPackageSource } from "create-mitome/template";
+import {
+  agentPackageSource,
+  defaultAgentDefinitionSource,
+  instructionsSource,
+} from "create-mitome/template";
 import { knownModelIds as codexModelIds } from "@mitome/providers/openai-codex";
 import { knownModelIds as openAiModelIds } from "@mitome/providers/openai";
 import { modelCatalog } from "../catalog.js";
@@ -15,8 +19,8 @@ const customModel = Symbol("custom-model");
 
 const initializationPath = async (): Promise<string> => {
   const directory = requireConfigDirectory();
-  const path = join(directory, "agent.ts");
-  for (const file of [path, join(directory, "package.json")]) {
+  const path = join(directory, "index.ts");
+  for (const file of [path, join(directory, "AGENTS.md"), join(directory, "package.json")]) {
     const existing = await stat(file).catch((error: unknown) => {
       if (!isEnoent(error)) throw error;
       return undefined;
@@ -33,7 +37,8 @@ const initializationPath = async (): Promise<string> => {
 const initialize = async (path: string, provider: InitProvider, model: string): Promise<void> => {
   const directory = dirname(path);
   await mkdir(directory, { recursive: true });
-  await writeFile(path, agentDefinitionSource({ flavor: "promise", provider, model }));
+  await writeFile(path, defaultAgentDefinitionSource({ provider, model }));
+  await writeFile(join(directory, "AGENTS.md"), instructionsSource);
   await writeFile(join(directory, "package.json"), agentPackageSource());
   await install(path);
 };

@@ -28,7 +28,7 @@ const logoutCommand = Command.make("logout", definitionCommandConfig, ({ use }) 
   runAuth("logout", use),
 );
 const authCommand = Command.make("auth", {}, () =>
-  fail("Usage: mitome auth <login|logout> [--use <file>]"),
+  fail("Usage: mitome auth <login|logout> [--use <path>]"),
 ).pipe(
   Command.withDescription("Manage Agent Definition authentication"),
   Command.withSubcommands([loginCommand, logoutCommand]),

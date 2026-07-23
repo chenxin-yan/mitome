@@ -42,7 +42,6 @@ describe("@mitome/sdk", () => {
   test("returns a canonical Agent Definition accepted directly by Core", async () => {
     const fixture = await Effect.runPromise(makeDeterministicModel("hello"));
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [{ name: "first" }, { name: "second" }],
     });
@@ -85,7 +84,6 @@ describe("@mitome/sdk", () => {
 
     const fixture = await Effect.runPromise(makeDeterministicModel("hello"));
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [],
     });
@@ -106,7 +104,6 @@ describe("@mitome/sdk", () => {
   test("throws tagged Turn errors with their original cause", async () => {
     const cause = new ModelFailure({ message: "model failed" });
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: makeTestModel(() => Stream.fail(cause)),
       plugins: [],
     });
@@ -129,7 +126,6 @@ describe("@mitome/sdk", () => {
   test("brackets a typed, terminating Turn stream", async () => {
     const fixture = await Effect.runPromise(makeDeterministicModel("hello"));
     const definition = defineAgent({
-      instructions: "Be concise.",
       model: fixture.model,
       plugins: [],
     });

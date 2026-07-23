@@ -53,7 +53,7 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
     id: "prompt", delta: process.argv[2]!,
   })),
 }));
-export default { instructions: "", model, plugins: [] };
+export default { model, plugins: [] };
 `;
 
 const definitionSource = (
@@ -81,7 +81,7 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
     ${options.block ? 'Stream.fromEffect(Effect.sleep(10_000).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))' : 'Stream.fromEffect(Effect.sleep(100).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))'},
   ),
 }));
-export default { instructions: "Reply with the fixture output.", model, plugins: ${
+export default { model, plugins: ${
   options.signalProbe
     ? `[{ name: "cleanup", hooks: { sessionEnd: Effect.sync(() => {
       writeFileSync(${JSON.stringify(options.signalProbe.cleanupStarted)}, "");
@@ -109,7 +109,7 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
     ].join(":"),
   })),
 }));
-export default { instructions: "", model, plugins: [] };
+export default { model, plugins: [] };
 `;
 
 const precedenceDefinitionSource = (name: string): string => `
@@ -122,7 +122,7 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
     id: "credential", delta: process.env[${JSON.stringify(name)}] ?? "missing",
   })),
 }), ${JSON.stringify(name)});
-export default { instructions: "", model, plugins: [] };
+export default { model, plugins: [] };
 `;
 
 const approvalDefinitionSource = (marker: string): string => `
@@ -148,7 +148,6 @@ const dangerous = Tool.make("dangerous", {
   needsApproval: true,
 });
 export default {
-  instructions: "Approve the fixture Tool.",
   model,
   plugins: [{
     name: "dangerous",
@@ -336,7 +335,7 @@ describe("compiled mitome", () => {
       exitCode: 0,
       stderr: "",
     });
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts"))).toBe(false);
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
 
     const escaped = await fixture(promptEchoDefinitionSource());
     expect(
@@ -359,7 +358,7 @@ describe("compiled mitome", () => {
     const current = await scaffold("mitome-prompt-interrupt-");
 
     expect(await output(spawn("", ["init"], current))).toMatchObject({ exitCode: 130 });
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts"))).toBe(false);
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
   });
 
   test("installs Agent Definition dependencies without Bun on PATH or executing it", async () => {
@@ -414,6 +413,18 @@ describe("compiled mitome", () => {
     });
   });
 
+  test("loads an Agent Definition directory through index.ts", async () => {
+    const current = await fixture();
+    const directory = dirname(current.definition);
+    await writeFile(join(directory, "index.ts"), definitionSource("directory"));
+
+    expect(await output(spawn("", ["hello", "--use", directory], current))).toMatchObject({
+      exitCode: 0,
+      stdout: "directory second\n",
+      stderr: "",
+    });
+  });
+
   test("preserves failed installer output and status", async () => {
     const current = await installFixture();
     await writeFile(join(dirname(current.definition), "package.json"), '{"name":');
@@ -423,9 +434,9 @@ describe("compiled mitome", () => {
     expect(result.stderr).toContain("package.json");
   });
 
-  test("loads only XDG or explicit TypeScript Agent Definitions without Bun on PATH", async () => {
+  test("loads only XDG index.ts or explicit Agent Definition modules without Bun on PATH", async () => {
     const current = await fixture(definitionSource("default"));
-    const configDefinition = join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts");
+    const configDefinition = join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts");
     await mkdir(dirname(configDefinition), { recursive: true });
     await cp(current.definition, configDefinition);
     await cp(
@@ -436,7 +447,7 @@ describe("compiled mitome", () => {
       },
     );
     await writeFile(
-      join(current.root, "agent.ts"),
+      join(current.root, "index.ts"),
       'throw new Error("project Agent Definition was imported");',
     );
 
@@ -455,7 +466,7 @@ describe("compiled mitome", () => {
     });
 
     const fallback = await fixture(definitionSource("fallback"));
-    const fallbackDefinition = join(fallback.env.HOME, ".config", "mitome", "agent.ts");
+    const fallbackDefinition = join(fallback.env.HOME, ".config", "mitome", "index.ts");
     await mkdir(dirname(fallbackDefinition), { recursive: true });
     await cp(fallback.definition, fallbackDefinition);
     await cp(
@@ -474,6 +485,18 @@ describe("compiled mitome", () => {
       stdout: "fallback second\n",
       stderr: "",
     });
+  });
+
+  test("does not fall back to the legacy XDG agent.ts", async () => {
+    const current = await scaffold("mitome-cli-");
+    const legacy = join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts");
+    await mkdir(dirname(legacy), { recursive: true });
+    await writeFile(legacy, definitionSource("legacy"));
+
+    const result = await output(spawn("", ["hello"], current));
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("No Agent Definition found");
   });
 
   test("loads exported and quoted config .env values without cwd leakage, and preserves process values", async () => {
@@ -554,7 +577,9 @@ describe("compiled mitome", () => {
       spawn("", ["hello", "--use", dirname(current.definition)], current),
     );
     expect(directory.exitCode).toBe(1);
-    expect(directory.stderr).toContain("TypeScript entry file");
+    expect(directory.stderr).toContain(
+      `No Agent Definition module found at ${join(dirname(current.definition), "index.ts")}`,
+    );
 
     const implicit = await output(spawn("", [], current));
     expect(implicit.exitCode).toBe(1);
@@ -573,22 +598,25 @@ describe("compiled mitome", () => {
     expect(invalidDefinition.exitCode).toBe(1);
     expect(invalidDefinition.stderr).toContain("Agent Definition must default-export an Agent");
 
-    const withoutInstructions = await fixture(
-      promptEchoDefinitionSource().replace('instructions: "", ', ""),
-    );
+    const accepted = await fixture(promptEchoDefinitionSource());
     const acceptedDefinition = await output(
-      spawn("", ["hello", "--use", withoutInstructions.definition], withoutInstructions),
+      spawn("", ["hello", "--use", accepted.definition], accepted),
     );
     expect(acceptedDefinition).toMatchObject({ exitCode: 0, stdout: "hello\n", stderr: "" });
 
-    const nonStringInstructions = await fixture(
-      promptEchoDefinitionSource().replace('instructions: "",', "instructions: 1,"),
-    );
-    const invalidInstructions = await output(
-      spawn("", ["hello", "--use", nonStringInstructions.definition], nonStringInstructions),
-    );
-    expect(invalidInstructions.exitCode).toBe(1);
-    expect(invalidInstructions.stderr).toContain("Agent Definition must default-export an Agent");
+    for (const value of ['"old"', "undefined"]) {
+      const oldInstructions = await fixture(
+        promptEchoDefinitionSource().replace(
+          "model, plugins",
+          `instructions: ${value}, model, plugins`,
+        ),
+      );
+      const invalidInstructions = await output(
+        spawn("", ["hello", "--use", oldInstructions.definition], oldInstructions),
+      );
+      expect(invalidInstructions.exitCode).toBe(1);
+      expect(invalidInstructions.stderr).toContain("Agent Definition must default-export an Agent");
+    }
 
     const nonStringPluginInstructions = await fixture(
       promptEchoDefinitionSource().replace(
@@ -612,7 +640,7 @@ describe("compiled mitome", () => {
     await writeFile(javascript, "export default {};");
     const nonTypescript = await output(spawn("", ["hello", "--use", javascript], current));
     expect(nonTypescript.exitCode).toBe(1);
-    expect(nonTypescript.stderr).toContain("must be a TypeScript entry file");
+    expect(nonTypescript.stderr).toContain("must be a TypeScript module");
   });
 
   test("reports a failed Turn with its cause", async () => {
@@ -624,7 +652,7 @@ import { makeModel } from "@mitome/core";
 const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.fail(new Error("provider boom")),
 }));
-export default { instructions: "Reply with the fixture output.", model, plugins: [] };
+export default { model, plugins: [] };
 `);
     const result = await output(spawn("", ["hello", "--use", current.definition], current));
     expect(result.exitCode).toBe(1);
@@ -676,7 +704,6 @@ const echo = Tool.make("echo", {
   success: Schema.String,
 });
 export default {
-  instructions: "Reply with the fixture output.",
   model,
   plugins: [definePlugin({
     name: "echo",
@@ -777,7 +804,7 @@ export default {
     await cachedModelHints(current);
     const localPackages = join(current.root, "local-packages");
     const archives = new Map<string, Buffer>();
-    for (const packageName of ["core", "providers", "sdk"] as const) {
+    for (const packageName of ["core", "plugins", "providers", "sdk"] as const) {
       const source = resolve(packageDir, "..", packageName);
       // npm tarballs root entries under package/; staging the layout keeps tar
       // invocation portable (GNU --transform is unavailable on BSD/macOS tar).
@@ -852,19 +879,24 @@ export default {
       () => new Promise<void>((done) => registry.close(() => done())),
     );
     expect(result).toMatchObject({ exitCode: 0 });
-    // 3 packages × (metadata + tarball), pinned by the isolated fixture HOME.
-    expect(requests).toHaveLength(6);
+    // 4 packages × (metadata + tarball), pinned by the isolated fixture HOME.
+    expect(requests).toHaveLength(8);
     expect(result.stdout + result.stderr).not.toContain(key);
-    const definition = await readFile(join(config, "agent.ts"), "utf8");
+    const definition = await readFile(join(config, "index.ts"), "utf8");
     expect(definition).toContain('import { defineAgent } from "@mitome/sdk"');
     expect(definition).toContain('import { env, openai } from "@mitome/providers/openai"');
     expect(definition).toContain('openai("gpt-5.6", env("OPENAI_API_KEY"))');
-    expect(definition).toContain("plugins: []");
+    expect(definition).toContain(
+      'plugins: [instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })]',
+    );
     expect(definition).not.toContain(key);
     expect(JSON.parse(await readFile(join(config, "package.json"), "utf8")).dependencies).toEqual({
+      "@mitome/plugins": corePackage.version,
       "@mitome/providers": corePackage.version,
       "@mitome/sdk": corePackage.version,
     });
+    expect(await readFile(join(config, "AGENTS.md"), "utf8")).toBe("You are a helpful Agent.\n");
+    expect(await exists(join(config, "instructions.md"))).toBe(false);
     expect(await readFile(join(config, ".env"), "utf8")).toBe(`OPENAI_API_KEY=${key}\n`);
     expect((await stat(join(config, ".env"))).mode & 0o777).toBe(0o600);
     expect(await exists(join(config, ".env.example"))).toBe(false);
@@ -884,7 +916,7 @@ export default {
 
   test("refuses to clobber an existing default Agent Definition", async () => {
     const current = await fixture();
-    const path = join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts");
+    const path = join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts");
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, "export default {};\n");
     const result = await output(spawn("fixture-model\n", ["init"], current));
@@ -902,7 +934,21 @@ export default {
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("already exists");
     expect(await readFile(join(config, "package.json"), "utf8")).toBe('{"name":"hand-edited"}\n');
-    expect(await exists(join(config, "agent.ts"))).toBe(false);
+    expect(await exists(join(config, "index.ts"))).toBe(false);
+  });
+
+  test("refuses to clobber a global AGENTS.md", async () => {
+    const current = await scaffold("mitome-cli-");
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await mkdir(config, { recursive: true });
+    await writeFile(join(config, "AGENTS.md"), "hand-written\n");
+
+    const result = await output(spawn("fixture-model\n", ["init"], current));
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("AGENTS.md already exists");
+    expect(await readFile(join(config, "AGENTS.md"), "utf8")).toBe("hand-written\n");
+    expect(await exists(join(config, "index.ts"))).toBe(false);
   });
 
   test("initializes Codex without requesting an API key", async () => {
@@ -919,7 +965,7 @@ export default {
     const result = await output(child);
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout + result.stderr).not.toContain(key);
-    expect(await readFile(join(config, "agent.ts"), "utf8")).toContain(
+    expect(await readFile(join(config, "index.ts"), "utf8")).toContain(
       'import { codex } from "@mitome/providers/openai-codex"',
     );
     expect(await exists(join(config, ".env"))).toBe(false);
@@ -938,7 +984,7 @@ export default {
     child.stdin.end("private-model\n");
     const result = await output(child);
     expect(result.exitCode).not.toBe(0);
-    expect(await readFile(join(config, "agent.ts"), "utf8")).toContain(
+    expect(await readFile(join(config, "index.ts"), "utf8")).toContain(
       'openai("private-model", env("OPENAI_API_KEY"))',
     );
   });
@@ -955,7 +1001,7 @@ export default {
     const result = await output(child);
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("Model identifier is required.");
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "agent.ts"))).toBe(false);
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
   });
 
   test("auth delegates to the Agent Definition credential descriptor without exposing Credentials", async () => {
@@ -1008,7 +1054,7 @@ export default {
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { makeModel } from "@mitome/core";
 const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, { streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "unused" })) }), { capability: { module: ${JSON.stringify(new URL(`file://${capability}`).href)} } });
-export default { instructions: "", model, plugins: [] };`,
+export default { model, plugins: [] };`,
     );
     expect(
       await output(

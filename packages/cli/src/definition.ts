@@ -2,33 +2,38 @@ import { stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import { Option } from "effect";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
-import { configDirectory, configDirectoryMessage } from "./config.js";
+import { configDirectory, configDirectoryMessage, isEnoent } from "./config.js";
 
 type Package = { readonly version?: unknown };
 
 export const definitionPath = async (use: Option.Option<string>): Promise<string> => {
   const selected = Option.getOrUndefined(use);
   if (selected === undefined && configDirectory() === undefined) {
-    throw new Error(`${configDirectoryMessage} Or use --use <file>.`);
+    throw new Error(`${configDirectoryMessage} Or use --use <path>.`);
   }
-  const path = resolve(selected ?? join(configDirectory()!, "agent.ts"));
+  let path = resolve(selected ?? join(configDirectory()!, "index.ts"));
   let file;
   try {
     file = await stat(path);
-  } catch {
+  } catch (error) {
+    if (!isEnoent(error)) throw error;
     throw new Error(
       selected === undefined
-        ? "No Agent Definition found; run mitome init first or use --use <file>."
+        ? "No Agent Definition found; run mitome init first or use --use <path>."
         : `Agent Definition not found at ${path}; check the --use path.`,
     );
   }
   if (file.isDirectory()) {
-    throw new Error(
-      `Agent Definition path ${path} is a directory; --use requires a TypeScript entry file.`,
-    );
+    path = join(path, "index.ts");
+    try {
+      await stat(path);
+    } catch (error) {
+      if (!isEnoent(error)) throw error;
+      throw new Error(`No Agent Definition module found at ${path}.`);
+    }
   }
   if (extname(path) !== ".ts") {
-    throw new Error(`Agent Definition path ${path} must be a TypeScript entry file.`);
+    throw new Error(`Agent Definition path ${path} must be a TypeScript module.`);
   }
   return path;
 };
