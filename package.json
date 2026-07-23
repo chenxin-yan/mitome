@@ -20,8 +20,8 @@
   },
   "type": "module",
   "scripts": {
-    "generate:hints": "bun scripts/generate-model-hints.ts",
-    "refresh:hints": "bun scripts/generate-model-hints.ts --refresh",
+    "hints:generate": "bun scripts/generate-model-hints.ts",
+    "hints:refresh": "bun scripts/generate-model-hints.ts --refresh",
     "lint": "turbo run lint",
     "lint:fix": "turbo run lint:fix",
     "fmt": "oxfmt --check",

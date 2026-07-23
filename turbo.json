@@ -1,7 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
-    "//#generate:hints": {
+    "//#hints:generate": {
       "inputs": [
         "$TURBO_ROOT$/scripts/generate-model-hints.ts",
         "$TURBO_ROOT$/scripts/models-dev.snapshot.json",
@@ -13,7 +13,7 @@
       ]
     },
     "build": {
-      "dependsOn": ["^build", "//#generate:hints"],
+      "dependsOn": ["^build", "//#hints:generate"],
       "outputs": ["dist/**"]
     },
     "dev": {
@@ -24,7 +24,7 @@
       "outputs": []
     },
     "lint": {
-      "dependsOn": ["^build", "//#generate:hints"],
+      "dependsOn": ["^build", "//#hints:generate"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.oxlintrc.json"],
       "outputs": []
     },
@@ -39,7 +39,7 @@
       "cache": false
     },
     "check:types": {
-      "dependsOn": ["^build", "//#generate:hints"],
+      "dependsOn": ["^build", "//#hints:generate"],
       "outputs": []
     }
   }
