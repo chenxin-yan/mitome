@@ -2,13 +2,51 @@
 /** @effect-diagnostics missingEffectContext:skip-file */
 import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import { definePlugin, type AnyPlugin, type Plugin } from "../../src/index.js";
+import {
+  defineAgent,
+  definePlugin,
+  type AgentDefinition,
+  type AnyPlugin,
+  type Model,
+  type Plugin,
+} from "../../src/index.js";
+
+type Equal<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+    ? true
+    : false;
+type Expect<Value extends true> = Value;
+type ContributionsOf<Value> =
+  Value extends Plugin<infer _Resource, infer _Error, infer Contributions> ? Contributions : never;
+
+declare const model: Model;
 
 class Dependency extends Context.Service<Dependency, { readonly value: string }>()(
   "@mitome/core/test/Dependency",
 ) {}
 
 const independent = Tool.make("independent");
+const typedCorePlugin = definePlugin({
+  name: "typed-core",
+  toolkit: Toolkit.make(
+    Tool.make("count", {
+      parameters: Schema.Struct({ amount: Schema.Finite }),
+      success: Schema.String,
+    }),
+    Tool.make("label", { parameters: Schema.String, success: Schema.Boolean }),
+  ),
+  handlers: {
+    count: () => Effect.succeed("done"),
+    label: () => Effect.succeed(true),
+  },
+});
+type TypedCoreContributions = ContributionsOf<typeof typedCorePlugin>;
+export type CoreContributionKeys = Expect<Equal<keyof TypedCoreContributions, "count" | "label">>;
+export type CoreCountInput = Expect<
+  Equal<TypedCoreContributions["count"]["input"], { readonly amount: number }>
+>;
+export type CoreLabelOutput = Expect<Equal<TypedCoreContributions["label"]["output"], boolean>>;
+
 definePlugin({
   name: "independent",
   toolkit: Toolkit.make(independent),
@@ -57,3 +95,27 @@ definePlugin({
   // @ts-expect-error Tool result decoding services require a Plugin resource Layer.
   handlers: { "decoding-dependent": () => Effect.succeed("result") },
 });
+
+const toolkitlessPlugin = definePlugin({ name: "toolkitless" });
+const typedDefinition = defineAgent({
+  model,
+  plugins: [typedCorePlugin, toolkitlessPlugin, resourcePlugin] as const,
+});
+export type PreservedPluginTuple = Expect<
+  Equal<
+    typeof typedDefinition.plugins,
+    readonly [typeof typedCorePlugin, typeof toolkitlessPlugin, typeof resourcePlugin]
+  >
+>;
+const heterogeneousPlugins: ReadonlyArray<AnyPlugin> = [
+  typedCorePlugin,
+  toolkitlessPlugin,
+  resourcePlugin,
+];
+const heterogeneousDefinition: AgentDefinition<
+  readonly [typeof typedCorePlugin, typeof toolkitlessPlugin, typeof resourcePlugin]
+> = typedDefinition;
+const explicitlyTypedDefinition = defineAgent<AgentDefinition>({ model, plugins: [] });
+void heterogeneousPlugins;
+void heterogeneousDefinition;
+void explicitlyTypedDefinition;

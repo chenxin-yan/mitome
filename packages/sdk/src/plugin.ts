@@ -1,7 +1,13 @@
 import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import { AgentDefinitionError } from "@mitome/core";
-import type { Plugin, PluginHooks, ToolHookContext, ToolResultHookContext } from "@mitome/core";
+import type {
+  Plugin,
+  PluginHooks,
+  ToolContribution,
+  ToolHookContext,
+  ToolResultHookContext,
+} from "@mitome/core";
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec";
 
 type EffectSchema<Output> = Schema.Codec<Output, unknown, never, never>;
@@ -41,8 +47,13 @@ export interface PluginHooksDefinition<Resource = never> {
   readonly postTool?: (context: ToolResultHookContext & HookContext<Resource>) => Promise<unknown>;
 }
 
-export interface Tool<Input = unknown, Output = unknown, Resource = never> {
-  readonly name: string;
+export interface Tool<
+  Input = unknown,
+  Output = unknown,
+  Resource = never,
+  Name extends string = string,
+> {
+  readonly name: Name;
   readonly description?: string;
   readonly inputSchema: InputSchema<Input>;
   readonly outputSchema: OutputSchema<Output>;
@@ -52,9 +63,9 @@ export interface Tool<Input = unknown, Output = unknown, Resource = never> {
   readonly handler: (input: Input, context: HookContext<Resource>) => Promise<Output>;
 }
 
-export const tool = <Input, Output, Resource = never>(
-  definition: Tool<Input, Output, Resource>,
-): Tool<Input, Output, Resource> => definition;
+export const tool = <Input, Output, Resource = never, const Name extends string = string>(
+  definition: Tool<Input, Output, Resource, Name>,
+): Tool<Input, Output, Resource, Name> => definition;
 
 type StandardInput<Input> = StandardSchemaV1.Props<unknown, Input> &
   StandardJSONSchemaV1.Props<unknown, Input>;
@@ -149,10 +160,43 @@ const adaptHooks = <Resource>(
   return adapted;
 };
 
-export interface PluginDefinition<Resource = never> {
+type ToolResource<Value extends Tool<any, any, never, string>> = Value extends unknown
+  ? Parameters<Value["handler"]>[1] extends HookContext<infer Resource>
+    ? 0 extends 1 & Resource
+      ? never
+      : Resource
+    : never
+  : never;
+type ToolResources<Tools extends ReadonlyArray<Tool<any, any, never, string>>> = ToolResource<
+  Tools[number]
+>;
+type UnsatisfiedToolResources<
+  Resource,
+  Value extends Tool<any, any, never, string>,
+> = Value extends unknown
+  ? [ToolResource<Value>] extends [never]
+    ? never
+    : Resource extends ToolResource<Value>
+      ? never
+      : ToolResource<Value>
+  : never;
+
+type ToolContributions<Tools extends ReadonlyArray<Tool<any, any, never, string>>> = {
+  readonly [Value in Tools[number] as Value["name"]]: ToolContribution<
+    Parameters<Value["handler"]>[0],
+    Awaited<ReturnType<Value["handler"]>>
+  >;
+};
+
+export interface PluginDefinition<
+  Resource = never,
+  Tools extends ReadonlyArray<Tool<any, any, never, string>> = ReadonlyArray<
+    Tool<any, any, Resource, string>
+  >,
+> {
   readonly name: string;
   readonly instructions?: string;
-  readonly tools: ReadonlyArray<Tool<any, unknown, Resource>>;
+  readonly tools: Tools;
   readonly hooks?: PluginHooksDefinition<Resource>;
   readonly setup?: (context: Pick<HookContext<Resource>, "signal">) => Promise<Resource>;
   readonly dispose?: (resource: Resource) => Promise<void>;
@@ -160,26 +204,37 @@ export interface PluginDefinition<Resource = never> {
 
 // A declared Resource without setup would hand handlers `undefined as Resource`,
 // so setup is mandatory whenever anything in the Plugin declares a Resource.
-export function definePlugin<Resource = never>(
-  definition: PluginDefinition<Resource> &
-    ([Resource] extends [never]
+export function definePlugin<
+  Resource = never,
+  const Tools extends ReadonlyArray<Tool<any, any, never, string>> = ReadonlyArray<
+    Tool<any, any, Resource, string>
+  >,
+>(
+  definition: PluginDefinition<Resource, Tools> &
+    ([UnsatisfiedToolResources<Resource, Tools[number]>] extends [never] ? unknown : never) &
+    ([Resource | ToolResources<Tools>] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : {
           readonly setup: (
             context: Pick<HookContext<NoInfer<Resource>>, "signal">,
           ) => Promise<Resource>;
         }),
-): NoInfer<Plugin<Resource, unknown>>;
-export function definePlugin<Resource = never>(
-  definition: PluginDefinition<Resource>,
-): Plugin<Resource, unknown> {
+): NoInfer<Plugin<Resource, unknown, ToolContributions<Tools>>>;
+export function definePlugin<
+  Resource = never,
+  Tools extends ReadonlyArray<Tool<any, any, never, string>> = ReadonlyArray<
+    Tool<any, any, never, string>
+  >,
+>(definition: PluginDefinition<Resource, Tools>): Plugin<Resource, unknown> {
   if (definition.dispose !== undefined && definition.setup === undefined) {
     throw new AgentDefinitionError({
       message: `Plugin "${definition.name}" declares dispose without setup`,
     });
   }
   const names = new Set<string>();
-  const definitions = definition.tools.map((tool) => {
+  const definitions = (
+    definition.tools as unknown as ReadonlyArray<Tool<any, any, Resource, string>>
+  ).map((tool) => {
     if (names.has(tool.name)) {
       throw new AgentDefinitionError({ message: `Duplicate Tool name: ${tool.name}` });
     }

@@ -30,7 +30,27 @@ export interface PluginHooks<Resource = never> {
 export type ToolInputValidator = (input: unknown) => Effect.Effect<unknown, unknown>;
 export type ToolResultValidator = (result: unknown) => Effect.Effect<unknown, unknown>;
 
-export interface Plugin<Resource = never, ResourceError = never> {
+export interface ToolContribution<Input = unknown, Output = unknown> {
+  readonly input: Input;
+  readonly output: Output;
+}
+
+export type ToolContributions = Readonly<Record<string, ToolContribution>>;
+type EmptyToolContributions = Readonly<Record<never, never>>;
+type ToolkitContributions<Tools extends Record<string, Tool.Any>> = {
+  readonly [Name in keyof Tools]: ToolContribution<
+    Tool.Parameters<Tools[Name]>,
+    Tool.Success<Tools[Name]>
+  >;
+};
+declare const PluginContributionsTypeId: unique symbol;
+
+export interface Plugin<
+  Resource = never,
+  ResourceError = never,
+  Contributions extends ToolContributions = EmptyToolContributions,
+> {
+  readonly [PluginContributionsTypeId]?: Contributions;
   readonly name: string;
   readonly instructions?: string;
   /** Required at runtime whenever hooks or handlers use a Resource; hooks run unprovided (missing-service defect) without it. */
@@ -52,7 +72,7 @@ export interface Plugin<Resource = never, ResourceError = never> {
  * hook/handler Effects are covariant in R, so no single parameterization
  * accepts every Plugin; the union's arms cover both variance directions.
  */
-export type AnyPlugin = Plugin<any, unknown> | Plugin<never, any>;
+export type AnyPlugin = Plugin<any, unknown, any> | Plugin<never, any, any>;
 
 type ServiceFree<Tools extends Record<string, Tool.Any>> = [
   Tool.HandlerServices<Tools[keyof Tools]> | Tool.ResultDecodingServices<Tools[keyof Tools]>,
@@ -87,7 +107,7 @@ export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
   >;
   readonly hooks?: PluginHooks;
-}): Plugin;
+}): Plugin<never, never, ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>>;
 // The impl return must be assignable to every overload return; only never is.
 export function definePlugin(plugin: unknown): never {
   return plugin as never;

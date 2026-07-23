@@ -3,9 +3,11 @@ import { Tool } from "effect/unstable/ai";
 import type { Model } from "./model.js";
 import type { AnyPlugin } from "./plugin.js";
 
-export interface AgentDefinition {
+export interface AgentDefinition<
+  Plugins extends ReadonlyArray<AnyPlugin> = ReadonlyArray<AnyPlugin>,
+> {
   readonly model: Model;
-  readonly plugins: ReadonlyArray<AnyPlugin>;
+  readonly plugins: Plugins;
 }
 
 export class AgentDefinitionError extends Schema.TaggedErrorClass<AgentDefinitionError>()(

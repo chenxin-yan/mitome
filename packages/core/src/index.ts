@@ -6,6 +6,8 @@ export type {
   AnyPlugin,
   Plugin,
   PluginHooks,
+  ToolContribution,
+  ToolContributions,
   ToolHookContext,
   ToolInputValidator,
   ToolResultHookContext,
