@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0027
+status: amended by ADR-0027, ADR-0030
 ---
 
 # Load the default Definition from XDG config

@@ -31,7 +31,7 @@
     "check:types": "turbo run check:types",
     "test": "turbo run test",
     "dev:docs": "turbo run dev --filter=@mitome/docs",
-    "dev:cli": "turbo run build --filter='@mitome/cli^...' && bun run --cwd packages/cli dev",
+    "dev:cli": "turbo run build --filter='@mitome/cli^...' && MITOME_HOME=\"$PWD/.dev-home\" bun run --cwd packages/cli dev",
     "build": "turbo run build",
     "build:pkgs": "turbo run build --filter='./packages/*'",
     "build:docs": "turbo run build --filter=@mitome/docs",

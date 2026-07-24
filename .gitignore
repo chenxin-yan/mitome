@@ -5,6 +5,8 @@
 packages/providers/src/openai/models.ts
 packages/create-mitome/src/model-hints.ts
 .DS_Store
+# Dev config home used by `bun run dev:cli` (holds live credentials)
+.dev-home/
 .env
 .env.*
 !.env.example
