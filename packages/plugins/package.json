@@ -30,7 +30,7 @@
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
     "@mitome/sdk": "workspace:*",
-    "@types/node": "^24.0.0",
+    "@types/node": "catalog:",
     "effect": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

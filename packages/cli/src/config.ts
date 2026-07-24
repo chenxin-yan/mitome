@@ -1,19 +1,6 @@
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configDirectory, configDirectoryMessage } from "@mitome/core";
-
-// Bun needs an --env-file path that exists on every platform (Windows has no
-// /dev/null); one empty process-lifetime file keeps auth/no-config children
-// from autoloading a cwd .env.
-let emptyEnv: string | undefined;
-export const emptyEnvFile = async (): Promise<string> => {
-  if (emptyEnv === undefined) {
-    emptyEnv = join(await mkdtemp(join(tmpdir(), "mitome-env-")), "empty.env");
-    await writeFile(emptyEnv, "");
-  }
-  return emptyEnv;
-};
 
 export const isEnoent = (error: unknown): boolean =>
   typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";

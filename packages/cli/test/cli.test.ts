@@ -378,6 +378,14 @@ describe("compiled mitome", () => {
     expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
   });
 
+  test("exits 130 when input closes between chained prompts", async () => {
+    const current = await scaffold("mitome-prompt-chained-interrupt-");
+    await cachedModelHints(current);
+
+    expect(await output(spawn("\n", ["init"], current))).toMatchObject({ exitCode: 130 });
+    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
+  });
+
   test("installs Agent Definition dependencies without Bun on PATH or executing it", async () => {
     const current = await installFixture();
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");

@@ -14,28 +14,27 @@
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
-    "@tanstack/react-router": "1.170.17",
+    "@tanstack/react-router": "1.170.18",
     "@tanstack/react-router-devtools": "1.167.0",
-    "@tanstack/react-start": "1.168.27",
-    "fumadocs-core": "16.11.1",
-    "fumadocs-mdx": "15.1.0",
-    "fumadocs-ui": "16.11.1",
+    "@tanstack/react-start": "1.168.32",
+    "fumadocs-core": "16.12.1",
+    "fumadocs-mdx": "15.2.0",
+    "fumadocs-ui": "16.12.1",
     "lucide-react": "^1.24.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "vite": "^8.1.4"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "vite": "^8.1.5"
   },
   "devDependencies": {
     "@mitome/config": "workspace:*",
-    "@tailwindcss/vite": "^4.3.2",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/mdx": "^2.0.14",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.3",
+    "@vitejs/plugin-react": "^6.0.4",
     "nitro": "3.0.260610-beta",
-    "oxlint": "^1.73.0",
-    "tailwindcss": "^4.3.2",
+    "tailwindcss": "^4.3.3",
     "typescript": "catalog:"
   }
 }

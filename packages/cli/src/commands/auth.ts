@@ -7,7 +7,7 @@ import {
 } from "../child-host.js";
 import { removeConfigEnv, updateConfigEnv } from "../config.js";
 import { checkRuntime, definitionPath } from "../definition.js";
-import { attempt, fail, runNativePrompt, waitForChild } from "../support.js";
+import { attempt, fail, waitForChild } from "../support.js";
 
 // Bun CLI tests and shell pipelines use non-TTY stdin; wait for buffered input or EOF.
 const stdinCanPrompt = (): Promise<boolean> => {
@@ -37,7 +37,7 @@ const selectProvider = (providers: ReadonlyArray<ProviderAuthentication>) =>
         `Multiple auth-capable Providers; choose one interactively: ${providers.map(({ id }) => id).join(", ")}`,
       );
     }
-    return yield* runNativePrompt(
+    return yield* Prompt.run(
       Prompt.select<ProviderAuthentication>({
         message: "Provider",
         choices: providers.map((provider) => ({ title: provider.id, value: provider })),
@@ -58,7 +58,7 @@ export const authenticateDefinition = (path: string, command: "login" | "logout"
       yield* attempt(() => removeConfigEnv(credential));
       return;
     }
-    const value = Redacted.value(yield* runNativePrompt(Prompt.password({ message: credential })));
+    const value = Redacted.value(yield* Prompt.run(Prompt.password({ message: credential })));
     if (value === "") return yield* fail("Credential value is required.");
     yield* attempt(() => updateConfigEnv(credential, value));
   });

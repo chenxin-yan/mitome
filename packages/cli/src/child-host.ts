@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { configDirectory, type CredentialDescriptor } from "@mitome/core";
-import { emptyEnvFile, requireConfigDirectory } from "./config.js";
+import { requireConfigDirectory } from "./config.js";
 // Bun embeds hosts as source text at compile time; static analysis sees modules without default exports.
 // @ts-expect-error
 // oxlint-disable-next-line import/default
@@ -58,18 +58,16 @@ export const install = async (path: string): Promise<void> => {
 
 export const runHost = async (path: string, prompt: string): Promise<void> => {
   const directory = configDirectory();
-  // Always pass --env-file: its presence suppresses Bun's automatic cwd .env
-  // autoload in the child, and Bun tolerates a missing file silently.
-  const envPath = directory === undefined ? await emptyEnvFile() : join(directory, ".env");
-  const child = Bun.spawn(
-    [process.execPath, `--env-file=${envPath}`, "--eval", hostSource, path, prompt],
-    {
-      env: { ...process.env, BUN_BE_BUN: "1" },
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    },
-  );
+  // Both flags suppress Bun's automatic cwd .env autoload in the child; the
+  // config .env is loaded explicitly when a config directory exists.
+  const envFlag =
+    directory === undefined ? "--no-env-file" : `--env-file=${join(directory, ".env")}`;
+  const child = Bun.spawn([process.execPath, envFlag, "--eval", hostSource, path, prompt], {
+    env: { ...process.env, BUN_BE_BUN: "1" },
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
   const forwardSigint = () => child.kill("SIGINT");
   process.once("SIGINT", forwardSigint);
   try {
@@ -88,14 +86,7 @@ export const inspectProviderAuthentication = async (
   const output = join(directory, "credential.json");
   try {
     const child = Bun.spawn(
-      [
-        process.execPath,
-        `--env-file=${await emptyEnvFile()}`,
-        "--eval",
-        authHostSource,
-        path,
-        output,
-      ],
+      [process.execPath, "--no-env-file", "--eval", authHostSource, path, output],
       {
         env: { ...process.env, BUN_BE_BUN: "1" },
         stdout: "ignore",
@@ -122,7 +113,7 @@ export const runOAuthAuth = async (
   const child = Bun.spawn(
     [
       process.execPath,
-      `--env-file=${await emptyEnvFile()}`,
+      "--no-env-file",
       "--eval",
       authHostSource,
       path,
