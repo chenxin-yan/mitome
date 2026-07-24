@@ -8,12 +8,14 @@ export const useFlag = Flag.string("use").pipe(
 
 // The parser silently ignores unconsumed positionals (still true on beta.101),
 // so rejecting extras requires declaring an argument that accepts no values.
+// TODO: delete once the parser rejects excess positionals (effect#6594).
 export const noArguments = Param.makeSingle({
   kind: Param.argumentKind,
   name: "argument",
   primitiveType: Primitive.none,
 }).pipe(Param.optional);
 
+// TODO: use a plain Argument.string once positional max rejects extras (effect#6594).
 export const promptArgument = Argument.string("prompt").pipe(
   Argument.variadic(),
   Argument.mapEffect((prompts) =>

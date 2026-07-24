@@ -59,6 +59,8 @@ export type Approvals = {
  * evaluation, user Approval resolution, and the Session-wide serialization of
  * Tool execution (one permit; Tool handler streams and their Hooks cannot
  * overlap while model output still streams).
+ *
+ * TODO: drop the semaphore once streamText honors concurrency: 1 (effect#6596).
  */
 export const makeApprovals = (
   plugins: ReadonlyArray<AnyPlugin>,
@@ -70,6 +72,7 @@ export const makeApprovals = (
     const preparedByCallId = new Map<string, PreparedTool>();
     // Toolkit.handle lacks toolCallId, so name+params keys are FIFO. The handler
     // retries a miss with decoded params to match transforming/defaulting schemas.
+    // TODO: collapse to preparedByCallId once handle receives toolCallId (effect#6597).
     const canonicalize = (value: unknown): unknown =>
       Array.isArray(value)
         ? value.map(canonicalize)
@@ -116,6 +119,7 @@ export const makeApprovals = (
         const needsApproval = tool.needsApproval;
         // No with-needsApproval combinator exists upstream, so clone the Tool;
         // assumes Tool instances keep their data in enumerable own properties.
+        // TODO: use Tool.setNeedsApproval once it exists (effect#6600).
         const wrapped = Object.assign(Object.create(Object.getPrototypeOf(tool)), tool, {
           needsApproval: (params: unknown, context: Tool.NeedsApprovalContext) =>
             semaphore.withPermit(

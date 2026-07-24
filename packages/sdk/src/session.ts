@@ -38,6 +38,7 @@ const toSdkEvent = (event: CoreTurnEvent): TurnEvent => {
 // breaking out of iteration would leave model/tool work running. ReadableStream
 // cancellation does interrupt its producer fiber and awaits its cleanup, and
 // the scope finalizer covers iterators abandoned without return().
+// TODO: use Stream.toAsyncIterable once return() interrupts the in-flight pull (effect#6595).
 const toAsyncIterable = (
   stream: Stream.Stream<CoreTurnEvent, unknown>,
   scope: Scope.Scope,

@@ -20,6 +20,7 @@ export const fail = (message: string) =>
 // The Bun terminal never ends its input queue at stdin EOF, so every prompt
 // after EOF waits forever. Ending the queue on stdin "end" makes prompts fail
 // with their documented QuitError; buffered keypresses still deliver first.
+// TODO: delete this layer once NodeTerminal ends its queue on stdin EOF (effect#4895).
 let stdinEnded = false; // "end" fires once per process and Bun never sets readableEnded
 export const promptTerminal = Layer.effect(
   Terminal.Terminal,
