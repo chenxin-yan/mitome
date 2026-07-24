@@ -19,11 +19,11 @@ afterEach(async () => {
 
 describe("create-mitome scaffold", () => {
   test.each([
-    ["promise", "openai", '@mitome/sdk";', 'openai("gpt-5.6", env("OPENAI_API_KEY"))'],
-    ["promise", "openai-codex", '@mitome/sdk";', 'codex("gpt-5.6")'],
-    ["effect", "openai", '@mitome/sdk/effect";', 'openai("gpt-5.6", env("OPENAI_API_KEY"))'],
-    ["effect", "openai-codex", '@mitome/sdk/effect";', 'codex("gpt-5.6")'],
-  ] as const)("creates a %s %s Agent project", async (flavor, provider, sdk, model) => {
+    ["promise", "openai", '@mitome/sdk";', "openai()", "openai"],
+    ["promise", "openai-codex", '@mitome/sdk";', "codex()", "openai-codex"],
+    ["effect", "openai", '@mitome/sdk/effect";', "openai()", "openai"],
+    ["effect", "openai-codex", '@mitome/sdk/effect";', "codex()", "openai-codex"],
+  ] as const)("creates a %s %s Agent project", async (flavor, provider, sdk, factory, id) => {
     const path = await directory();
     await scaffold(path, { flavor, provider, model: "gpt-5.6" });
 
@@ -39,7 +39,9 @@ describe("create-mitome scaffold", () => {
     });
     const agent = await contents(path, "index.ts");
     expect(agent).toContain(`import { defineAgent } from "${sdk}`);
-    expect(agent).toContain(model);
+    expect(agent).toContain(`providers: [${factory}]`);
+    expect(agent).toContain(`model: "${id}/gpt-5.6"`);
+    expect(agent).not.toContain("env(");
     expect(agent).toContain('import { instructionFiles } from "@mitome/plugins";');
     expect(agent).toContain('plugins: [instructionFiles({ paths: ["./instructions.md"] })]');
     expect(agent).not.toContain('instructions: "You are a helpful Agent."');

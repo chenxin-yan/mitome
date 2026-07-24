@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { Cause, Context, Effect, Exit, Layer, Result, Schema, SchemaGetter, Stream } from "effect";
 import { Response, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import { createSession, type Plugin } from "@mitome/core";
-import { makeTestModel } from "./model.js";
+import { makeTestProvider } from "./provider.js";
 import {
   defineAgent,
   definePlugin,
@@ -34,13 +34,13 @@ const jsonStringSchema: InputSchema<string> = {
 };
 
 const textModel = () =>
-  makeTestModel(() =>
+  makeTestProvider(() =>
     Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
   );
 
 const toolModel = (name: string, doneAt = 2) => {
   let calls = 0;
-  return makeTestModel((options) => {
+  return makeTestProvider((options) => {
     calls += 1;
     if (calls === doneAt)
       return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
@@ -93,7 +93,8 @@ describe("@mitome/sdk Plugin resources", () => {
 
     await withSession(
       defineAgent({
-        model: textModel(),
+        providers: [textModel()],
+        model: "test/default",
         plugins: [plugin("first"), plugin("second"), plugin("third")],
       }),
       (session) => Array.fromAsync(session.prompt("Hi")),
@@ -138,7 +139,7 @@ describe("@mitome/sdk Plugin resources", () => {
 
     await expect(
       withSession(
-        defineAgent({ model: textModel(), plugins: [first, second] }),
+        defineAgent({ providers: [textModel()], model: "test/default", plugins: [first, second] }),
         async () => undefined,
       ),
     ).rejects.toMatchObject({ _tag: "TurnError", cause: setupFailure });
@@ -166,7 +167,8 @@ describe("@mitome/sdk Plugin resources", () => {
     await expect(
       withSession(
         defineAgent({
-          model: textModel(),
+          providers: [textModel()],
+          model: "test/default",
           plugins: [plugin("first"), plugin("second", true)],
         }),
         async () => undefined,
@@ -214,7 +216,8 @@ describe("@mitome/sdk Plugin resources", () => {
 
     const events = await withSession(
       defineAgent({
-        model: toolModel("alpha-tool"),
+        providers: [toolModel("alpha-tool")],
+        model: "test/default",
         plugins: [alpha, beta],
       }),
       (session) => Array.fromAsync(session.prompt("Hi")),
@@ -271,8 +274,9 @@ describe("@mitome/sdk Plugin resources", () => {
       },
     });
 
-    await withSession(defineAgent({ model: toolModel("res-tool"), plugins: [plugin] }), (session) =>
-      Array.fromAsync(session.prompt("Hi")),
+    await withSession(
+      defineAgent({ providers: [toolModel("res-tool")], model: "test/default", plugins: [plugin] }),
+      (session) => Array.fromAsync(session.prompt("Hi")),
     );
 
     expect(log).toEqual([
@@ -314,7 +318,8 @@ describe("@mitome/sdk Plugin resources", () => {
         Effect.scoped(
           createSession(
             defineAgent({
-              model: textModel(),
+              providers: [textModel()],
+              model: "test/default",
               plugins: [owner, intruder],
             }),
           ),
@@ -331,7 +336,8 @@ describe("@mitome/sdk Plugin resources", () => {
     const model = toolModel("wait", 3);
     let disposed = 0;
     const definition = defineAgent({
-      model,
+      providers: [model],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "wait",
@@ -421,7 +427,7 @@ describe("@mitome/sdk Plugin resources", () => {
     });
 
     await withSession(
-      defineAgent({ model: textModel(), plugins: [core, sdk] }),
+      defineAgent({ providers: [textModel()], model: "test/default", plugins: [core, sdk] }),
       async () => undefined,
     );
     expect(log).toEqual([
@@ -461,7 +467,7 @@ describe("@mitome/sdk Plugin resources", () => {
       hooks: { postTool: (context) => Effect.succeed(context.result) },
     };
     let calls = 0;
-    const model = makeTestModel((options) => {
+    const model = makeTestProvider((options) => {
       calls += 1;
       if (calls === 2)
         return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
@@ -490,8 +496,9 @@ describe("@mitome/sdk Plugin resources", () => {
       );
     });
 
-    const events = await withSession(defineAgent({ model, plugins: [native] }), (session) =>
-      Array.fromAsync(session.prompt("Hi")),
+    const events = await withSession(
+      defineAgent({ providers: [model], model: "test/default", plugins: [native] }),
+      (session) => Array.fromAsync(session.prompt("Hi")),
     );
 
     expect(events).toContainEqual({
@@ -507,7 +514,8 @@ describe("@mitome/sdk Plugin resources", () => {
   test("keeps disposer failure loud with its original cause", async () => {
     const disposeFailure = new Error("dispose failed");
     const definition = defineAgent({
-      model: textModel(),
+      providers: [textModel()],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "failing-dispose",
@@ -552,9 +560,12 @@ describe("@mitome/sdk Plugin resources", () => {
     });
 
     await expect(
-      withSession(defineAgent({ model: textModel(), plugins: [plugin] }), async () => {
-        throw primary;
-      }),
+      withSession(
+        defineAgent({ providers: [textModel()], model: "test/default", plugins: [plugin] }),
+        async () => {
+          throw primary;
+        },
+      ),
     ).rejects.toBe(primary);
     expect(log).toEqual(["dispose:resource"]);
   });

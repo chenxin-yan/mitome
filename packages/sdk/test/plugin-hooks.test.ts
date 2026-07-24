@@ -10,7 +10,7 @@ import {
   type InputSchema,
   type StandardSchema,
 } from "../src/index.js";
-import { makeTestModel } from "./model.js";
+import { makeTestProvider } from "./provider.js";
 
 const stringSchema: StandardSchema<unknown, string> = {
   "~standard": {
@@ -35,7 +35,7 @@ const jsonStringSchema: InputSchema<string> = {
 
 const makeToolModel = () => {
   let calls = 0;
-  return makeTestModel((options) => {
+  return makeTestProvider((options) => {
     calls += 1;
     if (calls === 2)
       return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
@@ -121,8 +121,9 @@ describe("@mitome/sdk Plugin Hooks", () => {
       },
     });
 
-    const events = await withSession(defineAgent({ model, plugins: [core, sdk] }), (session) =>
-      Array.fromAsync(session.prompt("Hi")),
+    const events = await withSession(
+      defineAgent({ providers: [model], model: "test/default", plugins: [core, sdk] }),
+      (session) => Array.fromAsync(session.prompt("Hi")),
     );
 
     expect(log).toEqual([
@@ -157,10 +158,13 @@ describe("@mitome/sdk Plugin Hooks", () => {
   test("rejects invalid pre-Step output before calling the model", async () => {
     let modelCalls = 0;
     const agent = defineAgent({
-      model: makeTestModel(() => {
-        modelCalls += 1;
-        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-      }),
+      providers: [
+        makeTestProvider(() => {
+          modelCalls += 1;
+          return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+        }),
+      ],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "sdk",
@@ -183,7 +187,8 @@ describe("@mitome/sdk Plugin Hooks", () => {
     });
     let aborted = false;
     const agent = defineAgent({
-      model: makeToolModel(),
+      providers: [makeToolModel()],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "sdk",
@@ -225,9 +230,12 @@ describe("@mitome/sdk Plugin Hooks", () => {
     let aborted = false;
     let laterCompleted = false;
     const agent = defineAgent({
-      model: makeTestModel(() =>
-        Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
-      ),
+      providers: [
+        makeTestProvider(() =>
+          Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
+        ),
+      ],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "blocking",
@@ -272,9 +280,12 @@ describe("@mitome/sdk Plugin Hooks", () => {
   test("preserves the original rejected Hook error as the TurnError cause", async () => {
     const original = new Error("hook failed");
     const agent = defineAgent({
-      model: makeTestModel(() =>
-        Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
-      ),
+      providers: [
+        makeTestProvider(() =>
+          Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
+        ),
+      ],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "sdk",
@@ -302,7 +313,8 @@ describe("@mitome/sdk Plugin Hooks", () => {
       },
     };
     const failing = defineAgent({
-      model: makeToolModel(),
+      providers: [makeToolModel()],
+      model: "test/default",
       plugins: [
         core,
         definePlugin({
@@ -327,7 +339,8 @@ describe("@mitome/sdk Plugin Hooks", () => {
     expect(events.at(-1)).toEqual({ type: "response-complete" });
 
     const invalid = defineAgent({
-      model: makeToolModel(),
+      providers: [makeToolModel()],
+      model: "test/default",
       plugins: [
         { name: "core", hooks: { postTool: () => Effect.succeed(1) } },
         definePlugin({

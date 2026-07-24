@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
-import { makeModel } from "@mitome/core";
+import { makeProvider } from "@mitome/core";
 import {
   defineAgent,
   definePlugin,
@@ -61,7 +61,7 @@ const defaultingSchema: InputSchema<{
 const approvalModel = () => {
   let calls = 0;
   return {
-    model: makeModel(
+    provider: makeProvider("test", [] as const, undefined, () =>
       Layer.effect(
         LanguageModel.LanguageModel,
         LanguageModel.make({
@@ -90,7 +90,8 @@ describe("@mitome/sdk Tool Approval", () => {
     const fixture = approvalModel();
     let handlerCalls = 0;
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "dangerous",
@@ -137,7 +138,8 @@ describe("@mitome/sdk Tool Approval", () => {
     let handlerCalls = 0;
     let seen: unknown;
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "dangerous",
@@ -185,7 +187,8 @@ describe("@mitome/sdk Tool Approval", () => {
     let approvalParams: unknown;
     let handlerInput: unknown;
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "dangerous",
@@ -222,7 +225,8 @@ describe("@mitome/sdk Tool Approval", () => {
     const fixture = approvalModel();
     let handlerCalls = 0;
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "dangerous",
@@ -266,7 +270,8 @@ describe("@mitome/sdk Tool Approval", () => {
     const fixture = approvalModel();
     let handlerCalls = 0;
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "dangerous",

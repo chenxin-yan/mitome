@@ -1,6 +1,6 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { Effect, Redacted } from "effect";
+import { Effect } from "effect";
 import { Prompt } from "effect/unstable/cli";
 import {
   agentPackageSource,
@@ -10,8 +10,9 @@ import {
 import { knownModelIds as codexModelIds } from "@mitome/providers/openai-codex";
 import { knownModelIds as openAiModelIds } from "@mitome/providers/openai";
 import { modelCatalog } from "../catalog.js";
-import { install, runOAuthAuth } from "../child-host.js";
-import { isEnoent, requireConfigDirectory, updateConfigEnv } from "../config.js";
+import { install } from "../child-host.js";
+import { isEnoent, requireConfigDirectory } from "../config.js";
+import { authenticateDefinition } from "./auth.js";
 import { attempt, fail, runNativePrompt, waitForChild } from "../support.js";
 
 type InitProvider = "openai" | "openai-codex";
@@ -76,13 +77,5 @@ export const runInit = Effect.gen(function* () {
   if (model === "") return yield* fail("Model identifier is required.");
   yield* waitForChild(() => initialize(path, provider, model));
   if (process.exitCode !== 0) return;
-  if (provider === "openai-codex") {
-    yield* waitForChild(() => runOAuthAuth(path, "login"));
-    return;
-  }
-  const credential = Redacted.value(
-    yield* runNativePrompt(Prompt.password({ message: "OpenAI API key" })),
-  );
-  if (credential === "") return yield* fail("Credential value is required.");
-  yield* attempt(() => updateConfigEnv("OPENAI_API_KEY", credential));
+  yield* authenticateDefinition(path, "login");
 });

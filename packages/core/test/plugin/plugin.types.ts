@@ -7,8 +7,8 @@ import {
   definePlugin,
   type AgentDefinition,
   type AnyPlugin,
-  type Model,
   type Plugin,
+  type Provider,
 } from "../../src/index.js";
 
 type Equal<Left, Right> =
@@ -19,7 +19,7 @@ type Expect<Value extends true> = Value;
 type ContributionsOf<Value> =
   Value extends Plugin<infer _Resource, infer _Error, infer Contributions> ? Contributions : never;
 
-declare const model: Model;
+declare const model: Provider<"test", readonly []>;
 
 class Dependency extends Context.Service<Dependency, { readonly value: string }>()(
   "@mitome/core/test/Dependency",
@@ -98,7 +98,8 @@ definePlugin({
 
 const toolkitlessPlugin = definePlugin({ name: "toolkitless" });
 const typedDefinition = defineAgent({
-  model,
+  providers: [model],
+  model: "test/default",
   plugins: [typedCorePlugin, toolkitlessPlugin, resourcePlugin] as const,
 });
 export type PreservedPluginTuple = Expect<
@@ -113,9 +114,17 @@ const heterogeneousPlugins: ReadonlyArray<AnyPlugin> = [
   resourcePlugin,
 ];
 const heterogeneousDefinition: AgentDefinition<
+  readonly [typeof model],
+  "test/default",
   readonly [typeof typedCorePlugin, typeof toolkitlessPlugin, typeof resourcePlugin]
 > = typedDefinition;
-const explicitlyTypedDefinition = defineAgent<AgentDefinition>({ model, plugins: [] });
+const explicitlyTypedDefinition = defineAgent<readonly [typeof model], "test/default", readonly []>(
+  {
+    providers: [model],
+    model: "test/default",
+    plugins: [],
+  },
+);
 void heterogeneousPlugins;
 void heterogeneousDefinition;
 void explicitlyTypedDefinition;

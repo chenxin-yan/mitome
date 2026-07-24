@@ -5,16 +5,17 @@ import {
   createSession,
   defineAgent,
   AgentDefinitionError,
+  makeProvider,
   type AgentDefinition,
 } from "../src/index.js";
-import { makeTestModel } from "./support/model.js";
+import { makeTestProvider } from "./support/provider.js";
 
-const model = makeTestModel(() => Stream.empty);
+const model = makeTestProvider(() => Stream.empty);
 const getAgentDefinitionError = (definition: AgentDefinition) =>
   Effect.flip(createSession(definition));
 
-type AgentDefinitionKeysAreExact = keyof AgentDefinition extends "model" | "plugins"
-  ? "model" | "plugins" extends keyof AgentDefinition
+type AgentDefinitionKeysAreExact = keyof AgentDefinition extends "providers" | "model" | "plugins"
+  ? "providers" | "model" | "plugins" extends keyof AgentDefinition
     ? true
     : false
   : false;
@@ -22,13 +23,18 @@ const exactAgentDefinitionKeys: AgentDefinitionKeysAreExact = true;
 void exactAgentDefinitionKeys;
 
 // @ts-expect-error Agent Definition Instructions are contributed by Plugins.
-defineAgent({ instructions: "old", model, plugins: [] });
+defineAgent({ instructions: "old", providers: [model], model: "test/default", plugins: [] });
 
 describe("Agent Definition validation", () => {
   it.effect("rejects the retired Instructions field from structural callers", () =>
     Effect.gen(function* () {
-      const legacy = { instructions: "old", model, plugins: [] };
-      const definition: AgentDefinition = legacy;
+      const structural = {
+        instructions: "old",
+        providers: [model],
+        model: "test/default" as const,
+        plugins: [],
+      };
+      const definition: AgentDefinition = structural;
 
       expect(yield* getAgentDefinitionError(definition)).toMatchObject({
         message: "Agent Definition Instructions must be contributed by Plugins",
@@ -36,14 +42,38 @@ describe("Agent Definition validation", () => {
     }),
   );
 
+  it.effect("rejects duplicate Providers and invalid Default Model identifiers", () =>
+    Effect.gen(function* () {
+      const provider = makeProvider("registered", [] as const, undefined, () => {
+        throw new Error("validation must not provision Models");
+      });
+      const invalidDefinition = (model: string, providers = [provider]) =>
+        ({ providers, model, plugins: [] }) as AgentDefinition;
+
+      expect(
+        (yield* getAgentDefinitionError(
+          invalidDefinition("registered/model", [provider, provider]),
+        )).message,
+      ).toBe("Duplicate Provider id: registered");
+      expect((yield* getAgentDefinitionError(invalidDefinition("registered/"))).message).toBe(
+        "Malformed Model identifier: registered/",
+      );
+      expect((yield* getAgentDefinitionError(invalidDefinition("missing/model"))).message).toBe(
+        "Unregistered Provider id: missing",
+      );
+    }),
+  );
+
   it.effect("rejects duplicate Plugin and Tool names before Session startup", () =>
     Effect.gen(function* () {
       const duplicatePlugins: AgentDefinition = {
-        model,
+        providers: [model],
+        model: "test/default",
         plugins: [{ name: "same" }, { name: "same" }],
       };
       const duplicateTools: AgentDefinition = {
-        model,
+        providers: [model],
+        model: "test/default",
         plugins: [
           { name: "one", toolkit: Toolkit.make(Tool.make("same", { success: Schema.String })) },
           { name: "two", toolkit: Toolkit.make(Tool.make("same", { success: Schema.String })) },
@@ -59,7 +89,8 @@ describe("Agent Definition validation", () => {
     Effect.gen(function* () {
       const tool = Tool.make("echo", { success: Schema.String });
       const definition: AgentDefinition = {
-        model,
+        providers: [model],
+        model: "test/default",
         plugins: [
           {
             name: "owner",
@@ -79,7 +110,8 @@ describe("Agent Definition validation", () => {
   it.effect("rejects missing and orphaned Tool handlers before Session startup", () =>
     Effect.gen(function* () {
       const missing: AgentDefinition = {
-        model,
+        providers: [model],
+        model: "test/default",
         plugins: [
           {
             name: "missing",
@@ -88,7 +120,8 @@ describe("Agent Definition validation", () => {
         ],
       };
       const orphaned: AgentDefinition = {
-        model,
+        providers: [model],
+        model: "test/default",
         plugins: [{ name: "orphaned", handlers: { echo: () => Effect.succeed("echo") } }],
       };
 
@@ -102,7 +135,8 @@ describe("Agent Definition validation", () => {
   it.effect("rejects a Tool result validator outside its owning Plugin", () =>
     Effect.gen(function* () {
       const definition: AgentDefinition = {
-        model,
+        providers: [model],
+        model: "test/default",
         plugins: [
           {
             name: "validator",

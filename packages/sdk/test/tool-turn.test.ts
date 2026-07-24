@@ -9,7 +9,7 @@ import {
   type InputSchema,
   type StandardSchema,
 } from "../src/index.js";
-import { makeTestModel } from "./model.js";
+import { makeTestProvider } from "./provider.js";
 
 const stringSchema: StandardSchema<unknown, string> = {
   "~standard": {
@@ -35,7 +35,7 @@ const jsonStringSchema: InputSchema<string> = {
 const makeToolModel = () => {
   let calls = 0;
   let secondPrompt: Prompt.Prompt | undefined;
-  const model = makeTestModel((options) => {
+  const provider = makeTestProvider((options) => {
     calls += 1;
     if (calls === 2) {
       secondPrompt = options.prompt;
@@ -65,14 +65,15 @@ const makeToolModel = () => {
       ),
     );
   });
-  return { model, calls: () => calls, prompt: () => secondPrompt };
+  return { provider, calls: () => calls, prompt: () => secondPrompt };
 };
 
 describe("@mitome/sdk Tool", () => {
   test("validates Standard Schema input/output and completes a second Step", async () => {
     const fixture = makeToolModel();
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "echo-plugin",
@@ -116,7 +117,7 @@ describe("@mitome/sdk Tool", () => {
     let handlerAborted!: () => void;
     const started = new Promise<void>((resolve) => (handlerStarted = resolve));
     const aborted = new Promise<void>((resolve) => (handlerAborted = resolve));
-    const model = makeTestModel((options) => {
+    const model = makeTestProvider((options) => {
       calls += 1;
       if (calls === 3) {
         return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
@@ -147,7 +148,8 @@ describe("@mitome/sdk Tool", () => {
       );
     });
     const definition = defineAgent({
-      model,
+      providers: [model],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "echo-plugin",
@@ -205,7 +207,7 @@ describe("@mitome/sdk Tool", () => {
     let handlerAborted!: () => void;
     const started = new Promise<void>((resolve) => (handlerStarted = resolve));
     const aborted = new Promise<void>((resolve) => (handlerAborted = resolve));
-    const model = makeTestModel((options) => {
+    const model = makeTestProvider((options) => {
       const call = Response.makePart("tool-call", {
         id: "call-1",
         name: "echo",
@@ -231,7 +233,8 @@ describe("@mitome/sdk Tool", () => {
       );
     });
     const definition = defineAgent({
-      model,
+      providers: [model],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "echo-plugin",
@@ -274,7 +277,8 @@ describe("@mitome/sdk Tool", () => {
   test("accepts Effect Schema without manual Standard Schema adapters", async () => {
     const fixture = makeToolModel();
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "effect-schema",
@@ -330,7 +334,8 @@ describe("@mitome/sdk Tool", () => {
   test("returns a generic failure result when a Promise handler rejects", async () => {
     const fixture = makeToolModel();
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [
         definePlugin({
           name: "failing-plugin",

@@ -59,7 +59,7 @@ afterAll(async () => {
 
 describe("Codex OAuth", () => {
   test("carries a provider-owned OAuth capability without starting transport", () => {
-    expect(credentialDescriptor(codex("fixture-model"))).toEqual({
+    expect(credentialDescriptor(codex())).toEqual({
       capability: { module: expect.any(String) },
     });
   });

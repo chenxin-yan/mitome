@@ -2,6 +2,17 @@ import { spawn } from "node:child_process";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import { type AddressInfo } from "node:net";
 import { Readable } from "node:stream";
+import type { AgentDefinition, AnyPlugin, AnyProvider } from "@mitome/core";
+
+export const agent = (
+  provider: AnyProvider,
+  model: string,
+  plugins: ReadonlyArray<AnyPlugin> = [],
+): AgentDefinition => ({
+  providers: [provider],
+  model: `${provider.id}/${model}`,
+  plugins,
+});
 
 interface ServerOptions {
   readonly fetch: (request: Request) => Response | Promise<Response>;

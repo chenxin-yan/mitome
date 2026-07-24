@@ -14,17 +14,34 @@ import authHost from "./hosts/auth-host.ts" with { type: "text" };
 const hostSource: string = definitionHost;
 const authHostSource: string = authHost;
 
-// Validates untrusted JSON crossing the auth-host process boundary.
+export interface ProviderAuthentication {
+  readonly id: string;
+  readonly credential: CredentialDescriptor;
+}
+
 const isCredentialDescriptor = (value: unknown): value is CredentialDescriptor =>
   typeof value === "string"
     ? /^[A-Za-z_][A-Za-z0-9_]*$/.test(value)
     : typeof value === "object" &&
       value !== null &&
+      Object.keys(value).length === 1 &&
       "capability" in value &&
       typeof value.capability === "object" &&
       value.capability !== null &&
+      Object.keys(value.capability).length === 1 &&
       "module" in value.capability &&
       typeof value.capability.module === "string";
+
+// Validates untrusted JSON crossing the auth-host process boundary.
+const isProviderAuthentication = (value: unknown): value is ProviderAuthentication =>
+  typeof value === "object" &&
+  value !== null &&
+  Object.keys(value).length === 2 &&
+  "id" in value &&
+  typeof value.id === "string" &&
+  value.id !== "" &&
+  "credential" in value &&
+  isCredentialDescriptor(value.credential);
 
 // No SIGINT forwarding (unlike runHost): the installer is short-lived and
 // terminal Ctrl-C reaches it through the process group.
@@ -62,7 +79,9 @@ export const runHost = async (path: string, prompt: string): Promise<void> => {
   }
 };
 
-export const inspectCredential = async (path: string): Promise<CredentialDescriptor> => {
+export const inspectProviderAuthentication = async (
+  path: string,
+): Promise<ReadonlyArray<ProviderAuthentication>> => {
   const directory = await mkdtemp(join(tmpdir(), "mitome-auth-"));
   // The descriptor travels via file rather than stdout: importing the Agent Definition
   // may print, and stdout stays ignored so nothing leaks into the prompt flow.
@@ -85,16 +104,21 @@ export const inspectCredential = async (path: string): Promise<CredentialDescrip
     );
     if ((await child.exited) !== 0)
       throw new Error("Could not inspect Agent Definition authentication.");
-    const credential: unknown = JSON.parse(await readFile(output, "utf8"));
-    if (!isCredentialDescriptor(credential))
-      throw new Error("Agent Definition Model does not support CLI authentication.");
-    return credential;
+    const authentication: unknown = JSON.parse(await readFile(output, "utf8"));
+    if (!Array.isArray(authentication) || !authentication.every(isProviderAuthentication)) {
+      throw new Error("Agent Definition returned invalid Provider authentication metadata.");
+    }
+    return authentication;
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 };
 
-export const runOAuthAuth = async (path: string, command: "login" | "logout"): Promise<void> => {
+export const runOAuthAuth = async (
+  path: string,
+  providerId: string,
+  command: "login" | "logout",
+): Promise<void> => {
   const child = Bun.spawn(
     [
       process.execPath,
@@ -105,6 +129,7 @@ export const runOAuthAuth = async (path: string, command: "login" | "logout"): P
       "",
       command,
       requireConfigDirectory(),
+      providerId,
     ],
     {
       env: { ...process.env, BUN_BE_BUN: "1" },

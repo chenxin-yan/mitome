@@ -1,6 +1,6 @@
 import { Effect, Layer, Ref, Stream } from "effect";
 import { LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
-import { makeModel } from "@mitome/core";
+import { makeProvider } from "@mitome/core";
 
 interface TestModelOptions {
   readonly prompt: Prompt.Prompt;
@@ -11,10 +11,12 @@ export const testLanguageModel = (
   streamText: (options: TestModelOptions) => unknown,
 ): LanguageModel.Service => ({ streamText }) as unknown as LanguageModel.Service;
 
-export const makeTestModel = (streamText: (options: TestModelOptions) => unknown) =>
-  makeModel(Layer.succeed(LanguageModel.LanguageModel, testLanguageModel(streamText)));
+export const makeTestProvider = (streamText: (options: TestModelOptions) => unknown) =>
+  makeProvider("test", [] as const, undefined, () =>
+    Layer.succeed(LanguageModel.LanguageModel, testLanguageModel(streamText)),
+  );
 
-export const makeDeterministicModel = (output: string) =>
+export const makeDeterministicProvider = (output: string) =>
   Effect.gen(function* () {
     const calls = yield* Ref.make(0);
     const released = yield* Ref.make(false);
@@ -34,5 +36,9 @@ export const makeDeterministicModel = (output: string) =>
       ),
     );
 
-    return { model: makeModel(layer), calls: Ref.get(calls), released: Ref.get(released) };
+    return {
+      provider: makeProvider("test", [] as const, undefined, () => layer),
+      calls: Ref.get(calls),
+      released: Ref.get(released),
+    };
   });
