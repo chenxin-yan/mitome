@@ -27,7 +27,7 @@ One model generation within a Turn; a Turn may require multiple Steps to resolve
 _Avoid_: Turn, iteration
 
 **Agent Definition**:
-A user-authored declaration of exactly one Agent and its Plugins.
+A user-authored declaration of exactly one Agent, its Providers, Default Model, and Plugins.
 _Avoid_: Definition (bare), configuration, setup script, registry
 
 **Agent Definition module**:
@@ -47,12 +47,24 @@ A static markdown fragment a Plugin contributes to an Agent's system prompt, com
 _Avoid_: System prompt (the composed whole), prompt fragment
 
 **Model**:
-The opaque provider-provisioned value an Agent Definition names to generate Steps.
+A model available through a Provider that an Agent uses to generate Steps.
 _Avoid_: Provider, LLM
 
+**Model identifier**:
+A Provider-qualified name, written as `provider/model`, that selects one Model.
+_Avoid_: Model name, model key
+
+**Model catalog**:
+The known Model identifiers a Provider offers for discovery and selection; it is a set of hints, not an entitlement authority or a closed registry.
+_Avoid_: Model registry, available Models
+
+**Default Model**:
+The Model an Agent uses for a Turn when its Host does not select another Model under a registered Provider.
+_Avoid_: Primary Model, fallback Model
+
 **Provider**:
-An external service whose API Mitome adapts to provision Models.
-_Avoid_: Vendor, backend
+A configured integration through which an Agent can access a family of Models from one external model service.
+_Avoid_: Vendor, backend, Provider adapter
 
 **Toolkit**:
 A collection of configured Tools that a Plugin may contribute.
@@ -75,7 +87,7 @@ A program that drives Sessions on a user's behalf: starting Turns, presenting ev
 _Avoid_: Frontend, client, harness
 
 **Credential**:
-A stored secret that authorizes Mitome to use one provider on behalf of the user.
+A stored secret that authorizes Mitome to use one Provider on behalf of the user.
 _Avoid_: Token, key, login
 
 **Auth capability**:

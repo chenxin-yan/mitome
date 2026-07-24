@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0017 and ADR-0020
+status: amended by ADR-0017, ADR-0020, and ADR-0029
 ---
 
 # Treat model identifiers as hints, not a registry
