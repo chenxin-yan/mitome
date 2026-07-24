@@ -1,35 +1,18 @@
 import { Effect } from "effect";
-import { Argument, CliError, Flag } from "effect/unstable/cli";
+import { Argument, CliError, Flag, Param, Primitive } from "effect/unstable/cli";
 
 export const useFlag = Flag.string("use").pipe(
   Flag.withDescription("Path to an Agent Definition module or directory"),
   Flag.optional,
 );
 
-// Effect beta.98 ignores unconsumed positionals, so consume them all and
-// validate cardinality inside the native argument parser.
-export const noArguments = Argument.string("argument").pipe(
-  Argument.variadic(),
-  Argument.mapEffect((arguments_) =>
-    arguments_.length === 0
-      ? Effect.void
-      : Effect.fail(
-          new CliError.InvalidValue({
-            option: "argument",
-            value: arguments_[0]!,
-            expected: "no additional arguments",
-            kind: "argument",
-          }),
-        ),
-  ),
-);
-
-export const missingUseFlag = Flag.boolean("__mitome-missing-use").pipe(
-  Flag.withHidden,
-  Flag.mapEffect((missing) =>
-    missing ? Effect.fail(new CliError.MissingOption({ option: "use" })) : Effect.void,
-  ),
-);
+// The parser silently ignores unconsumed positionals (still true on beta.101),
+// so rejecting extras requires declaring an argument that accepts no values.
+export const noArguments = Param.makeSingle({
+  kind: Param.argumentKind,
+  name: "argument",
+  primitiveType: Primitive.none,
+}).pipe(Param.optional);
 
 export const promptArgument = Argument.string("prompt").pipe(
   Argument.variadic(),

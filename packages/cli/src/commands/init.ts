@@ -13,7 +13,7 @@ import { modelCatalog } from "../catalog.js";
 import { install } from "../child-host.js";
 import { isEnoent, requireConfigDirectory } from "../config.js";
 import { authenticateDefinition } from "./auth.js";
-import { attempt, fail, runNativePrompt, waitForChild } from "../support.js";
+import { attempt, fail, waitForChild } from "../support.js";
 
 type InitProvider = "openai" | "openai-codex";
 const customModel = Symbol("custom-model");
@@ -46,7 +46,7 @@ const initialize = async (path: string, provider: InitProvider, model: string): 
 
 export const runInit = Effect.gen(function* () {
   const path = yield* attempt(initializationPath);
-  const provider = yield* runNativePrompt(
+  const provider = yield* Prompt.run(
     Prompt.select<InitProvider>({
       message: "Provider",
       choices: [
@@ -61,7 +61,7 @@ export const runInit = Effect.gen(function* () {
     provider === "openai-codex"
       ? codexModelIds
       : yield* attempt(() => modelCatalog({ directory: dirname(path), fallback: openAiModelIds }));
-  const modelChoice = yield* runNativePrompt(
+  const modelChoice = yield* Prompt.run(
     Prompt.select<string | typeof customModel>({
       message: "Model",
       choices: [
@@ -72,7 +72,7 @@ export const runInit = Effect.gen(function* () {
   );
   const model =
     modelChoice === customModel
-      ? (yield* runNativePrompt(Prompt.text({ message: "Model identifier" }))).trim()
+      ? (yield* Prompt.run(Prompt.text({ message: "Model identifier" }))).trim()
       : modelChoice;
   if (model === "") return yield* fail("Model identifier is required.");
   yield* waitForChild(() => initialize(path, provider, model));

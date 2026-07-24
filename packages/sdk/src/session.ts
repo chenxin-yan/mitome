@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Fiber, Queue, Scope, Stream } from "effect";
+import { Cause, Effect, Exit, Scope, Stream } from "effect";
 import { createSession } from "@mitome/core";
 import type {
   AgentDefinition,
@@ -25,10 +25,6 @@ class CallbackFailure {
   constructor(readonly cause: unknown) {}
 }
 
-type TurnItem =
-  | { readonly _tag: "Event"; readonly event: CoreTurnEvent }
-  | { readonly _tag: "Exit"; readonly exit: Exit.Exit<void, unknown> };
-
 const toSdkEvent = (event: CoreTurnEvent): TurnEvent => {
   if (event.type !== "approval-required") return event;
   return {
@@ -38,48 +34,42 @@ const toSdkEvent = (event: CoreTurnEvent): TurnEvent => {
   };
 };
 
-// beta.98's Stream.toAsyncIterable().return() only closes its Scope, never Fiber.interrupts an in-flight pull.
-// This bridge makes iterator return()/throw() interrupt active model/tool work.
+// The upstream AsyncIterable conversion never interrupts an in-flight pull, so
+// breaking out of iteration would leave model/tool work running. ReadableStream
+// cancellation does interrupt its producer fiber and awaits its cleanup, and
+// the scope finalizer covers iterators abandoned without return().
 const toAsyncIterable = (
   stream: Stream.Stream<CoreTurnEvent, unknown>,
   scope: Scope.Scope,
 ): AsyncIterable<TurnEvent> => ({
   [Symbol.asyncIterator]() {
-    const queue = Effect.runSync(Queue.bounded<TurnItem>(1));
-    const fiber = Fiber.runIn(
-      Effect.runFork(
-        Effect.exit(
-          Stream.runForEach(stream, (event) => Queue.offer(queue, { _tag: "Event", event })),
-        ).pipe(Effect.flatMap((exit) => Queue.offer(queue, { _tag: "Exit", exit }))),
-      ),
-      scope,
-    );
-    let closed = false;
-    const close = async (): Promise<void> => {
-      if (!closed) {
-        closed = true;
-        await Effect.runPromise(Fiber.interrupt(fiber));
-        // Effect.exit does not survive external interruption, so close() supplies the missing Exit sentinel.
-        // A full queue may drop it safely: post-close next() short-circuits on closed.
-        Queue.offerUnsafe(queue, { _tag: "Exit", exit: Exit.succeed<void>(undefined) });
-      }
-    };
-
+    const reader = Stream.toReadableStream(stream).getReader();
+    const cancel = () => reader.cancel().catch(() => undefined);
+    Effect.runSync(Scope.addFinalizer(scope, Effect.promise(cancel)));
+    let done = false;
     return {
       async next(): Promise<IteratorResult<TurnEvent>> {
-        if (closed) return { done: true, value: undefined };
-        const item = await Effect.runPromise(Queue.take(queue));
-        if (item._tag === "Event") return { done: false, value: toSdkEvent(item.event) };
-        closed = true;
-        if (Exit.isSuccess(item.exit)) return { done: true, value: undefined };
-        throw Cause.squash(item.exit.cause);
+        if (done) return { done: true, value: undefined };
+        try {
+          const result = await reader.read();
+          if (result.done) {
+            done = true;
+            return { done: true, value: undefined };
+          }
+          return { done: false, value: toSdkEvent(result.value) };
+        } catch (error) {
+          done = true;
+          throw error;
+        }
       },
       async return(): Promise<IteratorResult<TurnEvent>> {
-        await close();
+        done = true;
+        await cancel();
         return { done: true, value: undefined };
       },
       async throw(error: unknown): Promise<IteratorResult<TurnEvent>> {
-        await close();
+        done = true;
+        await cancel();
         throw error;
       },
     };

@@ -3,15 +3,14 @@ import * as BunServices from "@effect/platform-bun/BunServices";
 import { Effect, Layer } from "effect";
 import { CliOutput, Command } from "effect/unstable/cli";
 import cliPackage from "../package.json" with { type: "json" };
-import { missingUseFlag, noArguments, promptArgument, useFlag } from "./args.js";
+import { noArguments, promptArgument, useFlag } from "./args.js";
 import { runAuth } from "./commands/auth.js";
 import { runInit } from "./commands/init.js";
 import { runInstall, runPrompt } from "./commands/run.js";
-import { fail } from "./support.js";
+import { fail, promptTerminal } from "./support.js";
 
 const definitionCommandConfig = {
   arguments: noArguments,
-  missingUse: missingUseFlag,
   use: useFlag,
 };
 
@@ -37,7 +36,6 @@ const authCommand = Command.make("auth", {}, () =>
 const command = Command.make(
   "mitome",
   {
-    missingUse: missingUseFlag,
     prompt: promptArgument,
     use: useFlag,
   },
@@ -47,25 +45,14 @@ const command = Command.make(
   Command.withSubcommands([installCommand, initCommand, authCommand]),
 );
 
-const nativeRunCli = Command.runWith(command, { version: cliPackage.version });
-// beta.98 drops a trailing string flag instead of reporting its missing value.
-const normalizeMissingUseValue = (args: ReadonlyArray<string>): ReadonlyArray<string> => {
-  const terminator = args.indexOf("--");
-  const optionCount = terminator === -1 ? args.length : terminator;
-  const missing = args.findIndex(
-    (arg, index) =>
-      index < optionCount &&
-      arg === "--use" &&
-      (args[index + 1] === undefined || args[index + 1]!.startsWith("-")),
-  );
-  return missing === -1
-    ? args
-    : args.map((arg, index) => (index === missing ? "--__mitome-missing-use" : arg));
-};
-
-export const runCli = (args: ReadonlyArray<string>) => nativeRunCli(normalizeMissingUseValue(args));
+export const runCli = Command.runWith(command, { version: cliPackage.version });
 
 if (import.meta.main) {
-  const services = Layer.merge(BunServices.layer, CliOutput.layer(CliOutput.defaultFormatter()));
+  // promptTerminal is merged last so its Terminal overrides the BunServices one.
+  const services = Layer.mergeAll(
+    BunServices.layer,
+    CliOutput.layer(CliOutput.defaultFormatter()),
+    promptTerminal,
+  );
   BunRuntime.runMain(runCli(process.argv.slice(2)).pipe(Effect.provide(services)));
 }

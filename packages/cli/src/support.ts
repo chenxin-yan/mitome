@@ -1,5 +1,5 @@
-import { Console, Effect, Runtime, Terminal } from "effect";
-import { Prompt } from "effect/unstable/cli";
+import * as BunTerminal from "@effect/platform-bun/BunTerminal";
+import { type Cause, Console, Effect, Layer, Queue, Runtime, Terminal } from "effect";
 
 class ReportedError extends Error {
   override readonly [Runtime.errorReported] = false;
@@ -17,23 +17,31 @@ export const waitForChild = <A>(promise: () => Promise<A>) =>
 export const fail = (message: string) =>
   Console.error(message).pipe(Effect.andThen(Effect.fail(new ReportedError(message))));
 
-// Prompt.run hangs when beta.98's Bun terminal sees stdin EOF. Defer the
-// interruption one tick so a final buffered line can still submit first.
-export const runNativePrompt = <A>(prompt: Prompt.Prompt<A>) =>
-  Prompt.run(prompt).pipe(
-    Effect.raceFirst(
-      Effect.callback<never, Terminal.QuitError>((resume) => {
-        let pending: ReturnType<typeof setImmediate> | undefined;
-        const quit = () => resume(Effect.fail(new Terminal.QuitError({})));
-        const onEnd = () => {
-          pending = setImmediate(quit);
-        };
-        if (process.stdin.readableEnded) onEnd();
-        else process.stdin.once("end", onEnd);
-        return Effect.sync(() => {
-          process.stdin.off("end", onEnd);
-          if (pending !== undefined) clearImmediate(pending);
-        });
-      }),
-    ),
-  );
+// The Bun terminal never ends its input queue at stdin EOF, so every prompt
+// after EOF waits forever. Ending the queue on stdin "end" makes prompts fail
+// with their documented QuitError; buffered keypresses still deliver first.
+let stdinEnded = false; // "end" fires once per process and Bun never sets readableEnded
+export const promptTerminal = Layer.effect(
+  Terminal.Terminal,
+  Effect.map(BunTerminal.make(), (terminal) =>
+    Terminal.make({
+      ...terminal,
+      readInput: terminal.readInput.pipe(
+        Effect.tap((input) =>
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              const end = () => {
+                stdinEnded = true;
+                Queue.endUnsafe(input as Queue.Queue<Terminal.UserInput, Cause.Done>);
+              };
+              if (stdinEnded) end();
+              else process.stdin.once("end", end);
+              return end;
+            }),
+            (end) => Effect.sync(() => process.stdin.off("end", end)),
+          ),
+        ),
+      ),
+    }),
+  ),
+);
