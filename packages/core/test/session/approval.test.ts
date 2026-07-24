@@ -1,12 +1,17 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
-import { type AgentDefinition, createSession, makeModel, type TurnEvent } from "../../src/index.js";
+import {
+  type AgentDefinition,
+  createSession,
+  makeProvider,
+  type TurnEvent,
+} from "../../src/index.js";
 
 const approvalModel = () => {
   let calls = 0;
   let prompt: unknown;
-  const model = makeModel(
+  const provider = makeProvider("test", [] as const, undefined, () =>
     Layer.effect(
       LanguageModel.LanguageModel,
       LanguageModel.make({
@@ -31,7 +36,7 @@ const approvalModel = () => {
       }),
     ),
   );
-  return { model, calls: () => calls, prompt: () => prompt };
+  return { provider, calls: () => calls, prompt: () => prompt };
 };
 
 const start = (definition: AgentDefinition) =>
@@ -70,7 +75,8 @@ const definition = (
     fixture,
     counts: () => ({ handlerCalls, postCalls }),
     definition: {
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [
         {
           name: "dangerous",
@@ -213,7 +219,7 @@ describe("Tool Approval", () => {
       let preToolCalls = 0;
       let handlerCalls = 0;
       let calls = 0;
-      const model = makeModel(
+      const model = makeProvider("test", [] as const, undefined, () =>
         Layer.effect(
           LanguageModel.LanguageModel,
           LanguageModel.make({
@@ -247,7 +253,8 @@ describe("Tool Approval", () => {
         needsApproval: false,
       });
       const session = yield* createSession({
-        model,
+        providers: [model],
+        model: "test/default",
         plugins: [
           {
             name: "dangerous",
@@ -289,7 +296,8 @@ describe("Tool Approval", () => {
         needsApproval: false,
       });
       const session = yield* createSession({
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [
           {
             name: "dangerous",
@@ -312,7 +320,7 @@ describe("Tool Approval", () => {
 
   it.effect("maps an approval request without its Tool call to TurnError", () =>
     Effect.gen(function* () {
-      const model = makeModel(
+      const model = makeProvider("test", [] as const, undefined, () =>
         Layer.succeed(LanguageModel.LanguageModel, {
           streamText: () =>
             Stream.succeed(
@@ -324,7 +332,8 @@ describe("Tool Approval", () => {
         } as never),
       );
       const session = yield* createSession({
-        model,
+        providers: [model],
+        model: "test/default",
         plugins: [],
       });
 

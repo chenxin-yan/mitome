@@ -17,6 +17,12 @@ describe("makeProvider", () => {
     }
   });
 
+  it("rejects invalid environment Credential names", () => {
+    expect(() => makeProvider("example", [], "INVALID-NAME", () => stubLayer)).toThrowError(
+      "Provider credential must be a valid environment variable name",
+    );
+  });
+
   it("exposes only its id and Model catalog hints", () => {
     const provider = makeProvider(
       "example",

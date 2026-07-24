@@ -1,10 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { Effect, Schema, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import * as core from "@mitome/core";
+import { LanguageModel, Response } from "effect/unstable/ai";
 import { createSession } from "@mitome/core";
 import * as sdkEffect from "../src/effect.js";
 import { TurnError, defineAgent, definePlugin, withSession } from "../src/index.js";
-import { makeDeterministicModel, makeTestModel } from "./model.js";
+import { makeDeterministicProvider, makeTestProvider } from "./provider.js";
 
 class ModelFailure extends Schema.TaggedErrorClass<ModelFailure>()("ModelFailure", {
   message: Schema.String,
@@ -16,9 +17,10 @@ describe("@mitome/sdk", () => {
   });
 
   test("returns a canonical Agent Definition accepted directly by Core", async () => {
-    const fixture = await Effect.runPromise(makeDeterministicModel("hello"));
+    const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [{ name: "first" }, { name: "second" }],
     });
 
@@ -35,9 +37,10 @@ describe("@mitome/sdk", () => {
   });
 
   test("adapts SDK Plugin Instructions into Core Session history", async () => {
-    const fixture = await Effect.runPromise(makeDeterministicModel("hello"));
+    const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [
         definePlugin({ name: "instructions", instructions: "SDK Instructions", tools: [] }),
       ],
@@ -55,18 +58,48 @@ describe("@mitome/sdk", () => {
     );
   });
 
+  test("forwards a typed per-Turn Model override", async () => {
+    const provider = (id: string, output: string) =>
+      core.makeProvider(id, [] as const, undefined, () =>
+        Layer.succeed(LanguageModel.LanguageModel, {
+          streamText: () =>
+            Stream.succeed(Response.makePart("text-delta", { id: output, delta: output })),
+        } as unknown as LanguageModel.Service),
+      );
+    const first = provider("first", "default");
+    const second = provider("second", "override");
+    const definition = defineAgent({
+      providers: [first, second] as const,
+      model: "first/default",
+      plugins: [],
+    });
+
+    const output = await withSession(definition, async (session) => {
+      const defaults = await Array.fromAsync(session.prompt("one"));
+      const override = await Array.fromAsync(session.prompt("two", { model: "second/private" }));
+      return [defaults[0], override[0]];
+    });
+
+    expect(output).toEqual([
+      { type: "model-output", text: "default" },
+      { type: "model-output", text: "override" },
+    ]);
+  });
+
   test("rethrows callback errors after releasing the Session scope", async () => {
     class MyError extends Error {}
 
-    const fixture = await Effect.runPromise(makeDeterministicModel("hello"));
+    const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [],
     });
     let caught: unknown;
 
     try {
-      await withSession(definition, () => {
+      await withSession(definition, async (session) => {
+        await Array.fromAsync(session.prompt("Hi"));
         throw new MyError("expected");
       });
     } catch (error) {
@@ -80,7 +113,8 @@ describe("@mitome/sdk", () => {
   test("throws tagged Turn errors with their original cause", async () => {
     const cause = new ModelFailure({ message: "model failed" });
     const definition = defineAgent({
-      model: makeTestModel(() => Stream.fail(cause)),
+      providers: [makeTestProvider(() => Stream.fail(cause))],
+      model: "test/default",
       plugins: [],
     });
     let caught: unknown;
@@ -100,9 +134,10 @@ describe("@mitome/sdk", () => {
   });
 
   test("brackets a typed, terminating Turn stream", async () => {
-    const fixture = await Effect.runPromise(makeDeterministicModel("hello"));
+    const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
     const definition = defineAgent({
-      model: fixture.model,
+      providers: [fixture.provider],
+      model: "test/default",
       plugins: [],
     });
 

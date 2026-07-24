@@ -1,7 +1,7 @@
 // oxlint-disable-next-line jsdoc/check-tag-names
 /** @effect-diagnostics missingEffectContext:skip-file */
 import { Schema } from "effect";
-import type { Model, PluginHooks } from "@mitome/core";
+import type { PluginHooks, Provider } from "@mitome/core";
 import { defineAgent, definePlugin, tool, type PluginHooksDefinition } from "../src/index.js";
 
 type Equal<Left, Right> =
@@ -18,7 +18,7 @@ type ContributionsOf<Value> = Value extends import("@mitome/core").Plugin<
   : never;
 
 const formatInputSchema = Schema.Struct({ value: Schema.Finite });
-declare const model: Model;
+declare const model: Provider<"test", readonly []>;
 
 export type PluginHookKeyParity = Expect<Equal<keyof PluginHooksDefinition, keyof PluginHooks>>;
 
@@ -215,7 +215,8 @@ export type ResourceHealthOutput = Expect<
 >;
 const sdkToolkitlessPlugin = definePlugin({ name: "sdk-toolkitless", tools: [] });
 const sdkDefinition = defineAgent({
-  model,
+  providers: [model],
+  model: "test/default",
   plugins: [inferencePlugin, resourceInferencePlugin, sdkToolkitlessPlugin] as const,
 });
 export type SdkPluginTupleIsPreserved = Expect<

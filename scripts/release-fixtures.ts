@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -126,34 +126,34 @@ try {
     `import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import * as core from "@mitome/core";
-import { createSession, makeModel } from "@mitome/core";
+import { createSession, makeProvider } from "@mitome/core";
 import { defineAgent, withSession } from "@mitome/sdk";
 import * as sdkEffect from "@mitome/sdk/effect";
-import { env, openai } from "@mitome/providers/openai";
+import { openai } from "@mitome/providers/openai";
 import { openaiCompatible } from "@mitome/providers/openai-compatible";
-import { codex, oauth } from "@mitome/providers/openai-codex";
+import { codex } from "@mitome/providers/openai-codex";
 import { instructions } from "@mitome/plugins";
 
-declare const process: { env: Record<string, string | undefined> };
-process.env.OPENAI_API_KEY = "fixture";
-const provider = openai("fixture", env("OPENAI_API_KEY"));
 if (sdkEffect.createSession !== core.createSession) throw new Error("SDK Effect facade duplicated the Core runtime.");
-if (typeof openaiCompatible !== "function") throw new Error("OpenAI-compatible package was not installed.");
-await Effect.runPromise(
-  Effect.scoped(Effect.as(createSession(defineAgent({ model: provider, plugins: [] })), undefined)),
-);
-const credential = oauth();
-if (typeof codex !== "function" || typeof credential === "string" || typeof credential.capability.module !== "string") throw new Error("Codex package was not installed.");
+if (openai().id !== "openai" || codex().id !== "openai-codex") throw new Error("Official Provider packages were not installed.");
+if (openaiCompatible({ id: "local", baseUrl: "http://localhost" }).id !== "local") throw new Error("OpenAI-compatible package was not installed.");
 // Deliberately partial mock; only streamText runs in this smoke.
-const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+const provider = makeProvider("fixture", [] as const, undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "ok" })),
 } as unknown as LanguageModel.Service));
-const definition = defineAgent({ model, plugins: [instructions("Release fixture")] });
-if (definition.model !== model) throw new Error("SDK wrapped the canonical Core Model.");
+const definition = defineAgent({
+  providers: [provider] as const,
+  model: "fixture/default",
+  plugins: [instructions("Release fixture")],
+});
+await Effect.runPromise(
+  Effect.scoped(Effect.as(createSession(definition), undefined)),
+);
+if (definition.providers[0] !== provider) throw new Error("SDK wrapped the canonical Core Provider.");
 if (definition.plugins[0]?.instructions !== "Release fixture") throw new Error("Plugins package was not installed.");
 const events = await withSession(definition, async (session) => {
   const values = [];
-  for await (const event of session.prompt("hello")) values.push(event);
+  for await (const event of session.prompt("hello", { model: "fixture/override" })) values.push(event);
   return values;
 });
 if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke did not complete.");
@@ -176,9 +176,27 @@ if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke 
   if (!(await Bun.file(join(createdDirectory, "instructions.md")).exists())) {
     throw new Error("create-mitome did not generate instructions.md.");
   }
-  if (!(await Bun.file(join(createdDirectory, "index.ts")).text()).includes("instructionFiles")) {
+  const createdDefinition = await Bun.file(join(createdDirectory, "index.ts")).text();
+  if (!createdDefinition.includes("instructionFiles")) {
     throw new Error("create-mitome did not load instructions.md through @mitome/plugins.");
   }
+  if (
+    !createdDefinition.includes("providers: [openai()]") ||
+    !createdDefinition.includes('model: "openai/')
+  ) {
+    throw new Error("create-mitome did not generate the Provider-qualified Agent contract.");
+  }
+  await symlink(nodeModules, join(createdDirectory, "node_modules"), "dir");
+  // The fixture vendors Effect without its declaration-only dependencies; the
+  // earlier packed-consumer check covers dependency declarations.
+  await run([
+    process.execPath,
+    "x",
+    "tsc",
+    "-p",
+    join(createdDirectory, "tsconfig.json"),
+    "--skipLibCheck",
+  ]);
   console.log("Release tarball/install fixtures passed.");
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });

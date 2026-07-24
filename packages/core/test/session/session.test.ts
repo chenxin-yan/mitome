@@ -4,19 +4,20 @@ import { LanguageModel, Prompt, Response } from "effect/unstable/ai";
 import {
   type AgentDefinition,
   createSession,
-  makeModel,
+  makeProvider,
   SessionBusyError,
   SessionReleasedError,
   TurnError,
 } from "../../src/index.js";
-import { makeDeterministicModel, makeTestModel } from "../support/model.js";
+import { makeDeterministicProvider, makeTestProvider } from "../support/provider.js";
 
 describe("createSession", () => {
   it.effect("streams one model Step before completion", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicModel("hello");
+      const fixture = yield* makeDeterministicProvider("hello");
       const definition: AgentDefinition = {
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [],
       };
       const session = yield* createSession(definition);
@@ -33,14 +34,18 @@ describe("createSession", () => {
   it.effect("keeps caller-provided services visible during stream execution", () =>
     Effect.gen(function* () {
       class Greeting extends Context.Service<Greeting, { readonly text: string }>()("Greeting") {}
-      const model = makeTestModel(() =>
+      const model = makeTestProvider(() =>
         Stream.fromEffect(
           Effect.map(Effect.service(Greeting), ({ text }) =>
             Response.makePart("text-delta", { id: "caller", delta: text }),
           ),
         ),
       );
-      const session = yield* createSession({ model, plugins: [] });
+      const session = yield* createSession({
+        providers: [model],
+        model: "test/default",
+        plugins: [],
+      });
       const events = yield* Stream.runCollect(session.prompt("Hi")).pipe(
         Effect.provideService(Greeting, { text: "from the caller" }),
       );
@@ -55,12 +60,13 @@ describe("createSession", () => {
   it.effect("composes Plugin Instructions into model input and history", () =>
     Effect.gen(function* () {
       let modelPrompt: ReadonlyArray<Prompt.Message> = [];
-      const model = makeTestModel(({ prompt }) => {
+      const model = makeTestProvider(({ prompt }) => {
         modelPrompt = prompt.content;
         return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
       });
       const session = yield* createSession({
-        model,
+        providers: [model],
+        model: "test/default",
         plugins: [
           { name: "first", instructions: "First Plugin" },
           { name: "empty", instructions: "" },
@@ -86,9 +92,10 @@ describe("createSession", () => {
 
   it.effect("starts without a system message when no Instructions contribute", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicModel("hello");
+      const fixture = yield* makeDeterministicProvider("hello");
       const session = yield* createSession({
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [{ name: "empty", instructions: "" }, { name: "missing" }],
       });
 
@@ -96,19 +103,28 @@ describe("createSession", () => {
     }),
   );
 
-  it.effect("wraps a failing model layer build as a TurnError at startup", () =>
+  it.effect("wraps a failing lazy Provider build as a TurnError on first use", () =>
     Effect.gen(function* () {
       class ProvisionFailure extends Schema.TaggedErrorClass<ProvisionFailure>()(
         "ProvisionFailure",
         { message: Schema.String },
       ) {}
-      const model = makeModel(
+      const model = makeProvider("test", [] as const, undefined, () =>
         Layer.effect(
           LanguageModel.LanguageModel,
           Effect.fail(new ProvisionFailure({ message: "no credential" })),
         ),
       );
-      const error = yield* Effect.flip(Effect.scoped(createSession({ model, plugins: [] })));
+      const error = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({
+            providers: [model],
+            model: "test/default",
+            plugins: [],
+          });
+          return yield* Effect.flip(Stream.runDrain(session.prompt("Hi")));
+        }),
+      );
       expect(error).toBeInstanceOf(TurnError);
       expect(error).toMatchObject({ _tag: "TurnError", message: "no credential" });
     }),
@@ -116,9 +132,10 @@ describe("createSession", () => {
 
   it.effect("isolates and releases session state", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicModel("hello");
+      const fixture = yield* makeDeterministicProvider("hello");
       const definition: AgentDefinition = {
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [],
       };
       const first = yield* Effect.scoped(
@@ -139,9 +156,10 @@ describe("createSession", () => {
 
   it.effect("fails overlapping prompts with a typed busy error", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicModel("hello");
+      const fixture = yield* makeDeterministicProvider("hello");
       const definition: AgentDefinition = {
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [],
       };
       const session = yield* createSession(definition);
@@ -162,7 +180,7 @@ describe("createSession", () => {
       let calls = 0;
       let start!: () => void;
       const started = new Promise<void>((resolve) => (start = resolve));
-      const model = makeTestModel(() => {
+      const model = makeTestProvider(() => {
         calls += 1;
         if (calls === 1) {
           start();
@@ -174,7 +192,11 @@ describe("createSession", () => {
         return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
       });
 
-      const session = yield* createSession({ model, plugins: [] });
+      const session = yield* createSession({
+        providers: [model],
+        model: "test/default",
+        plugins: [],
+      });
       const first = yield* Effect.forkChild(Stream.runDrain(session.prompt("first")));
       yield* Effect.promise(() => started);
       yield* Fiber.interrupt(first);
@@ -191,9 +213,10 @@ describe("createSession", () => {
 
   it.effect("allows sequential prompts after a Turn completes", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicModel("hello");
+      const fixture = yield* makeDeterministicProvider("hello");
       const definition: AgentDefinition = {
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [],
       };
       const session = yield* createSession(definition);
@@ -207,9 +230,10 @@ describe("createSession", () => {
 
   it.effect("rejects prompts after the session scope closes", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicModel("hello");
+      const fixture = yield* makeDeterministicProvider("hello");
       const definition: AgentDefinition = {
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [],
       };
       const session = yield* Effect.scoped(createSession(definition));

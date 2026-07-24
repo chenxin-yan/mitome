@@ -1,6 +1,6 @@
 import { Layer } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
-import type { CredentialDescriptor } from "./model.js";
+import type { CredentialDescriptor } from "./credential.js";
 
 // Type-only so Provider values expose no runtime brand; the WeakMap enforces Core identity.
 declare const ProviderTypeId: unique symbol;
@@ -40,6 +40,9 @@ export const makeProvider = <const Id extends string, const ModelIds extends Rea
   if (id.length === 0 || id.includes("/")) {
     throw new TypeError("Provider id must be non-empty and contain no '/'");
   }
+  if (typeof credential === "string" && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(credential)) {
+    throw new TypeError("Provider credential must be a valid environment variable name");
+  }
 
   const provider = { id: id as Id, modelIds } as Provider<Id, ModelIds>;
   providerMetadata.set(provider, { credential, provision });
@@ -48,6 +51,10 @@ export const makeProvider = <const Id extends string, const ModelIds extends Rea
 
 export const getProviderMetadata = (provider: AnyProvider): ProviderMetadata | undefined =>
   providerMetadata.get(provider);
+
+/** Returns a Provider's declarative Credential metadata without provisioning a Model. */
+export const credentialDescriptor = (provider: AnyProvider): CredentialDescriptor | undefined =>
+  providerMetadata.get(provider)?.credential;
 
 export interface ParsedModelIdentifier {
   readonly providerId: string;

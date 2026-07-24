@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { createSession, makeModel } from "@mitome/core";
+import { createSession, makeProvider } from "@mitome/core";
 import { defineAgent as definePromiseAgent } from "@mitome/sdk";
 import { defineAgent as defineEffectAgent } from "@mitome/sdk/effect";
 import { instructionFiles, instructions } from "../src/index.js";
@@ -25,8 +25,8 @@ const temporaryDirectory = (): string => {
   return directory;
 };
 
-const model = () =>
-  makeModel(
+const provider = () =>
+  makeProvider("test", [] as const, undefined, () =>
     Layer.succeed(LanguageModel.LanguageModel, {
       streamText: () =>
         Stream.succeed(Response.makePart("text-delta", { id: "test", delta: "done" })),
@@ -38,7 +38,11 @@ describe("@mitome/plugins", () => {
     const history = await Effect.runPromise(
       Effect.scoped(
         Effect.map(
-          createSession({ model: model(), plugins: [instructions("Be helpful.")] }),
+          createSession({
+            providers: [provider()],
+            model: "test/default",
+            plugins: [instructions("Be helpful.")],
+          }),
           (session) => session.history(),
         ),
       ),
@@ -132,11 +136,13 @@ describe("@mitome/plugins", () => {
 
   test("accepts Plugins from both SDK definition surfaces", () => {
     const promiseDefinition = definePromiseAgent({
-      model: model(),
+      providers: [provider()],
+      model: "test/default",
       plugins: [instructions("Promise SDK")],
     });
     const effectDefinition = defineEffectAgent({
-      model: model(),
+      providers: [provider()],
+      model: "test/default",
       plugins: [instructionFiles({ paths: ["./fixtures/instructions.md"] })],
     });
 

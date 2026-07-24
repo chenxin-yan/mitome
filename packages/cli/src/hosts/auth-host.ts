@@ -1,46 +1,51 @@
-// Runs inside the embedded Bun runtime with the Agent Definition path as argv[1] and
-// an output file as argv[2]. child-host.ts embeds this file as text like host.ts:
-// Core is resolved beside the selected Agent Definition so credentialDescriptor sees
-// the same module instance the Agent Definition's Model was created with. Without
-// further arguments it writes the Model's credential descriptor (or null) as
-// JSON to the output file; with an operation as argv[3] and the config
-// directory as argv[4] it instead delegates the interactive login/logout to
-// the descriptor's OAuth capability module.
+// Runs inside the embedded Bun runtime. Core is resolved beside the selected
+// Agent Definition so Provider WeakMap identity matches the author's Core copy.
 import { writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
-import type { AuthCapability, Model } from "@mitome/core";
+import type { AuthCapability, AnyProvider } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
 const outputPath = process.argv[2]!;
 const operation = process.argv[3];
 const authConfigDirectory = process.argv[4];
+const selectedProviderId = process.argv[5];
 const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
 const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath).href);
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
 
-const credential =
-  typeof loaded === "object" && loaded !== null && "model" in loaded
-    ? core.credentialDescriptor(loaded.model as Model)
-    : undefined;
+const providers =
+  typeof loaded === "object" &&
+  loaded !== null &&
+  "providers" in loaded &&
+  Array.isArray(loaded.providers)
+    ? (loaded.providers as ReadonlyArray<AnyProvider>)
+    : [];
+const authentication = providers.flatMap((provider) => {
+  const credential = core.credentialDescriptor(provider);
+  return credential === undefined ? [] : [{ id: provider.id, credential }];
+});
 
 if (operation === undefined) {
-  await writeFile(outputPath, JSON.stringify(credential ?? null));
+  await writeFile(outputPath, JSON.stringify(authentication));
 } else {
+  const selected = authentication.find(({ id }) => id === selectedProviderId);
   if (
-    credential === undefined ||
-    typeof credential === "string" ||
+    selected === undefined ||
+    typeof selected.credential === "string" ||
     authConfigDirectory === undefined ||
     (operation !== "login" && operation !== "logout")
   ) {
-    throw new Error("Agent Definition Model authentication is unsupported.");
+    throw new Error("Selected Provider does not support OAuth authentication.");
   }
-  const capability = (await import(credential.capability.module)) as Partial<AuthCapability>;
+  const capability = (await import(
+    selected.credential.capability.module
+  )) as Partial<AuthCapability>;
   if (typeof capability.authenticate !== "function") {
-    throw new Error("Agent Definition Model authentication is unsupported.");
+    throw new Error("Selected Provider does not support OAuth authentication.");
   }
   const reader = createInterface({ input: process.stdin, crlfDelay: Infinity });
   const lines = reader[Symbol.asyncIterator]();
@@ -56,8 +61,6 @@ if (operation === undefined) {
       ...(process.env.MITOME_NO_BROWSER === "1" ? { openBrowser: false } : {}),
     });
   } finally {
-    // An open readline interface keeps the process alive on a TTY even after
-    // authenticate resolves; close it so login/logout exit instead of hanging.
     reader.close();
   }
 }

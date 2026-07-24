@@ -9,8 +9,9 @@ export {
 } from "@mitome/core";
 export type {
   AgentDefinition,
-  Model,
+  ModelIdentifier,
   Plugin,
+  Provider,
   PluginHooks,
   ToolHookContext,
   ToolResultHookContext,

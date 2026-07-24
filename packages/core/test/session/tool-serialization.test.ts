@@ -3,7 +3,7 @@ import { Effect, Fiber, Stream } from "effect";
 import { Schema } from "effect";
 import { Response, Tool, Toolkit } from "effect/unstable/ai";
 import { createSession, type AgentDefinition } from "../../src/index.js";
-import { makeTestModel } from "../support/model.js";
+import { makeTestProvider } from "../support/provider.js";
 
 class HookFailure extends Schema.TaggedErrorClass<HookFailure>()("HookFailure", {
   message: Schema.String,
@@ -26,7 +26,7 @@ describe("createSession Tool serialization", () => {
       const postFirstReleased = new Promise<void>((resolve) => (releasePostFirst = resolve));
       const first = Tool.make("first", { parameters: Schema.Struct({}), success: Schema.String });
       const second = Tool.make("second", { parameters: Schema.Struct({}), success: Schema.String });
-      const model = makeTestModel((options) => {
+      const model = makeTestProvider((options) => {
         calls += 1;
         if (calls === 2) {
           return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
@@ -75,7 +75,8 @@ describe("createSession Tool serialization", () => {
           active -= 1;
         });
       const definition: AgentDefinition = {
-        model,
+        providers: [model],
+        model: "test/default",
         plugins: [
           {
             name: "tools",

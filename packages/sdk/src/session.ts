@@ -1,6 +1,11 @@
 import { Cause, Effect, Exit, Fiber, Queue, Scope, Stream } from "effect";
 import { createSession } from "@mitome/core";
-import type { AgentDefinition, TurnEvent as CoreTurnEvent } from "@mitome/core";
+import type {
+  AgentDefinition,
+  AnyProvider,
+  PromptOptions,
+  TurnEvent as CoreTurnEvent,
+} from "@mitome/core";
 
 type CoreApproval = Extract<CoreTurnEvent, { type: "approval-required" }>;
 export type TurnEvent =
@@ -10,8 +15,10 @@ export type TurnEvent =
       readonly deny: (reason?: string) => Promise<void>;
     });
 
-export interface Session {
-  readonly prompt: (text: string) => AsyncIterable<TurnEvent>;
+export interface Session<
+  Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
+> {
+  readonly prompt: (text: string, options?: PromptOptions<Providers>) => AsyncIterable<TurnEvent>;
 }
 
 class CallbackFailure {
@@ -79,9 +86,9 @@ const toAsyncIterable = (
   },
 });
 
-export const withSession = <A>(
-  definition: AgentDefinition,
-  use: (session: Session) => Promise<A>,
+export const withSession = <const Definition extends AgentDefinition, A>(
+  definition: Definition,
+  use: (session: Session<Definition["providers"]>) => Promise<A>,
 ): Promise<A> =>
   Effect.runPromiseExit(
     Effect.scoped(
@@ -89,7 +96,10 @@ export const withSession = <A>(
         const session = yield* createSession(definition);
         const scope = yield* Effect.scope;
         return yield* Effect.tryPromise({
-          try: () => use({ prompt: (text) => toAsyncIterable(session.prompt(text), scope) }),
+          try: () =>
+            use({
+              prompt: (text, options) => toAsyncIterable(session.prompt(text, options), scope),
+            }),
           catch: (error) => new CallbackFailure(error),
         });
       }),

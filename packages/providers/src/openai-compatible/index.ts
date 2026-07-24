@@ -1,29 +1,27 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat";
 import { Layer } from "effect";
-import { type Credential, makeModel, type Model } from "@mitome/core";
+import { makeProvider } from "@mitome/core";
 import { makeApiKeyClient } from "../internal/api-key-client.js";
 
-export { env } from "@mitome/core";
-export type { Credential } from "@mitome/core";
-
-export type ModelId = string;
-
-export interface OpenAiCompatibleOptions {
+export interface OpenAiCompatibleOptions<Id extends string = string> {
+  /** Stable Provider id used in qualified Model identifiers. */
+  readonly id: Id;
   /** OpenAI-compatible Chat Completions API root. */
   readonly baseUrl: string;
+  /** Optional environment variable containing the endpoint's API key. */
+  readonly apiKeyEnv?: string;
 }
 
-/** Creates a canonical Model backed by an OpenAI-compatible Chat Completions endpoint. */
-export const openaiCompatible = (
-  model: ModelId,
-  credential: Credential,
-  options: OpenAiCompatibleOptions,
-): Model => {
+/** Creates a configured Provider for an OpenAI-compatible endpoint. */
+export const openaiCompatible = <const Id extends string>(
+  options: OpenAiCompatibleOptions<Id> & {
+    readonly id: Id & (Id extends "" | `${string}/${string}` ? never : unknown);
+  },
+) => {
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
-  return makeModel(
+  return makeProvider(options.id, [] as const, options.apiKeyEnv, (model) =>
     OpenAiLanguageModel.layer({ model }).pipe(
-      Layer.provide(makeApiKeyClient(credential, baseUrl, OpenAiClient.layer)),
+      Layer.provide(makeApiKeyClient(options.apiKeyEnv, baseUrl, OpenAiClient.layer)),
     ),
-    credential.name,
   );
 };

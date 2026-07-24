@@ -4,9 +4,9 @@ import { describe, expect, test, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import { type AgentDefinition, createSession, credentialDescriptor } from "@mitome/core";
-import { serve } from "../support.js";
-import { env, openai } from "../../src/openai/index.js";
+import { createSession, credentialDescriptor } from "@mitome/core";
+import { agent, serve } from "../support.js";
+import { openai } from "../../src/openai/index.js";
 
 const key = "MITOME_OPENAI_TEST_KEY";
 const sse = (data: unknown) => `data: ${JSON.stringify(data)}\n\n`;
@@ -89,7 +89,7 @@ const withKey = async <A>(run: () => Promise<A>): Promise<A> => {
 
 describe("openai", () => {
   test("exposes its credential descriptor without building a Session", () => {
-    expect(credentialDescriptor(openai("gpt-5.4-mini", env("MITOME_TEST_API_KEY")))).toBe(
+    expect(credentialDescriptor(openai({ apiKeyEnv: "MITOME_TEST_API_KEY" }))).toBe(
       "MITOME_TEST_API_KEY",
     );
   });
@@ -137,12 +137,10 @@ describe("openai", () => {
 
     try {
       await withKey(async () => {
-        const definition = (model: string): AgentDefinition => ({
-          model: openai(model, env(key), {
-            baseUrl: `http://127.0.0.1:${server.port}/v1/`,
-            transport: "http",
-          }),
-          plugins: [],
+        const provider = openai({
+          apiKeyEnv: key,
+          baseUrl: `http://127.0.0.1:${server.port}/v1/`,
+          transport: "http",
         });
         const events: Array<unknown> = [];
         let firstOutput!: () => void;
@@ -150,7 +148,7 @@ describe("openai", () => {
         const turn = Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
-              const session = yield* createSession(definition("gpt-5.6"));
+              const session = yield* createSession(agent(provider, "gpt-5.6"));
               yield* Stream.runForEach(session.prompt("Hi"), (item) =>
                 Effect.sync(() => {
                   events.push(item);
@@ -183,26 +181,43 @@ describe("openai", () => {
     }
   });
 
-  test("accepts the default but rejects explicit WebSocket outside Bun and Node", () => {
+  test("rejects explicit WebSocket outside Bun and Node when selected", async () => {
     const nodeProcess = globalThis.process;
     vi.stubGlobal("process", undefined);
     try {
-      expect(() => openai("gpt-5.6", env(key))).not.toThrow();
-      expect(() => openai("gpt-5.6", env(key), { transport: "websocket" })).toThrow(
-        "OpenAI WebSocket transport requires a Bun or Node server runtime",
-      );
+      const provider = openai({ apiKeyEnv: key, transport: "websocket" });
+      await expect(
+        Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const session = yield* createSession(agent(provider, "gpt-5.6"));
+              yield* Stream.runDrain(session.prompt("Hi"));
+            }),
+          ),
+        ),
+      ).rejects.toMatchObject({
+        _tag: "TurnError",
+        message: "OpenAI WebSocket transport requires a Bun or Node server runtime",
+      });
     } finally {
       vi.stubGlobal("process", nodeProcess);
     }
   });
 
-  test("fails session startup when its environment credential is missing", async () => {
+  test("fails first use when its environment credential is missing", async () => {
     const previous = process.env[key];
     delete process.env[key];
     try {
-      const model = openai("gpt-5.6", env(key));
+      const provider = openai({ apiKeyEnv: key });
       await expect(
-        Effect.runPromise(Effect.scoped(createSession({ model, plugins: [] }))),
+        Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const session = yield* createSession(agent(provider, "gpt-5.6"));
+              yield* Stream.runDrain(session.prompt("Hi"));
+            }),
+          ),
+        ),
       ).rejects.toMatchObject({
         _tag: "TurnError",
         message: `Environment variable ${key} is not set or empty`,
@@ -222,17 +237,15 @@ describe("openai", () => {
     });
     try {
       await withKey(async () => {
-        const model = openai("future-private-model", env(key), {
+        const provider = openai({
+          apiKeyEnv: key,
           baseUrl: `http://127.0.0.1:${server.port}/v1`,
           transport: "http",
         });
         const exit = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
-              const session = yield* createSession({
-                model,
-                plugins: [],
-              });
+              const session = yield* createSession(agent(provider, "future-private-model"));
               return yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
             }),
           ),
@@ -306,11 +319,12 @@ describe("openai", () => {
         const events = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
-              const session = yield* createSession({
-                model: openai("gpt-5.6", env(key), {
-                  baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
-                }),
-                plugins: [
+              const provider = openai({
+                apiKeyEnv: key,
+                baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
+              });
+              const session = yield* createSession(
+                agent(provider, "gpt-5.6", [
                   {
                     name: "echo",
                     toolkit: Toolkit.make(echo),
@@ -318,8 +332,8 @@ describe("openai", () => {
                       echo: (params) => Effect.succeed((params as { text: string }).text),
                     },
                   },
-                ],
-              });
+                ]),
+              );
               return yield* Stream.runCollect(session.prompt("Hi"));
             }),
           ),
@@ -402,21 +416,20 @@ describe("openai", () => {
           parameters: Schema.Struct({ text: Schema.String }),
           success: Schema.String,
         });
-        const definition: AgentDefinition = {
-          model: openai("gpt-5.6", env(key), {
-            baseUrl: `http://127.0.0.1:${server.port}/v1`,
-            transport: "http",
-          }),
-          plugins: [
-            {
-              name: "echo",
-              toolkit: Toolkit.make(echo),
-              handlers: {
-                echo: (params) => Effect.succeed((params as { text: string }).text),
-              },
+        const provider = openai({
+          apiKeyEnv: key,
+          baseUrl: `http://127.0.0.1:${server.port}/v1`,
+          transport: "http",
+        });
+        const definition = agent(provider, "gpt-5.6", [
+          {
+            name: "echo",
+            toolkit: Toolkit.make(echo),
+            handlers: {
+              echo: (params) => Effect.succeed((params as { text: string }).text),
             },
-          ],
-        };
+          },
+        ]);
         const events = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {

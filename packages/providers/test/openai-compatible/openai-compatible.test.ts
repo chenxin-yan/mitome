@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import { type AgentDefinition, createSession, credentialDescriptor } from "@mitome/core";
-import { serve } from "../support.js";
-import { env, openaiCompatible } from "../../src/openai-compatible/index.js";
+import { createSession, credentialDescriptor } from "@mitome/core";
+import { agent, serve } from "../support.js";
+import { openaiCompatible } from "../../src/openai-compatible/index.js";
 
 const key = "MITOME_OPENAI_COMPATIBLE_TEST_KEY";
 const sse = (data: unknown) =>
@@ -30,11 +30,16 @@ describe("openaiCompatible", () => {
   test("exposes its credential descriptor without building a Session", () => {
     expect(
       credentialDescriptor(
-        openaiCompatible("any-model", env("MITOME_TEST_API_KEY"), {
+        openaiCompatible({
+          id: "compatible",
           baseUrl: "http://localhost:1",
+          apiKeyEnv: "MITOME_TEST_API_KEY",
         }),
       ),
     ).toBe("MITOME_TEST_API_KEY");
+    expect(
+      credentialDescriptor(openaiCompatible({ id: "local", baseUrl: "http://localhost:1" })),
+    ).toBeUndefined();
   });
 
   test("passes known and arbitrary model ids unchanged and streams text incrementally", async () => {
@@ -76,12 +81,11 @@ describe("openaiCompatible", () => {
 
     try {
       await withKey(async () => {
-        const definition = (model: string): AgentDefinition => ({
+        const provider = openaiCompatible({
+          id: "compatible",
+          apiKeyEnv: key,
           // Trailing slash pins baseUrl normalization.
-          model: openaiCompatible(model, env(key), {
-            baseUrl: `http://127.0.0.1:${server.port}/v1/`,
-          }),
-          plugins: [],
+          baseUrl: `http://127.0.0.1:${server.port}/v1/`,
         });
         const events: Array<unknown> = [];
         let firstOutput!: () => void;
@@ -89,7 +93,7 @@ describe("openaiCompatible", () => {
         const turn = Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
-              const session = yield* createSession(definition("gpt-4o-mini"));
+              const session = yield* createSession(agent(provider, "gpt-4o-mini"));
               yield* Stream.runForEach(session.prompt("Hi"), (event) =>
                 Effect.sync(() => {
                   events.push(event);
@@ -113,7 +117,7 @@ describe("openaiCompatible", () => {
         await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
-              const session = yield* createSession(definition("ft:private-model"));
+              const session = yield* createSession(agent(provider, "ft:private-model"));
               yield* Stream.runDrain(session.prompt("Hi"));
             }),
           ),
@@ -128,13 +132,24 @@ describe("openaiCompatible", () => {
     }
   });
 
-  test("fails session startup when its environment credential is missing", async () => {
+  test("fails first use when its environment credential is missing", async () => {
     const previous = process.env[key];
     delete process.env[key];
     try {
-      const model = openaiCompatible("gpt-4o-mini", env(key), { baseUrl: "http://127.0.0.1/v1" });
+      const provider = openaiCompatible({
+        id: "compatible",
+        apiKeyEnv: key,
+        baseUrl: "http://127.0.0.1/v1",
+      });
       await expect(
-        Effect.runPromise(Effect.scoped(createSession({ model, plugins: [] }))),
+        Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const session = yield* createSession(agent(provider, "gpt-4o-mini"));
+              yield* Stream.runDrain(session.prompt("Hi"));
+            }),
+          ),
+        ),
       ).rejects.toMatchObject({
         _tag: "TurnError",
         message: `Environment variable ${key} is not set or empty`,
@@ -154,13 +169,15 @@ describe("openaiCompatible", () => {
     });
     try {
       await withKey(async () => {
-        const model = openaiCompatible("future-private-model", env(key), {
+        const provider = openaiCompatible({
+          id: "compatible",
+          apiKeyEnv: key,
           baseUrl: `http://127.0.0.1:${server.port}/v1`,
         });
         const exit = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
-              const session = yield* createSession({ model, plugins: [] });
+              const session = yield* createSession(agent(provider, "future-private-model"));
               return yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
             }),
           ),
@@ -233,18 +250,18 @@ describe("openaiCompatible", () => {
           parameters: Schema.Struct({ text: Schema.String }),
           success: Schema.String,
         });
-        const definition: AgentDefinition = {
-          model: openaiCompatible("gpt-4o-mini", env(key), {
-            baseUrl: `http://127.0.0.1:${server.port}/v1`,
-          }),
-          plugins: [
-            {
-              name: "echo",
-              toolkit: Toolkit.make(echo),
-              handlers: { echo: (params) => Effect.succeed((params as { text: string }).text) },
-            },
-          ],
-        };
+        const provider = openaiCompatible({
+          id: "compatible",
+          apiKeyEnv: key,
+          baseUrl: `http://127.0.0.1:${server.port}/v1`,
+        });
+        const definition = agent(provider, "gpt-4o-mini", [
+          {
+            name: "echo",
+            toolkit: Toolkit.make(echo),
+            handlers: { echo: (params) => Effect.succeed((params as { text: string }).text) },
+          },
+        ]);
         const events = await Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {

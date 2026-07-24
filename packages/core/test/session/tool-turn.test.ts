@@ -3,13 +3,13 @@ import { Effect, Stream } from "effect";
 import { AiError, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { Schema } from "effect";
 import { type AgentDefinition, createSession, definePlugin } from "../../src/index.js";
-import { makeTestModel } from "../support/model.js";
+import { makeTestProvider } from "../support/provider.js";
 
 const makeToolModel = () => {
   let calls = 0;
   let secondPrompt: Prompt.Prompt | undefined;
   return {
-    model: makeTestModel((options) => {
+    provider: makeTestProvider((options) => {
       calls += 1;
       if (calls === 2) {
         secondPrompt = options.prompt;
@@ -55,7 +55,8 @@ describe("createSession Tool Turn", () => {
         failureMode: "return",
       });
       const definition: AgentDefinition = {
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [
           definePlugin({
             name: "echo",
@@ -86,7 +87,7 @@ describe("createSession Tool Turn", () => {
   it.effect("does not start another Step for a provider-executed Tool call", () =>
     Effect.gen(function* () {
       let calls = 0;
-      const model = makeTestModel(() => {
+      const model = makeTestProvider(() => {
         calls += 1;
         return Stream.succeed(
           Response.makePart("tool-call", {
@@ -98,7 +99,11 @@ describe("createSession Tool Turn", () => {
         );
       });
 
-      const session = yield* createSession({ model, plugins: [] });
+      const session = yield* createSession({
+        providers: [model],
+        model: "test/default",
+        plugins: [],
+      });
       const events = yield* Stream.runCollect(session.prompt("Find it"));
 
       expect([...events]).toEqual([
@@ -113,7 +118,7 @@ describe("createSession Tool Turn", () => {
     Effect.gen(function* () {
       let calls = 0;
       const echo = Tool.make("echo", { success: Schema.String });
-      const model = makeTestModel(() => {
+      const model = makeTestProvider(() => {
         calls += 1;
         return Stream.succeed(
           calls === 17
@@ -128,7 +133,8 @@ describe("createSession Tool Turn", () => {
       });
 
       const session = yield* createSession({
-        model,
+        providers: [model],
+        model: "test/default",
         plugins: [
           {
             name: "echo",
@@ -157,7 +163,8 @@ describe("createSession Tool Turn", () => {
         failureMode: "return",
       });
       const definition: AgentDefinition = {
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [
           {
             name: "observe",
@@ -208,7 +215,8 @@ describe("createSession Tool Turn", () => {
         failureMode: "return",
       });
       const definition: AgentDefinition = {
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [
           {
             name: "echo",

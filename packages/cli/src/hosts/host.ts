@@ -22,6 +22,7 @@ const isAgentDefinition = (value: unknown): value is AgentDefinition => {
   const candidate = value as Partial<AgentDefinition>;
   return (
     !("instructions" in value) &&
+    Array.isArray(candidate.providers) &&
     candidate.model !== undefined &&
     Array.isArray(candidate.plugins) &&
     candidate.plugins.every(
@@ -67,7 +68,9 @@ const errorMessage = (error: unknown): string => {
 };
 
 if (!isAgentDefinition(loaded)) {
-  throw new Error("Agent Definition must default-export an Agent with model and Plugins.");
+  throw new Error(
+    "Agent Definition must default-export an Agent with Providers, a Default Model, and Plugins.",
+  );
 }
 
 const { Cause, Effect, Exit, Fiber, Stream } = effect;

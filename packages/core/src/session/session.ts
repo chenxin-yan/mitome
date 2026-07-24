@@ -1,9 +1,8 @@
 import { Context, Effect, Layer, Scope, Stream } from "effect";
 import { LanguageModel, Prompt, Tool } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
-import { isProviderAgentDefinition, validateAgentDefinition } from "../agent.js";
-import type { AgentDefinition, AgentDefinitionError, ProviderAgentDefinition } from "../agent.js";
-import { getModelLayer } from "../model.js";
+import { validateAgentDefinition } from "../agent.js";
+import type { AgentDefinition, AgentDefinitionError } from "../agent.js";
 import { getProviderMetadata, parseModelIdentifier } from "../provider.js";
 import type { AnyProvider, ModelIdentifier } from "../provider.js";
 import { providePlugin } from "../plugin.js";
@@ -21,9 +20,7 @@ import { beginHookPhase, transformPrompt } from "./hooks.js";
 import { makeToolkit } from "./toolkit.js";
 
 type ProvidersOf<Definition extends AgentDefinition> =
-  Definition extends ProviderAgentDefinition<infer Providers, any, any>
-    ? Providers
-    : ReadonlyArray<never>;
+  Definition extends AgentDefinition<infer Providers, any, any> ? Providers : never;
 
 export interface PromptOptions<Providers extends ReadonlyArray<AnyProvider>> {
   readonly model: ModelIdentifier<Providers[number]>;
@@ -59,23 +56,7 @@ const createSessionImpl: (
   yield* validateAgentDefinition(definition);
 
   const sessionScope = yield* Effect.scope;
-  let legacyModel: RuntimeModel | undefined;
-  if (!isProviderAgentDefinition(definition)) {
-    const layer = getModelLayer(definition.model);
-    if (layer === undefined) {
-      return yield* Effect.die(new Error("Model was not created by @mitome/core"));
-    }
-
-    const context = yield* Layer.build(layer).pipe(Effect.mapError(modelSetupTurnError));
-    legacyModel = {
-      context,
-      model: Context.get(context, LanguageModel.LanguageModel),
-    };
-  }
-
-  const providers = isProviderAgentDefinition(definition)
-    ? new Map(definition.providers.map((provider) => [provider.id, provider]))
-    : undefined;
+  const providers = new Map(definition.providers.map((provider) => [provider.id, provider]));
   const models = new Map<string, RuntimeModel>();
   const pluginContexts = new Map<AnyPlugin, Context.Context<any>>();
   for (const plugin of definition.plugins) {
@@ -222,18 +203,6 @@ const createSessionImpl: (
   };
 
   const resolveModel = (identifier: unknown): Effect.Effect<RuntimeModel, TurnError> => {
-    if (legacyModel !== undefined) {
-      if (identifier !== undefined) {
-        return Effect.fail(
-          new TurnError({
-            message: "Per-Turn Model selection requires registered Providers",
-            cause: identifier,
-          }),
-        );
-      }
-      return Effect.succeed(legacyModel);
-    }
-
     const parsed = parseModelIdentifier(identifier);
     if (parsed === undefined) {
       return Effect.fail(
@@ -243,7 +212,7 @@ const createSessionImpl: (
         }),
       );
     }
-    const provider = providers!.get(parsed.providerId);
+    const provider = providers.get(parsed.providerId);
     if (provider === undefined) {
       return Effect.fail(
         new TurnError({
@@ -289,9 +258,7 @@ const createSessionImpl: (
             new SessionBusyError({ message: "Session is busy with an active Turn" }),
           );
         }
-        const identifier = isProviderAgentDefinition(definition)
-          ? (options?.model ?? definition.model)
-          : options?.model;
+        const identifier = options?.model ?? definition.model;
         isTurnActive = true;
         return Stream.unwrap(
           resolveModel(identifier).pipe(

@@ -1,21 +1,18 @@
-import type { CredentialDescriptor, Model } from "@mitome/core";
+import type { Provider } from "@mitome/core";
 import {
   type CodexOptions,
   type KnownModelId,
   type LoginOptions,
   type LogoutOptions,
-  type ModelId,
   type OAuthCredential,
   authenticate,
   codex,
+  knownModelIds,
   login,
   logout,
-  oauth,
   writeCredential,
 } from "../../src/openai-codex/index.js";
 
-// Option shapes are pinned to literals (not the exported aliases) so a leaked
-// or widened field fails to compile, matching openai.types.ts.
 type LiteralLoginOptions = {
   readonly configDirectory: string;
   readonly callbackPort?: number;
@@ -44,13 +41,6 @@ type LiteralCodexOptions = {
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Assert<T extends true> = T;
-type PublicOAuth = () => CredentialDescriptor;
-type PublicModelId = KnownModelId | (string & {});
-type PublicCodex = (
-  model: ModelId,
-  credential?: CredentialDescriptor,
-  options?: CodexOptions,
-) => Model;
 type PublicLogin = (options: LiteralLoginOptions) => Promise<void>;
 type PublicLogout = (options: LiteralLogoutOptions) => Promise<void>;
 type PublicWriteCredential = (
@@ -67,11 +57,10 @@ type PublicAuthenticate = (options: {
 }) => Promise<void>;
 
 const publicContracts: [
-  Assert<Equal<ModelId, PublicModelId>>,
-  // KnownModelId must stay a literal union that still provides autocomplete.
   Assert<Equal<string extends KnownModelId ? true : false, false>>,
-  Assert<Equal<typeof oauth, PublicOAuth>>,
-  Assert<Equal<typeof codex, PublicCodex>>,
+  Assert<
+    Equal<typeof codex, (options?: CodexOptions) => Provider<"openai-codex", typeof knownModelIds>>
+  >,
   Assert<Equal<typeof login, PublicLogin>>,
   Assert<Equal<typeof logout, PublicLogout>>,
   Assert<Equal<typeof writeCredential, PublicWriteCredential>>,
@@ -80,5 +69,5 @@ const publicContracts: [
   Assert<Equal<LogoutOptions, LiteralLogoutOptions>>,
   Assert<Equal<OAuthCredential, LiteralOAuthCredential>>,
   Assert<Equal<CodexOptions, LiteralCodexOptions>>,
-] = [true, true, true, true, true, true, true, true, true, true, true, true];
+] = [true, true, true, true, true, true, true, true, true, true];
 void publicContracts;

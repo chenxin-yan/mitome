@@ -12,4 +12,3 @@ export const knownModelIds = [
 ] as const;
 
 export type KnownModelId = (typeof knownModelIds)[number];
-export type ModelId = KnownModelId | (string & {});

@@ -10,14 +10,14 @@ import {
   type Plugin,
   type PluginHooks,
 } from "../../src/index.js";
-import { makeTestModel } from "../support/model.js";
+import { makeTestProvider } from "../support/provider.js";
 
 class HookFailure extends Schema.TaggedErrorClass<HookFailure>()("HookFailure", {
   message: Schema.String,
 }) {}
 
 const textModel = (capture: (prompt: Prompt.Prompt) => void) =>
-  makeTestModel(({ prompt }) => {
+  makeTestProvider(({ prompt }) => {
     capture(prompt);
     return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
   });
@@ -26,7 +26,7 @@ const toolModel = () => {
   let calls = 0;
   let secondPrompt: Prompt.Prompt | undefined;
   return {
-    model: makeTestModel((options) => {
+    provider: makeTestProvider((options) => {
       calls += 1;
       if (calls === 2) {
         secondPrompt = options.prompt;
@@ -83,7 +83,8 @@ describe("Plugin Hooks", () => {
           },
         });
         const definition: AgentDefinition = {
-          model: textModel((prompt) => (modelPrompt = prompt)),
+          providers: [textModel((prompt) => (modelPrompt = prompt))],
+          model: "test/default",
           plugins: [plugin("first", true), plugin("second")],
         };
 
@@ -125,7 +126,8 @@ describe("Plugin Hooks", () => {
         success: Schema.String,
       });
       const definition: AgentDefinition = {
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [
           {
             name: "hooks",
@@ -154,7 +156,8 @@ describe("Plugin Hooks", () => {
       const prompts: Array<Prompt.Prompt> = [];
       let history: ReadonlyArray<Prompt.Message> = [];
       const definition: AgentDefinition = {
-        model: textModel((prompt) => void prompts.push(prompt)),
+        providers: [textModel((prompt) => void prompts.push(prompt))],
+        model: "test/default",
         plugins: [
           {
             name: "inject",
@@ -189,7 +192,8 @@ describe("Plugin Hooks", () => {
         failureMode: "return",
       });
       const definition: AgentDefinition = {
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [
           {
             name: "veto",
@@ -234,7 +238,8 @@ describe("Plugin Hooks", () => {
         success: Schema.String,
       });
       const valid: AgentDefinition = {
-        model: fixture.model,
+        providers: [fixture.provider],
+        model: "test/default",
         plugins: [
           {
             name: "transform",
@@ -263,7 +268,8 @@ describe("Plugin Hooks", () => {
       const invalidFixture = toolModel();
       const invalid: AgentDefinition = {
         ...valid,
-        model: invalidFixture.model,
+        providers: [invalidFixture.provider],
+        model: "test/default",
         plugins: [
           { name: "transform", hooks: { postTool: () => Effect.succeed(1) } },
           valid.plugins[1]!,
@@ -285,7 +291,8 @@ describe("Plugin Hooks", () => {
       let sessionEnds = 0;
       const startupExit = yield* Effect.exit(
         createSession({
-          model: textModel(() => undefined),
+          providers: [textModel(() => undefined)],
+          model: "test/default",
           plugins: [
             {
               name: "bad",
@@ -303,7 +310,8 @@ describe("Plugin Hooks", () => {
       let laterTurnStarts = 0;
       let turnEnds = 0;
       const turnSession = yield* createSession({
-        model: textModel(() => undefined),
+        providers: [textModel(() => undefined)],
+        model: "test/default",
         plugins: [
           {
             name: "bad",
@@ -327,7 +335,8 @@ describe("Plugin Hooks", () => {
 
       const stepLog: Array<string> = [];
       const stepSession = yield* createSession({
-        model: textModel(() => undefined),
+        providers: [textModel(() => undefined)],
+        model: "test/default",
         plugins: [
           {
             name: "bad",
@@ -349,7 +358,8 @@ describe("Plugin Hooks", () => {
       const sessionLog: Array<string> = [];
       yield* Effect.exit(
         createSession({
-          model: textModel(() => undefined),
+          providers: [textModel(() => undefined)],
+          model: "test/default",
           plugins: [
             {
               name: "started",
@@ -374,7 +384,8 @@ describe("Plugin Hooks", () => {
 
       const turnLog: Array<string> = [];
       const turnSession = yield* createSession({
-        model: textModel(() => undefined),
+        providers: [textModel(() => undefined)],
+        model: "test/default",
         plugins: [
           {
             name: "started",
@@ -400,7 +411,8 @@ describe("Plugin Hooks", () => {
 
       const stepLog: Array<string> = [];
       const stepSession = yield* createSession({
-        model: textModel(() => undefined),
+        providers: [textModel(() => undefined)],
+        model: "test/default",
         plugins: [
           {
             name: "started",
@@ -431,7 +443,8 @@ describe("Plugin Hooks", () => {
       const sessionLog: Array<string> = [];
       yield* Effect.scoped(
         createSession({
-          model: textModel(() => undefined),
+          providers: [textModel(() => undefined)],
+          model: "test/default",
           plugins: [
             {
               name: "first",
@@ -453,9 +466,12 @@ describe("Plugin Hooks", () => {
       expect(sessionLog).toEqual(["first", "second"]);
 
       const turnLog: Array<string> = [];
-      const failingModel = makeTestModel(() => Stream.fail(new HookFailure({ message: "model" })));
+      const failingModel = makeTestProvider(() =>
+        Stream.fail(new HookFailure({ message: "model" })),
+      );
       const session = yield* createSession({
-        model: failingModel,
+        providers: [failingModel],
+        model: "test/default",
         plugins: [
           {
             name: "first",
@@ -488,7 +504,8 @@ describe("Plugin Hooks", () => {
     Effect.gen(function* () {
       const log: Array<string> = [];
       const session = yield* createSession({
-        model: textModel(() => undefined),
+        providers: [textModel(() => undefined)],
+        model: "test/default",
         plugins: [
           {
             name: "hooks",
@@ -510,7 +527,8 @@ describe("Plugin Hooks", () => {
       const events: Array<string> = [];
       let history: ReadonlyArray<Prompt.Message> = [];
       const session = yield* createSession({
-        model: textModel(() => undefined),
+        providers: [textModel(() => undefined)],
+        model: "test/default",
         plugins: [
           {
             name: "bad",
@@ -555,7 +573,8 @@ describe("Plugin Hooks", () => {
           success: Schema.String,
         });
         const session = yield* createSession({
-          model: fixture.model,
+          providers: [fixture.provider],
+          model: "test/default",
           plugins: [
             { name: "bad", hooks },
             {
@@ -588,7 +607,8 @@ describe("Plugin Hooks", () => {
     Effect.gen(function* () {
       const startup = new HookFailure({ message: "startup" });
       const startupDefinition: AgentDefinition = {
-        model: textModel(() => undefined),
+        providers: [textModel(() => undefined)],
+        model: "test/default",
         plugins: [{ name: "bad", hooks: { sessionStart: Effect.fail(startup) } }],
       };
       const startupExit = yield* Effect.exit(createSession(startupDefinition));
@@ -601,7 +621,8 @@ describe("Plugin Hooks", () => {
 
       const turn = new HookFailure({ message: "turn" });
       const turnDefinition: AgentDefinition = {
-        model: textModel(() => undefined),
+        providers: [textModel(() => undefined)],
+        model: "test/default",
         plugins: [{ name: "bad", hooks: { turnStart: () => Effect.fail(turn) } }],
       };
       const turnSession = yield* createSession(turnDefinition);
@@ -612,7 +633,8 @@ describe("Plugin Hooks", () => {
       });
 
       const recovered: AgentDefinition = {
-        model: textModel(() => undefined),
+        providers: [textModel(() => undefined)],
+        model: "test/default",
         plugins: [
           {
             name: "recover",

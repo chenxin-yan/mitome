@@ -45,14 +45,14 @@ const temporaryDirectories: Array<string> = [];
 const promptEchoDefinitionSource = (): string => `
 import { Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeModel } from "@mitome/core";
+import { makeProvider } from "@mitome/core";
 
-const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.succeed(Response.makePart("text-delta", {
     id: "prompt", delta: process.argv[2]!,
   })),
 }));
-export default { model, plugins: [] };
+export default { providers: [provider], model: "test/default", plugins: [] };
 `;
 
 const definitionSource = (
@@ -69,18 +69,18 @@ const definitionSource = (
 import { writeFileSync } from "node:fs";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeModel } from "@mitome/core";
+import { makeProvider } from "@mitome/core";
 
 ${options.signalProbe ? `writeFileSync(${JSON.stringify(options.signalProbe.pid)}, String(process.pid));` : ""}
 interface FixtureOutput { readonly text: string }
 const fixture: FixtureOutput = { text: ${JSON.stringify(output)} };
-const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.concat(
     Stream.succeed(Response.makePart("text-delta", { id: "first", delta: fixture.text })),
     ${options.block ? 'Stream.fromEffect(Effect.sleep(10_000).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))' : 'Stream.fromEffect(Effect.sleep(100).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))'},
   ),
 }));
-export default { model, plugins: ${
+export default { providers: [provider], model: "test/default", plugins: ${
   options.signalProbe
     ? `[{ name: "cleanup", hooks: { sessionEnd: Effect.sync(() => {
       writeFileSync(${JSON.stringify(options.signalProbe.cleanupStarted)}, "");
@@ -96,9 +96,9 @@ export default { model, plugins: ${
 const envDefinitionSource = (): string => `
 import { Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeModel } from "@mitome/core";
+import { makeProvider } from "@mitome/core";
 
-const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.succeed(Response.makePart("text-delta", {
     id: "env",
     delta: [
@@ -108,30 +108,47 @@ const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
     ].join(":"),
   })),
 }));
-export default { model, plugins: [] };
+export default { providers: [provider], model: "test/default", plugins: [] };
 `;
 
 const precedenceDefinitionSource = (name: string): string => `
 import { Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeModel } from "@mitome/core";
+import { makeProvider } from "@mitome/core";
 
-const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+const provider = makeProvider("test", [], ${JSON.stringify(name)}, () => Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.succeed(Response.makePart("text-delta", {
     id: "credential", delta: process.env[${JSON.stringify(name)}] ?? "missing",
   })),
-}), ${JSON.stringify(name)});
-export default { model, plugins: [] };
+}));
+export default { providers: [provider], model: "test/default", plugins: [] };
+`;
+
+const multipleCredentialDefinitionSource = (): string => `
+import { Layer, Stream } from "effect";
+import { LanguageModel } from "effect/unstable/ai";
+import { makeProvider } from "@mitome/core";
+
+const layer = Layer.succeed(LanguageModel.LanguageModel, {
+  streamText: () => Stream.empty,
+});
+const first = makeProvider("first", [], "FIRST_PROVIDER_ENV", () => layer);
+const second = makeProvider("second", [], "SECOND_PROVIDER_ENV", () => layer);
+export default {
+  providers: [first, second],
+  model: "first/default",
+  plugins: [],
+};
 `;
 
 const approvalDefinitionSource = (marker: string): string => `
 import { writeFileSync } from "node:fs";
 import { Effect, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
-import { makeModel } from "@mitome/core";
+import { makeProvider } from "@mitome/core";
 
 let calls = 0;
-const model = makeModel(Layer.effect(LanguageModel.LanguageModel, LanguageModel.make({
+const provider = makeProvider("test", [], undefined, () => Layer.effect(LanguageModel.LanguageModel, LanguageModel.make({
   generateText: () => Effect.succeed([]),
   streamText: () => {
     calls += 1;
@@ -147,7 +164,8 @@ const dangerous = Tool.make("dangerous", {
   needsApproval: true,
 });
 export default {
-  model,
+  providers: [provider],
+  model: "test/default",
   plugins: [{
     name: "dangerous",
     toolkit: Toolkit.make(dangerous),
@@ -606,8 +624,8 @@ describe("compiled mitome", () => {
     for (const value of ['"old"', "undefined"]) {
       const oldInstructions = await fixture(
         promptEchoDefinitionSource().replace(
-          "model, plugins",
-          `instructions: ${value}, model, plugins`,
+          "providers: [provider], model:",
+          `instructions: ${value}, providers: [provider], model:`,
         ),
       );
       const invalidInstructions = await output(
@@ -646,12 +664,12 @@ describe("compiled mitome", () => {
     const current = await fixture(`
 import { Layer, Stream } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
-import { makeModel } from "@mitome/core";
+import { makeProvider } from "@mitome/core";
 
-const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.fail(new Error("provider boom")),
 }));
-export default { model, plugins: [] };
+export default { providers: [provider], model: "test/default", plugins: [] };
 `);
     const result = await output(spawn("", ["hello", "--use", current.definition], current));
     expect(result.exitCode).toBe(1);
@@ -664,10 +682,10 @@ export default { model, plugins: [] };
     const current = await fixture(`
 import { Effect, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
-import { definePlugin, makeModel } from "@mitome/core";
+import { definePlugin, makeProvider } from "@mitome/core";
 
 let calls = 0;
-const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, {
+const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
   streamText: (options) => {
     calls += 1;
     if (calls === 2) {
@@ -703,7 +721,8 @@ const echo = Tool.make("echo", {
   success: Schema.String,
 });
 export default {
-  model,
+  providers: [provider],
+  model: "test/default",
   plugins: [definePlugin({
     name: "echo",
     toolkit: Toolkit.make(echo),
@@ -860,6 +879,12 @@ export default {
     await new Promise<void>((done) => registry.listen(0, "127.0.0.1", done));
     const registryUrl = `http://127.0.0.1:${(registry.address() as AddressInfo).port}/`;
     await writeFile(join(config, "bunfig.toml"), `[install]\nregistry = "${registryUrl}"\n`);
+    // The fixture registry strips dependencies from package manifests; link the
+    // runtimes needed when init imports the generated definition for authentication.
+    const configModules = join(config, "node_modules");
+    await mkdir(join(configModules, "@effect"), { recursive: true });
+    await symlink(effectDir, join(configModules, "effect"), "dir");
+    await symlink(aiOpenaiDir, join(configModules, "@effect", "ai-openai"), "dir");
 
     const key = "synthetic-init-credential";
     const child = spawn(undefined, ["init"], current);
@@ -883,8 +908,9 @@ export default {
     expect(result.stdout + result.stderr).not.toContain(key);
     const definition = await readFile(join(config, "index.ts"), "utf8");
     expect(definition).toContain('import { defineAgent } from "@mitome/sdk"');
-    expect(definition).toContain('import { env, openai } from "@mitome/providers/openai"');
-    expect(definition).toContain(`openai("${openAiModelIds[0]}", env("OPENAI_API_KEY"))`);
+    expect(definition).toContain('import { openai } from "@mitome/providers/openai"');
+    expect(definition).toContain("providers: [openai()]");
+    expect(definition).toContain(`model: "openai/${openAiModelIds[0]}"`);
     expect(definition).toContain(
       'plugins: [instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })]',
     );
@@ -903,12 +929,7 @@ export default {
 
     // Prove the scaffold actually loads: auth logout imports it through the
     // auth-host, so a scaffold that no longer parses or mismatches the SDK/
-    // provider API fails here. The fixture registry packages carry no
-    // dependencies, so link the runtime ones the dists import.
-    const configModules = join(config, "node_modules");
-    await mkdir(join(configModules, "@effect"), { recursive: true });
-    await symlink(effectDir, join(configModules, "effect"), "dir");
-    await symlink(aiOpenaiDir, join(configModules, "@effect", "ai-openai"), "dir");
+    // provider API fails here.
     expect(await output(spawn("", ["auth", "logout"], current))).toMatchObject({ exitCode: 0 });
     expect(await readFile(join(config, ".env"), "utf8")).toBe("");
   });
@@ -984,7 +1005,7 @@ export default {
     const result = await output(child);
     expect(result.exitCode).not.toBe(0);
     expect(await readFile(join(config, "index.ts"), "utf8")).toContain(
-      'openai("private-model", env("OPENAI_API_KEY"))',
+      'model: "openai/private-model"',
     );
   });
 
@@ -1039,6 +1060,34 @@ export default {
     expect(result.stderr).toContain('Unknown subcommand "bogus"');
   });
 
+  test("auth selects one of several registered Providers", async () => {
+    const current = await fixture(multipleCredentialDefinitionSource());
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+
+    const first = spawn(undefined, ["auth", "login", "--use", current.definition], current);
+    first.stdin.write("\n");
+    await delay(500);
+    first.stdin.end("first-secret\n");
+    expect(await output(first)).toMatchObject({ exitCode: 0 });
+
+    const second = spawn(undefined, ["auth", "login", "--use", current.definition], current);
+    second.stdin.write("j\n");
+    await delay(500);
+    second.stdin.end("second-secret\n");
+    expect(await output(second)).toMatchObject({ exitCode: 0 });
+
+    expect(await readFile(join(config, ".env"), "utf8")).toBe(
+      "FIRST_PROVIDER_ENV=first-secret\nSECOND_PROVIDER_ENV=second-secret\n",
+    );
+
+    const ambiguous = await output(
+      spawn("", ["auth", "login", "--use", current.definition], current),
+    );
+    expect(ambiguous.exitCode).not.toBe(0);
+    expect(ambiguous.stdout + ambiguous.stderr).toContain("first");
+    expect(ambiguous.stdout + ambiguous.stderr).toContain("second");
+  });
+
   test("auth delegates generic OAuth capabilities without a provider registry", async () => {
     const current = await fixture();
     const capability = join(current.root, "capability.mjs");
@@ -1051,9 +1100,9 @@ export default {
       current.definition,
       `import { Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeModel } from "@mitome/core";
-const model = makeModel(Layer.succeed(LanguageModel.LanguageModel, { streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "unused" })) }), { capability: { module: ${JSON.stringify(new URL(`file://${capability}`).href)} } });
-export default { model, plugins: [] };`,
+import { makeProvider } from "@mitome/core";
+const provider = makeProvider("test", [], { capability: { module: ${JSON.stringify(new URL(`file://${capability}`).href)} } }, () => Layer.succeed(LanguageModel.LanguageModel, { streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "unused" })) }));
+export default { providers: [provider], model: "test/default", plugins: [] };`,
     );
     expect(
       await output(
@@ -1118,11 +1167,11 @@ export default { model, plugins: [] };`,
     expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", ".env"))).toBe(false);
   });
 
-  test("auth login reports a bare Model without a credential descriptor", async () => {
+  test("auth login reports an Agent with no auth-capable Providers", async () => {
     const current = await fixture(definitionSource("bare"));
     const result = await output(spawn("", ["auth", "login", "--use", current.definition], current));
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toBe("Agent Definition Model does not support CLI authentication.\n");
+    expect(result.stderr).toBe("Agent Definition has no auth-capable Providers.\n");
   });
 
   test("uses Core directly without SDK runtime support", async () => {
