@@ -1,6 +1,6 @@
 export { configDirectory, configDirectoryMessage, resolveConfigDirectory } from "./config.js";
 export { AgentDefinitionError, defineAgent } from "./agent.js";
-export type { AgentDefinition } from "./agent.js";
+export type { AgentDefinition, LegacyAgentDefinition, ProviderAgentDefinition } from "./agent.js";
 export { definePlugin } from "./plugin.js";
 export type {
   AnyPlugin,
@@ -21,6 +21,8 @@ export type {
   CredentialDescriptor,
   Model,
 } from "./model.js";
+export { makeProvider } from "./provider.js";
+export type { AnyProvider, ModelIdentifier, Provider } from "./provider.js";
 export {
   ApprovalResolutionError,
   SessionBusyError,

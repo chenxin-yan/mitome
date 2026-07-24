@@ -5,6 +5,7 @@ import {
   createSession,
   defineAgent,
   AgentDefinitionError,
+  makeProvider,
   type AgentDefinition,
 } from "../src/index.js";
 import { makeTestModel } from "./support/model.js";
@@ -33,6 +34,39 @@ describe("Agent Definition validation", () => {
       expect(yield* getAgentDefinitionError(definition)).toMatchObject({
         message: "Agent Definition Instructions must be contributed by Plugins",
       });
+    }),
+  );
+
+  it.effect("rejects duplicate Providers and invalid Default Model identifiers", () =>
+    Effect.gen(function* () {
+      const provider = makeProvider("registered", [] as const, undefined, () => {
+        throw new Error("validation must not provision Models");
+      });
+      const duplicate = {
+        providers: [provider, provider],
+        model: "registered/model",
+        plugins: [],
+      } as AgentDefinition;
+      const malformed = {
+        providers: [provider],
+        model: "registered/",
+        plugins: [],
+      } as AgentDefinition;
+      const unregistered = {
+        providers: [provider],
+        model: "missing/model",
+        plugins: [],
+      } as AgentDefinition;
+
+      expect((yield* getAgentDefinitionError(duplicate)).message).toBe(
+        "Duplicate Provider id: registered",
+      );
+      expect((yield* getAgentDefinitionError(malformed)).message).toBe(
+        "Malformed Model identifier: registered/",
+      );
+      expect((yield* getAgentDefinitionError(unregistered)).message).toBe(
+        "Unregistered Provider id: missing",
+      );
     }),
   );
 

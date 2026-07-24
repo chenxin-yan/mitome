@@ -1,9 +1,11 @@
 import { Context, Effect, Layer, Scope, Stream } from "effect";
 import { LanguageModel, Prompt, Tool } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
-import { validateAgentDefinition } from "../agent.js";
-import type { AgentDefinition, AgentDefinitionError } from "../agent.js";
+import { isProviderAgentDefinition, validateAgentDefinition } from "../agent.js";
+import type { AgentDefinition, AgentDefinitionError, ProviderAgentDefinition } from "../agent.js";
 import { getModelLayer } from "../model.js";
+import { getProviderMetadata, parseModelIdentifier } from "../provider.js";
+import type { AnyProvider, ModelIdentifier } from "../provider.js";
 import { providePlugin } from "../plugin.js";
 import type { AnyPlugin } from "../plugin.js";
 import { makeApprovals } from "./approval.js";
@@ -18,36 +20,63 @@ import type { TurnEvent } from "./events.js";
 import { beginHookPhase, transformPrompt } from "./hooks.js";
 import { makeToolkit } from "./toolkit.js";
 
-export interface Session {
+type ProvidersOf<Definition extends AgentDefinition> =
+  Definition extends ProviderAgentDefinition<infer Providers, any, any>
+    ? Providers
+    : ReadonlyArray<never>;
+
+export interface PromptOptions<Providers extends ReadonlyArray<AnyProvider>> {
+  readonly model: ModelIdentifier<Providers[number]>;
+}
+
+export interface Session<
+  Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
+> {
   readonly prompt: (
     text: string,
+    options?: PromptOptions<Providers>,
   ) => Stream.Stream<TurnEvent, SessionBusyError | SessionReleasedError | TurnError>;
   readonly history: () => ReadonlyArray<Prompt.Message>;
   readonly released: () => boolean;
 }
 
-export const createSession: (
+type RuntimeModel = {
+  readonly context: Context.Context<LanguageModel.LanguageModel>;
+  readonly model: LanguageModel.Service;
+};
+
+const modelSetupTurnError = (cause: unknown) =>
+  new TurnError({
+    message: cause instanceof Error ? cause.message : String(cause),
+    cause,
+  });
+
+const createSessionImpl: (
   definition: AgentDefinition,
 ) => Effect.Effect<Session, AgentDefinitionError | TurnError, Scope.Scope> = Effect.fn(
   "@mitome/core/createSession",
 )(function* (definition) {
   yield* validateAgentDefinition(definition);
 
-  const layer = getModelLayer(definition.model);
-  if (layer === undefined) {
-    return yield* Effect.die(new Error("Model was not created by @mitome/core"));
+  const sessionScope = yield* Effect.scope;
+  let legacyModel: RuntimeModel | undefined;
+  if (!isProviderAgentDefinition(definition)) {
+    const layer = getModelLayer(definition.model);
+    if (layer === undefined) {
+      return yield* Effect.die(new Error("Model was not created by @mitome/core"));
+    }
+
+    const context = yield* Layer.build(layer).pipe(Effect.mapError(modelSetupTurnError));
+    legacyModel = {
+      context,
+      model: Context.get(context, LanguageModel.LanguageModel),
+    };
   }
 
-  const context = yield* Layer.build(layer).pipe(
-    Effect.mapError(
-      (cause) =>
-        new TurnError({
-          message: cause instanceof Error ? cause.message : String(cause),
-          cause,
-        }),
-    ),
-  );
-  const model = Context.get(context, LanguageModel.LanguageModel);
+  const providers = isProviderAgentDefinition(definition)
+    ? new Map(definition.providers.map((provider) => [provider.id, provider]))
+    : undefined;
+  const models = new Map<string, RuntimeModel>();
   const pluginContexts = new Map<AnyPlugin, Context.Context<any>>();
   for (const plugin of definition.plugins) {
     if (plugin.resource !== undefined) {
@@ -99,7 +128,7 @@ export const createSession: (
 
   type StepEvent = TurnEvent | { readonly type: "turn-complete"; readonly history: Prompt.Prompt };
 
-  const runStep = (prompt: Prompt.Prompt) => {
+  const runStep = (prompt: Prompt.Prompt, selected: RuntimeModel) => {
     const parts: Array<Response.AnyPart> = [];
     const toolCalls = new Map<string, Response.ToolCallPart<string, unknown>>();
     const decisions: Array<Prompt.ToolApprovalResponsePart> = [];
@@ -119,12 +148,12 @@ export const createSession: (
               Effect.map((transformed) => {
                 endPrompt = transformed;
                 return (
-                  model.streamText({
+                  selected.model.streamText({
                     prompt: transformed,
                     toolkit: approvals.toolkit,
                   }) as Stream.Stream<Response.StreamPart<Record<string, Tool.Any>>, unknown>
                 ).pipe(
-                  Stream.provideContext(context),
+                  Stream.provideContext(selected.context),
                   Stream.mapError(modelTurnError),
                   Stream.tap((part) => Effect.sync(() => parts.push(part))),
                   Stream.flatMap((part): Stream.Stream<StepEvent, TurnError> => {
@@ -173,7 +202,7 @@ export const createSession: (
                       const next: Stream.Stream<StepEvent, TurnError> = parts.some(
                         (part) => part.type === "tool-call" && part.providerExecuted !== true,
                       )
-                        ? runStep(nextPrompt)
+                        ? runStep(nextPrompt, selected)
                         : Stream.succeed({ type: "turn-complete", history: nextPrompt });
                       return Stream.concat(
                         Stream.fromEffectDrain(
@@ -192,8 +221,63 @@ export const createSession: (
     );
   };
 
+  const resolveModel = (identifier: unknown): Effect.Effect<RuntimeModel, TurnError> => {
+    if (legacyModel !== undefined) {
+      if (identifier !== undefined) {
+        return Effect.fail(
+          new TurnError({
+            message: "Per-Turn Model selection requires registered Providers",
+            cause: identifier,
+          }),
+        );
+      }
+      return Effect.succeed(legacyModel);
+    }
+
+    const parsed = parseModelIdentifier(identifier);
+    if (parsed === undefined) {
+      return Effect.fail(
+        new TurnError({
+          message: `Malformed Model identifier: ${String(identifier)}`,
+          cause: identifier,
+        }),
+      );
+    }
+    const provider = providers!.get(parsed.providerId);
+    if (provider === undefined) {
+      return Effect.fail(
+        new TurnError({
+          message: `Unregistered Provider id: ${parsed.providerId}`,
+          cause: identifier,
+        }),
+      );
+    }
+
+    const modelIdentifier = `${parsed.providerId}/${parsed.modelId}`;
+    const cached = models.get(modelIdentifier);
+    if (cached !== undefined) return Effect.succeed(cached);
+
+    const metadata = getProviderMetadata(provider)!;
+    return Effect.try({
+      try: () => metadata.provision(parsed.modelId),
+      catch: modelSetupTurnError,
+    }).pipe(
+      Effect.flatMap((layer) =>
+        Layer.buildWithScope(layer, sessionScope).pipe(Effect.mapError(modelSetupTurnError)),
+      ),
+      Effect.map((context) => {
+        const selected = {
+          context,
+          model: Context.get(context, LanguageModel.LanguageModel),
+        };
+        models.set(modelIdentifier, selected);
+        return selected;
+      }),
+    );
+  };
+
   return {
-    prompt: (text) =>
+    prompt: (text, options) =>
       Stream.suspend<TurnEvent, SessionBusyError | SessionReleasedError | TurnError, never>(() => {
         if (isReleased) {
           return Stream.fail(
@@ -205,28 +289,35 @@ export const createSession: (
             new SessionBusyError({ message: "Session is busy with an active Turn" }),
           );
         }
+        const identifier = isProviderAgentDefinition(definition)
+          ? (options?.model ?? definition.model)
+          : options?.model;
         isTurnActive = true;
         return Stream.unwrap(
-          beginHookPhase(
-            definition.plugins,
-            (plugin) => inContext(plugin, plugin.hooks?.turnStart?.(text)),
-            (plugin) => inContext(plugin, plugin.hooks?.turnEnd?.(text)),
-            "Turn end Hook failed",
-          ).pipe(
-            hookTurnError("Turn start Hook failed"),
-            Effect.map((turnHooks) =>
-              runStep(Prompt.concat(history, text)).pipe(
-                Stream.mapEffect((event) => {
-                  if (event.type !== "turn-complete") return Effect.succeed(event);
-                  return turnHooks.end.pipe(
-                    hookTurnError("Turn end Hook failed"),
-                    Effect.map(() => {
-                      history = event.history;
-                      return { type: "response-complete" } as const;
+          resolveModel(identifier).pipe(
+            Effect.flatMap((selected) =>
+              beginHookPhase(
+                definition.plugins,
+                (plugin) => inContext(plugin, plugin.hooks?.turnStart?.(text)),
+                (plugin) => inContext(plugin, plugin.hooks?.turnEnd?.(text)),
+                "Turn end Hook failed",
+              ).pipe(
+                hookTurnError("Turn start Hook failed"),
+                Effect.map((turnHooks) =>
+                  runStep(Prompt.concat(history, text), selected).pipe(
+                    Stream.mapEffect((event) => {
+                      if (event.type !== "turn-complete") return Effect.succeed(event);
+                      return turnHooks.end.pipe(
+                        hookTurnError("Turn end Hook failed"),
+                        Effect.map(() => {
+                          history = event.history;
+                          return { type: "response-complete" } as const;
+                        }),
+                      );
                     }),
-                  );
-                }),
-                Stream.onExit(() => turnHooks.cleanup),
+                    Stream.onExit(() => turnHooks.cleanup),
+                  ),
+                ),
               ),
             ),
           ),
@@ -243,3 +334,7 @@ export const createSession: (
     released: () => isReleased,
   };
 });
+
+export const createSession = createSessionImpl as <const Definition extends AgentDefinition>(
+  definition: Definition,
+) => Effect.Effect<Session<ProvidersOf<Definition>>, AgentDefinitionError | TurnError, Scope.Scope>;
