@@ -33,7 +33,7 @@
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@mitome/config": "workspace:*",
-    "@types/node": "^24.0.0",
+    "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
