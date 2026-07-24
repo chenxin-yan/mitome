@@ -26,9 +26,6 @@ const validateAuthorization = (authorization: Authorization, state: string): str
   return authorization.code;
 };
 
-const randomHex = (): string =>
-  Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("hex");
-
 const verifier = (): string =>
   Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
 
@@ -50,7 +47,7 @@ const defaultBrowser = (url: string): void => {
 export const login = async (options: LoginOptions): Promise<void> => {
   const port = options.callbackPort ?? 1455;
   const redirectUri = `http://localhost:${port}/auth/callback`;
-  const state = randomHex();
+  const state = crypto.randomUUID();
   const codeVerifier = verifier();
   const authorization = new URL("https://auth.openai.com/oauth/authorize");
   authorization.search = new URLSearchParams({

@@ -1,4 +1,4 @@
-export { configDirectory, configDirectoryMessage, resolveConfigDirectory } from "./config.js";
+export { configDirectory, configDirectoryMessage } from "./config.js";
 export type { AuthCapability, AuthenticateOptions, CredentialDescriptor } from "./credential.js";
 export { AgentDefinitionError, defineAgent } from "./agent.js";
 export type { AgentDefinition } from "./agent.js";

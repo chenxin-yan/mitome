@@ -1,13 +1,11 @@
 import { type OAuthCredential } from "./types.js";
 
-const decodeBase64url = (value: string): string => Buffer.from(value, "base64url").toString("utf8");
-
 export const accountId = (access: string): string => {
   const payload = access.split(".")[1];
   if (payload === undefined) throw new Error("OAuth access token did not contain an account.");
   let parsed: unknown;
   try {
-    parsed = JSON.parse(decodeBase64url(payload));
+    parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
   } catch {
     throw new Error("OAuth access token did not contain an account.");
   }

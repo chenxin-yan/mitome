@@ -56,12 +56,9 @@ export const getProviderMetadata = (provider: AnyProvider): ProviderMetadata | u
 export const credentialDescriptor = (provider: AnyProvider): CredentialDescriptor | undefined =>
   providerMetadata.get(provider)?.credential;
 
-export interface ParsedModelIdentifier {
-  readonly providerId: string;
-  readonly modelId: string;
-}
-
-export const parseModelIdentifier = (identifier: unknown): ParsedModelIdentifier | undefined => {
+export const parseModelIdentifier = (
+  identifier: unknown,
+): { readonly providerId: string; readonly modelId: string } | undefined => {
   if (typeof identifier !== "string") return undefined;
   const separator = identifier.indexOf("/");
   if (separator <= 0 || separator === identifier.length - 1) return undefined;

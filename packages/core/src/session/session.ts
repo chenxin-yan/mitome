@@ -77,7 +77,7 @@ const createSessionImpl: (
   );
   const instructions = definition.plugins
     .map((plugin) => plugin.instructions)
-    .filter((fragment) => fragment !== undefined && fragment !== "")
+    .filter(Boolean)
     .join("\n\n");
   let history = Prompt.make(instructions === "" ? [] : [{ role: "system", content: instructions }]);
   let isReleased = false;

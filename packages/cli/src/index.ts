@@ -34,7 +34,7 @@ const authCommand = Command.make("auth", {}, () =>
   Command.withSubcommands([loginCommand, logoutCommand]),
 );
 
-export const command = Command.make(
+const command = Command.make(
   "mitome",
   {
     missingUse: missingUseFlag,
@@ -48,6 +48,7 @@ export const command = Command.make(
 );
 
 const nativeRunCli = Command.runWith(command, { version: cliPackage.version });
+// beta.98 drops a trailing string flag instead of reporting its missing value.
 const normalizeMissingUseValue = (args: ReadonlyArray<string>): ReadonlyArray<string> => {
   const terminator = args.indexOf("--");
   const optionCount = terminator === -1 ? args.length : terminator;
@@ -66,13 +67,5 @@ export const runCli = (args: ReadonlyArray<string>) => nativeRunCli(normalizeMis
 
 if (import.meta.main) {
   const services = Layer.merge(BunServices.layer, CliOutput.layer(CliOutput.defaultFormatter()));
-  const args = process.argv.slice(2);
-  const normalizedArgs = normalizeMissingUseValue(args);
-  // beta.98 drops a trailing string flag instead of reporting its missing value.
-  const program = (
-    normalizedArgs === args
-      ? Command.run(command, { version: cliPackage.version })
-      : nativeRunCli(normalizedArgs)
-  ).pipe(Effect.provide(services));
-  BunRuntime.runMain(program);
+  BunRuntime.runMain(runCli(process.argv.slice(2)).pipe(Effect.provide(services)));
 }

@@ -3,9 +3,6 @@ import { Prompt } from "effect/unstable/ai";
 import type { AnyPlugin, PluginContexts } from "../plugin.js";
 import { providePlugin } from "../plugin.js";
 
-const logHookFailure = (message: string) =>
-  Effect.catchCause((cause) => Effect.logWarning(message, cause));
-
 export const transformPrompt = (
   plugins: ReadonlyArray<AnyPlugin>,
   contexts: PluginContexts,
@@ -35,7 +32,10 @@ const runCleanupHooks = (
 ): Effect.Effect<void> =>
   Effect.forEach(
     plugins,
-    (plugin) => (getHook(plugin) ?? Effect.void).pipe(logHookFailure(message)),
+    (plugin) =>
+      (getHook(plugin) ?? Effect.void).pipe(
+        Effect.catchCause((cause) => Effect.logWarning(message, cause)),
+      ),
     { discard: true },
   );
 

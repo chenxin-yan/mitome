@@ -1,12 +1,5 @@
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Layer, Redacted } from "effect";
 import { FetchHttpClient, type HttpClient } from "effect/unstable/http";
-
-// Deliberately unexported from any subpath: it never appears in a public signature,
-// and exporting it would drag Effect Schema/Cause types into the generated declarations.
-class MissingCredentialError extends Schema.TaggedErrorClass<MissingCredentialError>()(
-  "MissingCredentialError",
-  { message: Schema.String },
-) {}
 
 /** Builds a Provider client Layer from an optional environment Credential and API root. */
 export const makeApiKeyClient = <Id, E>(
@@ -16,7 +9,7 @@ export const makeApiKeyClient = <Id, E>(
     readonly apiKey?: Redacted.Redacted;
     readonly apiUrl: string;
   }) => Layer.Layer<Id, E, HttpClient.HttpClient>,
-): Layer.Layer<Id, E | MissingCredentialError> =>
+): Layer.Layer<Id, E | string> =>
   Layer.unwrap(
     Effect.gen(function* () {
       let apiKey: Redacted.Redacted | undefined;
@@ -25,9 +18,8 @@ export const makeApiKeyClient = <Id, E>(
         // process.env at first access, which would miss keys set after startup.
         const value = process.env[apiKeyEnv];
         if (value === undefined || value === "") {
-          return yield* new MissingCredentialError({
-            message: `Environment variable ${apiKeyEnv} is not set or empty`,
-          });
+          // A bare string: core surfaces it via String(cause) on TurnError.
+          return yield* Effect.fail(`Environment variable ${apiKeyEnv} is not set or empty`);
         }
         apiKey = Redacted.make(value);
       }

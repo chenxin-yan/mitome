@@ -6,28 +6,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { knownModelIds as codexIds } from "../packages/providers/src/openai-codex/models.ts";
+import { toolCapableOpenAiIds } from "../packages/cli/src/catalog.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const snapshotPath = join(root, "scripts", "models-dev.snapshot.json");
 const openAiHintsPath = join(root, "packages", "providers", "src", "openai", "models.ts");
 const createMitomeHintsPath = join(root, "packages", "create-mitome", "src", "model-hints.ts");
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
-const toolCapableOpenAiIds = (payload: unknown): Array<string> => {
-  const models = isRecord(payload) && isRecord(payload.openai) ? payload.openai.models : undefined;
-  return isRecord(models)
-    ? Object.values(models).flatMap((model) =>
-        isRecord(model) &&
-        typeof model.id === "string" &&
-        model.id !== "" &&
-        model.tool_call === true
-          ? [model.id]
-          : [],
-      )
-    : [];
-};
 
 const fetchOpenAiIds = async (): Promise<Array<string>> => {
   const response = await fetch("https://models.dev/api.json", {
@@ -41,11 +25,10 @@ const fetchOpenAiIds = async (): Promise<Array<string>> => {
 };
 
 const snapshotOpenAiIds = async (): Promise<Array<string>> => {
-  const snapshot: unknown = JSON.parse(await readFile(snapshotPath, "utf8"));
-  const ids =
-    isRecord(snapshot) && Array.isArray(snapshot.openai)
-      ? snapshot.openai.filter((id): id is string => typeof id === "string" && id !== "")
-      : [];
+  const snapshot = JSON.parse(await readFile(snapshotPath, "utf8")) as { openai?: unknown };
+  const ids = Array.isArray(snapshot.openai)
+    ? snapshot.openai.filter((id): id is string => typeof id === "string" && id !== "")
+    : [];
   if (ids.length === 0) throw new Error(`Snapshot ${snapshotPath} holds no OpenAI ids.`);
   return ids;
 };

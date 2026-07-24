@@ -5,7 +5,6 @@ import { invalidOutput, providerError } from "./request.js";
 
 type Call = { readonly id: string; readonly name: string; arguments: string };
 type StreamState = {
-  readonly events: Array<string>;
   readonly parser: Sse.Parser;
   readonly calls: Map<string, Call>;
   readonly textIds: Set<string>;
@@ -130,7 +129,6 @@ export const decodeStream = <R>(
   Stream.suspend(() => {
     const events: Array<string> = [];
     const state: StreamState = {
-      events,
       parser: Sse.makeParser((event) => {
         if (event._tag === "Event") events.push(event.data);
       }),
@@ -148,7 +146,7 @@ export const decodeStream = <R>(
               for (const value of chunk) current.parser.feed(value);
               return [
                 current,
-                current.events.splice(0).flatMap((event) => decodeEvent(current, event)),
+                events.splice(0).flatMap((event) => decodeEvent(current, event)),
               ] as const;
             },
             catch: (cause) =>

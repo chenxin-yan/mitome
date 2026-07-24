@@ -91,7 +91,9 @@ describe("Codex OAuth", () => {
         redirect_uri: `http://localhost:${port}/auth/callback`,
         scope: "openid profile email offline_access",
       });
-      expect(url.searchParams.get("state")).toMatch(/^[0-9a-f]{32}$/);
+      expect(url.searchParams.get("state")).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
       expect(requests).toEqual([
         expect.objectContaining({
           grant_type: "authorization_code",

@@ -34,9 +34,6 @@ export function defineAgent(definition: AgentDefinition): AgentDefinition {
   return definition;
 }
 
-const toolRequiresHandler = (tool: Tool.Any): boolean =>
-  Tool.isProviderDefined(tool) ? tool.requiresHandler : true;
-
 export const validateAgentDefinition: (
   definition: AgentDefinition,
 ) => Effect.Effect<void, AgentDefinitionError> = Effect.fn("@mitome/core/validateAgentDefinition")(
@@ -92,7 +89,9 @@ export const validateAgentDefinition: (
         }
         toolNames.add(tool.name);
         pluginToolNames.add(tool.name);
-        if (toolRequiresHandler(tool)) requiredHandlerNames.add(tool.name);
+        if (Tool.isProviderDefined(tool) ? tool.requiresHandler : true) {
+          requiredHandlerNames.add(tool.name);
+        }
       }
 
       for (const name of Object.keys(plugin.toolInputValidators ?? {})) {

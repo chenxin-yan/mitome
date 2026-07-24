@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
-import { realpathSync } from "node:fs";
-import { stat, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { createInterface } from "node:readline";
 import {
   agentDefinitionSource,
@@ -23,18 +22,6 @@ const files = [
   "README.md",
 ] as const;
 
-const exists = async (path: string): Promise<boolean> => {
-  try {
-    await stat(path);
-    return true;
-  } catch (error) {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
-};
-
 const readme = (flavor: Flavor): string => {
   const embed =
     flavor === "promise"
@@ -46,7 +33,7 @@ const readme = (flavor: Flavor): string => {
 
 export const scaffold = async (directory: string, options: ScaffoldOptions): Promise<void> => {
   for (const file of files) {
-    if (await exists(join(directory, file))) throw new Error(`${file} already exists`);
+    if (existsSync(join(directory, file))) throw new Error(`${file} already exists`);
   }
   await Promise.all([
     writeFile(join(directory, "package.json"), agentPackageSource()),
@@ -127,10 +114,7 @@ const main = async (): Promise<void> => {
   }
 };
 
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
-) {
+if (import.meta.main) {
   await main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

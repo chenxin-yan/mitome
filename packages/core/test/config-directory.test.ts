@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { resolveConfigDirectory } from "../src/index.js";
+import { resolveConfigDirectory } from "../src/config.js";
 
 describe("resolveConfigDirectory", () => {
   it("uses MITOME_HOME verbatim, before every other variable", () => {

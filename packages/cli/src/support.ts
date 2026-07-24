@@ -1,7 +1,7 @@
 import { Console, Effect, Runtime, Terminal } from "effect";
 import { Prompt } from "effect/unstable/cli";
 
-export class ReportedError extends Error {
+class ReportedError extends Error {
   override readonly [Runtime.errorReported] = false;
 }
 
