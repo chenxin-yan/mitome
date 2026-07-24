@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Layer, Schema, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { createSession, defineAgent, makeProvider } from "../../src/index.js";
 
@@ -64,12 +64,11 @@ describe("Provider-backed Sessions", () => {
         }),
       );
 
-      const invalid = yield* Effect.exit(
+      const error = yield* Effect.flip(
         Stream.runDrain(session.prompt("bad", { model: "missing/model" } as never)),
       );
 
-      expect(Exit.isFailure(invalid)).toBe(true);
-      expect(Cause.squash(Exit.isFailure(invalid) ? invalid.cause : Cause.empty)).toMatchObject({
+      expect(error).toMatchObject({
         _tag: "TurnError",
         message: "Unregistered Provider id: missing",
       });

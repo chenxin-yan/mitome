@@ -6,6 +6,11 @@ const layer = Layer.succeed(LanguageModel.LanguageModel, {} as LanguageModel.Ser
 const alpha = makeProvider("alpha", ["known", "other"] as const, undefined, () => layer);
 const beta = makeProvider("beta", [] as const, undefined, () => layer);
 
+// @ts-expect-error Provider ids must be non-empty.
+makeProvider("", [], undefined, () => layer);
+// @ts-expect-error Provider ids cannot contain the Model separator.
+makeProvider("invalid/id", [], undefined, () => layer);
+
 const definition = defineAgent({
   providers: [alpha, beta] as const,
   model: "alpha/known",
@@ -33,13 +38,10 @@ const reordered = defineAgent({
 });
 
 declare const session: Session<readonly [typeof alpha, typeof beta]>;
-const knownPrompt = session.prompt("known", { model: "alpha/known" });
-const arbitraryPrompt = session.prompt("arbitrary", { model: "beta/private" });
+void session.prompt("known", { model: "alpha/known" });
+void session.prompt("arbitrary", { model: "beta/private" });
 // @ts-expect-error Per-Turn selection must use a registered Provider prefix.
-const invalidPrompt = session.prompt("invalid", { model: "missing/model" });
-void knownPrompt;
-void arbitraryPrompt;
-void invalidPrompt;
+void session.prompt("invalid", { model: "missing/model" });
 
 const defaultModel: "alpha/known" = definition.model;
 const reorderedModel: "beta/private" = reordered.model;

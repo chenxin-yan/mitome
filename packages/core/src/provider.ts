@@ -17,14 +17,10 @@ export interface Provider<
 
 export type AnyProvider = Provider<string, ReadonlyArray<string>>;
 
-type NativeModelIdentifier<ModelIds extends ReadonlyArray<string>> =
-  | ModelIds[number]
-  | (string & {});
-
 /** A Provider-qualified Model identifier. */
 export type ModelIdentifier<Value extends AnyProvider> =
   Value extends Provider<infer Id, infer ModelIds>
-    ? `${Id}/${NativeModelIdentifier<ModelIds>}`
+    ? `${Id}/${ModelIds[number] | (string & {})}`
     : never;
 
 interface ProviderMetadata {
@@ -36,12 +32,16 @@ const providerMetadata = new WeakMap<AnyProvider, ProviderMetadata>();
 
 /** Creates a configured Provider without exposing credentials or provisioning behavior. */
 export const makeProvider = <const Id extends string, const ModelIds extends ReadonlyArray<string>>(
-  id: Id,
+  id: Id & (Id extends "" | `${string}/${string}` ? never : unknown),
   modelIds: ModelIds,
   credential: CredentialDescriptor | undefined,
   provision: (modelId: string) => Layer.Layer<LanguageModel.LanguageModel, unknown, never>,
 ): Provider<Id, ModelIds> => {
-  const provider = { id, modelIds } as Provider<Id, ModelIds>;
+  if (id.length === 0 || id.includes("/")) {
+    throw new TypeError("Provider id must be non-empty and contain no '/'");
+  }
+
+  const provider = { id: id as Id, modelIds } as Provider<Id, ModelIds>;
   providerMetadata.set(provider, { credential, provision });
   return provider;
 };

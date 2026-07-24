@@ -253,7 +253,7 @@ const createSessionImpl: (
       );
     }
 
-    const modelIdentifier = `${parsed.providerId}/${parsed.modelId}`;
+    const modelIdentifier = identifier as string;
     const cached = models.get(modelIdentifier);
     if (cached !== undefined) return Effect.succeed(cached);
 

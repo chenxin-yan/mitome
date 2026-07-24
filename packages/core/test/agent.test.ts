@@ -42,29 +42,18 @@ describe("Agent Definition validation", () => {
       const provider = makeProvider("registered", [] as const, undefined, () => {
         throw new Error("validation must not provision Models");
       });
-      const duplicate = {
-        providers: [provider, provider],
-        model: "registered/model",
-        plugins: [],
-      } as AgentDefinition;
-      const malformed = {
-        providers: [provider],
-        model: "registered/",
-        plugins: [],
-      } as AgentDefinition;
-      const unregistered = {
-        providers: [provider],
-        model: "missing/model",
-        plugins: [],
-      } as AgentDefinition;
+      const invalidDefinition = (model: string, providers = [provider]) =>
+        ({ providers, model, plugins: [] }) as AgentDefinition;
 
-      expect((yield* getAgentDefinitionError(duplicate)).message).toBe(
-        "Duplicate Provider id: registered",
-      );
-      expect((yield* getAgentDefinitionError(malformed)).message).toBe(
+      expect(
+        (yield* getAgentDefinitionError(
+          invalidDefinition("registered/model", [provider, provider]),
+        )).message,
+      ).toBe("Duplicate Provider id: registered");
+      expect((yield* getAgentDefinitionError(invalidDefinition("registered/"))).message).toBe(
         "Malformed Model identifier: registered/",
       );
-      expect((yield* getAgentDefinitionError(unregistered)).message).toBe(
+      expect((yield* getAgentDefinitionError(invalidDefinition("missing/model"))).message).toBe(
         "Unregistered Provider id: missing",
       );
     }),
