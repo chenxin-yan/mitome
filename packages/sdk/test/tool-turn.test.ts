@@ -1,72 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Schema, Stream } from "effect";
 import { Prompt, Response } from "effect/unstable/ai";
-import {
-  defineAgent,
-  definePlugin,
-  tool,
-  withSession,
-  type InputSchema,
-  type StandardSchema,
-} from "../src/index.js";
-import { makeTestProvider } from "./provider.js";
-
-const stringSchema: StandardSchema<unknown, string> = {
-  "~standard": {
-    version: 1,
-    vendor: "test",
-    validate: (value) =>
-      typeof value === "string"
-        ? { value, issues: undefined }
-        : { issues: [{ message: "expected string" }] },
-  },
-};
-
-const jsonStringSchema: InputSchema<string> = {
-  "~standard": {
-    ...stringSchema["~standard"],
-    jsonSchema: {
-      input: () => ({ type: "string" }),
-      output: () => ({ type: "string" }),
-    },
-  },
-};
-
-const makeToolModel = () => {
-  let calls = 0;
-  let secondPrompt: Prompt.Prompt | undefined;
-  const provider = makeTestProvider((options) => {
-    calls += 1;
-    if (calls === 2) {
-      secondPrompt = options.prompt;
-      return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
-    }
-    const call = Response.makePart("tool-call", {
-      id: "call-1",
-      name: "echo",
-      params: "hello",
-      providerExecuted: false,
-    });
-    return Stream.concat(
-      Stream.succeed(call),
-      Stream.unwrap(
-        options.toolkit!.handle("echo", "hello").pipe(
-          Effect.map((results) =>
-            Stream.map(results, (result) =>
-              Response.makePart("tool-result", {
-                id: call.id,
-                name: call.name,
-                providerExecuted: false,
-                ...result,
-              }),
-            ),
-          ),
-        ),
-      ),
-    );
-  });
-  return { provider, calls: () => calls, prompt: () => secondPrompt };
-};
+import { defineAgent, definePlugin, tool, withSession, type InputSchema } from "../src/index.js";
+import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
 
 describe("@mitome/sdk Tool", () => {
   test("reports every Standard Schema issue with its path", async () => {
@@ -151,10 +87,8 @@ describe("@mitome/sdk Tool", () => {
     let calls = 0;
     let handlerCalls = 0;
     let secondPrompt: Prompt.Prompt | undefined;
-    let handlerStarted!: () => void;
-    let handlerAborted!: () => void;
-    const started = new Promise<void>((resolve) => (handlerStarted = resolve));
-    const aborted = new Promise<void>((resolve) => (handlerAborted = resolve));
+    const { promise: started, resolve: handlerStarted } = Promise.withResolvers<void>();
+    const { promise: aborted, resolve: handlerAborted } = Promise.withResolvers<void>();
     const model = makeTestProvider((options) => {
       calls += 1;
       if (calls === 3) {
@@ -241,10 +175,8 @@ describe("@mitome/sdk Tool", () => {
   });
 
   test("aborts an abandoned iterator's active handler before withSession resolves", async () => {
-    let handlerStarted!: () => void;
-    let handlerAborted!: () => void;
-    const started = new Promise<void>((resolve) => (handlerStarted = resolve));
-    const aborted = new Promise<void>((resolve) => (handlerAborted = resolve));
+    const { promise: started, resolve: handlerStarted } = Promise.withResolvers<void>();
+    const { promise: aborted, resolve: handlerAborted } = Promise.withResolvers<void>();
     const model = makeTestProvider((options) => {
       const call = Response.makePart("tool-call", {
         id: "call-1",

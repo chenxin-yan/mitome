@@ -5,11 +5,10 @@ import { WebSocketServer } from "ws";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { createSession, credentialDescriptor } from "@mitome/core";
-import { agent, serve } from "../support.js";
+import { agent, serve, sse, withKey } from "../support.js";
 import { openai } from "../../src/openai/index.js";
 
 const key = "MITOME_OPENAI_TEST_KEY";
-const sse = (data: unknown) => `data: ${JSON.stringify(data)}\n\n`;
 const response = (id: string, output: ReadonlyArray<unknown> = []) => ({
   id,
   object: "response",
@@ -76,17 +75,6 @@ const textStream = (respId: string, msgId: string, deltas: ReadonlyArray<string>
     message(msgId, deltas.join(""), "completed"),
   );
 
-const withKey = async <A>(run: () => Promise<A>): Promise<A> => {
-  const previous = process.env[key];
-  process.env[key] = "synthetic-key";
-  try {
-    return await run();
-  } finally {
-    if (previous === undefined) delete process.env[key];
-    else process.env[key] = previous;
-  }
-};
-
 describe("openai", () => {
   test("exposes its credential descriptor without building a Session", () => {
     expect(credentialDescriptor(openai({ apiKeyEnv: "MITOME_TEST_API_KEY" }))).toBe(
@@ -136,7 +124,7 @@ describe("openai", () => {
     });
 
     try {
-      await withKey(async () => {
+      await withKey(key, async () => {
         const provider = openai({
           apiKeyEnv: key,
           baseUrl: `http://127.0.0.1:${server.port}/v1/`,
@@ -236,7 +224,7 @@ describe("openai", () => {
       },
     });
     try {
-      await withKey(async () => {
+      await withKey(key, async () => {
         const provider = openai({
           apiKeyEnv: key,
           baseUrl: `http://127.0.0.1:${server.port}/v1`,
@@ -311,7 +299,7 @@ describe("openai", () => {
       server.listen(0, "127.0.0.1", resolve);
     });
     try {
-      await withKey(async () => {
+      await withKey(key, async () => {
         const echo = Tool.make("echo", {
           parameters: Schema.Struct({ text: Schema.String }),
           success: Schema.String,
@@ -411,7 +399,7 @@ describe("openai", () => {
       },
     });
     try {
-      await withKey(async () => {
+      await withKey(key, async () => {
         const echo = Tool.make("echo", {
           parameters: Schema.Struct({ text: Schema.String }),
           success: Schema.String,

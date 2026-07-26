@@ -1,8 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Stream } from "effect";
-import { AiError, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
-import { Schema } from "effect";
-import { type AgentDefinition, createSession, definePlugin } from "../../src/index.js";
+import { Effect, Layer, Schema, Stream } from "effect";
+import { AiError, LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
+import {
+  type AgentDefinition,
+  createSession,
+  definePlugin,
+  makeProvider,
+} from "../../src/index.js";
 import { makeTestProvider } from "../support/provider.js";
 
 const makeToolModel = () => {
@@ -147,6 +151,128 @@ describe("createSession Tool Turn", () => {
 
       expect(calls).toBe(17);
       expect(events.at(-1)).toEqual({ type: "response-complete" });
+    }),
+  );
+
+  it.effect("blocks Tool execution when input validation fails before pre-Tool Hooks", () =>
+    Effect.gen(function* () {
+      const order: Array<string> = [];
+      const validationFailure = new Error("invalid input");
+      let modelCalls = 0;
+      const provider = makeProvider("test", [] as const, undefined, () =>
+        Layer.effect(
+          LanguageModel.LanguageModel,
+          LanguageModel.make({
+            generateText: () => Effect.succeed([]),
+            streamText: () => {
+              modelCalls += 1;
+              return Stream.succeed(
+                modelCalls === 1
+                  ? {
+                      type: "tool-call" as const,
+                      id: "call-1",
+                      name: "echo",
+                      params: { text: "hello" },
+                    }
+                  : { type: "text-delta" as const, id: "done", delta: "done" },
+              );
+            },
+          }),
+        ),
+      );
+      const echo = Tool.make("echo", {
+        parameters: Schema.Struct({ text: Schema.String }),
+        success: Schema.String,
+      });
+      const session = yield* createSession({
+        providers: [provider],
+        model: "test/default",
+        plugins: [
+          {
+            name: "echo",
+            toolkit: Toolkit.make(echo),
+            handlers: {
+              echo: () =>
+                Effect.sync(() => {
+                  order.push("handler");
+                  return "handled";
+                }),
+            },
+            toolInputValidators: {
+              echo: () =>
+                Effect.sync(() => order.push("validator")).pipe(
+                  Effect.andThen(Effect.fail(validationFailure)),
+                ),
+            },
+            hooks: {
+              preTool: () => Effect.sync(() => void order.push("preTool")),
+            },
+          },
+        ],
+      });
+
+      const error = yield* Effect.flip(Stream.runDrain(session.prompt("Hi")));
+
+      expect(error).toMatchObject({
+        _tag: "TurnError",
+        message: "Tool input validation failed",
+        cause: validationFailure,
+      });
+      expect(order).toEqual(["validator"]);
+      expect(modelCalls).toBe(1);
+    }),
+  );
+
+  it.effect("validates successful Tool results after post-Tool Hooks", () =>
+    Effect.gen(function* () {
+      const fixture = makeToolModel();
+      const order: Array<string> = [];
+      const echo = Tool.make("echo", {
+        parameters: Schema.Struct({ text: Schema.String }),
+        success: Schema.String,
+      });
+      const session = yield* createSession({
+        providers: [fixture.provider],
+        model: "test/default",
+        plugins: [
+          {
+            name: "echo",
+            toolkit: Toolkit.make(echo),
+            handlers: {
+              echo: () =>
+                Effect.sync(() => {
+                  order.push("handler");
+                  return "handled";
+                }),
+            },
+            toolResultValidators: {
+              echo: () =>
+                Effect.sync(() => {
+                  order.push("validator");
+                  return "validated";
+                }),
+            },
+            hooks: {
+              postTool: () =>
+                Effect.sync(() => {
+                  order.push("postTool");
+                  return "post";
+                }),
+            },
+          },
+        ],
+      });
+
+      const events = yield* Stream.runCollect(session.prompt("Hi"));
+
+      expect(order).toEqual(["handler", "postTool", "validator"]);
+      expect([...events]).toContainEqual({
+        type: "tool-result",
+        id: "call-1",
+        name: "echo",
+        result: "validated",
+        isFailure: false,
+      });
     }),
   );
 

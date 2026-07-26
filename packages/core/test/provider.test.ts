@@ -2,10 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 import { Layer, Stream } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
 import { makeProvider } from "../src/index.js";
+import { testLanguageModel } from "./support/provider.js";
 
-const stubLayer = Layer.succeed(LanguageModel.LanguageModel, {
-  streamText: () => Stream.empty,
-} as unknown as LanguageModel.Service);
+const stubLayer = Layer.succeed(
+  LanguageModel.LanguageModel,
+  testLanguageModel(() => Stream.empty),
+);
 
 describe("makeProvider", () => {
   it("rejects Provider ids that cannot qualify a Model identifier", () => {

@@ -7,11 +7,13 @@ interface TestModelOptions {
   readonly toolkit?: Toolkit.WithHandler<Record<string, Tool.Any>>;
 }
 
+export const testLanguageModel = (
+  streamText: (options: TestModelOptions) => unknown,
+): LanguageModel.Service => ({ streamText }) as unknown as LanguageModel.Service;
+
 export const makeTestProvider = (streamText: (options: TestModelOptions) => unknown) =>
   makeProvider("test", [] as const, undefined, () =>
-    Layer.succeed(LanguageModel.LanguageModel, {
-      streamText,
-    } as unknown as LanguageModel.Service),
+    Layer.succeed(LanguageModel.LanguageModel, testLanguageModel(streamText)),
   );
 
 export const makeDeterministicProvider = (output: string) =>

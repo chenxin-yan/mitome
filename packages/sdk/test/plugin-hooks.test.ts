@@ -2,74 +2,14 @@ import { describe, expect, test } from "vitest";
 import { Effect, Stream } from "effect";
 import { Response } from "effect/unstable/ai";
 import { type Plugin } from "@mitome/core";
-import {
-  defineAgent,
-  definePlugin,
-  tool,
-  withSession,
-  type InputSchema,
-  type StandardSchema,
-} from "../src/index.js";
-import { makeTestProvider } from "./provider.js";
-
-const stringSchema: StandardSchema<unknown, string> = {
-  "~standard": {
-    version: 1,
-    vendor: "test",
-    validate: (value) =>
-      typeof value === "string"
-        ? { value, issues: undefined }
-        : { issues: [{ message: "expected string" }] },
-  },
-};
-
-const jsonStringSchema: InputSchema<string> = {
-  "~standard": {
-    ...stringSchema["~standard"],
-    jsonSchema: {
-      input: () => ({ type: "string" }),
-      output: () => ({ type: "string" }),
-    },
-  },
-};
-
-const makeToolModel = () => {
-  let calls = 0;
-  return makeTestProvider((options) => {
-    calls += 1;
-    if (calls === 2)
-      return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-    const call = Response.makePart("tool-call", {
-      id: "call-1",
-      name: "echo",
-      params: "hello",
-      providerExecuted: false,
-    });
-    return Stream.concat(
-      Stream.succeed(call),
-      Stream.unwrap(
-        options.toolkit!.handle("echo", "hello").pipe(
-          Effect.map((results) =>
-            Stream.map(results, (result) =>
-              Response.makePart("tool-result", {
-                id: call.id,
-                name: call.name,
-                providerExecuted: false,
-                ...result,
-              }),
-            ),
-          ),
-        ),
-      ),
-    );
-  });
-};
+import { defineAgent, definePlugin, tool, withSession } from "../src/index.js";
+import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
 
 describe("@mitome/sdk Plugin Hooks", () => {
   test("adapts Promise Hooks into the Core lifecycle in Agent Definition order", async () => {
     const log: Array<string> = [];
     const signals: Array<boolean> = [];
-    const model = makeToolModel();
+    const model = makeToolModel().provider;
     const core: Plugin = {
       name: "core",
       hooks: {
@@ -181,13 +121,10 @@ describe("@mitome/sdk Plugin Hooks", () => {
   });
 
   test("aborts an in-flight Promise Hook when iteration stops", async () => {
-    let started!: () => void;
-    const hookStarted = new Promise<void>((resolve) => {
-      started = resolve;
-    });
+    const { promise: hookStarted, resolve: started } = Promise.withResolvers<void>();
     let aborted = false;
     const agent = defineAgent({
-      providers: [makeToolModel()],
+      providers: [makeToolModel().provider],
       model: "test/default",
       plugins: [
         definePlugin({
@@ -223,10 +160,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
   });
 
   test("continues remaining end Hooks when iteration stops during cleanup", async () => {
-    let started!: () => void;
-    const hookStarted = new Promise<void>((resolve) => {
-      started = resolve;
-    });
+    const { promise: hookStarted, resolve: started } = Promise.withResolvers<void>();
     let aborted = false;
     let laterCompleted = false;
     const agent = defineAgent({
@@ -313,7 +247,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
       },
     };
     const failing = defineAgent({
-      providers: [makeToolModel()],
+      providers: [makeToolModel().provider],
       model: "test/default",
       plugins: [
         core,
@@ -339,7 +273,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
     expect(events.at(-1)).toEqual({ type: "response-complete" });
 
     const invalid = defineAgent({
-      providers: [makeToolModel()],
+      providers: [makeToolModel().provider],
       model: "test/default",
       plugins: [
         { name: "core", hooks: { postTool: () => Effect.succeed(1) } },
