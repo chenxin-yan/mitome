@@ -150,7 +150,7 @@ describe("createSession Tool Turn", () => {
     }),
   );
 
-  it.effect("passes through a dynamic Tool failure without running post-Tool Hooks", () =>
+  it.effect("runs post-Tool Hooks for dynamic Tool failures", () =>
     Effect.gen(function* () {
       const fixture = makeToolModel();
       let postCalls = 0;
@@ -200,14 +200,15 @@ describe("createSession Tool Turn", () => {
         type: "tool-result",
         isFailure: true,
       });
-      expect(postCalls).toBe(0);
+      expect(postCalls).toBe(1);
       expect(events.at(-1)).toEqual({ type: "response-complete" });
     }),
   );
 
-  it.effect("returns a Core-native Tool's typed failure and continues the Turn", () =>
+  it.effect("transforms a Core-native Tool failure without running its success validator", () =>
     Effect.gen(function* () {
       const fixture = makeToolModel();
+      let validatorCalls = 0;
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),
         success: Schema.String,
@@ -219,9 +220,23 @@ describe("createSession Tool Turn", () => {
         model: "test/default",
         plugins: [
           {
+            name: "transform",
+            hooks: {
+              postTool: ({ isFailure }) =>
+                Effect.succeed({ code: isFailure ? "transformed" : "unexpected" }),
+            },
+          },
+          {
             name: "echo",
             toolkit: Toolkit.make(echo),
             handlers: { echo: () => Effect.fail({ code: "expected" }) },
+            toolResultValidators: {
+              echo: (result) =>
+                Effect.sync(() => {
+                  validatorCalls += 1;
+                  return result;
+                }),
+            },
           },
         ],
       };
@@ -233,9 +248,10 @@ describe("createSession Tool Turn", () => {
         type: "tool-result",
         id: "call-1",
         name: "echo",
-        result: { code: "expected" },
+        result: { code: "transformed" },
         isFailure: true,
       });
+      expect(validatorCalls).toBe(0);
       expect(events.at(-1)).toEqual({ type: "response-complete" });
       expect(fixture.calls()).toBe(2);
     }),

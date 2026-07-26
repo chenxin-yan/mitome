@@ -300,7 +300,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
     ).rejects.toMatchObject({ _tag: "TurnError", cause: original });
   });
 
-  test("centrally validates any Plugin's SDK Tool transform and preserves SDK failures", async () => {
+  test("centrally validates SDK Tool transforms and observes SDK failures", async () => {
     let postCalls = 0;
     const core: Plugin = {
       name: "core",
@@ -335,7 +335,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
       type: "tool-result",
       isFailure: true,
     });
-    expect(postCalls).toBe(0);
+    expect(postCalls).toBe(1);
     expect(events.at(-1)).toEqual({ type: "response-complete" });
 
     const invalid = defineAgent({

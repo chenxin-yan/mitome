@@ -23,7 +23,7 @@ export interface PluginHooks<Resource = never> {
   readonly preTool?: (
     context: ToolHookContext,
   ) => Effect.Effect<void | { readonly reason: string }, unknown, Resource>;
-  /** Failures already encoded outside an Effect failure schema skip this Hook. */
+  /** Observes and may transform successful or failed Tool handler results. */
   readonly postTool?: (context: ToolResultHookContext) => Effect.Effect<unknown, unknown, Resource>;
 }
 
