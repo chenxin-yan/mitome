@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { Effect, Layer, Schema, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
 import * as core from "@mitome/core";
-import { LanguageModel, Response } from "effect/unstable/ai";
+import { Response } from "effect/unstable/ai";
 import { createSession } from "@mitome/core";
 import * as sdkEffect from "../src/effect.js";
 import { TurnError, defineAgent, definePlugin, withSession } from "../src/index.js";
@@ -60,11 +60,9 @@ describe("@mitome/sdk", () => {
 
   test("forwards a typed per-Turn Model override", async () => {
     const provider = (id: string, output: string) =>
-      core.makeProvider(id, [] as const, undefined, () =>
-        Layer.succeed(LanguageModel.LanguageModel, {
-          streamText: () =>
-            Stream.succeed(Response.makePart("text-delta", { id: output, delta: output })),
-        } as unknown as LanguageModel.Service),
+      makeTestProvider(
+        () => Stream.succeed(Response.makePart("text-delta", { id: output, delta: output })),
+        id,
       );
     const first = provider("first", "default");
     const second = provider("second", "override");

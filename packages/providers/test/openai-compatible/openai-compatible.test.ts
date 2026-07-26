@@ -2,29 +2,16 @@ import { describe, expect, test } from "vitest";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { createSession, credentialDescriptor } from "@mitome/core";
-import { agent, serve } from "../support.js";
+import { agent, serve, sse, withKey } from "../support.js";
 import { openaiCompatible } from "../../src/openai-compatible/index.js";
 
 const key = "MITOME_OPENAI_COMPATIBLE_TEST_KEY";
-const sse = (data: unknown) =>
-  `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
 const chunk = (delta: Record<string, unknown>, finishReason: string | null = null) => ({
   id: "chatcmpl-test",
   model: "gpt-4o-mini",
   created: 1,
   choices: [{ index: 0, finish_reason: finishReason, delta }],
 });
-
-const withKey = async <A>(run: () => Promise<A>): Promise<A> => {
-  const previous = process.env[key];
-  process.env[key] = "synthetic-key";
-  try {
-    return await run();
-  } finally {
-    if (previous === undefined) delete process.env[key];
-    else process.env[key] = previous;
-  }
-};
 
 describe("openaiCompatible", () => {
   test("exposes its credential descriptor without building a Session", () => {
@@ -80,7 +67,7 @@ describe("openaiCompatible", () => {
     });
 
     try {
-      await withKey(async () => {
+      await withKey(key, async () => {
         const provider = openaiCompatible({
           id: "compatible",
           apiKeyEnv: key,
@@ -168,7 +155,7 @@ describe("openaiCompatible", () => {
       },
     });
     try {
-      await withKey(async () => {
+      await withKey(key, async () => {
         const provider = openaiCompatible({
           id: "compatible",
           apiKeyEnv: key,
@@ -245,7 +232,7 @@ describe("openaiCompatible", () => {
       },
     });
     try {
-      await withKey(async () => {
+      await withKey(key, async () => {
         const echo = Tool.make("echo", {
           parameters: Schema.Struct({ text: Schema.String }),
           success: Schema.String,

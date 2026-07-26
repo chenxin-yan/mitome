@@ -2,14 +2,16 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { createSession, defineAgent, makeProvider } from "../../src/index.js";
+import { testLanguageModel } from "../support/provider.js";
 
 const textLayer = (output: string, capture: (prompt: Prompt.Prompt) => void = () => undefined) =>
-  Layer.succeed(LanguageModel.LanguageModel, {
-    streamText: ({ prompt }: { readonly prompt: Prompt.Prompt }) => {
+  Layer.succeed(
+    LanguageModel.LanguageModel,
+    testLanguageModel(({ prompt }) => {
       capture(prompt);
       return Stream.succeed(Response.makePart("text-delta", { id: output, delta: output }));
-    },
-  } as unknown as LanguageModel.Service);
+    }),
+  );
 
 describe("Provider-backed Sessions", () => {
   it.effect("uses the Default Model and a per-Turn override with shared history", () =>
@@ -87,10 +89,9 @@ describe("Provider-backed Sessions", () => {
       let calls = 0;
       const provider = makeProvider("tools", [] as const, undefined, (modelId) => {
         selected.push(modelId);
-        return Layer.succeed(LanguageModel.LanguageModel, {
-          streamText: (options: {
-            readonly toolkit?: Toolkit.WithHandler<Record<string, Tool.Any>>;
-          }) => {
+        return Layer.succeed(
+          LanguageModel.LanguageModel,
+          testLanguageModel((options) => {
             calls += 1;
             if (calls === 2) {
               return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
@@ -118,8 +119,8 @@ describe("Provider-backed Sessions", () => {
                 ),
               ),
             );
-          },
-        } as unknown as LanguageModel.Service);
+          }),
+        );
       });
       const echo = Tool.make("echo", { success: Schema.String });
       const session = yield* createSession(
@@ -155,10 +156,9 @@ describe("Provider-backed Sessions", () => {
           Effect.acquireRelease(
             Effect.sync(() => {
               builds += 1;
-              return {
-                streamText: () =>
-                  Stream.succeed(Response.makePart("text-delta", { id: modelId, delta: modelId })),
-              } as unknown as LanguageModel.Service;
+              return testLanguageModel(() =>
+                Stream.succeed(Response.makePart("text-delta", { id: modelId, delta: modelId })),
+              );
             }),
             () => Effect.sync(() => void (releases += 1)),
           ),

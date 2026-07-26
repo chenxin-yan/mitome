@@ -21,11 +21,12 @@ type PreparedTool =
       readonly key: string;
       readonly toolCallId: string;
       readonly params: unknown;
-      readonly hookFailure: unknown;
+      readonly message: string;
+      readonly cause: unknown;
     };
 
 type ApprovalOutcome =
-  | { readonly _tag: "hook-failure"; readonly cause: unknown }
+  | { readonly _tag: "failure"; readonly message: string; readonly cause: unknown }
   | { readonly _tag: "veto"; readonly reason: string }
   | {
       readonly _tag: "approval";
@@ -134,36 +135,56 @@ export const makeApprovals = (
                           Effect.succeed({ _tag: "failure" as const, value: params, cause }),
                         ),
                       );
-                const preTool = yield* runPreTool(tool.name, input.value).pipe(
-                  Effect.map((veto) => ({ _tag: "ok" as const, veto })),
-                  Effect.catch((cause) => Effect.succeed({ _tag: "failure" as const, cause })),
-                );
+                const preTool =
+                  input._tag === "failure"
+                    ? undefined
+                    : yield* runPreTool(tool.name, input.value).pipe(
+                        Effect.map((veto) => ({ _tag: "ok" as const, veto })),
+                        Effect.catch((cause) =>
+                          Effect.succeed({ _tag: "failure" as const, cause }),
+                        ),
+                      );
                 const prepared: PreparedTool =
-                  preTool._tag === "failure"
+                  input._tag === "failure"
                     ? {
                         _tag: "failure",
-                        key: keyFor(tool.name, inputValidator === undefined ? input.value : params),
+                        key: keyFor(tool.name, params),
                         toolCallId: context.toolCallId,
-                        params: input.value,
-                        hookFailure: preTool.cause,
+                        params,
+                        message: "Tool input validation failed",
+                        cause: input.cause,
                       }
-                    : {
-                        _tag: "ok",
-                        key: keyFor(tool.name, inputValidator === undefined ? input.value : params),
-                        toolCallId: context.toolCallId,
-                        params: input.value,
-                        veto: preTool.veto,
-                      };
+                    : preTool?._tag === "failure"
+                      ? {
+                          _tag: "failure",
+                          key: keyFor(
+                            tool.name,
+                            inputValidator === undefined ? input.value : params,
+                          ),
+                          toolCallId: context.toolCallId,
+                          params: input.value,
+                          message: "Pre-Tool Hook failed",
+                          cause: preTool.cause,
+                        }
+                      : {
+                          _tag: "ok",
+                          key: keyFor(
+                            tool.name,
+                            inputValidator === undefined ? input.value : params,
+                          ),
+                          toolCallId: context.toolCallId,
+                          params: input.value,
+                          veto: preTool?.veto,
+                        };
                 const items = preparedByKey.get(prepared.key) ?? [];
                 items.push(prepared);
                 preparedByKey.set(prepared.key, items);
                 preparedByCallId.set(context.toolCallId, prepared);
 
-                if (preTool._tag === "failure" || preTool.veto !== undefined) return true;
+                if (prepared._tag === "failure" || prepared.veto !== undefined) return true;
                 if (needsApproval === undefined || typeof needsApproval === "boolean") {
                   return needsApproval ?? false;
                 }
-                if (input._tag === "failure") return true;
                 // @effect-diagnostics-next-line unknownInEffectCatch:off
                 return yield* Effect.try({
                   try: () => needsApproval(input.value as never, context),
@@ -212,7 +233,7 @@ export const makeApprovals = (
       const prepared = preparedByCallId.get(toolCallId);
       if (prepared?._tag === "failure") {
         discardPrepared(toolCallId);
-        return { _tag: "hook-failure", cause: prepared.hookFailure };
+        return { _tag: "failure", message: prepared.message, cause: prepared.cause };
       }
       if (prepared?.veto !== undefined) {
         discardPrepared(toolCallId);
@@ -227,10 +248,8 @@ export const makeApprovals = (
 
     const onApprovalRequest: Approvals["onApprovalRequest"] = (part, call, record) => {
       const approval = outcomeFor(part.toolCallId);
-      if (approval._tag === "hook-failure") {
-        return Stream.fail(
-          new TurnError({ message: "Pre-Tool Hook failed", cause: approval.cause }),
-        );
+      if (approval._tag === "failure") {
+        return Stream.fail(new TurnError({ message: approval.message, cause: approval.cause }));
       }
       if (approval._tag === "veto") {
         record(

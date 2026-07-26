@@ -27,10 +27,14 @@ const temporaryDirectory = (): string => {
 
 const provider = () =>
   makeProvider("test", [] as const, undefined, () =>
-    Layer.succeed(LanguageModel.LanguageModel, {
-      streamText: () =>
-        Stream.succeed(Response.makePart("text-delta", { id: "test", delta: "done" })),
-    } as unknown as LanguageModel.Service),
+    Layer.effect(
+      LanguageModel.LanguageModel,
+      LanguageModel.make({
+        generateText: () => Effect.succeed([]),
+        streamText: () =>
+          Stream.succeed(Response.makePart("text-delta", { id: "test", delta: "done" })),
+      }),
+    ),
   );
 
 describe("@mitome/plugins", () => {

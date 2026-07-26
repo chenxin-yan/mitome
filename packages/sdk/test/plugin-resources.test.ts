@@ -2,73 +2,13 @@ import { describe, expect, test } from "vitest";
 import { Cause, Context, Effect, Exit, Layer, Result, Schema, SchemaGetter, Stream } from "effect";
 import { Response, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import { createSession, type Plugin } from "@mitome/core";
-import { makeTestProvider } from "./provider.js";
-import {
-  defineAgent,
-  definePlugin,
-  tool,
-  withSession,
-  type InputSchema,
-  type StandardSchema,
-} from "../src/index.js";
-
-const stringSchema: StandardSchema<unknown, string> = {
-  "~standard": {
-    version: 1,
-    vendor: "test",
-    validate: (value) =>
-      typeof value === "string"
-        ? { value, issues: undefined }
-        : { issues: [{ message: "expected string" }] },
-  },
-};
-
-const jsonStringSchema: InputSchema<string> = {
-  "~standard": {
-    ...stringSchema["~standard"],
-    jsonSchema: {
-      input: () => ({ type: "string" }),
-      output: () => ({ type: "string" }),
-    },
-  },
-};
+import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
+import { defineAgent, definePlugin, tool, withSession } from "../src/index.js";
 
 const textModel = () =>
   makeTestProvider(() =>
     Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
   );
-
-const toolModel = (name: string, doneAt = 2) => {
-  let calls = 0;
-  return makeTestProvider((options) => {
-    calls += 1;
-    if (calls === doneAt)
-      return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-    const call = Response.makePart("tool-call", {
-      id: `call-${calls}`,
-      name,
-      params: "hello",
-      providerExecuted: false,
-    });
-    return Stream.concat(
-      Stream.succeed(call),
-      Stream.unwrap(
-        options.toolkit!.handle(name, "hello").pipe(
-          Effect.map((results) =>
-            Stream.map(results, (result) =>
-              Response.makePart("tool-result", {
-                id: call.id,
-                name: call.name,
-                providerExecuted: false,
-                ...result,
-              }),
-            ),
-          ),
-        ),
-      ),
-    );
-  });
-};
 
 describe("@mitome/sdk Plugin resources", () => {
   test("acquires resources before sessionStart in Agent Definition order and disposes them in reverse", async () => {
@@ -216,7 +156,7 @@ describe("@mitome/sdk Plugin resources", () => {
 
     const events = await withSession(
       defineAgent({
-        providers: [toolModel("alpha-tool")],
+        providers: [makeToolModel("alpha-tool").provider],
         model: "test/default",
         plugins: [alpha, beta],
       }),
@@ -275,7 +215,11 @@ describe("@mitome/sdk Plugin resources", () => {
     });
 
     await withSession(
-      defineAgent({ providers: [toolModel("res-tool")], model: "test/default", plugins: [plugin] }),
+      defineAgent({
+        providers: [makeToolModel("res-tool").provider],
+        model: "test/default",
+        plugins: [plugin],
+      }),
       (session) => Array.fromAsync(session.prompt("Hi")),
     );
 
@@ -333,7 +277,7 @@ describe("@mitome/sdk Plugin resources", () => {
   test("keeps a resource live across Turn cancellation and passes the Session AbortSignal", async () => {
     const { promise: handlerStarted, resolve: started } = Promise.withResolvers<void>();
     const { promise: handlerAborted, resolve: aborted } = Promise.withResolvers<void>();
-    const model = toolModel("wait", 3);
+    const model = makeToolModel("wait", 3).provider;
     let disposed = 0;
     const definition = defineAgent({
       providers: [model],

@@ -305,6 +305,34 @@ const rest = async (reader: StdoutReader) => {
   return output;
 };
 
+const interactiveOutput = (child: ReturnType<typeof spawn>) => {
+  const reader = child.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
+  let stdout = "";
+  return {
+    readUntil: (expected: string) =>
+      Promise.race([
+        (async () => {
+          while (!stdout.includes(expected)) {
+            const next = await reader.next();
+            if (next.done) throw new Error(`${expected} prompt did not render`);
+            stdout += next.value;
+          }
+        })(),
+        delay(2_000).then(() => {
+          throw new Error(`${expected} prompt timed out`);
+        }),
+      ]),
+    output: async () => {
+      const [tail, stderr, exitCode] = await Promise.all([
+        rest(reader),
+        text(child.stderr),
+        exited(child),
+      ]);
+      return { stdout: stdout + tail, stderr, exitCode };
+    },
+  };
+};
+
 const exists = async (path: string) => {
   try {
     await access(path);
@@ -893,8 +921,9 @@ export default {
 
     const key = "synthetic-init-credential";
     const child = spawn(undefined, ["init"], current);
+    const interaction = interactiveOutput(child);
     child.stdin.write("\n");
-    await delay(500);
+    await interaction.readUntil("Model");
     child.stdin.write("\n");
     // Prompt.run consumes keypress events while active; feed the Credential
     // after the installer has completed and the password prompt is listening.
@@ -904,9 +933,9 @@ export default {
       await delay(10);
     }
     child.stdin.end(`${key}\n`);
-    const result = await output(child).finally(
-      () => new Promise<void>((done) => registry.close(() => done())),
-    );
+    const result = await interaction
+      .output()
+      .finally(() => new Promise<void>((done) => registry.close(() => done())));
     expect(result).toMatchObject({ exitCode: 0 });
     // 4 packages × (metadata + tarball), pinned by the isolated fixture HOME.
     expect(requests).toHaveLength(8);
@@ -984,10 +1013,11 @@ export default {
     await writeFile(join(config, "bunfig.toml"), '[install]\nregistry = "http://127.0.0.1:1/"\n');
     const key = "synthetic-never-stored";
     const child = spawn(undefined, ["init"], current);
+    const interaction = interactiveOutput(child);
     child.stdin.write("j\n");
-    await delay(500);
+    await interaction.readUntil("Model");
     child.stdin.end(`\n${key}\n`);
-    const result = await output(child);
+    const result = await interaction.output();
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout + result.stderr).not.toContain(key);
     expect(await readFile(join(config, "index.ts"), "utf8")).toContain(
@@ -1002,12 +1032,13 @@ export default {
     await cachedModelHints(current);
     await writeFile(join(config, "bunfig.toml"), '[install]\nregistry = "http://127.0.0.1:1/"\n');
     const child = spawn(undefined, ["init"], current);
+    const interaction = interactiveOutput(child);
     child.stdin.write("\n");
-    await delay(500);
+    await interaction.readUntil("Model");
     child.stdin.write(`${"j".repeat(openAiModelIds.length)}\n`);
-    await delay(500);
+    await interaction.readUntil("Model identifier");
     child.stdin.end("private-model\n");
-    const result = await output(child);
+    const result = await interaction.output();
     expect(result.exitCode).not.toBe(0);
     expect(await readFile(join(config, "index.ts"), "utf8")).toContain(
       'model: "openai/private-model"',
@@ -1018,12 +1049,13 @@ export default {
     const current = await scaffold("mitome-cli-");
     await cachedModelHints(current);
     const child = spawn(undefined, ["init"], current);
+    const interaction = interactiveOutput(child);
     child.stdin.write("\n");
-    await delay(500);
+    await interaction.readUntil("Model");
     child.stdin.write(`${"j".repeat(openAiModelIds.length)}\n`);
-    await delay(500);
+    await interaction.readUntil("Model identifier");
     child.stdin.end("   \n");
-    const result = await output(child);
+    const result = await interaction.output();
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("Model identifier is required.");
     expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
@@ -1070,16 +1102,18 @@ export default {
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
 
     const first = spawn(undefined, ["auth", "login", "--use", current.definition], current);
+    const firstInteraction = interactiveOutput(first);
     first.stdin.write("\n");
-    await delay(500);
+    await firstInteraction.readUntil("FIRST_PROVIDER_ENV");
     first.stdin.end("first-secret\n");
-    expect(await output(first)).toMatchObject({ exitCode: 0 });
+    expect(await firstInteraction.output()).toMatchObject({ exitCode: 0 });
 
     const second = spawn(undefined, ["auth", "login", "--use", current.definition], current);
+    const secondInteraction = interactiveOutput(second);
     second.stdin.write("j\n");
-    await delay(500);
+    await secondInteraction.readUntil("SECOND_PROVIDER_ENV");
     second.stdin.end("second-secret\n");
-    expect(await output(second)).toMatchObject({ exitCode: 0 });
+    expect(await secondInteraction.output()).toMatchObject({ exitCode: 0 });
 
     expect(await readFile(join(config, ".env"), "utf8")).toBe(
       "FIRST_PROVIDER_ENV=first-secret\nSECOND_PROVIDER_ENV=second-secret\n",
@@ -1099,32 +1133,13 @@ export default {
     async () => {
       const current = await fixture(multipleCredentialDefinitionSource());
       const child = spawn(undefined, ["auth", "login", "--use", current.definition], current);
-      const reader = child.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
-      let stdout = "";
-      const readUntil = (expected: string) =>
-        Promise.race([
-          (async () => {
-            while (!stdout.includes(expected)) {
-              const next = await reader.next();
-              if (next.done) throw new Error(`${expected} prompt did not render`);
-              stdout += next.value;
-            }
-          })(),
-          delay(2_000).then(() => {
-            throw new Error(`${expected} prompt timed out`);
-          }),
-        ]);
+      const interaction = interactiveOutput(child);
       try {
-        await readUntil("Provider");
+        await interaction.readUntil("Provider");
         child.stdin.write("\n");
-        await readUntil("FIRST_PROVIDER_ENV");
+        await interaction.readUntil("FIRST_PROVIDER_ENV");
         child.stdin.end("first-secret\n");
-        const [tail, stderr, exitCode] = await Promise.all([
-          rest(reader),
-          text(child.stderr),
-          exited(child),
-        ]);
-        expect({ stdout: stdout + tail, stderr, exitCode }).toMatchObject({ exitCode: 0 });
+        expect(await interaction.output()).toMatchObject({ exitCode: 0 });
       } finally {
         if (child.exitCode === null) child.kill("SIGKILL");
       }

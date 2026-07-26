@@ -6,15 +6,12 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createSession } from "@mitome/core";
-import { agent as definition, serve, spawnRuntime } from "../support.js";
+import { agent as definition, serve, spawnRuntime, sse } from "../support.js";
 import { codex, writeCredential } from "../../src/openai-codex/index.js";
 
 const directories: Array<string> = [];
 const jwt = (accountId: string) =>
   `header.${Buffer.from(JSON.stringify({ chatgpt_account_id: accountId })).toString("base64url")}.signature`;
-const sse = (data: unknown) =>
-  `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
-
 const credential = (
   access = "synthetic-access",
   refresh = "synthetic-refresh",
