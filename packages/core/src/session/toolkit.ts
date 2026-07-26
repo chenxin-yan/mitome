@@ -14,9 +14,14 @@ const validateResult = (
     // Result validators describe successful SDK outputs; failures use their Tool failure schema instead.
     const validated =
       handlerResult.isFailure || validator === undefined ? result : yield* validator(result);
-    // Dynamic Tools have no failure schema, so preserve the handler's encoded payload after Hooks run.
+    // Dynamic Tools have no failure schema to re-encode with, so the Hook-transformed
+    // value doubles as the encoded payload the model sees.
     if (handlerResult.isFailure && Tool.isDynamic(tool) && tool.failureSchema === Schema.Never) {
-      return { ...handlerResult, result: validated } as Tool.HandlerResult<Tool.Any>;
+      return {
+        ...handlerResult,
+        result: validated,
+        encodedResult: validated,
+      } as Tool.HandlerResult<Tool.Any>;
     }
     const schema = handlerResult.isFailure ? tool.failureSchema : tool.successSchema;
     const encodedResult = yield* Schema.encodeUnknownEffect(schema)(validated);

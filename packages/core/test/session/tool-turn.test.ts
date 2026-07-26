@@ -169,10 +169,10 @@ describe("createSession Tool Turn", () => {
           {
             name: "observe",
             hooks: {
-              postTool: ({ result }) =>
+              postTool: () =>
                 Effect.sync(() => {
                   postCalls += 1;
-                  return result;
+                  return { code: "transformed" };
                 }),
             },
           },
@@ -199,8 +199,12 @@ describe("createSession Tool Turn", () => {
       expect(events.find((event) => event.type === "tool-result")).toMatchObject({
         type: "tool-result",
         isFailure: true,
+        result: { code: "transformed" },
       });
       expect(postCalls).toBe(1);
+      // The transformed payload is what the model receives on the next Step.
+      const toolMessage = fixture.prompt()?.content.find((message) => message.role === "tool");
+      expect(JSON.stringify(toolMessage)).toContain("transformed");
       expect(events.at(-1)).toEqual({ type: "response-complete" });
     }),
   );
