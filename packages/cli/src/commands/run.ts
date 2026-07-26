@@ -13,11 +13,11 @@ export const runPrompt = ({
   Effect.gen(function* () {
     const path = yield* attempt(() => definitionPath(use));
     yield* attempt(() => checkRuntime(path));
-    yield* waitForChild(() => runHost(path, prompt));
+    process.exitCode = yield* waitForChild(() => runHost(path, prompt));
   });
 
 export const runInstall = ({ use }: { readonly use: Option.Option<string> }) =>
   Effect.gen(function* () {
     const path = yield* attempt(() => definitionPath(use));
-    yield* waitForChild(() => install(path));
+    process.exitCode = yield* waitForChild(() => install(path));
   });

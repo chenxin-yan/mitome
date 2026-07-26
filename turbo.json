@@ -35,6 +35,9 @@
       "cache": false
     },
     "//#fmt": {},
+    "//#check:types": {
+      "outputs": []
+    },
     "//#fmt:fix": {
       "cache": false
     },

@@ -11,7 +11,18 @@ const validateResult = (
   validator: ToolResultValidator | undefined,
 ): Effect.Effect<Tool.HandlerResult<Tool.Any>, unknown> =>
   Effect.gen(function* () {
-    const validated = validator === undefined ? result : yield* validator(result);
+    // Result validators describe successful SDK outputs; failures use their Tool failure schema instead.
+    const validated =
+      handlerResult.isFailure || validator === undefined ? result : yield* validator(result);
+    // Dynamic Tools have no failure schema to re-encode with, so the Hook-transformed
+    // value doubles as the encoded payload the model sees.
+    if (handlerResult.isFailure && Tool.isDynamic(tool) && tool.failureSchema === Schema.Never) {
+      return {
+        ...handlerResult,
+        result: validated,
+        encodedResult: validated,
+      } as Tool.HandlerResult<Tool.Any>;
+    }
     const schema = handlerResult.isFailure ? tool.failureSchema : tool.successSchema;
     const encodedResult = yield* Schema.encodeUnknownEffect(schema)(validated);
     return {
@@ -92,15 +103,6 @@ export const makeToolkit = (
             const validator = validators[name];
             const finalResults = yield* Effect.forEach(results, (handlerResult) =>
               Effect.gen(function* () {
-                // Schema-less dynamic Tool failures are already encoded and have no failure schema.
-                if (
-                  handlerResult.isFailure &&
-                  (validator !== undefined ||
-                    (Tool.isDynamic(tool) && tool.failureSchema === Schema.Never))
-                ) {
-                  return handlerResult;
-                }
-
                 let result = handlerResult.result;
                 for (const plugin of plugins) {
                   const postTool = plugin.hooks?.postTool;

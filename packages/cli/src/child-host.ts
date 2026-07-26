@@ -47,7 +47,7 @@ const isProviderAuthentication = (value: unknown): value is ProviderAuthenticati
 
 // No SIGINT forwarding (unlike runHost): the installer is short-lived and
 // terminal Ctrl-C reaches it through the process group.
-export const install = async (path: string): Promise<void> => {
+export const install = async (path: string): Promise<number> => {
   const child = Bun.spawn([process.execPath, "install"], {
     cwd: dirname(path),
     env: childEnv,
@@ -55,10 +55,10 @@ export const install = async (path: string): Promise<void> => {
     stdout: "inherit",
     stderr: "inherit",
   });
-  process.exitCode = await child.exited;
+  return child.exited;
 };
 
-export const runHost = async (path: string, prompt: string): Promise<void> => {
+export const runHost = async (path: string, prompt: string): Promise<number> => {
   const directory = configDirectory();
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.
@@ -73,7 +73,7 @@ export const runHost = async (path: string, prompt: string): Promise<void> => {
   const forwardSigint = () => child.kill("SIGINT");
   process.once("SIGINT", forwardSigint);
   try {
-    process.exitCode = await child.exited;
+    return await child.exited;
   } finally {
     process.off("SIGINT", forwardSigint);
   }

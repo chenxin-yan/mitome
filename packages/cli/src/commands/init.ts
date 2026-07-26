@@ -35,13 +35,13 @@ const initializationPath = async (): Promise<string> => {
   return path;
 };
 
-const initialize = async (path: string, provider: InitProvider, model: string): Promise<void> => {
+const initialize = async (path: string, provider: InitProvider, model: string): Promise<number> => {
   const directory = dirname(path);
   await mkdir(directory, { recursive: true });
   await writeFile(path, defaultAgentDefinitionSource({ provider, model }));
   await writeFile(join(directory, "AGENTS.md"), instructionsSource);
   await writeFile(join(directory, "package.json"), agentPackageSource());
-  await install(path);
+  return install(path);
 };
 
 export const runInit = Effect.gen(function* () {
@@ -75,7 +75,8 @@ export const runInit = Effect.gen(function* () {
       ? (yield* Prompt.run(Prompt.text({ message: "Model identifier" }))).trim()
       : modelChoice;
   if (model === "") return yield* fail("Model identifier is required.");
-  yield* waitForChild(() => initialize(path, provider, model));
-  if (process.exitCode !== 0) return;
+  const exitCode = yield* waitForChild(() => initialize(path, provider, model));
+  process.exitCode = exitCode;
+  if (exitCode !== 0) return;
   yield* authenticateDefinition(path, "login");
 });

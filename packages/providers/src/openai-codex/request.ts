@@ -72,6 +72,7 @@ export const requestFor = (
     instructions: system === undefined ? "" : contentFor(system.content),
     input,
     text: { verbosity: "low" },
+    // TODO: replay reasoning items for store:false continuity (#52).
     include: ["reasoning.encrypted_content"],
     prompt_cache_key: sessionId,
     tool_choice: "auto",

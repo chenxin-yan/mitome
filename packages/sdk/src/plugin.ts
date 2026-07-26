@@ -208,7 +208,7 @@ export interface PluginDefinition<
   readonly instructions?: string;
   readonly tools: Tools;
   readonly hooks?: PluginHooksDefinition<Resource>;
-  readonly setup?: (context: Pick<HookContext<Resource>, "signal">) => Promise<Resource>;
+  readonly setup?: () => Promise<Resource>;
   readonly dispose?: (resource: Resource) => Promise<void>;
 }
 
@@ -225,9 +225,7 @@ export function definePlugin<
     ([Resource | ToolResources<Tools>] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : {
-          readonly setup: (
-            context: Pick<HookContext<NoInfer<Resource>>, "signal">,
-          ) => Promise<Resource>;
+          readonly setup: () => Promise<Resource>;
         }),
 ): NoInfer<Plugin<Resource, unknown, ToolContributions<Tools>>>;
 export function definePlugin<
@@ -326,7 +324,7 @@ export function definePlugin<
             Effect.acquireRelease(
               // @effect-diagnostics-next-line unknownInEffectCatch:off
               Effect.tryPromise({
-                try: (signal) => definition.setup!({ signal }),
+                try: () => definition.setup!(),
                 catch: (cause) => cause,
               }),
               (value, exit) => {

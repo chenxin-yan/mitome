@@ -19,15 +19,16 @@ const run = async (
   cwd = rootDirectory,
   input?: string,
 ): Promise<void> => {
-  const child = Bun.spawn(command, {
+  const child = Bun.spawn([...command], {
     cwd,
     stdin: input === undefined ? "ignore" : "pipe",
     stdout: "inherit",
     stderr: "inherit",
   });
   if (input !== undefined) {
-    child.stdin.write(input);
-    child.stdin.end();
+    const stdin = child.stdin!;
+    stdin.write(input);
+    stdin.end();
   }
   if ((await child.exited) !== 0) throw new Error(`Command failed: ${command.join(" ")}`);
 };
