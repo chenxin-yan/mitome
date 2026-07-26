@@ -1,6 +1,6 @@
 ---
 "@mitome/core": patch
-"@mitome/sdk": patch
+"@mitome/sdk": minor
 "@mitome/cli": patch
 ---
 
