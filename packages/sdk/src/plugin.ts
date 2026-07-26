@@ -101,7 +101,17 @@ const validate = async <Output>(
   value: unknown,
 ): Promise<Output> => {
   const result = await standard.validate(value);
-  if (result.issues) throw new Error(result.issues[0]?.message ?? "Schema validation failed");
+  if (result.issues) {
+    const details = result.issues
+      .map(({ message, path }) => {
+        const location = path
+          ?.map((part) => String(typeof part === "object" ? part.key : part))
+          .join(".");
+        return location ? `${location}: ${message}` : message;
+      })
+      .join("; ");
+    throw new Error(details || "Schema validation failed");
+  }
   return result.value;
 };
 
@@ -264,10 +274,20 @@ export function definePlugin<
               typeof needsApproval === "boolean"
                 ? needsApproval
                 : (params: unknown, context: ToolApprovalContext) =>
-                    Effect.promise(() =>
-                      Promise.resolve()
-                        .then(() => needsApproval(params as never, context))
-                        .catch(() => true),
+                    // User predicates may reject with arbitrary values; catchCause handles them below.
+                    // @effect-diagnostics-next-line unknownInEffectCatch:off
+                    Effect.tryPromise({
+                      try: () =>
+                        Promise.resolve().then(() => needsApproval(params as never, context)),
+                      catch: (cause) => cause,
+                    }).pipe(
+                      // Approval predicate failures fail closed: deny approval after logging.
+                      Effect.catchCause((cause) =>
+                        Effect.logWarning(
+                          "Plugin tool approval predicate failed; denying approval",
+                          cause,
+                        ).pipe(Effect.as(true)),
+                      ),
                     ),
           }),
     });

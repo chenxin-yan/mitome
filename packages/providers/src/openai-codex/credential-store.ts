@@ -84,7 +84,7 @@ const modifyAuth = async <A>(
   } finally {
     // Unlink before close: a failing close must not leave the lock behind.
     await unlink(lockPath(configDirectory)).catch((error: unknown) => {
-      // A stale-reaped lock is already gone; don't mask the update's own error.
+      // The lock may have been removed externally; don't mask the update's own error.
       if (!isMissing(error)) throw error;
     });
     await lock.close();

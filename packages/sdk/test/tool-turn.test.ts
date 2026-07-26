@@ -69,6 +69,44 @@ const makeToolModel = () => {
 };
 
 describe("@mitome/sdk Tool", () => {
+  test("reports every Standard Schema issue with its path", async () => {
+    const inputSchema: InputSchema<unknown> = {
+      "~standard": {
+        version: 1,
+        vendor: "test",
+        validate: () => ({
+          issues: [
+            { message: "name is required", path: ["user", "name"] },
+            { message: "tag is invalid", path: [{ key: "tags" }, 0] },
+          ],
+        }),
+        jsonSchema: {
+          input: () => ({ type: "object" }),
+          output: () => ({ type: "object" }),
+        },
+      },
+    };
+    const plugin = definePlugin({
+      name: "validation",
+      tools: [
+        tool({
+          name: "validate",
+          inputSchema,
+          outputSchema: stringSchema,
+          handler: async () => "unused",
+        }),
+      ],
+    });
+
+    const failure = await Effect.runPromise(
+      Effect.flip(plugin.toolInputValidators!["validate"]!({})),
+    );
+
+    expect(failure).toMatchObject({
+      message: "user.name: name is required; tags.0: tag is invalid",
+    });
+  });
+
   test("validates Standard Schema input/output and completes a second Step", async () => {
     const fixture = makeToolModel();
     const definition = defineAgent({

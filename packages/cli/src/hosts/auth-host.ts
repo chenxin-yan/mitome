@@ -32,20 +32,26 @@ const authentication = providers.flatMap((provider) => {
 if (operation === undefined) {
   await writeFile(outputPath, JSON.stringify(authentication));
 } else {
-  const selected = authentication.find(({ id }) => id === selectedProviderId);
   if (
-    selected === undefined ||
-    typeof selected.credential === "string" ||
     authConfigDirectory === undefined ||
+    selectedProviderId === undefined ||
     (operation !== "login" && operation !== "logout")
   ) {
-    throw new Error("Selected Provider does not support OAuth authentication.");
+    throw new Error("Invalid Provider authentication host operation or configuration.");
+  }
+  const selected = authentication.find(({ id }) => id === selectedProviderId);
+  if (selected === undefined || typeof selected.credential === "string") {
+    throw new Error(
+      `Provider \`${selectedProviderId}\` was not found or does not declare OAuth authentication.`,
+    );
   }
   const capability = (await import(
     selected.credential.capability.module
   )) as Partial<AuthCapability>;
   if (typeof capability.authenticate !== "function") {
-    throw new Error("Selected Provider does not support OAuth authentication.");
+    throw new Error(
+      `OAuth capability for Provider \`${selectedProviderId}\` does not export \`authenticate\`.`,
+    );
   }
   const reader = createInterface({ input: process.stdin, crlfDelay: Infinity });
   const lines = reader[Symbol.asyncIterator]();

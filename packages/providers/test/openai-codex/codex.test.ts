@@ -391,7 +391,7 @@ describe("Codex SSE", () => {
         }
         const refresh = (await request.formData()).get("refresh_token") as string;
         refreshes.push(refresh);
-        // Longer than the former 5s lock wait, but below the 15s refresh timeout.
+        // Long enough to overlap refreshes, but below the 15s refresh and 30s lock timeouts.
         await setTimeout(6_000);
         if (refresh !== "shared-refresh") return new Response("stale refresh", { status: 400 });
         return tokenResponse("race-account", "race-refresh");
