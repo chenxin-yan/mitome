@@ -13,6 +13,8 @@ import authHost from "./hosts/auth-host.ts" with { type: "text" };
 
 const hostSource: string = definitionHost;
 const authHostSource: string = authHost;
+// process.execPath is the compiled mitome binary; BUN_BE_BUN re-executes it as plain Bun.
+const childEnv = { ...process.env, BUN_BE_BUN: "1" };
 
 export interface ProviderAuthentication {
   readonly id: string;
@@ -48,7 +50,7 @@ const isProviderAuthentication = (value: unknown): value is ProviderAuthenticati
 export const install = async (path: string): Promise<void> => {
   const child = Bun.spawn([process.execPath, "install"], {
     cwd: dirname(path),
-    env: { ...process.env, BUN_BE_BUN: "1" },
+    env: childEnv,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -63,7 +65,7 @@ export const runHost = async (path: string, prompt: string): Promise<void> => {
   const envFlag =
     directory === undefined ? "--no-env-file" : `--env-file=${join(directory, ".env")}`;
   const child = Bun.spawn([process.execPath, envFlag, "--eval", hostSource, path, prompt], {
-    env: { ...process.env, BUN_BE_BUN: "1" },
+    env: childEnv,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -88,7 +90,7 @@ export const inspectProviderAuthentication = async (
     const child = Bun.spawn(
       [process.execPath, "--no-env-file", "--eval", authHostSource, path, output],
       {
-        env: { ...process.env, BUN_BE_BUN: "1" },
+        env: childEnv,
         stdout: "ignore",
         stderr: "inherit",
       },
@@ -123,7 +125,7 @@ export const runOAuthAuth = async (
       providerId,
     ],
     {
-      env: { ...process.env, BUN_BE_BUN: "1" },
+      env: childEnv,
       stdin: "inherit",
       stdout: "inherit",
       stderr: "inherit",

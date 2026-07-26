@@ -53,13 +53,15 @@ try {
   const storeDirectory = join(rootDirectory, "node_modules", ".bun");
   const effectVersion: string = (await Bun.file(join(rootDirectory, "package.json")).json())
     .workspaces.catalog.effect;
-  const installedPackage = (name: string, version: string): string => {
+  const installedPackage = async (name: string, version: string): Promise<string> => {
     // The store can hold several versions on dev machines; pin to the catalog one.
-    const entry = [
-      ...new Bun.Glob(`**/node_modules/${name}/package.json`).scanSync({ cwd: storeDirectory }),
-    ].find((candidate) => candidate.includes(`${name}@${version}`));
-    if (entry === undefined) throw new Error(`Cannot find installed ${name}@${version}.`);
-    return dirname(join(storeDirectory, entry));
+    for await (const entry of new Bun.Glob(`**/node_modules/${name}/package.json`).scan({
+      cwd: storeDirectory,
+    })) {
+      const manifest: { version?: unknown } = await Bun.file(join(storeDirectory, entry)).json();
+      if (manifest.version === version) return dirname(join(storeDirectory, entry));
+    }
+    throw new Error(`Cannot find installed ${name}@${version}.`);
   };
   const dependencies = Object.fromEntries(
     await Promise.all(
@@ -81,7 +83,7 @@ try {
     }),
   );
   await cp(
-    installedPackage("effect", effectVersion),
+    await installedPackage("effect", effectVersion),
     join(temporaryDirectory, "vendor", "effect"),
     {
       recursive: true,

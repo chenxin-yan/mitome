@@ -83,6 +83,7 @@ export const modelCatalog = async ({
     await writeCache(path, { openai: catalog, fetchedAt: now() }).catch(() => {});
     return catalog;
   } catch {
+    // Catalog is optional: fetch abort/timeout, non-2xx responses, JSON parse failures, and models.dev schema drift all fall back to stale cache, then static hints.
     return cached === undefined ? fallback : cached.openai;
   }
 };

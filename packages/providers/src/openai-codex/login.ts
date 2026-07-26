@@ -39,6 +39,7 @@ const defaultBrowser = (url: string): void => {
     process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
   const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
   const child = spawn(command, args, { stdio: "ignore", detached: true });
+  // spawn ENOENT (no browser); the printed URL/paste flow remains.
   child.on("error", () => {});
   child.unref();
 };

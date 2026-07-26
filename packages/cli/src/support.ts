@@ -21,7 +21,20 @@ export const fail = (message: string) =>
 // after EOF waits forever. Ending the queue on stdin "end" makes prompts fail
 // with their documented QuitError; buffered keypresses still deliver first.
 // TODO: delete this layer once NodeTerminal ends its queue on stdin EOF (effect#4895).
-let stdinEnded = false; // "end" fires once per process and Bun never sets readableEnded
+let stdinEnded = false;
+process.stdin.once("end", () => {
+  stdinEnded = true;
+});
+let stdinTrackingStarted = false;
+export const stdinCanPrompt = (): boolean => {
+  if (!stdinTrackingStarted) {
+    stdinTrackingStarted = true;
+    // Bun never sets readableEnded; a passive listener starts EOF detection without consuming input.
+    process.stdin.once("readable", () => {});
+  }
+  return process.stdin.isTTY === true || process.stdin.readableLength > 0 || !stdinEnded;
+};
+
 export const promptTerminal = Layer.effect(
   Terminal.Terminal,
   Effect.map(BunTerminal.make(), (terminal) =>

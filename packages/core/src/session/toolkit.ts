@@ -46,6 +46,7 @@ export const makeToolkit = (
     ...plugins.map((plugin) => plugin.toolResultValidators ?? {}),
   );
   const toolkit = Toolkit.make(...baseTools);
+  // Cross-Plugin handlers are heterogeneous, so their merged record cannot satisfy Toolkit.HandlersFrom.
   return toolkit
     .toHandlers(Object.assign({}, ...plugins.map((plugin) => plugin.handlers ?? {})) as never)
     .pipe(
@@ -78,6 +79,8 @@ export const makeToolkit = (
               handle(name, params).pipe(
                 Effect.flatMap((stream) =>
                   Stream.runCollect(
+                    // Collection holds the approval semaphore permit until handler streams and Hooks finish.
+                    // TODO: revisit when streamText honors Tool concurrency (effect#6596).
                     stream as unknown as Stream.Stream<Tool.HandlerResult<Tool.Any>, unknown>,
                   ),
                 ),

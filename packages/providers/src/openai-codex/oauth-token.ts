@@ -33,8 +33,7 @@ export const token = async (
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(form),
-    // A refresh runs under the storage lock: an exchange hung past the 30s lock
-    // reap window would let another process reap a live lock, so bound it below.
+    // Keep refresh bounded while holding the storage lock, so a hung exchange does not hold it indefinitely.
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error("OAuth token exchange failed.");

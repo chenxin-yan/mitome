@@ -72,7 +72,7 @@ export const makeApprovals = (
     const preparedByCallId = new Map<string, PreparedTool>();
     // Toolkit.handle lacks toolCallId, so name+params keys are FIFO. The handler
     // retries a miss with decoded params to match transforming/defaulting schemas.
-    // TODO: collapse to preparedByCallId once handle receives toolCallId (effect#6597).
+    // TODO: collapse to preparedByCallId and remove the handle cast once handle receives toolCallId (effect#6597).
     const canonicalize = (value: unknown): unknown =>
       Array.isArray(value)
         ? value.map(canonicalize)

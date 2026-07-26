@@ -5,6 +5,7 @@ import { CliOutput } from "effect/unstable/cli";
 import { describe, expect, test, vi } from "vitest";
 import cliPackage from "../package.json" with { type: "json" };
 
+// Vitest cannot parse Bun's `with { type: "text" }` imports in child-host.ts.
 vi.mock("../src/hosts/host.ts", () => ({ default: "" }));
 vi.mock("../src/hosts/auth-host.ts", () => ({ default: "" }));
 

@@ -75,7 +75,7 @@ const choose = async <A>(
     const answer = (await question("> ")).trim();
     const index = answer === "" ? 0 : Number(answer) - 1;
     const choice = choices[index];
-    if (choice !== undefined && Number.isInteger(index)) return choice.value;
+    if (choice !== undefined) return choice.value;
     console.error(`Choose 1-${choices.length}.`);
   }
 };

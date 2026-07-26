@@ -1,4 +1,5 @@
 import { spawn as spawnChild } from "node:child_process";
+import { once } from "node:events";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
@@ -277,16 +278,12 @@ const spawn = (
   return child;
 };
 
-const exited = (child: ReturnType<typeof spawnChild>) => {
-  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(child.exitCode);
-  const events = child as unknown as {
-    once(event: "error", listener: (error: Error) => void): void;
-    once(event: "close", listener: (code: number | null) => void): void;
-  };
-  return new Promise<number | null>((resolve, reject) => {
-    events.once("error", reject);
-    events.once("close", resolve);
-  });
+const exited = async (child: ReturnType<typeof spawnChild>): Promise<number | null> => {
+  if (child.exitCode !== null || child.signalCode !== null) return child.exitCode;
+  // Bun's ChildProcess type omits its EventEmitter inheritance, but node:events handles it.
+  // @ts-expect-error
+  const [code] = await once(child, "close");
+  return code;
 };
 
 const output = async (child: ReturnType<typeof spawn>) => {
@@ -555,7 +552,7 @@ describe("compiled mitome", () => {
       stderr: "",
     });
 
-    // No config home at all: the empty --env-file fallback must still suppress
+    // No config home at all: --no-env-file must still suppress
     // Bun's automatic cwd .env autoload in the host.
     expect(
       await output(
@@ -1095,6 +1092,44 @@ export default {
     expect(ambiguous.stdout + ambiguous.stderr).toContain("first");
     expect(ambiguous.stdout + ambiguous.stderr).toContain("second");
   });
+
+  test(
+    "auth prompts while a pipe writer remains open without buffered input",
+    { timeout: 5_000 },
+    async () => {
+      const current = await fixture(multipleCredentialDefinitionSource());
+      const child = spawn(undefined, ["auth", "login", "--use", current.definition], current);
+      const reader = child.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
+      let stdout = "";
+      const readUntil = (expected: string) =>
+        Promise.race([
+          (async () => {
+            while (!stdout.includes(expected)) {
+              const next = await reader.next();
+              if (next.done) throw new Error(`${expected} prompt did not render`);
+              stdout += next.value;
+            }
+          })(),
+          delay(2_000).then(() => {
+            throw new Error(`${expected} prompt timed out`);
+          }),
+        ]);
+      try {
+        await readUntil("Provider");
+        child.stdin.write("\n");
+        await readUntil("FIRST_PROVIDER_ENV");
+        child.stdin.end("first-secret\n");
+        const [tail, stderr, exitCode] = await Promise.all([
+          rest(reader),
+          text(child.stderr),
+          exited(child),
+        ]);
+        expect({ stdout: stdout + tail, stderr, exitCode }).toMatchObject({ exitCode: 0 });
+      } finally {
+        if (child.exitCode === null) child.kill("SIGKILL");
+      }
+    },
+  );
 
   test("auth delegates generic OAuth capabilities without a provider registry", async () => {
     const current = await fixture();
