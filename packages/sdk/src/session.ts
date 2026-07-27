@@ -34,11 +34,13 @@ const toSdkEvent = (event: CoreTurnEvent): TurnEvent => {
   };
 };
 
-// The upstream AsyncIterable conversion never interrupts an in-flight pull, so
-// breaking out of iteration would leave model/tool work running. ReadableStream
-// cancellation does interrupt its producer fiber and awaits its cleanup, and
-// the scope finalizer covers iterators abandoned without return().
-// TODO: use Stream.toAsyncIterable once return() interrupts the in-flight pull (effect#6595).
+// Stream.toAsyncIterable (effect#6595) is strictly pull-per-next: the turn
+// would only progress while the consumer awaits next(). SDK turns must keep
+// executing while the consumer processes the previous event (tool handlers
+// start without another pull) and be interrupted as a whole on early exit.
+// The ReadableStream bridge provides both: the producer runs in one forked
+// fiber with one-event readahead, and cancellation interrupts it. The scope
+// finalizer covers iterators abandoned without return().
 const toAsyncIterable = (
   stream: Stream.Stream<CoreTurnEvent, unknown>,
   scope: Scope.Scope,

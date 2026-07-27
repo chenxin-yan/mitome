@@ -132,6 +132,7 @@ const createSessionImpl: (
                   selected.model.streamText({
                     prompt: transformed,
                     toolkit: approvals.toolkit,
+                    concurrency: 1,
                   }) as Stream.Stream<Response.StreamPart<Record<string, Tool.Any>>, unknown>
                 ).pipe(
                   Stream.provideContext(selected.context),

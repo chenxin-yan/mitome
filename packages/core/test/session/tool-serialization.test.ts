@@ -3,7 +3,7 @@ import { Effect, Fiber, Stream } from "effect";
 import { Schema } from "effect";
 import { Response, Tool, Toolkit } from "effect/unstable/ai";
 import { createSession, type AgentDefinition } from "../../src/index.js";
-import { makeTestProvider } from "../support/provider.js";
+import { makeStreamingTestProvider } from "../support/provider.js";
 
 class HookFailure extends Schema.TaggedErrorClass<HookFailure>()("HookFailure", {
   message: Schema.String,
@@ -26,12 +26,15 @@ describe("createSession Tool serialization", () => {
       const postFirstReleased = new Promise<void>((resolve) => (releasePostFirst = resolve));
       const first = Tool.make("first", { parameters: Schema.Struct({}), success: Schema.String });
       const second = Tool.make("second", { parameters: Schema.Struct({}), success: Schema.String });
-      const model = makeTestProvider((options) => {
+      // The real streamText resolves the tool calls; the Session's
+      // concurrency: 1 must keep them from overlapping.
+      const model = makeStreamingTestProvider(() => {
         calls += 1;
         if (calls === 2) {
           return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
         }
-        const toolCalls = [
+        return Stream.fromIterable([
+          Response.makePart("text-delta", { id: "first", delta: "working" }),
           Response.makePart("tool-call", {
             id: "one",
             name: "first",
@@ -44,28 +47,7 @@ describe("createSession Tool serialization", () => {
             params: {},
             providerExecuted: false,
           }),
-        ];
-        const results = Stream.mergeAll({ concurrency: "unbounded" })(
-          toolCalls.map((call) =>
-            Stream.unwrap(options.toolkit!.handle(call.name, call.params)).pipe(
-              Stream.map((result) =>
-                Response.makePart("tool-result", {
-                  id: call.id,
-                  name: call.name,
-                  providerExecuted: false,
-                  ...result,
-                }),
-              ),
-            ),
-          ),
-        );
-        return Stream.concat(
-          Stream.fromIterable([
-            Response.makePart("text-delta", { id: "first", delta: "working" }),
-            ...toolCalls,
-          ]),
-          results,
-        );
+        ]);
       });
       const track = (label: string) =>
         Effect.sync(() => {

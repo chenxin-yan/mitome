@@ -10,11 +10,11 @@
     "catalog": {
       "typescript": "^7.0.0",
       "@types/bun": "^1.3.14",
-      "@effect/ai-openai": "4.0.0-beta.101",
-      "@effect/ai-openai-compat": "4.0.0-beta.101",
-      "@effect/platform-bun": "4.0.0-beta.101",
-      "@effect/vitest": "4.0.0-beta.101",
-      "effect": "4.0.0-beta.101",
+      "@effect/ai-openai": "4.0.0-beta.102",
+      "@effect/ai-openai-compat": "4.0.0-beta.102",
+      "@effect/platform-bun": "4.0.0-beta.102",
+      "@effect/vitest": "4.0.0-beta.102",
+      "effect": "4.0.0-beta.102",
       "vitest": "4.1.10",
       "@types/node": "^24.0.0"
     }

@@ -3,21 +3,20 @@ import * as BunServices from "@effect/platform-bun/BunServices";
 import { Effect, Layer } from "effect";
 import { CliOutput, Command } from "effect/unstable/cli";
 import cliPackage from "../package.json" with { type: "json" };
-import { noArguments, promptArgument, useFlag } from "./args.js";
+import { promptArgument, useFlag } from "./args.js";
 import { runAuth } from "./commands/auth.js";
 import { runInit } from "./commands/init.js";
 import { runInstall, runPrompt } from "./commands/run.js";
 import { fail, promptTerminal } from "./support.js";
 
 const definitionCommandConfig = {
-  arguments: noArguments,
   use: useFlag,
 };
 
 const installCommand = Command.make("install", definitionCommandConfig, runInstall).pipe(
   Command.withDescription("Install Agent Definition dependencies"),
 );
-const initCommand = Command.make("init", { arguments: noArguments }, () => runInit).pipe(
+const initCommand = Command.make("init", {}, () => runInit).pipe(
   Command.withDescription("Create a default Agent Definition"),
 );
 const loginCommand = Command.make("login", definitionCommandConfig, ({ use }) =>

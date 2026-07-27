@@ -36,7 +36,6 @@ const validateResult = (
 /** The composed Plugin Toolkit: contributed Tools, their handlers, and the post-Tool pipeline. */
 export type ComposedToolkit = {
   readonly tools: Record<string, Tool.Any>;
-  readonly decodeParameters: (name: string, params: unknown) => Effect.Effect<unknown, unknown>;
   readonly execute: (
     name: string,
     params: unknown,
@@ -64,17 +63,6 @@ export const makeToolkit = (
       Effect.flatMap((handlers) => Effect.provide(toolkit, handlers)),
       Effect.map((handlers): ComposedToolkit => {
         const handle = handlers.handle as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
-        const decodeParameters = (
-          name: string,
-          params: unknown,
-        ): Effect.Effect<unknown, unknown> => {
-          const tool = handlers.tools[name] as Tool.Any;
-          return providePlugin(
-            owners.get(name),
-            contexts,
-            Schema.decodeUnknownEffect(tool.parametersSchema)(params),
-          );
-        };
         const execute = (
           name: string,
           params: unknown,
@@ -90,8 +78,8 @@ export const makeToolkit = (
               handle(name, params).pipe(
                 Effect.flatMap((stream) =>
                   Stream.runCollect(
-                    // Collection holds the approval semaphore permit until handler streams and Hooks finish.
-                    // TODO: revisit when streamText honors Tool concurrency (effect#6596).
+                    // Collection keeps the handler stream and its Hooks inside
+                    // streamText's per-call concurrency slot (ADR-0005).
                     stream as unknown as Stream.Stream<Tool.HandlerResult<Tool.Any>, unknown>,
                   ),
                 ),
@@ -128,7 +116,7 @@ export const makeToolkit = (
             );
             return Stream.fromIterable(finalResults);
           });
-        return { tools: handlers.tools as Record<string, Tool.Any>, decodeParameters, execute };
+        return { tools: handlers.tools as Record<string, Tool.Any>, execute };
       }),
     );
 };
