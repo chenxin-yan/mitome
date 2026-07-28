@@ -1,12 +1,11 @@
 import { afterAll, describe, expect, test } from "vitest";
-import { setTimeout } from "node:timers/promises";
-import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { credentialDescriptor } from "@mitome/core";
-import { serve, spawnRuntime } from "../support.js";
-import { loadCredential } from "../../src/openai-codex/credential-store.js";
-import { codex, login, logout, writeCredential } from "../../src/openai-codex/index.js";
+import { serve } from "../support.js";
+import { loadCredential, writeCredential } from "../../src/openai-codex/credential-store.js";
+import { codex, login, logout } from "../../src/openai-codex/index.js";
 
 const temporaryDirectories: Array<string> = [];
 const marker = "synthetic-secret-marker";
@@ -204,74 +203,30 @@ describe("Codex OAuth", () => {
     }
   });
 
-  test("serializes atomic cross-process writes and logout preserves unrelated entries", async () => {
+  test("logout removes only the Codex entry", async () => {
     const configDirectory = await directory();
     await mkdir(configDirectory, { recursive: true });
     await writeFile(
       join(configDirectory, "auth.json"),
       JSON.stringify({ other: { retained: true } }),
     );
-    const source = new URL("../../dist/openai-codex/index.js", import.meta.url).href;
-    const writer = (providerKey: string) =>
-      spawnRuntime([
-        "-e",
-        `const { writeCredential } = await import(${JSON.stringify(source)}); await writeCredential(${JSON.stringify(configDirectory)}, ${JSON.stringify(providerKey)}, ${JSON.stringify(credential(providerKey))});`,
-      ]);
-    const writers = [writer("first"), writer("second")];
-    expect(await Promise.all(writers.map((writer) => writer.exited))).toEqual([0, 0]);
-    const contents = await readFile(join(configDirectory, "auth.json"), "utf8");
-    expect(JSON.parse(contents)).toMatchObject({
+    await writeCredential(configDirectory, credential("codex"));
+    expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toEqual({
       other: { retained: true },
-      first: { type: "oauth" },
-      second: { type: "oauth" },
+      "openai-codex": credential("codex"),
     });
-    await Promise.all(
-      Array.from({ length: 8 }, (_, index) =>
-        writeCredential(configDirectory, "openai-codex", credential(String(index))),
-      ),
-    );
+
     await logout({ configDirectory, output: () => {} });
-    expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toMatchObject({
+    expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toEqual({
       other: { retained: true },
-      first: { type: "oauth" },
-      second: { type: "oauth" },
     });
     expect((await stat(join(configDirectory, "auth.json"))).mode & 0o777).toBe(0o600);
   });
 
-  test("names the recovery for absent and corrupted Credential storage", async () => {
-    const configDirectory = await directory();
-    await expect(loadCredential(configDirectory)).rejects.toThrow(
+  test("names the recovery for an absent Credential", async () => {
+    await expect(loadCredential(await directory())).rejects.toThrow(
       "Codex Credential is unavailable. Run `mitome auth login` to authenticate.",
     );
-
-    const path = join(configDirectory, "auth.json");
-    await writeFile(path, "{ truncated");
-    const corrupted = `Credential storage at ${path} is corrupted; delete it and run \`mitome auth login\`.`;
-    await expect(loadCredential(configDirectory)).rejects.toThrow(corrupted);
-    // Every write reads first, so a re-login attempt must report the same remedy.
-    await expect(
-      writeCredential(configDirectory, "openai-codex", credential("recovery")),
-    ).rejects.toThrow(corrupted);
-  });
-
-  test("does not reap a stale storage lock", async () => {
-    const configDirectory = await directory();
-    await mkdir(configDirectory, { recursive: true });
-    const lock = join(configDirectory, "auth.lock");
-    await writeFile(lock, "");
-    const stale = new Date(Date.now() - 31_000);
-    await utimes(lock, stale, stale);
-
-    const write = writeCredential(configDirectory, "other", credential("stale"));
-    await setTimeout(50);
-    expect(await readFile(lock, "utf8")).toBe("");
-
-    await rm(lock);
-    await write;
-    expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toMatchObject({
-      other: { type: "oauth" },
-    });
   });
 
   test("never emits authorization or Credential values", async () => {

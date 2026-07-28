@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { clientId, defaultTokenUrl, provider } from "./constants.js";
+import { clientId, defaultTokenUrl } from "./constants.js";
 import { writeCredential } from "./credential-store.js";
 import { token } from "./oauth-token.js";
 import { type LoginOptions } from "./types.js";
@@ -125,7 +125,6 @@ export const login = async (options: LoginOptions): Promise<void> => {
     const code = validateAuthorization(received, state);
     await writeCredential(
       options.configDirectory,
-      provider,
       await token(options.tokenUrl ?? defaultTokenUrl, {
         grant_type: "authorization_code",
         client_id: clientId,

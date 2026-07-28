@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createSession } from "@mitome/core";
 import { agent as definition, serve, spawnRuntime, sse } from "../support.js";
-import { codex, writeCredential } from "../../src/openai-codex/index.js";
+import { writeCredential } from "../../src/openai-codex/credential-store.js";
+import { codex } from "../../src/openai-codex/index.js";
 
 const directories: Array<string> = [];
 const jwt = (accountId: string) =>
@@ -34,7 +35,7 @@ const tokenResponse = (accountId: string, refresh: string) =>
 const directory = async (value = credential()) => {
   const configDirectory = await mkdtemp(join(tmpdir(), "mitome-codex-sse-"));
   directories.push(configDirectory);
-  await writeCredential(configDirectory, "openai-codex", value);
+  await writeCredential(configDirectory, value);
   return configDirectory;
 };
 

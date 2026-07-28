@@ -6,7 +6,7 @@ import { codexLayer } from "./model.js";
 import { knownModelIds } from "./models.js";
 import { type CodexOptions } from "./types.js";
 
-export { writeCredential, logout } from "./credential-store.js";
+export { logout } from "./credential-store.js";
 export { login } from "./login.js";
 export { knownModelIds, type KnownModelId } from "./models.js";
 export type { CodexOptions, LoginOptions, LogoutOptions, OAuthCredential } from "./types.js";
