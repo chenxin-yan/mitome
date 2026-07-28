@@ -1,7 +1,7 @@
 export { configDirectory, configDirectoryMessage } from "./config.js";
 export type { AuthCapability, AuthenticateOptions, CredentialDescriptor } from "./credential.js";
-export { AgentDefinitionError, defineAgent } from "./agent.js";
-export type { AgentDefinition } from "./agent.js";
+export { AgentDefinitionError, compileAgentDefinition, defineAgent } from "./agent.js";
+export type { AgentDefinition, CompiledAgent } from "./agent.js";
 export { definePlugin } from "./plugin.js";
 export type {
   AnyPlugin,

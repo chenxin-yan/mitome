@@ -1,40 +1,25 @@
-import { Data, Effect } from "effect";
+import { Data, Effect, Schema } from "effect";
 import { type HttpClient } from "effect/unstable/http";
 import { modifyCredential, readCredential } from "../shared/credential-store.js";
 import { isExpired } from "../shared/oauth.js";
 import { oauth, provider } from "./constants.js";
 import { token } from "./oauth-token.js";
-import { type LogoutOptions, type OAuthCredential } from "./types.js";
+import { type LogoutOptions, OAuthCredential } from "./types.js";
 
 class CredentialUnavailableError extends Data.TaggedError("CredentialUnavailableError")<{
   readonly message: string;
 }> {}
 
+const credentialUnavailable = new CredentialUnavailableError({
+  message: "Codex Credential is unavailable. Run `mitome auth login` to authenticate.",
+});
+
 const credentialFrom = (
   value: unknown,
-): Effect.Effect<OAuthCredential, CredentialUnavailableError> => {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("type" in value) ||
-    value.type !== "oauth" ||
-    !("access" in value) ||
-    typeof value.access !== "string" ||
-    !("refresh" in value) ||
-    typeof value.refresh !== "string" ||
-    !("expires" in value) ||
-    typeof value.expires !== "number" ||
-    !("accountId" in value) ||
-    typeof value.accountId !== "string"
-  ) {
-    return Effect.fail(
-      new CredentialUnavailableError({
-        message: "Codex Credential is unavailable. Run `mitome auth login` to authenticate.",
-      }),
-    );
-  }
-  return Effect.succeed(value as OAuthCredential);
-};
+): Effect.Effect<OAuthCredential, CredentialUnavailableError> =>
+  Schema.decodeUnknownEffect(OAuthCredential)(value).pipe(
+    Effect.mapError(() => credentialUnavailable),
+  );
 
 /** Stores the Codex Credential while preserving all other Provider entries. */
 export const writeCredential = (

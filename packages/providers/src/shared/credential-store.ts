@@ -1,8 +1,9 @@
 import { chmod, mkdir, open, readFile, rename, rm, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { Data, Effect, Result, Schedule } from "effect";
+import { Data, Effect, Result, Schedule, Schema } from "effect";
 
-type AuthFile = Record<string, unknown>;
+const AuthFile = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
+type AuthFile = typeof AuthFile.Type;
 
 class CredentialStoreError extends Data.TaggedError("CredentialStoreError")<{
   readonly message: string;
@@ -61,14 +62,9 @@ const readAuth = (configDirectory: string): Effect.Effect<AuthFile, CredentialSt
     const corrupted = new CredentialStoreError({
       message: `Credential storage at ${path} is corrupted; delete it and authenticate again.`,
     });
-    const parsed = yield* Effect.try({
-      try: () => JSON.parse(result.success) as unknown,
-      catch: () => corrupted,
-    });
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return yield* corrupted;
-    }
-    return parsed as AuthFile;
+    return yield* Schema.decodeUnknownEffect(AuthFile)(result.success).pipe(
+      Effect.mapError(() => corrupted),
+    );
   });
 
 const writeAuth = (

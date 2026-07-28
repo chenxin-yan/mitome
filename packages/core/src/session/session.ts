@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Scope, Stream } from "effect";
 import { LanguageModel, Prompt, Tool } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
-import { validateAgentDefinition } from "../agent.js";
+import { compileAgentDefinition } from "../agent.js";
 import type { AgentDefinition, AgentDefinitionError } from "../agent.js";
 import { getProviderMetadata, parseQualifiedModelId } from "../provider.js";
 import type { AnyProvider, QualifiedModelId } from "../provider.js";
@@ -53,13 +53,12 @@ const createSessionImpl: (
 ) => Effect.Effect<Session, AgentDefinitionError | TurnError, Scope.Scope> = Effect.fn(
   "@mitome/core/createSession",
 )(function* (definition) {
-  yield* validateAgentDefinition(definition);
+  const compiled = yield* compileAgentDefinition(definition);
 
   const sessionScope = yield* Effect.scope;
-  const providers = new Map(definition.providers.map((provider) => [provider.id, provider]));
   const models = new Map<string, RuntimeModel>();
   const pluginContexts = new Map<AnyPlugin, Context.Context<any>>();
-  for (const plugin of definition.plugins) {
+  for (const plugin of compiled.plugins) {
     if (plugin.resource !== undefined) {
       pluginContexts.set(
         plugin,
@@ -71,15 +70,13 @@ const createSessionImpl: (
     }
   }
   const approvals = yield* makeApprovals(
-    definition.plugins,
+    compiled,
     pluginContexts,
-    yield* makeToolkit(definition.plugins, pluginContexts),
+    yield* makeToolkit(compiled, pluginContexts),
   );
-  const instructions = definition.plugins
-    .map((plugin) => plugin.instructions)
-    .filter(Boolean)
-    .join("\n\n");
-  let history = Prompt.make(instructions === "" ? [] : [{ role: "system", content: instructions }]);
+  let history = Prompt.make(
+    compiled.instructions === "" ? [] : [{ role: "system", content: compiled.instructions }],
+  );
   let isReleased = false;
   let isTurnActive = false;
 
@@ -98,7 +95,7 @@ const createSessionImpl: (
   );
 
   const sessionHooks = yield* beginHookPhase(
-    definition.plugins,
+    compiled.plugins,
     (plugin) => inContext(plugin, plugin.hooks?.sessionStart),
     (plugin) => inContext(plugin, plugin.hooks?.sessionEnd),
     "Session end Hook failed",
@@ -116,7 +113,7 @@ const createSessionImpl: (
     let endPrompt = prompt;
     return Stream.unwrap(
       beginHookPhase(
-        definition.plugins,
+        compiled.plugins,
         (plugin) => inContext(plugin, plugin.hooks?.stepStart?.(prompt)),
         (plugin) => inContext(plugin, plugin.hooks?.stepEnd?.(endPrompt)),
         "Step end Hook failed",
@@ -124,7 +121,7 @@ const createSessionImpl: (
         hookTurnError("Step start Hook failed"),
         Effect.map((stepHooks) => {
           return Stream.unwrap(
-            transformPrompt(definition.plugins, pluginContexts, prompt).pipe(
+            transformPrompt(compiled.plugins, pluginContexts, prompt).pipe(
               hookTurnError("Pre-Step Hook failed"),
               Effect.map((transformed) => {
                 endPrompt = transformed;
@@ -213,7 +210,7 @@ const createSessionImpl: (
         }),
       );
     }
-    const provider = providers.get(parsed.providerId);
+    const provider = compiled.providers.get(parsed.providerId);
     if (provider === undefined) {
       return Effect.fail(
         new TurnError({
@@ -266,7 +263,7 @@ const createSessionImpl: (
           resolveModel(qualifiedModelId).pipe(
             Effect.flatMap((selected) =>
               beginHookPhase(
-                definition.plugins,
+                compiled.plugins,
                 (plugin) => inContext(plugin, plugin.hooks?.turnStart?.(text)),
                 (plugin) => inContext(plugin, plugin.hooks?.turnEnd?.(text)),
                 "Turn end Hook failed",

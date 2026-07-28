@@ -47,7 +47,12 @@ export const checkRuntime = async (path: string): Promise<void> => {
     );
   }
   // A malformed package.json must fail loud.
-  const core = JSON.parse(await Bun.file(packagePath).text()) as { version?: unknown };
+  let core: { version?: unknown };
+  try {
+    core = JSON.parse(await Bun.file(packagePath).text()) as { version?: unknown };
+  } catch (error) {
+    throw new Error(`Could not decode ${packagePath}.`, { cause: error });
+  }
   if (core.version !== corePackage.version) {
     throw new Error(
       `@mitome/core beside ${path} is ${String(core.version)}; install @mitome/core@${corePackage.version} with the Agent Definition dependencies (run \`mitome install\`).`,

@@ -646,7 +646,13 @@ describe("compiled mitome", () => {
       spawn("", ["hello", "--use", invalid.definition], invalid),
     );
     expect(invalidDefinition.exitCode).toBe(1);
-    expect(invalidDefinition.stderr).toContain("Agent Definition must default-export an Agent");
+    expect(invalidDefinition.stderr).toContain(
+      [
+        "AgentDefinitionError: Agent Definition Providers must be an array",
+        "Agent Definition Model must be a string",
+        "Agent Definition Plugins must be an array",
+      ].join("\n"),
+    );
 
     const accepted = await fixture(promptEchoDefinitionSource());
     const acceptedDefinition = await output(
@@ -665,7 +671,9 @@ describe("compiled mitome", () => {
         spawn("", ["hello", "--use", oldInstructions.definition], oldInstructions),
       );
       expect(invalidInstructions.exitCode).toBe(1);
-      expect(invalidInstructions.stderr).toContain("Agent Definition must default-export an Agent");
+      expect(invalidInstructions.stderr).toContain(
+        "AgentDefinitionError: Agent Definition Instructions must be contributed by Plugins",
+      );
     }
 
     const nonStringPluginInstructions = await fixture(
@@ -683,7 +691,7 @@ describe("compiled mitome", () => {
     );
     expect(invalidPluginInstructions.exitCode).toBe(1);
     expect(invalidPluginInstructions.stderr).toContain(
-      "Agent Definition must default-export an Agent",
+      "AgentDefinitionError: Plugin bad Instructions must be a string",
     );
 
     const javascript = join(current.root, "agent.js");

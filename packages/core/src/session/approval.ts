@@ -1,6 +1,7 @@
 import { Deferred, Effect, Stream } from "effect";
 import { Prompt, Tool, Toolkit } from "effect/unstable/ai";
-import type { AnyPlugin, PluginContexts, ToolInputValidator } from "../plugin.js";
+import type { CompiledAgent } from "../agent.js";
+import type { PluginContexts } from "../plugin.js";
 import { providePlugin } from "../plugin.js";
 import { ApprovalResolutionError, TurnError, hookAiError } from "./errors.js";
 import type { ToolExecutionDenied, TurnEvent } from "./events.js";
@@ -58,7 +59,7 @@ export type Approvals = {
  * handler execution together per call (ADR-0005).
  */
 export const makeApprovals = (
-  plugins: ReadonlyArray<AnyPlugin>,
+  compiled: CompiledAgent,
   contexts: PluginContexts,
   base: ComposedToolkit,
 ): Effect.Effect<Approvals> =>
@@ -69,7 +70,7 @@ export const makeApprovals = (
       params: unknown,
     ): Effect.Effect<string | undefined, unknown> =>
       Effect.gen(function* () {
-        for (const plugin of plugins) {
+        for (const plugin of compiled.plugins) {
           const veto = yield* providePlugin(
             plugin,
             contexts,
@@ -79,18 +80,13 @@ export const makeApprovals = (
         }
         return undefined;
       });
-    const inputValidators: Readonly<Record<string, ToolInputValidator>> = Object.assign(
-      {},
-      ...plugins.map((plugin) => plugin.toolInputValidators ?? {}),
-    );
-
     const tools = Object.fromEntries(
       Object.entries(base.tools).map(([toolKey, tool]) => {
         const needsApproval = tool.needsApproval;
         const wrapped = tool.setNeedsApproval(
           (params: unknown, context: Tool.NeedsApprovalContext) =>
             Effect.gen(function* () {
-              const inputValidator = inputValidators[tool.name];
+              const inputValidator = compiled.toolInputValidators[tool.name];
               const input =
                 inputValidator === undefined
                   ? { _tag: "ok" as const, value: params }

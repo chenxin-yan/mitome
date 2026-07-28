@@ -10,6 +10,7 @@ import {
   writeCredential as writeCredentialEffect,
 } from "../../src/openai-codex/credential-store.js";
 import { codex, login, logout } from "../../src/openai-codex/index.js";
+import { accountId } from "../../src/openai-codex/oauth-token.js";
 
 const temporaryDirectories: Array<string> = [];
 const marker = "synthetic-secret-marker";
@@ -36,10 +37,10 @@ const directory = async () => {
 };
 
 // Real Codex access tokens nest the account under this claim.
+const accessToken = (claims: unknown) =>
+  `header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`;
 const jwt = (accountId: string) =>
-  `header.${Buffer.from(
-    JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } }),
-  ).toString("base64url")}.signature`;
+  accessToken({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } });
 
 const callbackPort = async (): Promise<number> => {
   const server = await serve({ fetch: () => new Response() });
@@ -234,9 +235,30 @@ describe("Codex OAuth", () => {
     expect((await stat(join(configDirectory, "auth.json"))).mode & 0o777).toBe(0o600);
   });
 
-  test("names the recovery for an absent Credential", async () => {
-    await expect(loadCredential(await directory())).rejects.toThrow(
-      "Codex Credential is unavailable. Run `mitome auth login` to authenticate.",
+  test("names the recovery for an absent or malformed Credential", async () => {
+    const message = "Codex Credential is unavailable. Run `mitome auth login` to authenticate.";
+    await expect(loadCredential(await directory())).rejects.toThrow(message);
+
+    const configDirectory = await directory();
+    await writeFile(
+      join(configDirectory, "auth.json"),
+      JSON.stringify({ "openai-codex": { ...credential("malformed"), expires: "soon" } }),
+    );
+    await expect(loadCredential(configDirectory)).rejects.toThrow(message);
+  });
+
+  test("decodes account claims without bypassing an authoritative nested claim", () => {
+    expect(accountId(accessToken({ chatgpt_account_id: "top-level" }))).toBe("top-level");
+    expect(() =>
+      accountId(
+        accessToken({
+          "https://api.openai.com/auth": {},
+          chatgpt_account_id: "must-not-fallback",
+        }),
+      ),
+    ).toThrow("OAuth access token did not contain an account.");
+    expect(() => accountId(accessToken([]))).toThrow(
+      "OAuth access token did not contain an account.",
     );
   });
 

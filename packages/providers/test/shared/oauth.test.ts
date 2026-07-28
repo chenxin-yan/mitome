@@ -53,6 +53,23 @@ describe("OAuth token exchange", () => {
     }),
   );
 
+  it.effect("maps a malformed token body to the stable OAuth error", () =>
+    Effect.gen(function* () {
+      const client = HttpClient.make((request) =>
+        Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            Response.json({ access_token: "access", expires_in: 60 }),
+          ),
+        ),
+      );
+      const error = yield* Effect.flip(
+        provideClient(exchangeToken("https://auth.test/token", {}), client),
+      );
+      expect(error.message).toBe("OAuth token exchange returned an invalid response.");
+    }),
+  );
+
   it.effect("times out while reading a hung token response", () =>
     Effect.gen(function* () {
       const client = HttpClient.make((request) =>

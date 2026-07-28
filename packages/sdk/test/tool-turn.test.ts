@@ -1,7 +1,14 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Schema, Stream } from "effect";
 import { Prompt, Response } from "effect/unstable/ai";
-import { defineAgent, definePlugin, tool, withSession, type InputSchema } from "../src/index.js";
+import {
+  AgentDefinitionError,
+  defineAgent,
+  definePlugin,
+  tool,
+  withSession,
+  type InputSchema,
+} from "../src/index.js";
 import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
 
 describe("@mitome/sdk Tool", () => {
@@ -299,6 +306,31 @@ describe("@mitome/sdk Tool", () => {
         ],
       }),
     ).toThrow("Duplicate Tool name: echo");
+  });
+
+  test("aggregates duplicate Tool names across Plugins when creating a Session", async () => {
+    const fixture = makeToolModel();
+    const plugin = (name: string) =>
+      definePlugin({
+        name,
+        tools: [
+          tool({
+            name: "echo",
+            inputSchema: jsonStringSchema,
+            outputSchema: stringSchema,
+            handler: async (input) => input,
+          }),
+        ],
+      });
+    const definition = defineAgent({
+      providers: [fixture.provider],
+      model: "test/default",
+      plugins: [plugin("first"), plugin("second")],
+    });
+
+    const failure = await withSession(definition, async () => undefined).catch((error) => error);
+    expect(failure).toBeInstanceOf(AgentDefinitionError);
+    expect((failure as AgentDefinitionError).issues).toContain("Duplicate Tool name: echo");
   });
 
   test("returns a generic failure result when a Promise handler rejects", async () => {

@@ -86,6 +86,20 @@ describe("Codex SSE", () => {
                 controller.enqueue(new TextEncoder().encode(value));
               enqueue(sse({ type: "response.created", response: {} }));
               enqueue(sse({ type: "response.in_progress", response: {} }));
+              enqueue(
+                sse({
+                  type: "response.output_item.added",
+                  output_index: 99,
+                  item: { type: "future_item" },
+                }),
+              );
+              enqueue(
+                sse({
+                  type: "response.output_item.done",
+                  output_index: 99,
+                  item: { type: "future_item" },
+                }),
+              );
               enqueue(added.slice(0, 17));
               enqueue(added.slice(17));
               enqueue(
@@ -304,6 +318,11 @@ describe("Codex SSE", () => {
       [
         sse({ type: "response.output_item.added", output_index: 0, item: { type: "message" } }),
         "Codex stream ended before a terminal response event",
+      ],
+      [
+        sse({ type: "response.output_item.added", output_index: 0, item: { type: "message" } }) +
+          sse({ type: "response.output_text.delta", output_index: 0, delta: 1 }),
+        "Codex sent text without a message item",
       ],
     ];
     for (const [body, description] of cases) {

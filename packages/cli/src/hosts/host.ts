@@ -13,27 +13,8 @@ const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
 const effectPath = Bun.resolveSync("effect", dirname(corePath));
 const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath).href);
 const effect: typeof import("effect") = await import(pathToFileURL(effectPath).href);
-const loaded: unknown = (
-  (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
-).default;
-
-const isAgentDefinition = (value: unknown): value is AgentDefinition => {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<AgentDefinition>;
-  return (
-    !("instructions" in value) &&
-    Array.isArray(candidate.providers) &&
-    candidate.model !== undefined &&
-    Array.isArray(candidate.plugins) &&
-    candidate.plugins.every(
-      (plugin) =>
-        typeof plugin === "object" &&
-        plugin !== null &&
-        typeof plugin.name === "string" &&
-        (plugin.instructions === undefined || typeof plugin.instructions === "string"),
-    )
-  );
-};
+const loaded = ((await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown })
+  .default as AgentDefinition;
 
 const render = (event: TurnEvent): void => {
   switch (event.type) {
@@ -66,12 +47,6 @@ const errorMessage = (error: unknown): string => {
     typeof error === "object" && error !== null && "cause" in error ? error.cause : undefined;
   return cause === undefined ? head : `${head}\n  cause: ${errorMessage(cause)}`;
 };
-
-if (!isAgentDefinition(loaded)) {
-  throw new Error(
-    "Agent Definition must default-export an Agent with Providers, a Default Model, and Plugins.",
-  );
-}
 
 const { Cause, Effect, Exit, Fiber, Stream } = effect;
 

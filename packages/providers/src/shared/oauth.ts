@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { Cause, Clock, Data, Effect } from "effect";
+import { Cause, Clock, Data, Effect, Schema } from "effect";
 import {
   FetchHttpClient,
   HttpClient,
@@ -42,6 +42,12 @@ class OAuthTokenError extends Data.TaggedError("OAuthTokenError")<{
   readonly cause?: unknown;
 }> {}
 
+const OAuthTokenResponse = Schema.Struct({
+  access_token: Schema.String,
+  refresh_token: Schema.String,
+  expires_in: Schema.Finite,
+});
+
 export const exchangeToken = (
   tokenUrl: string,
   form: Record<string, string>,
@@ -59,19 +65,11 @@ export const exchangeToken = (
     const invalid = new OAuthTokenError({
       message: "OAuth token exchange returned an invalid response.",
     });
-    const body = yield* response.json.pipe(Effect.mapError(() => invalid));
-    if (
-      typeof body !== "object" ||
-      body === null ||
-      !("access_token" in body) ||
-      !("refresh_token" in body) ||
-      !("expires_in" in body) ||
-      typeof body.access_token !== "string" ||
-      typeof body.refresh_token !== "string" ||
-      typeof body.expires_in !== "number"
-    ) {
-      return yield* invalid;
-    }
+    const body = yield* response.json.pipe(
+      Effect.mapError(() => invalid),
+      Effect.flatMap(Schema.decodeUnknownEffect(OAuthTokenResponse)),
+      Effect.mapError(() => invalid),
+    );
     return {
       access: body.access_token,
       refresh: body.refresh_token,

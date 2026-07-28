@@ -1,31 +1,28 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { type HttpClient } from "effect/unstable/http";
 import { exchangeToken, type OAuthToken } from "../shared/oauth.js";
 import { type OAuthCredential } from "./types.js";
 
+const AccountClaim = Schema.Struct({ chatgpt_account_id: Schema.String });
+const missingAccount = () => new Error("OAuth access token did not contain an account.");
+
 export const accountId = (access: string): string => {
   const payload = access.split(".")[1];
-  if (payload === undefined) throw new Error("OAuth access token did not contain an account.");
-  let parsed: unknown;
+  if (payload === undefined) throw missingAccount();
   try {
-    parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<
+      string,
+      unknown
+    >;
+    // A present nested object is authoritative, even when it lacks the account id.
+    const auth = claims["https://api.openai.com/auth"];
+    const source = typeof auth === "object" && auth !== null ? auth : claims;
+    const { chatgpt_account_id } = Schema.decodeUnknownSync(AccountClaim)(source);
+    if (chatgpt_account_id === "") throw missingAccount();
+    return chatgpt_account_id;
   } catch {
-    throw new Error("OAuth access token did not contain an account.");
+    throw missingAccount();
   }
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("OAuth access token did not contain an account.");
-  }
-  // Codex nests the account under this claim; some tokens carry it top-level.
-  const claims = parsed as Record<string, unknown>;
-  const auth = claims["https://api.openai.com/auth"];
-  const id =
-    typeof auth === "object" && auth !== null
-      ? (auth as Record<string, unknown>)["chatgpt_account_id"]
-      : claims["chatgpt_account_id"];
-  if (typeof id !== "string" || id === "") {
-    throw new Error("OAuth access token did not contain an account.");
-  }
-  return id;
 };
 
 /** Codex Credentials carry the account the unofficial backend routes on. */

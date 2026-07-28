@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
-import type { AnyPlugin } from "./plugin.js";
+import type { AnyPlugin, ToolInputValidator, ToolResultValidator } from "./plugin.js";
 import { getProviderMetadata, parseQualifiedModelId } from "./provider.js";
 import type { AnyProvider, QualifiedModelId } from "./provider.js";
 
@@ -14,10 +14,28 @@ export interface AgentDefinition<
   readonly plugins: Plugins;
 }
 
+type AnyToolHandler = (params: unknown) => Effect.Effect<unknown, unknown, any>;
+
+export interface CompiledAgent {
+  readonly plugins: ReadonlyArray<AnyPlugin>;
+  readonly providers: ReadonlyMap<string, AnyProvider>;
+  readonly defaultModel: { readonly providerId: string; readonly modelId: string };
+  readonly tools: Readonly<Record<string, Tool.Any>>;
+  readonly toolOwners: ReadonlyMap<string, AnyPlugin>;
+  readonly handlers: Readonly<Record<string, AnyToolHandler>>;
+  readonly toolInputValidators: Readonly<Record<string, ToolInputValidator>>;
+  readonly toolResultValidators: Readonly<Record<string, ToolResultValidator>>;
+  readonly instructions: string;
+}
+
 export class AgentDefinitionError extends Schema.TaggedErrorClass<AgentDefinitionError>()(
   "AgentDefinitionError",
-  { message: Schema.String },
-) {}
+  { issues: Schema.NonEmptyArray(Schema.String) },
+) {
+  override get message(): string {
+    return this.issues.join("\n");
+  }
+}
 
 export function defineAgent<
   const Providers extends ReadonlyArray<unknown>,
@@ -34,103 +52,159 @@ export function defineAgent(definition: AgentDefinition): AgentDefinition {
   return definition;
 }
 
-export const validateAgentDefinition: (
-  definition: AgentDefinition,
-) => Effect.Effect<void, AgentDefinitionError> = Effect.fn("@mitome/core/validateAgentDefinition")(
-  function* (definition) {
-    if ("instructions" in definition) {
-      return yield* new AgentDefinitionError({
-        message: "Agent Definition Instructions must be contributed by Plugins",
-      });
-    }
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
 
-    const providerIds = new Set<string>();
-    for (const provider of definition.providers) {
+export const compileAgentDefinition: (
+  definition: AgentDefinition,
+) => Effect.Effect<CompiledAgent, AgentDefinitionError> = Effect.fn(
+  "@mitome/core/compileAgentDefinition",
+)(function* (definition) {
+  if (!isObject(definition)) {
+    return yield* new AgentDefinitionError({ issues: ["Agent Definition must be an object"] });
+  }
+  const candidate: Record<string, unknown> = definition;
+  const issues: Array<string> = [];
+
+  if ("instructions" in candidate) {
+    issues.push("Agent Definition Instructions must be contributed by Plugins");
+  }
+
+  const providers = new Map<string, AnyProvider>();
+  const providerIds = new Set<string>();
+  const providerValues = candidate.providers;
+  if (!Array.isArray(providerValues)) {
+    issues.push("Agent Definition Providers must be an array");
+  } else {
+    for (const [index, value] of providerValues.entries()) {
+      if (!isObject(value) || typeof value.id !== "string") {
+        issues.push(`Provider at index ${index} must be an object with a string id`);
+        continue;
+      }
+      const provider = value as unknown as AnyProvider;
       if (providerIds.has(provider.id)) {
-        return yield* new AgentDefinitionError({
-          message: `Duplicate Provider id: ${provider.id}`,
-        });
+        issues.push(`Duplicate Provider id: ${provider.id}`);
       }
       providerIds.add(provider.id);
+      providers.set(provider.id, provider);
       if (getProviderMetadata(provider) === undefined) {
         return yield* Effect.die(new Error("Provider was not created by @mitome/core"));
       }
     }
+  }
 
-    const selection = parseQualifiedModelId(definition.model);
-    if (selection === undefined) {
-      return yield* new AgentDefinitionError({
-        message: `Malformed Qualified Model id: ${definition.model}`,
-      });
+  let defaultModel: ReturnType<typeof parseQualifiedModelId>;
+  const model = candidate.model;
+  if (typeof model !== "string") {
+    issues.push("Agent Definition Model must be a string");
+  } else {
+    defaultModel = parseQualifiedModelId(model);
+    if (defaultModel === undefined) {
+      issues.push(`Malformed Qualified Model id: ${model}`);
+    } else if (!providerIds.has(defaultModel.providerId)) {
+      issues.push(`Unregistered Provider id: ${defaultModel.providerId}`);
     }
-    if (!providerIds.has(selection.providerId)) {
-      return yield* new AgentDefinitionError({
-        message: `Unregistered Provider id: ${selection.providerId}`,
-      });
-    }
+  }
 
-    const pluginNames = new Set<string>();
-    const toolNames = new Set<string>();
-    const handlerNames = new Set<string>();
-    const requiredHandlerNames = new Set<string>();
+  const plugins: Array<AnyPlugin> = [];
+  const tools: Record<string, Tool.Any> = {};
+  const toolOwners = new Map<string, AnyPlugin>();
+  const handlers: Record<string, AnyToolHandler> = {};
+  const toolInputValidators: Record<string, ToolInputValidator> = {};
+  const toolResultValidators: Record<string, ToolResultValidator> = {};
+  const instructions: Array<string> = [];
+  const pluginNames = new Set<string>();
+  const toolNames = new Set<string>();
+  const handlerNames = new Set<string>();
+  const requiredHandlerNames = new Set<string>();
+  const pluginValues = candidate.plugins;
 
-    for (const plugin of definition.plugins) {
+  if (!Array.isArray(pluginValues)) {
+    issues.push("Agent Definition Plugins must be an array");
+  } else {
+    for (const [index, value] of pluginValues.entries()) {
+      if (!isObject(value) || typeof value.name !== "string") {
+        issues.push(`Plugin at index ${index} must be an object with a string name`);
+        continue;
+      }
+      const plugin = value as unknown as AnyPlugin;
+      if (plugin.instructions !== undefined && typeof plugin.instructions !== "string") {
+        issues.push(`Plugin ${plugin.name} Instructions must be a string`);
+      }
       if (pluginNames.has(plugin.name)) {
-        return yield* new AgentDefinitionError({
-          message: `Duplicate Plugin name: ${plugin.name}`,
-        });
+        issues.push(`Duplicate Plugin name: ${plugin.name}`);
       }
       pluginNames.add(plugin.name);
+      plugins.push(plugin);
+      if (typeof plugin.instructions === "string" && plugin.instructions.length > 0) {
+        instructions.push(plugin.instructions);
+      }
 
       const pluginToolNames = new Set<string>();
       for (const tool of Object.values(plugin.toolkit?.tools ?? {})) {
         if (toolNames.has(tool.name)) {
-          return yield* new AgentDefinitionError({ message: `Duplicate Tool name: ${tool.name}` });
+          issues.push(`Duplicate Tool name: ${tool.name}`);
         }
         toolNames.add(tool.name);
         pluginToolNames.add(tool.name);
+        tools[tool.name] = tool;
+        toolOwners.set(tool.name, plugin);
         if (Tool.isProviderDefined(tool) ? tool.requiresHandler : true) {
           requiredHandlerNames.add(tool.name);
         }
       }
 
-      for (const name of Object.keys(plugin.toolInputValidators ?? {})) {
+      for (const [name, validator] of Object.entries(plugin.toolInputValidators ?? {})) {
         if (!pluginToolNames.has(name)) {
-          return yield* new AgentDefinitionError({
-            message: `Tool input validator has no matching Tool: ${name}`,
-          });
+          issues.push(`Tool input validator has no matching Tool: ${name}`);
         }
+        toolInputValidators[name] = validator;
       }
 
-      for (const name of Object.keys(plugin.toolResultValidators ?? {})) {
+      for (const [name, validator] of Object.entries(plugin.toolResultValidators ?? {})) {
         if (!pluginToolNames.has(name)) {
-          return yield* new AgentDefinitionError({
-            message: `Tool result validator has no matching Tool: ${name}`,
-          });
+          issues.push(`Tool result validator has no matching Tool: ${name}`);
         }
+        toolResultValidators[name] = validator;
       }
 
-      for (const name of Object.keys(plugin.handlers ?? {})) {
+      for (const [name, handler] of Object.entries(plugin.handlers ?? {})) {
         if (handlerNames.has(name)) {
-          return yield* new AgentDefinitionError({
-            message: `Duplicate Tool handler name: ${name}`,
-          });
+          issues.push(`Duplicate Tool handler name: ${name}`);
         }
         handlerNames.add(name);
+        handlers[name] = handler;
       }
     }
+  }
 
-    for (const name of requiredHandlerNames) {
-      if (!handlerNames.has(name)) {
-        return yield* new AgentDefinitionError({ message: `Missing Tool handler: ${name}` });
-      }
+  for (const name of requiredHandlerNames) {
+    if (!handlerNames.has(name)) {
+      issues.push(`Missing Tool handler: ${name}`);
     }
-    for (const name of handlerNames) {
-      if (!toolNames.has(name)) {
-        return yield* new AgentDefinitionError({
-          message: `Tool handler has no matching Tool: ${name}`,
-        });
-      }
+  }
+  for (const name of handlerNames) {
+    if (!toolNames.has(name)) {
+      issues.push(`Tool handler has no matching Tool: ${name}`);
     }
-  },
-);
+  }
+
+  if (issues.length > 0) {
+    return yield* new AgentDefinitionError({
+      issues: issues as [string, ...Array<string>],
+    });
+  }
+
+  return {
+    plugins,
+    providers,
+    // Empty `issues` implies the model parsed and resolved, so `defaultModel` is set.
+    defaultModel: defaultModel!,
+    tools,
+    toolOwners,
+    handlers,
+    toolInputValidators,
+    toolResultValidators,
+    instructions: instructions.join("\n\n"),
+  };
+});

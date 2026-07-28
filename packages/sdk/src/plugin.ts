@@ -1,6 +1,5 @@
 import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
-import { AgentDefinitionError } from "@mitome/core";
 import type {
   Plugin,
   PluginHooks,
@@ -76,9 +75,7 @@ const standardInput = <Input>(schema: InputSchema<Input>): StandardInput<Input> 
   }
   const standard = schema["~standard"];
   if (!("validate" in standard) || !("jsonSchema" in standard)) {
-    throw new AgentDefinitionError({
-      message: "Tool input schema must provide validation and JSON Schema",
-    });
+    throw new Error("Tool input schema must provide validation and JSON Schema");
   }
   return standard;
 };
@@ -91,7 +88,7 @@ const standardOutput = <Output>(
   }
   const standard = schema["~standard"];
   if (!("validate" in standard)) {
-    throw new AgentDefinitionError({ message: "Tool output schema must provide validation" });
+    throw new Error("Tool output schema must provide validation");
   }
   return standard;
 };
@@ -235,17 +232,13 @@ export function definePlugin<
   >,
 >(definition: PluginDefinition<Resource, Tools>): Plugin<Resource, unknown> {
   if (definition.dispose !== undefined && definition.setup === undefined) {
-    throw new AgentDefinitionError({
-      message: `Plugin "${definition.name}" declares dispose without setup`,
-    });
+    throw new Error(`Plugin "${definition.name}" declares dispose without setup`);
   }
   const names = new Set<string>();
   const definitions = (
     definition.tools as unknown as ReadonlyArray<Tool<any, any, Resource, string>>
   ).map((tool) => {
-    if (names.has(tool.name)) {
-      throw new AgentDefinitionError({ message: `Duplicate Tool name: ${tool.name}` });
-    }
+    if (names.has(tool.name)) throw new Error(`Duplicate Tool name: ${tool.name}`);
     names.add(tool.name);
     return {
       tool,
