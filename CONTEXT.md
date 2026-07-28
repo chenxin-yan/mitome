@@ -50,12 +50,12 @@ _Avoid_: System prompt (the composed whole), prompt fragment
 A model available through a Provider that an Agent uses to generate Steps.
 _Avoid_: Provider, LLM
 
-**Model identifier**:
-A Provider-qualified name, written as `provider/model`, that selects one Model.
-_Avoid_: Model name, model key
+**Qualified Model id**:
+A Provider-qualified id, written as `provider/model`, that selects one Model. Its two parts are a Provider id and a Provider-native Model id.
+_Avoid_: Model identifier, Model name, model key
 
 **Model catalog**:
-The known Model identifiers a Provider offers for discovery and selection; it is a set of hints, not an entitlement authority or a closed registry.
+The known Provider-native Model ids a Provider offers for discovery and selection, unqualified and without a Provider prefix; it is a set of hints, not an entitlement authority or a closed registry.
 _Avoid_: Model registry, available Models
 
 **Default Model**:

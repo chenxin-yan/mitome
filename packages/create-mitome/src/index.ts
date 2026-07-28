@@ -100,8 +100,8 @@ const main = async (): Promise<void> => {
       { label: "Custom model ID", value: customModel },
     ]);
     const model =
-      selectedModel === customModel ? (await question("Model identifier: ")).trim() : selectedModel;
-    if (model === "") throw new Error("Model identifier is required");
+      selectedModel === customModel ? (await question("Model ID: ")).trim() : selectedModel;
+    if (model === "") throw new Error("Model ID is required");
     const flavor = await choose(question, "Template", [
       { label: "Promise-first", value: "promise" },
       { label: "Effect-native", value: "effect" },

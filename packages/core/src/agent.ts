@@ -1,12 +1,12 @@
 import { Effect, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 import type { AnyPlugin } from "./plugin.js";
-import { getProviderMetadata, parseModelIdentifier } from "./provider.js";
-import type { AnyProvider, ModelIdentifier } from "./provider.js";
+import { getProviderMetadata, parseQualifiedModelId } from "./provider.js";
+import type { AnyProvider, QualifiedModelId } from "./provider.js";
 
 export interface AgentDefinition<
   Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
-  DefaultModel extends ModelIdentifier<Providers[number]> = ModelIdentifier<Providers[number]>,
+  DefaultModel extends QualifiedModelId<Providers[number]> = QualifiedModelId<Providers[number]>,
   Plugins extends ReadonlyArray<AnyPlugin> = ReadonlyArray<AnyPlugin>,
 > {
   readonly providers: Providers;
@@ -21,7 +21,7 @@ export class AgentDefinitionError extends Schema.TaggedErrorClass<AgentDefinitio
 
 export function defineAgent<
   const Providers extends ReadonlyArray<unknown>,
-  const DefaultModel extends ModelIdentifier<Extract<NoInfer<Providers[number]>, AnyProvider>>,
+  const DefaultModel extends QualifiedModelId<Extract<NoInfer<Providers[number]>, AnyProvider>>,
   const Plugins extends ReadonlyArray<AnyPlugin>,
 >(
   definition: {
@@ -57,10 +57,10 @@ export const validateAgentDefinition: (
       }
     }
 
-    const selection = parseModelIdentifier(definition.model);
+    const selection = parseQualifiedModelId(definition.model);
     if (selection === undefined) {
       return yield* new AgentDefinitionError({
-        message: `Malformed Model identifier: ${definition.model}`,
+        message: `Malformed Qualified Model id: ${definition.model}`,
       });
     }
     if (!providerIds.has(selection.providerId)) {

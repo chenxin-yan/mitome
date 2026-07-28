@@ -72,9 +72,9 @@ export const runInit = Effect.gen(function* () {
   );
   const model =
     modelChoice === customModel
-      ? (yield* Prompt.run(Prompt.text({ message: "Model identifier" }))).trim()
+      ? (yield* Prompt.run(Prompt.text({ message: "Model ID" }))).trim()
       : modelChoice;
-  if (model === "") return yield* fail("Model identifier is required.");
+  if (model === "") return yield* fail("Model ID is required.");
   const exitCode = yield* waitForChild(() => initialize(path, provider, model));
   process.exitCode = exitCode;
   if (exitCode !== 0) return;

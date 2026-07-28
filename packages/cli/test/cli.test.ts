@@ -1026,7 +1026,7 @@ export default {
     expect(await exists(join(config, ".env"))).toBe(false);
   });
 
-  test("accepts a custom model identifier", async () => {
+  test("accepts a custom Model ID", async () => {
     const current = await scaffold("mitome-cli-");
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
     await cachedModelHints(current);
@@ -1036,7 +1036,7 @@ export default {
     child.stdin.write("\n");
     await interaction.readUntil("Model");
     child.stdin.write(`${"j".repeat(openAiModelIds.length)}\n`);
-    await interaction.readUntil("Model identifier");
+    await interaction.readUntil("Model ID");
     child.stdin.end("private-model\n");
     const result = await interaction.output();
     expect(result.exitCode).not.toBe(0);
@@ -1045,7 +1045,7 @@ export default {
     );
   });
 
-  test("rejects a blank custom model identifier", async () => {
+  test("rejects a blank custom Model ID", async () => {
     const current = await scaffold("mitome-cli-");
     await cachedModelHints(current);
     const child = spawn(undefined, ["init"], current);
@@ -1053,11 +1053,11 @@ export default {
     child.stdin.write("\n");
     await interaction.readUntil("Model");
     child.stdin.write(`${"j".repeat(openAiModelIds.length)}\n`);
-    await interaction.readUntil("Model identifier");
+    await interaction.readUntil("Model ID");
     child.stdin.end("   \n");
     const result = await interaction.output();
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("Model identifier is required.");
+    expect(result.stderr).toContain("Model ID is required.");
     expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
   });
 

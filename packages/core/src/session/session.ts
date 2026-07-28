@@ -3,8 +3,8 @@ import { LanguageModel, Prompt, Tool } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
 import { validateAgentDefinition } from "../agent.js";
 import type { AgentDefinition, AgentDefinitionError } from "../agent.js";
-import { getProviderMetadata, parseModelIdentifier } from "../provider.js";
-import type { AnyProvider, ModelIdentifier } from "../provider.js";
+import { getProviderMetadata, parseQualifiedModelId } from "../provider.js";
+import type { AnyProvider, QualifiedModelId } from "../provider.js";
 import { providePlugin } from "../plugin.js";
 import type { AnyPlugin } from "../plugin.js";
 import { makeApprovals } from "./approval.js";
@@ -23,7 +23,7 @@ type ProvidersOf<Definition extends AgentDefinition> =
   Definition extends AgentDefinition<infer Providers, any, any> ? Providers : never;
 
 export interface PromptOptions<Providers extends ReadonlyArray<AnyProvider>> {
-  readonly model: ModelIdentifier<Providers[number]>;
+  readonly model: QualifiedModelId<Providers[number]>;
 }
 
 export interface Session<
@@ -203,13 +203,13 @@ const createSessionImpl: (
     );
   };
 
-  const resolveModel = (identifier: unknown): Effect.Effect<RuntimeModel, TurnError> => {
-    const parsed = parseModelIdentifier(identifier);
+  const resolveModel = (qualifiedModelId: unknown): Effect.Effect<RuntimeModel, TurnError> => {
+    const parsed = parseQualifiedModelId(qualifiedModelId);
     if (parsed === undefined) {
       return Effect.fail(
         new TurnError({
-          message: `Malformed Model identifier: ${String(identifier)}`,
-          cause: identifier,
+          message: `Malformed Qualified Model id: ${String(qualifiedModelId)}`,
+          cause: qualifiedModelId,
         }),
       );
     }
@@ -218,13 +218,14 @@ const createSessionImpl: (
       return Effect.fail(
         new TurnError({
           message: `Unregistered Provider id: ${parsed.providerId}`,
-          cause: identifier,
+          cause: qualifiedModelId,
         }),
       );
     }
 
-    const modelIdentifier = identifier as string;
-    const cached = models.get(modelIdentifier);
+    // parseQualifiedModelId only succeeds for strings.
+    const cacheKey = qualifiedModelId as string;
+    const cached = models.get(cacheKey);
     if (cached !== undefined) return Effect.succeed(cached);
 
     const metadata = getProviderMetadata(provider)!;
@@ -240,7 +241,7 @@ const createSessionImpl: (
           context,
           model: Context.get(context, LanguageModel.LanguageModel),
         };
-        models.set(modelIdentifier, selected);
+        models.set(cacheKey, selected);
         return selected;
       }),
     );
@@ -259,10 +260,10 @@ const createSessionImpl: (
             new SessionBusyError({ message: "Session is busy with an active Turn" }),
           );
         }
-        const identifier = options?.model ?? definition.model;
+        const qualifiedModelId = options?.model ?? definition.model;
         isTurnActive = true;
         return Stream.unwrap(
-          resolveModel(identifier).pipe(
+          resolveModel(qualifiedModelId).pipe(
             Effect.flatMap((selected) =>
               beginHookPhase(
                 definition.plugins,

@@ -42,7 +42,7 @@ describe("Agent Definition validation", () => {
     }),
   );
 
-  it.effect("rejects duplicate Providers and invalid Default Model identifiers", () =>
+  it.effect("rejects duplicate Providers and invalid Default Model selections", () =>
     Effect.gen(function* () {
       const provider = makeProvider("registered", [] as const, undefined, () => {
         throw new Error("validation must not provision Models");
@@ -56,7 +56,7 @@ describe("Agent Definition validation", () => {
         )).message,
       ).toBe("Duplicate Provider id: registered");
       expect((yield* getAgentDefinitionError(invalidDefinition("registered/"))).message).toBe(
-        "Malformed Model identifier: registered/",
+        "Malformed Qualified Model id: registered/",
       );
       expect((yield* getAgentDefinitionError(invalidDefinition("missing/model"))).message).toBe(
         "Unregistered Provider id: missing",

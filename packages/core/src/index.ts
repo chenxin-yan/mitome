@@ -15,7 +15,7 @@ export type {
   ToolResultValidator,
 } from "./plugin.js";
 export { credentialDescriptor, makeProvider } from "./provider.js";
-export type { AnyProvider, ModelIdentifier, Provider } from "./provider.js";
+export type { AnyProvider, Provider, QualifiedModelId, ValidProviderId } from "./provider.js";
 export {
   ApprovalResolutionError,
   SessionBusyError,
