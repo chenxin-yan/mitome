@@ -41,16 +41,28 @@ const acquireLock = async (configDirectory: string) => {
 };
 
 const readAuth = async (configDirectory: string): Promise<AuthFile> => {
+  const path = authPath(configDirectory);
+  let contents: string;
   try {
-    const parsed: unknown = JSON.parse(await readFile(authPath(configDirectory), "utf8"));
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      throw new Error("Credential storage is invalid.");
-    }
-    return parsed as AuthFile;
+    contents = await readFile(path, "utf8");
   } catch (error) {
+    // Absent storage is the pre-login state, not a failure.
     if (isMissing(error)) return {};
     throw error;
   }
+  // Every write reads first, so an unreadable file would otherwise block re-login
+  // with a bare SyntaxError naming neither the file nor the way out.
+  const corrupted = new Error(
+    `Credential storage at ${path} is corrupted; delete it and run \`mitome auth login\`.`,
+  );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    throw corrupted;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw corrupted;
+  return parsed as AuthFile;
 };
 
 const writeAuth = async (configDirectory: string, auth: AuthFile): Promise<void> => {
@@ -83,10 +95,9 @@ const modifyAuth = async <A>(
     return value;
   } finally {
     // Unlink before close: a failing close must not leave the lock behind.
-    await unlink(lockPath(configDirectory)).catch((error: unknown) => {
-      // The lock may have been removed externally; don't mask the update's own error.
-      if (!isMissing(error)) throw error;
-    });
+    // Swallowed so cleanup never replaces the update's own error; a lock left behind
+    // surfaces on the next operation as the acquire timeout, which names its path.
+    await unlink(lockPath(configDirectory)).catch(() => {});
     await lock.close();
   }
 };
@@ -120,7 +131,7 @@ const credentialFrom = (value: unknown): OAuthCredential => {
     !("accountId" in value) ||
     typeof value.accountId !== "string"
   ) {
-    throw new Error("Codex Credential is unavailable.");
+    throw new Error("Codex Credential is unavailable. Run `mitome auth login` to authenticate.");
   }
   return value as OAuthCredential;
 };

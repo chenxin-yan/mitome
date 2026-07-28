@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { credentialDescriptor } from "@mitome/core";
 import { serve, spawnRuntime } from "../support.js";
+import { loadCredential } from "../../src/openai-codex/credential-store.js";
 import { codex, login, logout, writeCredential } from "../../src/openai-codex/index.js";
 
 const temporaryDirectories: Array<string> = [];
@@ -236,6 +237,22 @@ describe("Codex OAuth", () => {
       second: { type: "oauth" },
     });
     expect((await stat(join(configDirectory, "auth.json"))).mode & 0o777).toBe(0o600);
+  });
+
+  test("names the recovery for absent and corrupted Credential storage", async () => {
+    const configDirectory = await directory();
+    await expect(loadCredential(configDirectory)).rejects.toThrow(
+      "Codex Credential is unavailable. Run `mitome auth login` to authenticate.",
+    );
+
+    const path = join(configDirectory, "auth.json");
+    await writeFile(path, "{ truncated");
+    const corrupted = `Credential storage at ${path} is corrupted; delete it and run \`mitome auth login\`.`;
+    await expect(loadCredential(configDirectory)).rejects.toThrow(corrupted);
+    // Every write reads first, so a re-login attempt must report the same remedy.
+    await expect(
+      writeCredential(configDirectory, "openai-codex", credential("recovery")),
+    ).rejects.toThrow(corrupted);
   });
 
   test("does not reap a stale storage lock", async () => {
