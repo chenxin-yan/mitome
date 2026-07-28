@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0018
+status: amended by ADR-0018, ADR-0031
 ---
 
 # Publish a separate @mitome/openai-codex provider package
