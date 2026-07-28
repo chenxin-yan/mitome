@@ -1,14 +1,25 @@
 import { afterAll, describe, expect, test } from "vitest";
+import { Effect } from "effect";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { credentialDescriptor } from "@mitome/core";
 import { serve } from "../support.js";
-import { loadCredential, writeCredential } from "../../src/openai-codex/credential-store.js";
+import {
+  loadCredential as loadCredentialEffect,
+  writeCredential as writeCredentialEffect,
+} from "../../src/openai-codex/credential-store.js";
 import { codex, login, logout } from "../../src/openai-codex/index.js";
 
 const temporaryDirectories: Array<string> = [];
 const marker = "synthetic-secret-marker";
+
+const loadCredential = (configDirectory: string) =>
+  Effect.runPromise(loadCredentialEffect(configDirectory));
+const writeCredential = (
+  configDirectory: string,
+  value: Parameters<typeof writeCredentialEffect>[1],
+) => Effect.runPromise(writeCredentialEffect(configDirectory, value));
 
 const credential = (suffix: string) => ({
   type: "oauth" as const,

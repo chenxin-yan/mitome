@@ -1,5 +1,6 @@
 import { Effect, Layer, Stream } from "effect";
 import { AiError, LanguageModel, Response } from "effect/unstable/ai";
+import { FetchHttpClient, HttpClient } from "effect/unstable/http";
 import { configDirectory as processConfigDirectory, configDirectoryMessage } from "@mitome/core";
 import { oauth } from "./constants.js";
 import { loadCredential } from "./credential-store.js";
@@ -23,6 +24,7 @@ export const codexLayer = (
       }
       const baseUrl = (options.baseUrl ?? "https://chatgpt.com/backend-api").replace(/\/+$/, "");
       const sessionId = crypto.randomUUID();
+      const httpClient = yield* HttpClient.HttpClient;
       const requestStream = (
         providerOptions: LanguageModel.ProviderOptions,
       ): Stream.Stream<Response.StreamPartEncoded, AiError.AiError> =>
@@ -33,11 +35,8 @@ export const codexLayer = (
           options.tokenUrl ?? oauth.tokenUrl,
           sessionId,
           providerOptions,
-        );
-      yield* Effect.tryPromise({
-        try: () => loadCredential(configDirectory),
-        catch: networkError,
-      });
+        ).pipe(Stream.provideService(HttpClient.HttpClient, httpClient));
+      yield* loadCredential(configDirectory).pipe(Effect.mapError(networkError));
       return yield* LanguageModel.make({
         streamText: requestStream,
         generateText: (providerOptions) =>
@@ -55,4 +54,4 @@ export const codexLayer = (
           ),
       });
     }),
-  );
+  ).pipe(Layer.provide(FetchHttpClient.layer));

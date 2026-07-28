@@ -7,17 +7,6 @@ import type { AgentDefinition, AnyPlugin, AnyProvider } from "@mitome/core";
 export const sse = (data: unknown) =>
   `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
 
-export const withKey = async <A>(key: string, run: () => Promise<A>): Promise<A> => {
-  const previous = process.env[key];
-  process.env[key] = "synthetic-key";
-  try {
-    return await run();
-  } finally {
-    if (previous === undefined) delete process.env[key];
-    else process.env[key] = previous;
-  }
-};
-
 export const agent = (
   provider: AnyProvider,
   model: string,

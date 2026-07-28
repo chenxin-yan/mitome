@@ -1,11 +1,6 @@
 import { Effect, Stream } from "effect";
 import { AiError, LanguageModel } from "effect/unstable/ai";
-import {
-  FetchHttpClient,
-  HttpClient,
-  HttpClientRequest,
-  HttpClientResponse,
-} from "effect/unstable/http";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 import { isExpired } from "../shared/oauth.js";
 import { loadCredential, refreshCredential } from "./credential-store.js";
 import { networkError, requestFor } from "./request.js";
@@ -46,10 +41,10 @@ export const streamText = (
       Effect.mapError(networkError),
       Effect.flatMap((response) => {
         if (response.status === 401 && !retried) {
-          return Effect.tryPromise({
-            try: () => refreshCredential(configDirectory, tokenUrl, credential.access, false),
-            catch: networkError,
-          }).pipe(Effect.flatMap((next) => execute(next, true)));
+          return refreshCredential(configDirectory, tokenUrl, credential.access, false).pipe(
+            Effect.mapError(networkError),
+            Effect.flatMap((next) => execute(next, true)),
+          );
         }
         if (response.status >= 200 && response.status < 300) {
           return Effect.succeed(
@@ -76,14 +71,14 @@ export const streamText = (
     );
   };
   return Stream.unwrap(
-    Effect.tryPromise({
-      try: async () => {
-        const current = await loadCredential(configDirectory);
-        return isExpired(current)
-          ? refreshCredential(configDirectory, tokenUrl, undefined, true)
-          : current;
-      },
-      catch: networkError,
-    }).pipe(Effect.flatMap((credential) => execute(credential, false))),
-  ).pipe(decodeStream, Stream.provide(FetchHttpClient.layer));
+    Effect.gen(function* () {
+      const current = yield* loadCredential(configDirectory).pipe(Effect.mapError(networkError));
+      const credential = (yield* isExpired(current))
+        ? yield* refreshCredential(configDirectory, tokenUrl, undefined, true).pipe(
+            Effect.mapError(networkError),
+          )
+        : current;
+      return yield* execute(credential, false);
+    }),
+  ).pipe(decodeStream);
 };

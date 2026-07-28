@@ -1,90 +1,104 @@
 import { chmod, mkdir, open, readFile, rename, rm, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { setTimeout } from "node:timers/promises";
+import { Data, Effect, Result, Schedule } from "effect";
 
 type AuthFile = Record<string, unknown>;
+
+class CredentialStoreError extends Data.TaggedError("CredentialStoreError")<{
+  readonly message: string;
+  readonly code?: string;
+  readonly cause?: unknown;
+}> {}
 
 const authPath = (configDirectory: string) => join(configDirectory, "auth.json");
 const lockPath = (configDirectory: string) => join(configDirectory, "auth.lock");
 const lockTimeout = 30_000;
 
-const isMissing = (error: unknown): boolean =>
-  typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+const attempt = <A>(operation: () => Promise<A>): Effect.Effect<A, CredentialStoreError> =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) => {
+      const error = cause as NodeJS.ErrnoException;
+      return new CredentialStoreError({
+        message: error.message,
+        ...(error.code === undefined ? {} : { code: error.code }),
+        cause,
+      });
+    },
+  });
 
-const ensureDirectory = async (configDirectory: string): Promise<void> => {
-  await mkdir(configDirectory, { recursive: true, mode: 0o700 });
-  await chmod(configDirectory, 0o700);
-};
+const ensureDirectory = (configDirectory: string): Effect.Effect<void, CredentialStoreError> =>
+  Effect.gen(function* () {
+    yield* attempt(() => mkdir(configDirectory, { recursive: true, mode: 0o700 }));
+    yield* attempt(() => chmod(configDirectory, 0o700));
+  });
 
-const acquireLock = async (configDirectory: string) => {
+const acquireLock = (configDirectory: string) => {
   const path = lockPath(configDirectory);
-  const deadline = Date.now() + lockTimeout;
-  while (Date.now() < deadline) {
-    try {
-      return await open(path, "wx", 0o600);
-    } catch (error) {
-      if (
-        typeof error !== "object" ||
-        error === null ||
-        !("code" in error) ||
-        error.code !== "EEXIST"
-      ) {
-        throw error;
-      }
-    }
-    await setTimeout(10);
-  }
-  throw new Error(`Credential storage lock timed out: ${path}`);
-};
-
-const readAuth = async (configDirectory: string): Promise<AuthFile> => {
-  const path = authPath(configDirectory);
-  let contents: string;
-  try {
-    contents = await readFile(path, "utf8");
-  } catch (error) {
-    // Absent storage is the pre-login state, not a failure.
-    if (isMissing(error)) return {};
-    throw error;
-  }
-  // Every write reads first, so an unreadable file would otherwise block re-authentication
-  // with a bare SyntaxError naming neither the file nor the way out.
-  const corrupted = new Error(
-    `Credential storage at ${path} is corrupted; delete it and authenticate again.`,
+  return attempt(() => open(path, "wx", 0o600)).pipe(
+    Effect.retry({ while: (error) => error.code === "EEXIST", schedule: Schedule.spaced(10) }),
+    // ponytail: a timeout firing mid-open can strand the lock file; the next
+    // caller's timeout error names its path, same recovery story as before.
+    Effect.timeoutOrElse({
+      duration: lockTimeout,
+      orElse: () =>
+        new CredentialStoreError({ message: `Credential storage lock timed out: ${path}` }),
+    }),
   );
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(contents);
-  } catch {
-    throw corrupted;
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw corrupted;
-  return parsed as AuthFile;
 };
 
-const writeAuth = async (configDirectory: string, auth: AuthFile): Promise<void> => {
-  const path = authPath(configDirectory);
-  const temporary = join(configDirectory, `.auth-${process.pid}-${crypto.randomUUID()}`);
-  const handle = await open(temporary, "wx", 0o600);
-  try {
-    await handle.writeFile(`${JSON.stringify(auth)}\n`);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
-    await rename(temporary, path);
-    await chmod(path, 0o600);
-  } finally {
-    await rm(temporary, { force: true });
-  }
-};
+const readAuth = (configDirectory: string): Effect.Effect<AuthFile, CredentialStoreError> =>
+  Effect.gen(function* () {
+    const path = authPath(configDirectory);
+    const result = yield* Effect.result(attempt(() => readFile(path, "utf8")));
+    if (!Result.isSuccess(result)) {
+      // Absent storage is the pre-login state, not a failure.
+      if (result.failure.code === "ENOENT") return {};
+      return yield* result.failure;
+    }
+    // Every write reads first, so an unreadable file would otherwise block re-authentication
+    // with a bare SyntaxError naming neither the file nor the way out.
+    const corrupted = new CredentialStoreError({
+      message: `Credential storage at ${path} is corrupted; delete it and authenticate again.`,
+    });
+    const parsed = yield* Effect.try({
+      try: () => JSON.parse(result.success) as unknown,
+      catch: () => corrupted,
+    });
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return yield* corrupted;
+    }
+    return parsed as AuthFile;
+  });
+
+const writeAuth = (
+  configDirectory: string,
+  auth: AuthFile,
+): Effect.Effect<void, CredentialStoreError> =>
+  Effect.gen(function* () {
+    const path = authPath(configDirectory);
+    const temporary = join(configDirectory, `.auth-${process.pid}-${crypto.randomUUID()}`);
+    yield* Effect.acquireUseRelease(
+      attempt(() => open(temporary, "wx", 0o600)),
+      (handle) =>
+        Effect.gen(function* () {
+          yield* attempt(() => handle.writeFile(`${JSON.stringify(auth)}\n`));
+          yield* attempt(() => handle.sync());
+        }),
+      (handle) => attempt(() => handle.close()),
+    );
+    yield* Effect.gen(function* () {
+      yield* attempt(() => rename(temporary, path));
+      yield* attempt(() => chmod(path, 0o600));
+    }).pipe(Effect.ensuring(Effect.ignore(attempt(() => rm(temporary, { force: true })))));
+  });
 
 /** Reads one Provider's stored Credential, unvalidated; `undefined` before login. */
-export const readCredential = async (
+export const readCredential = (
   configDirectory: string,
   providerKey: string,
-): Promise<unknown> => (await readAuth(configDirectory))[providerKey];
+): Effect.Effect<unknown, CredentialStoreError> =>
+  Effect.map(readAuth(configDirectory), (auth) => auth[providerKey]);
 
 /**
  * Runs `update` as a locked transaction over one Provider's entry, so a token
@@ -92,28 +106,34 @@ export const readCredential = async (
  * Provider's entry is visible and replaceable; every other entry is preserved.
  * A replacement of `undefined` removes the entry.
  */
-export const modifyCredential = async <A>(
+export const modifyCredential = <A, E = never, R = never>(
   configDirectory: string,
   providerKey: string,
-  update: (current: unknown) => Promise<readonly [unknown, A]> | readonly [unknown, A],
-): Promise<A> => {
-  await ensureDirectory(configDirectory);
-  const lock = await acquireLock(configDirectory);
-  try {
-    const auth = await readAuth(configDirectory);
-    const [next, value] = await update(auth[providerKey]);
-    if (next === undefined) {
-      const { [providerKey]: _, ...remaining } = auth;
-      await writeAuth(configDirectory, remaining);
-    } else {
-      await writeAuth(configDirectory, { ...auth, [providerKey]: next });
-    }
-    return value;
-  } finally {
-    // Unlink before close: a failing close must not leave the lock behind.
-    // Swallowed so cleanup never replaces the update's own error; a lock left behind
-    // surfaces on the next operation as the acquire timeout, which names its path.
-    await unlink(lockPath(configDirectory)).catch(() => {});
-    await lock.close();
-  }
-};
+  update: (current: unknown) => Effect.Effect<readonly [unknown, A], E, R> | readonly [unknown, A],
+): Effect.Effect<A, CredentialStoreError | E, R> =>
+  Effect.gen(function* () {
+    yield* ensureDirectory(configDirectory);
+    return yield* Effect.acquireUseRelease(
+      acquireLock(configDirectory),
+      () =>
+        Effect.gen(function* () {
+          const auth = yield* readAuth(configDirectory);
+          const updated = update(auth[providerKey]);
+          const [next, value] = yield* Effect.isEffect(updated) ? updated : Effect.succeed(updated);
+          if (next === undefined) {
+            const { [providerKey]: _, ...remaining } = auth;
+            yield* writeAuth(configDirectory, remaining);
+          } else {
+            yield* writeAuth(configDirectory, { ...auth, [providerKey]: next });
+          }
+          return value;
+        }),
+      (lock) =>
+        Effect.gen(function* () {
+          // Unlink before close so a close failure cannot leave the lock behind.
+          // Cleanup failures are ignored so they never replace the transaction's cause.
+          yield* Effect.ignore(attempt(() => unlink(lockPath(configDirectory))));
+          yield* Effect.ignore(attempt(() => lock.close()));
+        }),
+    );
+  });

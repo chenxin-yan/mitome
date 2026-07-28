@@ -41,6 +41,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
     "@types/node": "catalog:",

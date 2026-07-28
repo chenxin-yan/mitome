@@ -1,4 +1,4 @@
-import { Effect, Layer, Redacted } from "effect";
+import { Config, ConfigProvider, Effect, Layer, Redacted } from "effect";
 import { FetchHttpClient, type HttpClient } from "effect/unstable/http";
 
 /** Builds a Provider client Layer from an optional environment Credential and API root. */
@@ -12,19 +12,20 @@ export const makeApiKeyClient = <Id, E>(
 ): Layer.Layer<Id, E | string> =>
   Layer.unwrap(
     Effect.gen(function* () {
-      let apiKey: Redacted.Redacted | undefined;
-      if (apiKeyEnv !== undefined) {
-        // Read live rather than via Config: Effect's default ConfigProvider snapshots
-        // process.env at first access, which would miss keys set after startup.
-        const value = process.env[apiKeyEnv];
-        if (value === undefined || value === "") {
-          // A bare string: core surfaces it via String(cause) on TurnError.
-          return yield* Effect.fail(`Environment variable ${apiKeyEnv} is not set or empty`);
-        }
-        apiKey = Redacted.make(value);
-      }
+      const apiKey =
+        apiKeyEnv === undefined
+          ? undefined
+          : yield* Config.redacted(apiKeyEnv).pipe(
+              // A bare string: core surfaces it via String(cause) on TurnError.
+              Effect.mapError(
+                () => `Environment variable ${apiKeyEnv} is not set or empty` as const,
+              ),
+            );
       return layer({ apiUrl: baseUrl, ...(apiKey === undefined ? {} : { apiKey }) }).pipe(
         Layer.provide(FetchHttpClient.layer),
       );
     }),
+  ).pipe(
+    // Build a fresh fallback when the Layer runs so keys set after startup stay visible.
+    Layer.provide(ConfigProvider.layerAdd(Effect.sync(() => ConfigProvider.fromEnv()))),
   );

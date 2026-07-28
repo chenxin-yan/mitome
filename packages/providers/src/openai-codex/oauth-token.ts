@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+import { type HttpClient } from "effect/unstable/http";
 import { exchangeToken, type OAuthToken } from "../shared/oauth.js";
 import { type OAuthCredential } from "./types.js";
 
@@ -33,7 +35,8 @@ export const credential = (token: OAuthToken): OAuthCredential => ({
   accountId: accountId(token.access),
 });
 
-export const token = async (
+export const token = (
   tokenUrl: string,
   form: Record<string, string>,
-): Promise<OAuthCredential> => credential(await exchangeToken(tokenUrl, form));
+): Effect.Effect<OAuthCredential, Error, HttpClient.HttpClient> =>
+  Effect.map(exchangeToken(tokenUrl, form), credential);

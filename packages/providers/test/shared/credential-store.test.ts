@@ -1,4 +1,7 @@
 import { afterAll, describe, expect, test } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import { setTimeout } from "node:timers/promises";
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -23,11 +26,14 @@ const directory = async () => {
   return value;
 };
 
-const write = (configDirectory: string, providerKey: string, value: unknown) =>
+const writeEffect = (configDirectory: string, providerKey: string, value: unknown) =>
   modifyCredential(configDirectory, providerKey, () => [value, undefined]);
 
+const write = (configDirectory: string, providerKey: string, value: unknown) =>
+  Effect.runPromise(writeEffect(configDirectory, providerKey, value));
+
 const remove = (configDirectory: string, providerKey: string) =>
-  modifyCredential(configDirectory, providerKey, () => [undefined, undefined]);
+  Effect.runPromise(modifyCredential(configDirectory, providerKey, () => [undefined, undefined]));
 
 const contents = async (configDirectory: string): Promise<unknown> =>
   JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"));
@@ -42,7 +48,9 @@ describe("Credential storage", () => {
     await write(configDirectory, "alpha", credential("alpha"));
     await write(configDirectory, "beta", credential("beta"));
 
-    const seen = await modifyCredential(configDirectory, "alpha", (current) => [current, current]);
+    const seen = await Effect.runPromise(
+      modifyCredential(configDirectory, "alpha", (current) => [current, current]),
+    );
     expect(seen).toEqual(credential("alpha"));
 
     await write(configDirectory, "alpha", credential("alpha-2"));
@@ -53,11 +61,11 @@ describe("Credential storage", () => {
 
     await remove(configDirectory, "alpha");
     expect(await contents(configDirectory)).toEqual({ beta: credential("beta") });
-    expect(await readCredential(configDirectory, "alpha")).toBeUndefined();
+    expect(await Effect.runPromise(readCredential(configDirectory, "alpha"))).toBeUndefined();
   });
 
   test("reads absent storage as the pre-login state", async () => {
-    expect(await readCredential(await directory(), "alpha")).toBeUndefined();
+    expect(await Effect.runPromise(readCredential(await directory(), "alpha"))).toBeUndefined();
   });
 
   test("serializes atomic cross-process writes and keeps storage private", async () => {
@@ -71,7 +79,7 @@ describe("Credential storage", () => {
     const writer = (providerKey: string) =>
       spawnRuntime([
         "-e",
-        `const { modifyCredential } = await import(${JSON.stringify(source)}); await modifyCredential(${JSON.stringify(configDirectory)}, ${JSON.stringify(providerKey)}, () => [${JSON.stringify(credential(providerKey))}, undefined]);`,
+        `import { Effect } from "effect"; const { modifyCredential } = await import(${JSON.stringify(source)}); await Effect.runPromise(modifyCredential(${JSON.stringify(configDirectory)}, ${JSON.stringify(providerKey)}, () => [${JSON.stringify(credential(providerKey))}, undefined]));`,
       ]);
     const writers = [writer("first"), writer("second")];
     expect(await Promise.all(writers.map((child) => child.exited))).toEqual([0, 0]);
@@ -88,6 +96,55 @@ describe("Credential storage", () => {
     });
     expect((await stat(join(configDirectory, "auth.json"))).mode & 0o777).toBe(0o600);
   });
+
+  it.effect("times out a contended storage lock on the Effect Clock", () =>
+    Effect.gen(function* () {
+      const configDirectory = yield* Effect.promise(directory);
+      yield* Effect.promise(() => mkdir(configDirectory, { recursive: true }));
+      const lock = join(configDirectory, "auth.lock");
+      yield* Effect.promise(() => writeFile(lock, ""));
+
+      const fiber = yield* Effect.forkChild(
+        Effect.flip(writeEffect(configDirectory, "alpha", credential("timeout"))),
+        { startImmediately: true },
+      );
+      // Let each real filesystem rejection register its next Clock-driven retry.
+      yield* Effect.promise(
+        () => new Promise<void>((resolve) => globalThis.setTimeout(resolve, 25)),
+      );
+      for (let seconds = 0; seconds < 31; seconds += 1) {
+        yield* TestClock.adjust("1 second");
+        yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+      }
+      expect((yield* Fiber.join(fiber)).message).toBe(`Credential storage lock timed out: ${lock}`);
+    }),
+  );
+
+  it.live("releases the storage lock when an update is interrupted", () =>
+    Effect.gen(function* () {
+      const configDirectory = yield* Effect.promise(directory);
+      const path = join(configDirectory, "auth.lock");
+      const fiber = yield* Effect.forkChild(
+        modifyCredential(configDirectory, "alpha", () => Effect.never),
+        { startImmediately: true },
+      );
+      yield* Effect.promise(async () => {
+        while (true) {
+          try {
+            await readFile(path);
+            return;
+          } catch {
+            await setTimeout(1);
+          }
+        }
+      });
+
+      yield* Fiber.interrupt(fiber);
+      yield* Effect.promise(async () => {
+        await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+      });
+    }),
+  );
 
   test("does not reap a stale storage lock", async () => {
     const configDirectory = await directory();
@@ -111,13 +168,17 @@ describe("Credential storage", () => {
     const path = join(configDirectory, "auth.json");
     await writeFile(path, "{ truncated");
     const corrupted = `Credential storage at ${path} is corrupted; delete it and authenticate again.`;
-    await expect(readCredential(configDirectory, "alpha")).rejects.toThrow(corrupted);
+    await expect(Effect.runPromise(readCredential(configDirectory, "alpha"))).rejects.toThrow(
+      corrupted,
+    );
     // Every write reads first, so a re-authentication attempt must report the same remedy.
     await expect(write(configDirectory, "alpha", credential("recovery"))).rejects.toThrow(
       corrupted,
     );
 
     await writeFile(path, JSON.stringify([1, 2]));
-    await expect(readCredential(configDirectory, "alpha")).rejects.toThrow(corrupted);
+    await expect(Effect.runPromise(readCredential(configDirectory, "alpha"))).rejects.toThrow(
+      corrupted,
+    );
   });
 });

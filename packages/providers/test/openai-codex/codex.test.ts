@@ -7,10 +7,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createSession } from "@mitome/core";
 import { agent as definition, serve, spawnRuntime, sse } from "../support.js";
-import { writeCredential } from "../../src/openai-codex/credential-store.js";
+import { writeCredential as writeCredentialEffect } from "../../src/openai-codex/credential-store.js";
 import { codex } from "../../src/openai-codex/index.js";
 
 const directories: Array<string> = [];
+const writeCredential = (
+  configDirectory: string,
+  value: Parameters<typeof writeCredentialEffect>[1],
+) => Effect.runPromise(writeCredentialEffect(configDirectory, value));
 const jwt = (accountId: string) =>
   `header.${Buffer.from(JSON.stringify({ chatgpt_account_id: accountId })).toString("base64url")}.signature`;
 const credential = (
@@ -340,7 +344,7 @@ describe("Codex SSE", () => {
     const server = await serve({
       fetch() {
         requests += 1;
-        return Response.json({ error: { message: "model not found" } }, { status: 404 });
+        return Response.json({ error: { message: "model not found" } }, { status: 400 });
       },
     });
     try {
@@ -362,8 +366,13 @@ describe("Codex SSE", () => {
       );
       expect(Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty)).toMatchObject({
         _tag: "TurnError",
-        // The backend's rejection body must survive into the surfaced error.
-        cause: { reason: { description: expect.stringContaining("model not found") } },
+        // Preserve the backend's typed rejection and its response body.
+        cause: {
+          reason: {
+            _tag: "InvalidRequestError",
+            description: expect.stringContaining("model not found"),
+          },
+        },
       });
       expect(requests).toBe(1);
     } finally {
