@@ -1,3 +1,4 @@
+import { exchangeToken, type OAuthToken } from "../internal/oauth.js";
 import { type OAuthCredential } from "./types.js";
 
 export const accountId = (access: string): string => {
@@ -25,40 +26,14 @@ export const accountId = (access: string): string => {
   return id;
 };
 
+/** Codex Credentials carry the account the unofficial backend routes on. */
+export const credential = (token: OAuthToken): OAuthCredential => ({
+  type: "oauth",
+  ...token,
+  accountId: accountId(token.access),
+});
+
 export const token = async (
   tokenUrl: string,
   form: Record<string, string>,
-): Promise<OAuthCredential> => {
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(form),
-    // Keep refresh bounded while holding the storage lock, so a hung exchange does not hold it indefinitely.
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) throw new Error("OAuth token exchange failed.");
-  const body: unknown = await response.json();
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    !("access_token" in body) ||
-    !("refresh_token" in body) ||
-    !("expires_in" in body) ||
-    typeof body.access_token !== "string" ||
-    typeof body.refresh_token !== "string" ||
-    typeof body.expires_in !== "number"
-  ) {
-    throw new Error("OAuth token exchange returned an invalid response.");
-  }
-  return {
-    type: "oauth",
-    access: body.access_token,
-    refresh: body.refresh_token,
-    expires: Date.now() + body.expires_in * 1_000,
-    accountId: accountId(body.access_token),
-  };
-};
-
-// Refresh slightly early so a token expiring mid-flight doesn't cost a 401 round trip.
-export const isExpired = (credential: OAuthCredential): boolean =>
-  Date.now() >= credential.expires - 60_000;
+): Promise<OAuthCredential> => credential(await exchangeToken(tokenUrl, form));

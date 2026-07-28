@@ -1,6 +1,7 @@
 import { modifyCredential, readCredential } from "../internal/credential-store.js";
-import { clientId, provider } from "./constants.js";
-import { isExpired, token } from "./oauth-token.js";
+import { isExpired } from "../internal/oauth.js";
+import { oauth, provider } from "./constants.js";
+import { token } from "./oauth-token.js";
 import { type LogoutOptions, type OAuthCredential } from "./types.js";
 
 const credentialFrom = (value: unknown): OAuthCredential => {
@@ -47,7 +48,7 @@ export const refreshCredential = async (
     const next = await token(tokenUrl, {
       grant_type: "refresh_token",
       refresh_token: current.refresh,
-      client_id: clientId,
+      client_id: oauth.clientId,
     });
     return [next, next];
   });

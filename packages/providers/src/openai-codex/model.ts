@@ -1,7 +1,7 @@
 import { Effect, Layer, Stream } from "effect";
 import { AiError, LanguageModel, Response } from "effect/unstable/ai";
 import { configDirectory as processConfigDirectory, configDirectoryMessage } from "@mitome/core";
-import { defaultTokenUrl } from "./constants.js";
+import { oauth } from "./constants.js";
 import { loadCredential } from "./credential-store.js";
 import { networkError } from "./request.js";
 import { streamText } from "./transport.js";
@@ -30,7 +30,7 @@ export const codexLayer = (
           model,
           configDirectory,
           baseUrl,
-          options.tokenUrl ?? defaultTokenUrl,
+          options.tokenUrl ?? oauth.tokenUrl,
           sessionId,
           providerOptions,
         );
