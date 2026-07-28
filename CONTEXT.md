@@ -78,6 +78,10 @@ _Avoid_: Middleware, event listener
 A named capability an Agent can invoke during a Session to inspect or affect something outside the model.
 _Avoid_: Function, command
 
+**Resource**:
+The private set of services a Plugin acquires at Session creation, holds for the Session's lifetime, and releases at Session end; visible only to that Plugin's own Hooks and Tool handlers.
+_Avoid_: Dependency, state, shared context
+
 **Approval**:
 A user decision allowing one pending Tool call to execute; the Turn stays paused until the decision is resolved or the Turn is interrupted.
 _Avoid_: Permission, confirmation
