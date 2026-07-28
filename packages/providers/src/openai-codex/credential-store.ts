@@ -1,5 +1,5 @@
-import { modifyCredential, readCredential } from "../internal/credential-store.js";
-import { isExpired } from "../internal/oauth.js";
+import { modifyCredential, readCredential } from "../shared/credential-store.js";
+import { isExpired } from "../shared/oauth.js";
 import { oauth, provider } from "./constants.js";
 import { token } from "./oauth-token.js";
 import { type LogoutOptions, type OAuthCredential } from "./types.js";

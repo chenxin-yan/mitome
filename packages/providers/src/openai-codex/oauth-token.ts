@@ -1,4 +1,4 @@
-import { exchangeToken, type OAuthToken } from "../internal/oauth.js";
+import { exchangeToken, type OAuthToken } from "../shared/oauth.js";
 import { type OAuthCredential } from "./types.js";
 
 export const accountId = (access: string): string => {

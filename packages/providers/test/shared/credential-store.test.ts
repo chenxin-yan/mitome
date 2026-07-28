@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/p
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnRuntime } from "../support.js";
-import { modifyCredential, readCredential } from "../../src/internal/credential-store.js";
+import { modifyCredential, readCredential } from "../../src/shared/credential-store.js";
 
 const temporaryDirectories: Array<string> = [];
 const marker = "synthetic-secret-marker";
@@ -67,7 +67,7 @@ describe("Credential storage", () => {
       join(configDirectory, "auth.json"),
       JSON.stringify({ other: { retained: true } }),
     );
-    const source = new URL("../../dist/internal/credential-store.js", import.meta.url).href;
+    const source = new URL("../../dist/shared/credential-store.js", import.meta.url).href;
     const writer = (providerKey: string) =>
       spawnRuntime([
         "-e",

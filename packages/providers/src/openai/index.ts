@@ -1,6 +1,6 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai";
 import { makeProvider } from "@mitome/core";
-import { makeApiKeyClient } from "../internal/api-key-client.js";
+import { makeApiKeyClient } from "../shared/api-key-client.js";
 import { transportLayer } from "./transport.js";
 import { knownModelIds } from "./models.js";
 

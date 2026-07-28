@@ -1,7 +1,7 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat";
 import { Layer } from "effect";
 import { makeProvider } from "@mitome/core";
-import { makeApiKeyClient } from "../internal/api-key-client.js";
+import { makeApiKeyClient } from "../shared/api-key-client.js";
 
 export interface OpenAiCompatibleOptions<Id extends string = string> {
   /** Stable Provider id used in qualified Model identifiers. */

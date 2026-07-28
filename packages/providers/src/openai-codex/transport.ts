@@ -6,7 +6,7 @@ import {
   HttpClientRequest,
   HttpClientResponse,
 } from "effect/unstable/http";
-import { isExpired } from "../internal/oauth.js";
+import { isExpired } from "../shared/oauth.js";
 import { loadCredential, refreshCredential } from "./credential-store.js";
 import { networkError, requestFor } from "./request.js";
 import { decodeStream } from "./sse.js";

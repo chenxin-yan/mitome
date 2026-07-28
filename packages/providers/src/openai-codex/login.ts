@@ -1,4 +1,4 @@
-import { authorize } from "../internal/oauth.js";
+import { authorize } from "../shared/oauth.js";
 import { oauth } from "./constants.js";
 import { writeCredential } from "./credential-store.js";
 import { credential } from "./oauth-token.js";
