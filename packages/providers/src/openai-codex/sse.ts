@@ -56,6 +56,75 @@ const itemKey = (event: Record<string, unknown>) =>
       ? event.item_id
       : "output";
 
+// Item type drives dispatch only; unknown/malformed items are ignored.
+const outputItemType = (item: unknown): string | undefined => {
+  const result = Schema.decodeUnknownResult(ItemType)(item);
+  return Result.isFailure(result) ? undefined : result.success.type;
+};
+
+const decodeOutputItemAdded = (
+  state: StreamState,
+  item: unknown,
+  key: string,
+): Array<Response.StreamPartEncoded> => {
+  const itemType = outputItemType(item);
+  if (itemType === "message") {
+    state.textIds.add(key);
+    return [Response.makePart("text-start", { id: key })];
+  }
+  if (itemType === "function_call") {
+    const added = decode(FunctionCallAddedItem, item, () =>
+      invalidOutput("Codex sent an incomplete Tool call"),
+    );
+    const id = added.call_id ?? added.id;
+    if (id === undefined) throw invalidOutput("Codex sent an incomplete Tool call");
+    const call = { id, name: added.name, arguments: "" };
+    state.calls.set(key, call);
+    // Argument deltas may arrive keyed by item_id instead of output_index.
+    if (added.id !== undefined) state.calls.set(added.id, call);
+    return [
+      Response.makePart("tool-params-start", { id, name: added.name, providerExecuted: false }),
+    ];
+  }
+  return [];
+};
+
+const decodeOutputItemDone = (
+  state: StreamState,
+  item: unknown,
+  key: string,
+): Array<Response.StreamPartEncoded> => {
+  const itemType = outputItemType(item);
+  if (itemType === "message") {
+    return state.textIds.delete(key) ? [Response.makePart("text-end", { id: key })] : [];
+  }
+  if (itemType === "function_call") {
+    const done = decode(FunctionCallDoneItem, item, () =>
+      invalidOutput("Codex completed an unknown Tool call"),
+    );
+    const call = state.calls.get(key) ?? state.calls.get(done.id ?? "");
+    if (call === undefined) throw invalidOutput("Codex completed an unknown Tool call");
+    const arguments_ = done.arguments ?? call.arguments;
+    let params: unknown;
+    try {
+      params = Tool.unsafeSecureJsonParse(arguments_ || "{}");
+    } catch {
+      throw invalidOutput(`Invalid JSON arguments for Tool ${call.name}`);
+    }
+    state.calls.delete(key);
+    return [
+      Response.makePart("tool-params-end", { id: call.id }),
+      Response.makePart("tool-call", {
+        id: call.id,
+        name: call.name,
+        params,
+        providerExecuted: false,
+      }),
+    ];
+  }
+  return [];
+};
+
 const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPartEncoded> => {
   if (data === "[DONE]") return [];
   const event = decode(Event, data, () => invalidOutput("Codex sent malformed SSE JSON"));
@@ -74,27 +143,7 @@ const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPar
   }
   const key = itemKey(event);
   if (type === "response.output_item.added") {
-    const itemType = Schema.decodeUnknownResult(ItemType)(event.item);
-    if (Result.isFailure(itemType)) return [];
-    if (itemType.success.type === "message") {
-      state.textIds.add(key);
-      return [Response.makePart("text-start", { id: key })];
-    }
-    if (itemType.success.type === "function_call") {
-      const item = decode(FunctionCallAddedItem, event.item, () =>
-        invalidOutput("Codex sent an incomplete Tool call"),
-      );
-      const id = item.call_id ?? item.id;
-      if (id === undefined) throw invalidOutput("Codex sent an incomplete Tool call");
-      const call = { id, name: item.name, arguments: "" };
-      state.calls.set(key, call);
-      // Argument deltas may arrive keyed by item_id instead of output_index.
-      if (item.id !== undefined) state.calls.set(item.id, call);
-      return [
-        Response.makePart("tool-params-start", { id, name: item.name, providerExecuted: false }),
-      ];
-    }
-    return [];
+    return decodeOutputItemAdded(state, event.item, key);
   }
   if (type === "response.output_text.delta") {
     const decoded = decode(Delta, event, () =>
@@ -126,35 +175,7 @@ const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPar
     return delta === "" ? [] : [Response.makePart("tool-params-delta", { id: call.id, delta })];
   }
   if (type === "response.output_item.done") {
-    const itemType = Schema.decodeUnknownResult(ItemType)(event.item);
-    if (Result.isFailure(itemType)) return [];
-    if (itemType.success.type === "message") {
-      return state.textIds.delete(key) ? [Response.makePart("text-end", { id: key })] : [];
-    }
-    if (itemType.success.type === "function_call") {
-      const item = decode(FunctionCallDoneItem, event.item, () =>
-        invalidOutput("Codex completed an unknown Tool call"),
-      );
-      const call = state.calls.get(key) ?? state.calls.get(item.id ?? "");
-      if (call === undefined) throw invalidOutput("Codex completed an unknown Tool call");
-      const arguments_ = item.arguments ?? call.arguments;
-      let params: unknown;
-      try {
-        params = Tool.unsafeSecureJsonParse(arguments_ || "{}");
-      } catch {
-        throw invalidOutput(`Invalid JSON arguments for Tool ${call.name}`);
-      }
-      state.calls.delete(key);
-      return [
-        Response.makePart("tool-params-end", { id: call.id }),
-        Response.makePart("tool-call", {
-          id: call.id,
-          name: call.name,
-          params,
-          providerExecuted: false,
-        }),
-      ];
-    }
+    return decodeOutputItemDone(state, event.item, key);
   }
   return [];
 };

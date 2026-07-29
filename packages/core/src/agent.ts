@@ -56,6 +56,89 @@ export function defineAgent(definition: AgentDefinition): AgentDefinition {
   return definition;
 }
 
+interface CompiledPlugins {
+  readonly plugins: Array<AnyPlugin>;
+  readonly tools: Map<string, Omit<CompiledTool, "handler">>;
+  readonly handlers: Map<string, AnyToolHandler>;
+  readonly instructions: Array<string>;
+  readonly requiredHandlerNames: Set<string>;
+}
+
+const compilePlugins = (pluginValues: unknown, issues: Array<string>): CompiledPlugins => {
+  const plugins: Array<AnyPlugin> = [];
+  const tools = new Map<string, Omit<CompiledTool, "handler">>();
+  const handlers = new Map<string, AnyToolHandler>();
+  const instructions: Array<string> = [];
+  const pluginNames = new Set<string>();
+  const requiredHandlerNames = new Set<string>();
+
+  if (!Array.isArray(pluginValues)) {
+    issues.push("Agent Definition Plugins must be an array");
+    return { plugins, tools, handlers, instructions, requiredHandlerNames };
+  }
+
+  for (const [index, value] of pluginValues.entries()) {
+    if (!Predicate.isObject(value) || typeof value.name !== "string") {
+      issues.push(`Plugin at index ${index} must be an object with a string name`);
+      continue;
+    }
+    const plugin = value as unknown as AnyPlugin;
+    if (plugin.instructions !== undefined && typeof plugin.instructions !== "string") {
+      issues.push(`Plugin ${plugin.name} Instructions must be a string`);
+    }
+    if (pluginNames.has(plugin.name)) {
+      issues.push(`Duplicate Plugin name: ${plugin.name}`);
+    }
+    pluginNames.add(plugin.name);
+    plugins.push(plugin);
+    if (typeof plugin.instructions === "string" && plugin.instructions.length > 0) {
+      instructions.push(plugin.instructions);
+    }
+
+    for (const tool of Object.values(plugin.toolkit?.tools ?? {})) {
+      if (tools.has(tool.name)) {
+        issues.push(`Duplicate Tool name: ${tool.name}`);
+      }
+      tools.set(tool.name, {
+        tool,
+        owner: plugin,
+        inputValidator: undefined,
+        resultValidator: undefined,
+      });
+      if (Tool.isProviderDefined(tool) ? tool.requiresHandler : true) {
+        requiredHandlerNames.add(tool.name);
+      }
+    }
+
+    for (const [name, validator] of Object.entries(plugin.toolInputValidators ?? {})) {
+      const compiledTool = tools.get(name);
+      if (compiledTool === undefined || compiledTool.owner !== plugin) {
+        issues.push(`Tool input validator has no matching Tool: ${name}`);
+      } else {
+        tools.set(name, { ...compiledTool, inputValidator: validator });
+      }
+    }
+
+    for (const [name, validator] of Object.entries(plugin.toolResultValidators ?? {})) {
+      const compiledTool = tools.get(name);
+      if (compiledTool === undefined || compiledTool.owner !== plugin) {
+        issues.push(`Tool result validator has no matching Tool: ${name}`);
+      } else {
+        tools.set(name, { ...compiledTool, resultValidator: validator });
+      }
+    }
+
+    for (const [name, handler] of Object.entries(plugin.handlers ?? {})) {
+      if (handlers.has(name)) {
+        issues.push(`Duplicate Tool handler name: ${name}`);
+      }
+      handlers.set(name, handler);
+    }
+  }
+
+  return { plugins, tools, handlers, instructions, requiredHandlerNames };
+};
+
 export const compileAgentDefinition: (
   definition: unknown,
 ) => Effect.Effect<CompiledAgent, AgentDefinitionError> = Effect.fn(
@@ -100,76 +183,10 @@ export const compileAgentDefinition: (
     }
   }
 
-  const plugins: Array<AnyPlugin> = [];
-  const tools = new Map<string, Omit<CompiledTool, "handler">>();
-  const handlers = new Map<string, AnyToolHandler>();
-  const instructions: Array<string> = [];
-  const pluginNames = new Set<string>();
-  const requiredHandlerNames = new Set<string>();
-  const pluginValues = definition.plugins;
-
-  if (!Array.isArray(pluginValues)) {
-    issues.push("Agent Definition Plugins must be an array");
-  } else {
-    for (const [index, value] of pluginValues.entries()) {
-      if (!Predicate.isObject(value) || typeof value.name !== "string") {
-        issues.push(`Plugin at index ${index} must be an object with a string name`);
-        continue;
-      }
-      const plugin = value as unknown as AnyPlugin;
-      if (plugin.instructions !== undefined && typeof plugin.instructions !== "string") {
-        issues.push(`Plugin ${plugin.name} Instructions must be a string`);
-      }
-      if (pluginNames.has(plugin.name)) {
-        issues.push(`Duplicate Plugin name: ${plugin.name}`);
-      }
-      pluginNames.add(plugin.name);
-      plugins.push(plugin);
-      if (typeof plugin.instructions === "string" && plugin.instructions.length > 0) {
-        instructions.push(plugin.instructions);
-      }
-
-      for (const tool of Object.values(plugin.toolkit?.tools ?? {})) {
-        if (tools.has(tool.name)) {
-          issues.push(`Duplicate Tool name: ${tool.name}`);
-        }
-        tools.set(tool.name, {
-          tool,
-          owner: plugin,
-          inputValidator: undefined,
-          resultValidator: undefined,
-        });
-        if (Tool.isProviderDefined(tool) ? tool.requiresHandler : true) {
-          requiredHandlerNames.add(tool.name);
-        }
-      }
-
-      for (const [name, validator] of Object.entries(plugin.toolInputValidators ?? {})) {
-        const compiledTool = tools.get(name);
-        if (compiledTool === undefined || compiledTool.owner !== plugin) {
-          issues.push(`Tool input validator has no matching Tool: ${name}`);
-        } else {
-          tools.set(name, { ...compiledTool, inputValidator: validator });
-        }
-      }
-
-      for (const [name, validator] of Object.entries(plugin.toolResultValidators ?? {})) {
-        const compiledTool = tools.get(name);
-        if (compiledTool === undefined || compiledTool.owner !== plugin) {
-          issues.push(`Tool result validator has no matching Tool: ${name}`);
-        } else {
-          tools.set(name, { ...compiledTool, resultValidator: validator });
-        }
-      }
-
-      for (const [name, handler] of Object.entries(plugin.handlers ?? {})) {
-        if (handlers.has(name)) {
-          issues.push(`Duplicate Tool handler name: ${name}`);
-        }
-        handlers.set(name, handler);
-      }
-    }
-  }
+  const { plugins, tools, handlers, instructions, requiredHandlerNames } = compilePlugins(
+    definition.plugins,
+    issues,
+  );
 
   for (const name of requiredHandlerNames) {
     if (!handlers.has(name)) {

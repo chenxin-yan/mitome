@@ -7,7 +7,7 @@ export class CliError extends Error {
 export type ExitCode = number;
 
 // The embedded Child Host cannot import this module, so hosts/host.ts keeps the sibling renderer.
-export const errorMessage = (error: unknown): string => {
+const errorMessage = (error: unknown): string => {
   const head =
     typeof error === "object" && error !== null && "_tag" in error && "message" in error
       ? `${String(error._tag)}: ${String(error.message)}`

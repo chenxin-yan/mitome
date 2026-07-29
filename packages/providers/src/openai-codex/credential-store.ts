@@ -56,7 +56,7 @@ export const loadCredential = (
 
 /** Refreshes the rotating Credential under the storage lock; a Credential already
  * rotated by another process is reused instead of burning its refresh token. */
-export const refreshCredential = (
+const refreshCredential = (
   configDirectory: string,
   tokenUrl: string,
   failedAccess: string | undefined,
