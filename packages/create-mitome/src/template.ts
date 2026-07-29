@@ -50,18 +50,18 @@ const definitionSource = (
   return `import { defineAgent } from ${JSON.stringify(sdk)};\nimport { instructionFiles } from "@mitome/plugins";\n${providerImport}\n\nexport default defineAgent({\n  providers: [${providerFactory}],\n  model: ${JSON.stringify(`${provider}/${model}`)},\n  plugins: [instructionFiles(${instructionFilesOptions})],\n});\n`;
 };
 
-export const agentDefinitionSource = (options: ScaffoldOptions): string =>
+const agentDefinitionSource = (options: ScaffoldOptions): string =>
   definitionSource(options, '{ paths: ["./instructions.md"] }');
 
-export const defaultAgentDefinitionSource = (options: Omit<ScaffoldOptions, "flavor">): string =>
+const defaultAgentDefinitionSource = (options: Omit<ScaffoldOptions, "flavor">): string =>
   definitionSource(
     { ...options, flavor: "promise" },
     '{ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] }',
   );
 
-export const instructionsSource = "You are a helpful Agent.\n";
+const instructionsSource = "You are a helpful Agent.\n";
 
-export const agentPackageSource = (): string =>
+const agentPackageSource = (): string =>
   `${JSON.stringify(
     {
       name: "mitome-agent",

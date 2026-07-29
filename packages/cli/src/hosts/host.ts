@@ -36,6 +36,7 @@ const render = (event: TurnEvent): void => {
   }
 };
 
+// This source is embedded standalone; support.ts keeps the sibling CLI renderer.
 const errorMessage = (error: unknown): string => {
   const head =
     typeof error === "object" && error !== null && "_tag" in error && "message" in error

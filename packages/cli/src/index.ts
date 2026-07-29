@@ -1,18 +1,25 @@
 import * as BunRuntime from "@effect/platform-bun/BunRuntime";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { Effect, Layer } from "effect";
-import { CliOutput, Command } from "effect/unstable/cli";
+import { Argument, CliOutput, Command, Flag } from "effect/unstable/cli";
 import cliPackage from "../package.json" with { type: "json" };
-import { promptArgument, useFlag } from "./args.js";
-import { childHostLayer } from "./child-host.js";
+import { ChildHost } from "./child-host.js";
 import { runAuth } from "./commands/auth.js";
 import { runInit } from "./commands/init.js";
 import { runInstall, runPrompt } from "./commands/run.js";
-import { prompterLayer } from "./prompter.js";
+import { Prompter } from "./prompter.js";
 import { fail, type ExitCode } from "./support.js";
 
 const useExitCode = <A extends ExitCode, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.tap((exitCode) => Effect.sync(() => (process.exitCode = exitCode))));
+
+const useFlag = Flag.string("use").pipe(
+  Flag.withDescription("Path to an Agent Definition module or directory"),
+  Flag.optional,
+);
+const promptArgument = Argument.string("prompt").pipe(
+  Argument.withDescription("Prompt to send to the Agent"),
+);
 
 const definitionCommandConfig = {
   use: useFlag,
@@ -21,7 +28,7 @@ const definitionCommandConfig = {
 const installCommand = Command.make("install", definitionCommandConfig, (options) =>
   useExitCode(runInstall(options)),
 ).pipe(Command.withDescription("Install Agent Definition dependencies"));
-const initCommand = Command.make("init", {}, () => useExitCode(runInit)).pipe(
+const initCommand = Command.make("init", {}, () => useExitCode(runInit())).pipe(
   Command.withDescription("Create a default Agent Definition"),
 );
 const loginCommand = Command.make("login", definitionCommandConfig, ({ use }) =>
@@ -53,6 +60,6 @@ export const runCli = Command.runWith(command, { version: cliPackage.version });
 
 if (import.meta.main) {
   const platform = Layer.merge(BunServices.layer, CliOutput.layer(CliOutput.defaultFormatter()));
-  const services = Layer.merge(childHostLayer, prompterLayer).pipe(Layer.provideMerge(platform));
+  const services = Layer.merge(ChildHost.layer, Prompter.layer).pipe(Layer.provideMerge(platform));
   BunRuntime.runMain(runCli(process.argv.slice(2)).pipe(Effect.provide(services)));
 }

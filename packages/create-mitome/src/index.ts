@@ -15,6 +15,7 @@ import {
 
 import { knownModelIds } from "./model-hints.js";
 
+/** Exported for the CLI entry-point test. */
 export const scaffold = (directory: string, options: ScaffoldOptions): Promise<void> =>
   writeScaffold(directory, projectPlan(options));
 

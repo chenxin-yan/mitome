@@ -2,7 +2,11 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Context, Effect, Layer, Result, Schema } from "effect";
-import { configDirectory, type CredentialDescriptor } from "@mitome/core";
+import {
+  configDirectory,
+  CredentialDescriptorSchema,
+  type CredentialDescriptor,
+} from "@mitome/core";
 import { requireConfigDirectory } from "./config.js";
 import { attempt, type CliError, type ExitCode } from "./support.js";
 // @ts-expect-error Bun embeds this as source text at compile time; TS sees a module without a default export.
@@ -36,12 +40,17 @@ export class ChildHost extends Context.Service<
       command: "login" | "logout",
     ) => Effect.Effect<void, CliError>;
   }
->()("@mitome/cli/ChildHost") {}
+>()("@mitome/cli/ChildHost") {
+  static readonly layer = Layer.succeed(ChildHost, {
+    runHost: (path, prompt) => Effect.uninterruptible(attempt(() => runHost(path, prompt))),
+    install: (path) => Effect.uninterruptible(attempt(() => install(path))),
+    inspectProviderAuthentication: (path) =>
+      Effect.uninterruptible(attempt(() => inspectProviderAuthentication(path))),
+    runOAuthAuth: (path, providerId, command) =>
+      Effect.uninterruptible(attempt(() => runOAuthAuth(path, providerId, command))),
+  });
+}
 
-const CredentialDescriptorSchema = Schema.Union([
-  Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/)),
-  Schema.Struct({ capability: Schema.Struct({ module: Schema.String }) }),
-]);
 const ProviderAuthenticationSchema = Schema.Struct({
   id: Schema.String.check(Schema.isNonEmpty()),
   credential: CredentialDescriptorSchema,
@@ -140,12 +149,3 @@ const runOAuthAuth = async (
   );
   if ((await child.exited) !== 0) throw new Error("Provider authentication failed.");
 };
-
-export const childHostLayer = Layer.succeed(ChildHost, {
-  runHost: (path, prompt) => Effect.uninterruptible(attempt(() => runHost(path, prompt))),
-  install: (path) => Effect.uninterruptible(attempt(() => install(path))),
-  inspectProviderAuthentication: (path) =>
-    Effect.uninterruptible(attempt(() => inspectProviderAuthentication(path))),
-  runOAuthAuth: (path, providerId, command) =>
-    Effect.uninterruptible(attempt(() => runOAuthAuth(path, providerId, command))),
-});

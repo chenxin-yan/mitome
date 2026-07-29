@@ -22,30 +22,34 @@ const selectProvider = (providers: ReadonlyArray<ProviderAuthentication>) =>
     });
   });
 
-export const authenticateDefinition = (path: string, command: "login" | "logout") =>
-  Effect.gen(function* () {
-    const childHost = yield* ChildHost;
-    const providers = yield* childHost.inspectProviderAuthentication(path);
-    const selected = yield* selectProvider(providers);
-    const credential = selected.credential;
-    if (typeof credential !== "string") {
-      yield* childHost.runOAuthAuth(path, selected.id, command);
-      return;
-    }
-    if (command === "logout") {
-      yield* attempt(() => removeConfigEnv(credential));
-      return;
-    }
-    const prompter = yield* Prompter;
-    const value = yield* prompter.password(credential);
-    if (value === "") return yield* fail("Credential value is required.");
-    yield* attempt(() => updateConfigEnv(credential, value));
-  });
+export const authenticateDefinition = Effect.fn("@mitome/cli/authenticateDefinition")(function* (
+  path: string,
+  command: "login" | "logout",
+) {
+  const childHost = yield* ChildHost;
+  const providers = yield* childHost.inspectProviderAuthentication(path);
+  const selected = yield* selectProvider(providers);
+  const credential = selected.credential;
+  if (typeof credential !== "string") {
+    yield* childHost.runOAuthAuth(path, selected.id, command);
+    return;
+  }
+  if (command === "logout") {
+    yield* attempt(() => removeConfigEnv(credential));
+    return;
+  }
+  const prompter = yield* Prompter;
+  const value = yield* prompter.password(credential);
+  if (value === "") return yield* fail("Credential value is required.");
+  yield* attempt(() => updateConfigEnv(credential, value));
+});
 
-export const runAuth = (command: "login" | "logout", use: Option.Option<string>) =>
-  Effect.gen(function* () {
-    const path = yield* attempt(() => definitionPath(use));
-    yield* attempt(() => checkRuntime(path));
-    yield* authenticateDefinition(path, command);
-    return 0 satisfies ExitCode;
-  });
+export const runAuth = Effect.fn("@mitome/cli/runAuth")(function* (
+  command: "login" | "logout",
+  use: Option.Option<string>,
+) {
+  const path = yield* attempt(() => definitionPath(use));
+  yield* attempt(() => checkRuntime(path));
+  yield* authenticateDefinition(path, command);
+  return 0 satisfies ExitCode;
+});

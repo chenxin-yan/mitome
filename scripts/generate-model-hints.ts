@@ -6,7 +6,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { knownModelIds as codexIds } from "../packages/providers/src/openai-codex/models.ts";
-import { toolCapableOpenAiIds } from "../packages/cli/src/catalog.ts";
+import { catalogUrl, toolCapableOpenAiIds } from "../packages/cli/src/catalog.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const snapshotPath = join(root, "scripts", "models-dev.snapshot.json");
@@ -14,7 +14,7 @@ const openAiHintsPath = join(root, "packages", "providers", "src", "openai", "mo
 const createMitomeHintsPath = join(root, "packages", "create-mitome", "src", "model-hints.ts");
 
 const fetchOpenAiIds = async (): Promise<Array<string>> => {
-  const response = await fetch("https://models.dev/api.json", {
+  const response = await fetch(catalogUrl, {
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) throw new Error(`models.dev returned ${response.status}`);

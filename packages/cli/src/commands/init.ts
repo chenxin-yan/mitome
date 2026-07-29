@@ -19,7 +19,7 @@ import { Prompter } from "../prompter.js";
 import { attempt, fail, type ExitCode } from "../support.js";
 import { authenticateDefinition } from "./auth.js";
 
-export const runInit = Effect.gen(function* () {
+export const runInit = Effect.fn("@mitome/cli/runInit")(function* () {
   const childHost = yield* ChildHost;
   const prompter = yield* Prompter;
   const directory = yield* attempt(async () => requireConfigDirectory());

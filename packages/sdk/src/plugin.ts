@@ -113,19 +113,17 @@ const validate = async <Output>(
 };
 
 // Promise Hooks use an unknown error channel; Core owns lifecycle-specific error mapping.
-const promiseHook = <A, Resource>(
+const promiseHook = Effect.fn("@mitome/sdk/promiseHook")(function* <A, Resource>(
   callback: (context: HookContext<Resource>) => Promise<A>,
   resource: Context.Service<Resource, Resource> | undefined,
-): Effect.Effect<A, unknown, Resource> =>
-  Effect.gen(function* () {
-    const value =
-      resource === undefined ? (undefined as Resource) : yield* Effect.service(resource);
-    // @effect-diagnostics-next-line unknownInEffectCatch:off
-    return yield* Effect.tryPromise({
-      try: (signal) => callback({ resource: value, signal }),
-      catch: (cause) => cause,
-    });
+) {
+  const value = resource === undefined ? (undefined as Resource) : yield* Effect.service(resource);
+  // @effect-diagnostics-next-line unknownInEffectCatch:off
+  return yield* Effect.tryPromise({
+    try: (signal) => callback({ resource: value, signal }),
+    catch: (cause) => cause,
   });
+});
 
 const adaptHooks = <Resource>(
   hooks: PluginHooksDefinition<Resource> | undefined,

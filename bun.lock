@@ -53,6 +53,7 @@
       },
       "devDependencies": {
         "@effect/platform-bun": "catalog:",
+        "@effect/vitest": "catalog:",
         "@mitome/config": "workspace:*",
         "@mitome/core": "workspace:*",
         "@mitome/providers": "workspace:*",

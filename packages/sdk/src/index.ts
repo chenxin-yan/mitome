@@ -11,6 +11,7 @@ export type {
   Plugin,
   Provider,
   PluginHooks,
+  PromptOptions,
   QualifiedModelId,
   ToolHookContext,
   ToolResultHookContext,

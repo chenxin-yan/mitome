@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Result, Schema } from "effect";
 
-const catalogUrl = "https://models.dev/api.json";
+export const catalogUrl = "https://models.dev/api.json";
 const cacheName = "models-cache.json";
 const cacheTtl = 24 * 60 * 60 * 1000;
 const fetchTimeout = 3_000;

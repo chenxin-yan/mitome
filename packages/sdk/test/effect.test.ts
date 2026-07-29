@@ -10,6 +10,7 @@ test("keeps the complete Effect facade export contract", async () => {
     [
       "AgentDefinitionError",
       "ApprovalResolutionError",
+      "CredentialDescriptorSchema",
       "SessionBusyError",
       "SessionReleasedError",
       "TurnError",

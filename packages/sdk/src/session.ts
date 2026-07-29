@@ -18,6 +18,7 @@ export type TurnEvent =
 export interface Session<
   Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
 > {
+  /** Treat the returned iterable as single-use; requesting another iterator re-runs the Turn. */
   readonly prompt: (text: string, options?: PromptOptions<Providers>) => AsyncIterable<TurnEvent>;
 }
 
