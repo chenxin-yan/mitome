@@ -4,26 +4,31 @@ import { Effect, Layer } from "effect";
 import { CliOutput, Command } from "effect/unstable/cli";
 import cliPackage from "../package.json" with { type: "json" };
 import { promptArgument, useFlag } from "./args.js";
+import { childHostLayer } from "./child-host.js";
 import { runAuth } from "./commands/auth.js";
 import { runInit } from "./commands/init.js";
 import { runInstall, runPrompt } from "./commands/run.js";
-import { fail, promptTerminal } from "./support.js";
+import { prompterLayer } from "./prompter.js";
+import { fail, type ExitCode } from "./support.js";
+
+const useExitCode = <A extends ExitCode, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(Effect.tap((exitCode) => Effect.sync(() => (process.exitCode = exitCode))));
 
 const definitionCommandConfig = {
   use: useFlag,
 };
 
-const installCommand = Command.make("install", definitionCommandConfig, runInstall).pipe(
-  Command.withDescription("Install Agent Definition dependencies"),
-);
-const initCommand = Command.make("init", {}, () => runInit).pipe(
+const installCommand = Command.make("install", definitionCommandConfig, (options) =>
+  useExitCode(runInstall(options)),
+).pipe(Command.withDescription("Install Agent Definition dependencies"));
+const initCommand = Command.make("init", {}, () => useExitCode(runInit)).pipe(
   Command.withDescription("Create a default Agent Definition"),
 );
 const loginCommand = Command.make("login", definitionCommandConfig, ({ use }) =>
-  runAuth("login", use),
+  useExitCode(runAuth("login", use)),
 );
 const logoutCommand = Command.make("logout", definitionCommandConfig, ({ use }) =>
-  runAuth("logout", use),
+  useExitCode(runAuth("logout", use)),
 );
 const authCommand = Command.make("auth", {}, () =>
   fail("Usage: mitome auth <login|logout> [--use <path>]"),
@@ -38,7 +43,7 @@ const command = Command.make(
     prompt: promptArgument,
     use: useFlag,
   },
-  runPrompt,
+  (options) => useExitCode(runPrompt(options)),
 ).pipe(
   Command.withDescription("Run an Agent Definition"),
   Command.withSubcommands([installCommand, initCommand, authCommand]),
@@ -47,11 +52,7 @@ const command = Command.make(
 export const runCli = Command.runWith(command, { version: cliPackage.version });
 
 if (import.meta.main) {
-  // promptTerminal is merged last so its Terminal overrides the BunServices one.
-  const services = Layer.mergeAll(
-    BunServices.layer,
-    CliOutput.layer(CliOutput.defaultFormatter()),
-    promptTerminal,
-  );
+  const platform = Layer.merge(BunServices.layer, CliOutput.layer(CliOutput.defaultFormatter()));
+  const services = Layer.merge(childHostLayer, prompterLayer).pipe(Layer.provideMerge(platform));
   BunRuntime.runMain(runCli(process.argv.slice(2)).pipe(Effect.provide(services)));
 }

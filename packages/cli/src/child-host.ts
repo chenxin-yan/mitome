@@ -1,9 +1,10 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Result, Schema } from "effect";
+import { Context, Effect, Layer, Result, Schema } from "effect";
 import { configDirectory, type CredentialDescriptor } from "@mitome/core";
 import { requireConfigDirectory } from "./config.js";
+import { attempt, type CliError, type ExitCode } from "./support.js";
 // Bun embeds hosts as source text at compile time; static analysis sees modules without default exports.
 // @ts-expect-error
 // oxlint-disable-next-line import/default
@@ -22,6 +23,22 @@ export interface ProviderAuthentication {
   readonly credential: CredentialDescriptor;
 }
 
+export class ChildHost extends Context.Service<
+  ChildHost,
+  {
+    readonly runHost: (path: string, prompt: string) => Effect.Effect<ExitCode, CliError>;
+    readonly install: (path: string) => Effect.Effect<ExitCode, CliError>;
+    readonly inspectProviderAuthentication: (
+      path: string,
+    ) => Effect.Effect<ReadonlyArray<ProviderAuthentication>, CliError>;
+    readonly runOAuthAuth: (
+      path: string,
+      providerId: string,
+      command: "login" | "logout",
+    ) => Effect.Effect<void, CliError>;
+  }
+>()("@mitome/cli/ChildHost") {}
+
 const CredentialDescriptorSchema = Schema.Union([
   Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/)),
   Schema.Struct({ capability: Schema.Struct({ module: Schema.String }) }),
@@ -36,7 +53,7 @@ const ProviderAuthenticationsFromJson = Schema.fromJsonString(
 
 // No SIGINT forwarding (unlike runHost): the installer is short-lived and
 // terminal Ctrl-C reaches it through the process group.
-export const install = async (path: string): Promise<number> => {
+const install = async (path: string): Promise<ExitCode> => {
   const child = Bun.spawn([process.execPath, "install"], {
     cwd: dirname(path),
     env: childEnv,
@@ -47,7 +64,7 @@ export const install = async (path: string): Promise<number> => {
   return child.exited;
 };
 
-export const runHost = async (path: string, prompt: string): Promise<number> => {
+const runHost = async (path: string, prompt: string): Promise<ExitCode> => {
   const directory = configDirectory();
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.
@@ -68,7 +85,7 @@ export const runHost = async (path: string, prompt: string): Promise<number> => 
   }
 };
 
-export const inspectProviderAuthentication = async (
+const inspectProviderAuthentication = async (
   path: string,
 ): Promise<ReadonlyArray<ProviderAuthentication>> => {
   const directory = await mkdtemp(join(tmpdir(), "mitome-auth-"));
@@ -98,7 +115,7 @@ export const inspectProviderAuthentication = async (
   }
 };
 
-export const runOAuthAuth = async (
+const runOAuthAuth = async (
   path: string,
   providerId: string,
   command: "login" | "logout",
@@ -124,3 +141,12 @@ export const runOAuthAuth = async (
   );
   if ((await child.exited) !== 0) throw new Error("Provider authentication failed.");
 };
+
+export const childHostLayer = Layer.succeed(ChildHost, {
+  runHost: (path, prompt) => Effect.uninterruptible(attempt(() => runHost(path, prompt))),
+  install: (path) => Effect.uninterruptible(attempt(() => install(path))),
+  inspectProviderAuthentication: (path) =>
+    Effect.uninterruptible(attempt(() => inspectProviderAuthentication(path))),
+  runOAuthAuth: (path, providerId, command) =>
+    Effect.uninterruptible(attempt(() => runOAuthAuth(path, providerId, command))),
+});

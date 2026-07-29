@@ -9,12 +9,27 @@ import cliPackage from "../package.json" with { type: "json" };
 vi.mock("../src/hosts/host.ts", () => ({ default: "" }));
 vi.mock("../src/hosts/auth-host.ts", () => ({ default: "" }));
 
+import { ChildHost } from "../src/child-host.ts";
 import { runCli } from "../src/index.ts";
+import { Prompter } from "../src/prompter.ts";
 
+const unused = Effect.die("Command handler unexpectedly ran");
 const services = Layer.mergeAll(
   BunServices.layer,
   TestConsole.layer,
   CliOutput.layer(CliOutput.defaultFormatter({ colors: false })),
+  Layer.succeed(ChildHost, {
+    runHost: () => unused,
+    install: () => unused,
+    inspectProviderAuthentication: () => unused,
+    runOAuthAuth: () => unused,
+  }),
+  Layer.succeed(Prompter, {
+    canPrompt: Effect.succeed(false),
+    select: () => unused,
+    text: () => unused,
+    password: () => unused,
+  }),
 );
 
 const run = (args: ReadonlyArray<string>) =>

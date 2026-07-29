@@ -98,6 +98,10 @@ _Avoid_: Frontend, client, harness
 The CLI's capability for delegating Host work — running a Turn, installing Agent Definition dependencies, or Provider authentication — to a separate Host process.
 _Avoid_: Spawner, process manager, subprocess (bare)
 
+**Prompter**:
+The CLI's capability for interactive terminal input — asking the user questions during init and auth flows.
+_Avoid_: Readline, stdin (bare), input handler
+
 **Credential**:
 A stored secret that authorizes Mitome to use one Provider on behalf of the user.
 _Avoid_: Token, key, login

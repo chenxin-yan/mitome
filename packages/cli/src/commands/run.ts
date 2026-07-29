@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
-import { install, runHost } from "../child-host.js";
+import { ChildHost } from "../child-host.js";
 import { checkRuntime, definitionPath } from "../definition.js";
-import { attempt, waitForChild } from "../support.js";
+import { attempt } from "../support.js";
 
 export const runPrompt = ({
   prompt,
@@ -11,13 +11,15 @@ export const runPrompt = ({
   readonly use: Option.Option<string>;
 }) =>
   Effect.gen(function* () {
+    const childHost = yield* ChildHost;
     const path = yield* attempt(() => definitionPath(use));
     yield* attempt(() => checkRuntime(path));
-    process.exitCode = yield* waitForChild(() => runHost(path, prompt));
+    return yield* childHost.runHost(path, prompt);
   });
 
 export const runInstall = ({ use }: { readonly use: Option.Option<string> }) =>
   Effect.gen(function* () {
+    const childHost = yield* ChildHost;
     const path = yield* attempt(() => definitionPath(use));
-    process.exitCode = yield* waitForChild(() => install(path));
+    return yield* childHost.install(path);
   });
