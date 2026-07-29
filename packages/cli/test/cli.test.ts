@@ -169,8 +169,7 @@ const spawn = (
 
 const exited = async (child: ReturnType<typeof spawnChild>): Promise<number | null> => {
   if (child.exitCode !== null || child.signalCode !== null) return child.exitCode;
-  // Bun's ChildProcess type omits its EventEmitter inheritance, but node:events handles it.
-  // @ts-expect-error
+  // @ts-expect-error Bun's ChildProcess type omits its EventEmitter inheritance; node:events handles it.
   const [code] = await once(child, "close");
   return code;
 };

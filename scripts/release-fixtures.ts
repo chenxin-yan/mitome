@@ -140,10 +140,11 @@ import { instructions } from "@mitome/plugins";
 if (sdkEffect.createSession !== core.createSession) throw new Error("SDK Effect facade duplicated the Core runtime.");
 if (openai().id !== "openai" || codex().id !== "openai-codex") throw new Error("Official Provider packages were not installed.");
 if (openaiCompatible({ id: "local", baseUrl: "http://localhost" }).id !== "local") throw new Error("OpenAI-compatible package was not installed.");
-// Deliberately partial mock; only streamText runs in this smoke.
-const provider = makeProvider("fixture", [] as const, undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
+// Built through the real published LanguageModel.make constructor; generateText is unused here.
+const provider = makeProvider("fixture", [] as const, undefined, () => Layer.effect(LanguageModel.LanguageModel, LanguageModel.make({
   streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "ok" })),
-} as unknown as LanguageModel.Service));
+  generateText: () => Effect.die("generateText is not used by this smoke"),
+})));
 const definition = defineAgent({
   providers: [provider] as const,
   model: "fixture/default",

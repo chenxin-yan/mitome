@@ -5,11 +5,10 @@ import { Context, Effect, Layer, Result, Schema } from "effect";
 import { configDirectory, type CredentialDescriptor } from "@mitome/core";
 import { requireConfigDirectory } from "./config.js";
 import { attempt, type CliError, type ExitCode } from "./support.js";
-// Bun embeds hosts as source text at compile time; static analysis sees modules without default exports.
-// @ts-expect-error
+// @ts-expect-error Bun embeds this as source text at compile time; TS sees a module without a default export.
 // oxlint-disable-next-line import/default
 import definitionHost from "./hosts/host.ts" with { type: "text" };
-// @ts-expect-error
+// @ts-expect-error Bun text import (see above).
 // oxlint-disable-next-line import/default
 import authHost from "./hosts/auth-host.ts" with { type: "text" };
 

@@ -155,6 +155,8 @@ export const makeToolExecution = (
                     Stream.runCollect(
                       // Collection keeps the handler stream and Hooks inside
                       // streamText's per-call concurrency slot (ADR-0005).
+                      // handle's typed error is `never` only because handlers were erased via
+                      // `as never`; `unknown` is the honest runtime channel that toolAiError maps.
                       stream as unknown as Stream.Stream<Tool.HandlerResult<Tool.Any>, unknown>,
                     ),
                   ),
@@ -248,11 +250,11 @@ export const makeToolExecution = (
                 if (needsApproval === undefined || typeof needsApproval === "boolean") {
                   return needsApproval ?? false;
                 }
-                // @effect-diagnostics-next-line unknownInEffectCatch:off
-                return yield* Effect.try({
-                  try: () => needsApproval(prepared.params as never, context),
-                  catch: (cause) => cause,
-                }).pipe(
+                // Sync throws become defects; the Cause-level handlers below treat
+                // Fail and Die identically (log, then fail closed).
+                return yield* Effect.sync(() =>
+                  needsApproval(prepared.params as never, context),
+                ).pipe(
                   Effect.flatMap((result) =>
                     Effect.isEffect(result) ? result : Effect.succeed(result),
                   ),

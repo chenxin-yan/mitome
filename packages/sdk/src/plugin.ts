@@ -235,17 +235,18 @@ export function definePlugin<
     throw new Error(`Plugin "${definition.name}" declares dispose without setup`);
   }
   const names = new Set<string>();
-  const definitions = (
-    definition.tools as unknown as ReadonlyArray<Tool<any, any, Resource, string>>
-  ).map((tool) => {
-    if (names.has(tool.name)) throw new Error(`Duplicate Tool name: ${tool.name}`);
-    names.add(tool.name);
-    return {
-      tool,
-      input: standardInput(tool.inputSchema),
-      output: standardOutput(tool.outputSchema),
-    };
-  });
+  const definitions =
+    // The public overload proved every Tool Resource is satisfied (UnsatisfiedToolResources);
+    // the impl signature erased Resource, so rehydrate it here.
+    (definition.tools as unknown as ReadonlyArray<Tool<any, any, Resource, string>>).map((tool) => {
+      if (names.has(tool.name)) throw new Error(`Duplicate Tool name: ${tool.name}`);
+      names.add(tool.name);
+      return {
+        tool,
+        input: standardInput(tool.inputSchema),
+        output: standardOutput(tool.outputSchema),
+      };
+    });
 
   const service =
     definition.setup === undefined
@@ -265,12 +266,10 @@ export function definePlugin<
               typeof needsApproval === "boolean"
                 ? needsApproval
                 : (params: unknown, context: ToolApprovalContext) =>
-                    // @effect-diagnostics-next-line unknownInEffectCatch:off
-                    Effect.tryPromise({
-                      try: () =>
-                        Promise.resolve().then(() => needsApproval(params as never, context)),
-                      catch: (cause) => cause,
-                    }).pipe(Effect.orDie),
+                    // Rejections become defects, matching Core's fail-closed approval handling.
+                    Effect.promise(() =>
+                      Promise.resolve().then(() => needsApproval(params as never, context)),
+                    ),
           }),
     });
   });
