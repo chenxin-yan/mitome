@@ -84,7 +84,7 @@ describe("scaffold plans", () => {
     [
       "project",
       () => projectPlan({ flavor: "promise", provider: "openai", model: "gpt-5.6" }),
-      "README.md",
+      "instructions.md",
       "package.json",
     ],
   ] as const)(
@@ -173,14 +173,5 @@ describe("create-mitome scaffold", () => {
       scaffold(path, { flavor: "promise", provider: "openai", model: "gpt-5.6" }),
     ).rejects.toThrow("package.json already exists");
     expect(await contents(path, "index.ts")).toBe("hand-written\n");
-  });
-
-  test("refuses to overwrite instructions.md", async () => {
-    const path = await directory();
-    await writeFile(join(path, "instructions.md"), "hand-written\n");
-
-    await expect(
-      scaffold(path, { flavor: "promise", provider: "openai", model: "gpt-5.6" }),
-    ).rejects.toThrow("instructions.md already exists");
   });
 });

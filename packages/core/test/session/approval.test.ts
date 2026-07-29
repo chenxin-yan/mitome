@@ -117,6 +117,10 @@ describe("Session Approval event adaptation", () => {
       expect(current.fixture.calls()).toBe(1);
 
       yield* turn.pending.approve();
+      expect(yield* Effect.flip(turn.pending.deny("too late"))).toMatchObject({
+        _tag: "ApprovalResolutionError",
+        message: "Approval decision has already been resolved",
+      });
       yield* Fiber.join(turn.turn);
 
       expect(current.counts()).toEqual({ handlerCalls: 1, postCalls: 1, preToolCalls: 1 });
@@ -164,7 +168,7 @@ describe("Session Approval event adaptation", () => {
             yield* Stream.runDrain(session.prompt("Hi"));
           }),
         ),
-      ).toMatchObject({ _tag: "TurnError", cause: failure });
+      ).toMatchObject({ _tag: "TurnError", message: "Pre-Tool Hook failed", cause: failure });
       expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
     }),
   );

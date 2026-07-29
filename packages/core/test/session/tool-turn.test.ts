@@ -93,14 +93,23 @@ describe("createSession Tool Turn", () => {
       let calls = 0;
       const model = makeTestProvider(() => {
         calls += 1;
-        return Stream.succeed(
+        return Stream.fromIterable([
           Response.makePart("tool-call", {
             id: "provider-call",
             name: "web-search",
             params: {},
             providerExecuted: true,
           }),
-        );
+          Response.makePart("tool-result", {
+            id: "provider-call",
+            name: "web-search",
+            result: "found",
+            encodedResult: "found",
+            isFailure: false,
+            preliminary: false,
+            providerExecuted: true,
+          }),
+        ]);
       });
 
       const session = yield* createSession({
@@ -112,6 +121,13 @@ describe("createSession Tool Turn", () => {
 
       expect([...events]).toEqual([
         { type: "tool-call", id: "provider-call", name: "web-search" },
+        {
+          type: "tool-result",
+          id: "provider-call",
+          name: "web-search",
+          result: "found",
+          isFailure: false,
+        },
         { type: "response-complete" },
       ]);
       expect(calls).toBe(1);

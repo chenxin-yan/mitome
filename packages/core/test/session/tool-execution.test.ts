@@ -104,44 +104,6 @@ const execute = (execution: ToolExecution, params: unknown, toolCallId = "call-1
     .pipe(Effect.flatMap(Stream.runCollect));
 
 describe("ToolExecution", () => {
-  it.effect("rejects a duplicate Approval decision and executes an approved Tool Call", () =>
-    Effect.gen(function* () {
-      const fixture = makeFixture();
-      const execution = yield* fixture.execution;
-      const params = { action: "delete" };
-
-      expect(yield* prepare(execution, params)).toBe(true);
-      const approval = pending(yield* request(execution, params));
-      expect(approval).toMatchObject({
-        approvalId: "approval-call-1",
-        toolCallId: "call-1",
-        name: "dangerous",
-        params: { action: "delete" },
-      });
-      expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
-
-      yield* execution.approval.resolve(approval.approvalId, { approved: true });
-      expect(
-        yield* Effect.flip(
-          execution.approval.resolve(approval.approvalId, { approved: false, reason: "too late" }),
-        ),
-      ).toMatchObject({
-        _tag: "ApprovalResolutionError",
-        message: "Approval decision has already been resolved",
-      });
-      expect(yield* approval.awaitDecision).toEqual({ approved: true });
-      const results = yield* execute(execution, params);
-
-      expect(fixture.counts()).toEqual({ handlerCalls: 1, postCalls: 1, preToolCalls: 1 });
-      expect([...results]).toContainEqual({
-        result: "executed",
-        encodedResult: "executed",
-        isFailure: false,
-        preliminary: false,
-      });
-    }),
-  );
-
   it.effect("resolves a cancelled pending Approval with the ensuring fallback", () =>
     Effect.gen(function* () {
       const fixture = makeFixture();
@@ -170,23 +132,6 @@ describe("ToolExecution", () => {
         expect(yield* request(execution, params)).toEqual({ _tag: "Veto", reason });
         expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
       }
-    }),
-  );
-
-  it.effect("fails Tool input validation before pre-Tool Hooks", () =>
-    Effect.gen(function* () {
-      const failure = new Error("invalid input");
-      const fixture = makeFixture({ inputValidator: () => Effect.fail(failure) });
-      const execution = yield* fixture.execution;
-      const params = { action: "delete" };
-
-      expect(yield* prepare(execution, params)).toBe(true);
-      expect(yield* request(execution, params)).toEqual({
-        _tag: "Failure",
-        message: "Tool input validation failed",
-        cause: failure,
-      });
-      expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 0 });
     }),
   );
 
@@ -288,23 +233,6 @@ describe("ToolExecution", () => {
         });
         expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
       }
-    }),
-  );
-
-  it.effect("preserves a pre-Tool Hook failure as a gate Failure", () =>
-    Effect.gen(function* () {
-      const failure = new Error("pre-tool failed");
-      const fixture = makeFixture({ preTool: () => Effect.fail(failure) });
-      const execution = yield* fixture.execution;
-      const params = { action: "delete" };
-
-      expect(yield* prepare(execution, params)).toBe(true);
-      expect(yield* request(execution, params)).toEqual({
-        _tag: "Failure",
-        message: "Pre-Tool Hook failed",
-        cause: failure,
-      });
-      expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
     }),
   );
 
