@@ -86,7 +86,7 @@ export const makeApprovals = (
         const wrapped = tool.setNeedsApproval(
           (params: unknown, context: Tool.NeedsApprovalContext) =>
             Effect.gen(function* () {
-              const inputValidator = compiled.toolInputValidators[tool.name];
+              const inputValidator = compiled.tools.get(tool.name)!.inputValidator;
               const input =
                 inputValidator === undefined
                   ? { _tag: "ok" as const, value: params }

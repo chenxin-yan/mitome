@@ -16,15 +16,19 @@ export interface AgentDefinition<
 
 type AnyToolHandler = (params: unknown) => Effect.Effect<unknown, unknown, any>;
 
+export interface CompiledTool {
+  readonly tool: Tool.Any;
+  readonly owner: AnyPlugin;
+  readonly handler: AnyToolHandler | undefined;
+  readonly inputValidator: ToolInputValidator | undefined;
+  readonly resultValidator: ToolResultValidator | undefined;
+}
+
 export interface CompiledAgent {
   readonly plugins: ReadonlyArray<AnyPlugin>;
   readonly providers: ReadonlyMap<string, AnyProvider>;
   readonly defaultModel: { readonly providerId: string; readonly modelId: string };
-  readonly tools: Readonly<Record<string, Tool.Any>>;
-  readonly toolOwners: ReadonlyMap<string, AnyPlugin>;
-  readonly handlers: Readonly<Record<string, AnyToolHandler>>;
-  readonly toolInputValidators: Readonly<Record<string, ToolInputValidator>>;
-  readonly toolResultValidators: Readonly<Record<string, ToolResultValidator>>;
+  readonly tools: ReadonlyMap<string, CompiledTool>;
   readonly instructions: string;
 }
 
@@ -97,15 +101,10 @@ export const compileAgentDefinition: (
   }
 
   const plugins: Array<AnyPlugin> = [];
-  const tools: Record<string, Tool.Any> = {};
-  const toolOwners = new Map<string, AnyPlugin>();
-  const handlers: Record<string, AnyToolHandler> = {};
-  const toolInputValidators: Record<string, ToolInputValidator> = {};
-  const toolResultValidators: Record<string, ToolResultValidator> = {};
+  const tools = new Map<string, Omit<CompiledTool, "handler">>();
+  const handlers = new Map<string, AnyToolHandler>();
   const instructions: Array<string> = [];
   const pluginNames = new Set<string>();
-  const toolNames = new Set<string>();
-  const handlerNames = new Set<string>();
   const requiredHandlerNames = new Set<string>();
   const pluginValues = definition.plugins;
 
@@ -130,51 +129,55 @@ export const compileAgentDefinition: (
         instructions.push(plugin.instructions);
       }
 
-      const pluginToolNames = new Set<string>();
       for (const tool of Object.values(plugin.toolkit?.tools ?? {})) {
-        if (toolNames.has(tool.name)) {
+        if (tools.has(tool.name)) {
           issues.push(`Duplicate Tool name: ${tool.name}`);
         }
-        toolNames.add(tool.name);
-        pluginToolNames.add(tool.name);
-        tools[tool.name] = tool;
-        toolOwners.set(tool.name, plugin);
+        tools.set(tool.name, {
+          tool,
+          owner: plugin,
+          inputValidator: undefined,
+          resultValidator: undefined,
+        });
         if (Tool.isProviderDefined(tool) ? tool.requiresHandler : true) {
           requiredHandlerNames.add(tool.name);
         }
       }
 
       for (const [name, validator] of Object.entries(plugin.toolInputValidators ?? {})) {
-        if (!pluginToolNames.has(name)) {
+        const compiledTool = tools.get(name);
+        if (compiledTool === undefined || compiledTool.owner !== plugin) {
           issues.push(`Tool input validator has no matching Tool: ${name}`);
+        } else {
+          tools.set(name, { ...compiledTool, inputValidator: validator });
         }
-        toolInputValidators[name] = validator;
       }
 
       for (const [name, validator] of Object.entries(plugin.toolResultValidators ?? {})) {
-        if (!pluginToolNames.has(name)) {
+        const compiledTool = tools.get(name);
+        if (compiledTool === undefined || compiledTool.owner !== plugin) {
           issues.push(`Tool result validator has no matching Tool: ${name}`);
+        } else {
+          tools.set(name, { ...compiledTool, resultValidator: validator });
         }
-        toolResultValidators[name] = validator;
       }
 
       for (const [name, handler] of Object.entries(plugin.handlers ?? {})) {
-        if (handlerNames.has(name)) {
+        if (handlers.has(name)) {
           issues.push(`Duplicate Tool handler name: ${name}`);
         }
-        handlerNames.add(name);
-        handlers[name] = handler;
+        handlers.set(name, handler);
       }
     }
   }
 
   for (const name of requiredHandlerNames) {
-    if (!handlerNames.has(name)) {
+    if (!handlers.has(name)) {
       issues.push(`Missing Tool handler: ${name}`);
     }
   }
-  for (const name of handlerNames) {
-    if (!toolNames.has(name)) {
+  for (const name of handlers.keys()) {
+    if (!tools.has(name)) {
       issues.push(`Tool handler has no matching Tool: ${name}`);
     }
   }
@@ -190,11 +193,12 @@ export const compileAgentDefinition: (
     providers,
     // Empty `issues` implies the model parsed and resolved, so `defaultModel` is set.
     defaultModel: defaultModel!,
-    tools,
-    toolOwners,
-    handlers,
-    toolInputValidators,
-    toolResultValidators,
+    tools: new Map(
+      Array.from(tools, ([name, compiledTool]) => [
+        name,
+        { ...compiledTool, handler: handlers.get(name) },
+      ]),
+    ),
     instructions: instructions.join("\n\n"),
   };
 });

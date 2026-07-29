@@ -116,10 +116,10 @@ export function definePlugin(plugin: unknown): never {
 export type PluginContexts = ReadonlyMap<AnyPlugin, Context.Context<any>>;
 
 export const providePlugin = <A, E>(
-  plugin: AnyPlugin | undefined,
+  plugin: AnyPlugin,
   contexts: PluginContexts,
   effect: Effect.Effect<A, E, any>,
 ): Effect.Effect<A, E> => {
-  const context = plugin === undefined ? undefined : contexts.get(plugin);
+  const context = contexts.get(plugin);
   return (context === undefined ? effect : Effect.provide(effect, context)) as Effect.Effect<A, E>;
 };

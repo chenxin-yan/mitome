@@ -47,9 +47,15 @@ export const makeToolkit = (
   compiled: CompiledAgent,
   contexts: PluginContexts,
 ): Effect.Effect<ComposedToolkit, never> => {
-  const toolkit = Toolkit.make(...Object.values(compiled.tools));
+  const compiledTools = Array.from(compiled.tools.values());
+  const toolkit = Toolkit.make(...compiledTools.map(({ tool }) => tool));
+  const toolHandlers = Object.fromEntries(
+    compiledTools.flatMap(({ tool, handler }) =>
+      handler === undefined ? [] : [[tool.name, handler] as const],
+    ),
+  );
   // Cross-Plugin handlers are heterogeneous, so their merged record cannot satisfy Toolkit.HandlersFrom.
-  return toolkit.toHandlers(compiled.handlers as never).pipe(
+  return toolkit.toHandlers(toolHandlers as never).pipe(
     Effect.flatMap((handlers) => Effect.provide(toolkit, handlers)),
     Effect.map((handlers): ComposedToolkit => {
       const handle = handlers.handle as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
@@ -60,8 +66,8 @@ export const makeToolkit = (
         Effect.gen(function* () {
           // The whole Tool call runs in the owning Plugin's context: the handler
           // itself plus any schema decode/encode services from its resource.
-          const owner = compiled.toolOwners.get(name);
-          const tool = handlers.tools[name] as Tool.Any;
+          const compiledTool = compiled.tools.get(name)!;
+          const { owner, resultValidator, tool } = compiledTool;
           const results = yield* providePlugin(
             owner,
             contexts,
@@ -78,7 +84,6 @@ export const makeToolkit = (
           if (!compiled.plugins.some((plugin) => plugin.hooks?.postTool !== undefined)) {
             return Stream.fromIterable(results);
           }
-          const validator = compiled.toolResultValidators[name];
           const finalResults = yield* Effect.forEach(results, (handlerResult) =>
             Effect.gen(function* () {
               let result = handlerResult.result;
@@ -100,7 +105,7 @@ export const makeToolkit = (
               return yield* providePlugin(
                 owner,
                 contexts,
-                validateResult(tool, handlerResult, result, validator),
+                validateResult(tool, handlerResult, result, resultValidator),
               ).pipe(hookAiError("postTool", "Post-Tool result validation failed"));
             }),
           );

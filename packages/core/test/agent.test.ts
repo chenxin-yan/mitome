@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
+import { compileAgentDefinition } from "../src/agent.js";
 import {
   AgentDefinitionError,
-  compileAgentDefinition,
   defineAgent,
   makeProvider,
   type AgentDefinition,
@@ -38,14 +38,13 @@ describe("Agent Definition compilation", () => {
         name: "first",
         instructions: "First",
         toolkit: Toolkit.make(echo),
-        handlers: { echo: echoHandler },
         toolInputValidators: { echo: echoInput },
       };
       const second = {
         name: "second",
         instructions: "Second",
         toolkit: Toolkit.make(count),
-        handlers: { count: countHandler },
+        handlers: { echo: echoHandler, count: countHandler },
         toolResultValidators: { count: countResult },
       };
 
@@ -58,13 +57,55 @@ describe("Agent Definition compilation", () => {
       expect(compiled.plugins).toEqual([first, second]);
       expect([...compiled.providers]).toEqual([["test", model]]);
       expect(compiled.defaultModel).toEqual({ providerId: "test", modelId: "default" });
-      expect(compiled.tools).toEqual({ echo, count });
-      expect(compiled.toolOwners.get("echo")).toBe(first);
-      expect(compiled.toolOwners.get("count")).toBe(second);
-      expect(compiled.handlers).toEqual({ echo: echoHandler, count: countHandler });
-      expect(compiled.toolInputValidators).toEqual({ echo: echoInput });
-      expect(compiled.toolResultValidators).toEqual({ count: countResult });
+      expect([...compiled.tools]).toEqual([
+        [
+          "echo",
+          {
+            tool: echo,
+            owner: first,
+            handler: echoHandler,
+            inputValidator: echoInput,
+            resultValidator: undefined,
+          },
+        ],
+        [
+          "count",
+          {
+            tool: count,
+            owner: second,
+            handler: countHandler,
+            inputValidator: undefined,
+            resultValidator: countResult,
+          },
+        ],
+      ]);
       expect(compiled.instructions).toBe("First\n\nSecond");
+    }),
+  );
+
+  it.effect("preserves special Tool names in the compiled registry", () =>
+    Effect.gen(function* () {
+      const tool = Tool.make("__proto__", { success: Schema.String });
+      const handler = () => Effect.succeed("ok");
+      const compiled = yield* compileAgentDefinition({
+        providers: [model],
+        model: "test/default",
+        plugins: [
+          {
+            name: "special",
+            toolkit: Toolkit.make(tool),
+            handlers: Object.fromEntries([[tool.name, handler]]),
+          },
+        ],
+      });
+
+      expect(compiled.tools.get(tool.name)).toEqual({
+        tool,
+        owner: compiled.plugins[0],
+        handler,
+        inputValidator: undefined,
+        resultValidator: undefined,
+      });
     }),
   );
 
