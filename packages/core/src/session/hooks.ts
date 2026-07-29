@@ -3,12 +3,12 @@ import { Prompt } from "effect/unstable/ai";
 import type { AnyPlugin, PluginContexts } from "../plugin.js";
 import { providePlugin } from "../plugin.js";
 
-export const transformPrompt = (
+export const transformPrompt: (
   plugins: ReadonlyArray<AnyPlugin>,
   contexts: PluginContexts,
   prompt: Prompt.Prompt,
-): Effect.Effect<Prompt.Prompt, unknown> =>
-  Effect.gen(function* () {
+) => Effect.Effect<Prompt.Prompt, unknown> = Effect.fn("@mitome/core/transformPrompt")(
+  function* (plugins, contexts, prompt) {
     let current = prompt;
     for (const plugin of plugins) {
       current = yield* providePlugin(
@@ -18,7 +18,8 @@ export const transformPrompt = (
       );
     }
     return current;
-  });
+  },
+);
 
 export interface HookPhase {
   readonly end: Effect.Effect<void, unknown>;
@@ -68,13 +69,13 @@ const runEndHooks = (
     if (failed) return yield* Effect.fail(firstFailure);
   });
 
-export const beginHookPhase = (
+export const beginHookPhase: (
   plugins: ReadonlyArray<AnyPlugin>,
   getStart: (plugin: AnyPlugin) => Effect.Effect<void, unknown> | undefined,
   getEnd: (plugin: AnyPlugin) => Effect.Effect<void, unknown> | undefined,
   endFailureMessage: string,
-): Effect.Effect<HookPhase, unknown> =>
-  Effect.gen(function* () {
+) => Effect.Effect<HookPhase, unknown> = Effect.fn("@mitome/core/beginHookPhase")(
+  function* (plugins, getStart, getEnd, endFailureMessage) {
     let started = 0;
     const start = Effect.gen(function* () {
       for (const plugin of plugins) {
@@ -93,4 +94,5 @@ export const beginHookPhase = (
         runCleanupHooks(plugins.slice(progress.dispatched), getEnd, endFailureMessage),
       ),
     };
-  });
+  },
+);

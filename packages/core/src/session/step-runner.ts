@@ -2,8 +2,8 @@ import { Effect, Stream } from "effect";
 import { Prompt, Tool } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
 import type { CompiledAgent } from "../agent.js";
-import type { AnyPlugin, PluginContexts } from "../plugin.js";
-import { providePlugin } from "../plugin.js";
+import type { PluginContexts } from "../plugin.js";
+import { providePluginHook } from "../plugin.js";
 import { hookTurnError, modelTurnError, TurnError } from "./errors.js";
 import type { TurnEvent } from "./events.js";
 import { beginHookPhase, transformPrompt } from "./hooks.js";
@@ -26,12 +26,6 @@ export const makeStepRunner = (
   contexts: PluginContexts,
   toolExecution: ToolExecution,
 ): StepRunner => {
-  const inContext = <A, E>(
-    plugin: AnyPlugin,
-    effect: Effect.Effect<A, E, any> | undefined,
-  ): Effect.Effect<A, E> | undefined =>
-    effect === undefined ? undefined : providePlugin(plugin, contexts, effect);
-
   const approvalEvents = (
     part: { readonly approvalId: string; readonly toolCallId: string },
     call: { readonly name: string; readonly params: unknown },
@@ -60,9 +54,9 @@ export const makeStepRunner = (
               toolCallId: outcome.toolCallId,
               name: outcome.name,
               params: outcome.params,
-              approve: () => toolExecution.approval.resolve(outcome.id, { approved: true }),
+              approve: () => toolExecution.approval.resolve(outcome.approvalId, { approved: true }),
               deny: (reason) =>
-                toolExecution.approval.resolve(outcome.id, {
+                toolExecution.approval.resolve(outcome.approvalId, {
                   approved: false,
                   reason: reason ?? "Approval denied",
                 }),
@@ -98,8 +92,8 @@ export const makeStepRunner = (
     return Stream.unwrap(
       beginHookPhase(
         compiled.plugins,
-        (plugin) => inContext(plugin, plugin.hooks?.stepStart?.(prompt)),
-        (plugin) => inContext(plugin, plugin.hooks?.stepEnd?.(endPrompt)),
+        (plugin) => providePluginHook(plugin, contexts, plugin.hooks?.stepStart?.(prompt)),
+        (plugin) => providePluginHook(plugin, contexts, plugin.hooks?.stepEnd?.(endPrompt)),
         "Step end Hook failed",
       ).pipe(
         hookTurnError("Step start Hook failed"),

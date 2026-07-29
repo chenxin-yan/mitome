@@ -120,12 +120,15 @@ describe("ToolExecution", () => {
       });
       expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
 
-      yield* execution.approval.resolve(approval.id, { approved: true });
+      yield* execution.approval.resolve(approval.approvalId, { approved: true });
       expect(
         yield* Effect.flip(
-          execution.approval.resolve(approval.id, { approved: false, reason: "too late" }),
+          execution.approval.resolve(approval.approvalId, { approved: false, reason: "too late" }),
         ),
-      ).toMatchObject({ _tag: "ApprovalResolutionError" });
+      ).toMatchObject({
+        _tag: "ApprovalResolutionError",
+        message: "Approval decision has already been resolved",
+      });
       expect(yield* approval.awaitDecision).toEqual({ approved: true });
       const results = yield* execute(execution, params);
 
@@ -150,7 +153,7 @@ describe("ToolExecution", () => {
       yield* Effect.timeoutOption(approval.awaitDecision, 0);
 
       expect(
-        yield* Effect.flip(execution.approval.resolve(approval.id, { approved: true })),
+        yield* Effect.flip(execution.approval.resolve(approval.approvalId, { approved: true })),
       ).toMatchObject({ _tag: "ApprovalResolutionError" });
       expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
     }),
@@ -195,7 +198,10 @@ describe("ToolExecution", () => {
       yield* prepare(execution, params);
       const approval = pending(yield* request(execution, params));
 
-      yield* execution.approval.resolve(approval.id, { approved: false, reason: "declined" });
+      yield* execution.approval.resolve(approval.approvalId, {
+        approved: false,
+        reason: "declined",
+      });
       expect(yield* approval.awaitDecision).toEqual({ approved: false, reason: "declined" });
       yield* execute(execution, params);
 
@@ -231,7 +237,7 @@ describe("ToolExecution", () => {
         postCalls: 0,
         preToolCalls: 1,
       });
-      yield* gated.approval.resolve(approval.id, { approved: true });
+      yield* gated.approval.resolve(approval.approvalId, { approved: true });
       yield* approval.awaitDecision;
       yield* execute(gated, params);
       expect(requiresApproval.counts()).toEqual({
@@ -269,12 +275,12 @@ describe("ToolExecution", () => {
         expect(yield* prepare(execution, params)).toBe(true);
         const approval = pending(yield* request(execution, params));
         expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
-        yield* execution.approval.resolve(approval.id, {
+        yield* execution.approval.resolve(approval.approvalId, {
           approved: false,
           reason: "declined",
         });
         expect(
-          yield* Effect.flip(execution.approval.resolve(approval.id, { approved: true })),
+          yield* Effect.flip(execution.approval.resolve(approval.approvalId, { approved: true })),
         ).toMatchObject({ _tag: "ApprovalResolutionError" });
         expect(yield* approval.awaitDecision).toEqual({
           approved: false,

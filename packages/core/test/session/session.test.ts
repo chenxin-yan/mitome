@@ -1,17 +1,22 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Cause, Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Prompt, Response } from "effect/unstable/ai";
-import {
-  type AgentDefinition,
-  createSession,
-  makeProvider,
-  SessionBusyError,
-  SessionReleasedError,
-  TurnError,
-} from "../../src/index.js";
+import { type AgentDefinition, createSession, makeProvider, TurnError } from "../../src/index.js";
 import { makeDeterministicProvider, makeTestProvider } from "../support/provider.js";
 
 describe("createSession", () => {
+  it("encodes TurnError defects for persistence", () => {
+    expect(
+      Schema.encodeUnknownSync(TurnError)(
+        new TurnError({ message: "Turn failed", cause: new Error("provider failed") }),
+      ),
+    ).toEqual({
+      _tag: "TurnError",
+      message: "Turn failed",
+      cause: { name: "Error", message: "provider failed" },
+    });
+  });
+
   it.effect("streams one model Step before completion", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");
@@ -168,7 +173,10 @@ describe("createSession", () => {
 
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {
-        expect(Cause.squash(exit.cause)).toBeInstanceOf(SessionBusyError);
+        expect(Cause.squash(exit.cause)).toMatchObject({
+          _tag: "SessionBusyError",
+          message: "Session is busy with an active Turn",
+        });
       }
       expect(yield* fixture.calls).toBe(1);
     }),
@@ -266,7 +274,10 @@ describe("createSession", () => {
 
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {
-        expect(Cause.squash(exit.cause)).toBeInstanceOf(SessionReleasedError);
+        expect(Cause.squash(exit.cause)).toMatchObject({
+          _tag: "SessionReleasedError",
+          message: "Session scope has been released",
+        });
       }
       expect(session.history()).toEqual([]);
     }),

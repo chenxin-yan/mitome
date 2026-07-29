@@ -3,7 +3,7 @@ import { Prompt } from "effect/unstable/ai";
 import { compileAgentDefinition } from "../agent.js";
 import type { AgentDefinition, AgentDefinitionError } from "../agent.js";
 import type { AnyProvider, QualifiedModelId } from "../provider.js";
-import { providePlugin } from "../plugin.js";
+import { providePluginHook } from "../plugin.js";
 import type { AnyPlugin } from "../plugin.js";
 import { SessionBusyError, SessionReleasedError, TurnError, hookTurnError } from "./errors.js";
 import type { TurnEvent } from "./events.js";
@@ -58,13 +58,6 @@ const createSessionImpl: (
   let isReleased = false;
   let isTurnActive = false;
 
-  // Hooks run with their Plugin's scoped Resource (if any) in context.
-  const inContext = <A, E>(
-    plugin: AnyPlugin,
-    effect: Effect.Effect<A, E, any> | undefined,
-  ): Effect.Effect<A, E> | undefined =>
-    effect === undefined ? undefined : providePlugin(plugin, pluginContexts, effect);
-
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
       history = Prompt.empty;
@@ -74,8 +67,8 @@ const createSessionImpl: (
 
   const sessionHooks = yield* beginHookPhase(
     compiled.plugins,
-    (plugin) => inContext(plugin, plugin.hooks?.sessionStart),
-    (plugin) => inContext(plugin, plugin.hooks?.sessionEnd),
+    (plugin) => providePluginHook(plugin, pluginContexts, plugin.hooks?.sessionStart),
+    (plugin) => providePluginHook(plugin, pluginContexts, plugin.hooks?.sessionEnd),
     "Session end Hook failed",
   ).pipe(hookTurnError("Session start Hook failed"));
 
@@ -86,14 +79,10 @@ const createSessionImpl: (
     prompt: (text, options) =>
       Stream.suspend<TurnEvent, SessionBusyError | SessionReleasedError | TurnError, never>(() => {
         if (isReleased) {
-          return Stream.fail(
-            new SessionReleasedError({ message: "Session scope has been released" }),
-          );
+          return Stream.fail(new SessionReleasedError({}));
         }
         if (isTurnActive) {
-          return Stream.fail(
-            new SessionBusyError({ message: "Session is busy with an active Turn" }),
-          );
+          return Stream.fail(new SessionBusyError({}));
         }
         const qualifiedModelId = options?.model ?? definition.model;
         isTurnActive = true;
@@ -102,8 +91,10 @@ const createSessionImpl: (
             Effect.flatMap((selected) =>
               beginHookPhase(
                 compiled.plugins,
-                (plugin) => inContext(plugin, plugin.hooks?.turnStart?.(text)),
-                (plugin) => inContext(plugin, plugin.hooks?.turnEnd?.(text)),
+                (plugin) =>
+                  providePluginHook(plugin, pluginContexts, plugin.hooks?.turnStart?.(text)),
+                (plugin) =>
+                  providePluginHook(plugin, pluginContexts, plugin.hooks?.turnEnd?.(text)),
                 "Turn end Hook failed",
               ).pipe(
                 hookTurnError("Turn start Hook failed"),

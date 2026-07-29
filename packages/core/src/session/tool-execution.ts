@@ -13,7 +13,6 @@ export type ApprovalRequestOutcome =
   | { readonly _tag: "Veto"; readonly reason: string }
   | {
       readonly _tag: "Pending";
-      readonly id: string;
       readonly approvalId: string;
       readonly toolCallId: string;
       readonly name: string;
@@ -143,8 +142,8 @@ export const makeToolExecution = (
       const pipelines = Object.fromEntries(
         compiledTools.map((compiledTool) => {
           const { owner, resultValidator, tool } = compiledTool;
-          const execute: ToolPipeline["execute"] = (params) =>
-            Effect.gen(function* () {
+          const execute: ToolPipeline["execute"] = Effect.fn("@mitome/core/ToolPipeline.execute")(
+            function* (params) {
               // The whole Tool Call runs in the owning Plugin's context: the handler
               // plus any schema decode/encode services from its Resource.
               const results = yield* providePlugin(
@@ -191,13 +190,14 @@ export const makeToolExecution = (
                 }),
               );
               return Stream.fromIterable(finalResults);
-            });
+            },
+          );
           return [tool.name, { compiled: compiledTool, execute } satisfies ToolPipeline] as const;
         }),
       ) as Record<string, ToolPipeline>;
 
-      const prepare = (pipeline: ToolPipeline, params: unknown): Effect.Effect<PreparedCall> =>
-        Effect.gen(function* () {
+      const prepare: (pipeline: ToolPipeline, params: unknown) => Effect.Effect<PreparedCall> =
+        Effect.fn("@mitome/core/ToolExecution.prepare")(function* (pipeline, params) {
           const { inputValidator, tool } = pipeline.compiled;
           const input =
             inputValidator === undefined
@@ -290,69 +290,54 @@ export const makeToolExecution = (
           return yield* pipeline.execute(params);
         })) as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
 
-      const request: ApprovalGate["request"] = (part, call) => {
-        const prepared = preparedCalls.get(part.toolCallId);
-        if (prepared?._tag === "Failure") {
-          preparedCalls.delete(part.toolCallId);
-          return Effect.succeed({
-            _tag: "Failure",
-            message: prepared.message,
-            cause: prepared.cause,
-          });
-        }
-        if (prepared?.veto !== undefined) {
-          preparedCalls.delete(part.toolCallId);
-          return Effect.succeed({ _tag: "Veto", reason: prepared.veto });
-        }
-        return Deferred.make<ApprovalDecision>().pipe(
-          Effect.map((deferred): ApprovalRequestOutcome => {
-            pendingApprovals.set(part.approvalId, deferred);
+      const request: ApprovalGate["request"] = Effect.fn("@mitome/core/ApprovalGate.request")(
+        function* (part, call) {
+          const prepared = preparedCalls.get(part.toolCallId);
+          if (prepared?._tag === "Failure") {
+            preparedCalls.delete(part.toolCallId);
             return {
-              _tag: "Pending",
-              id: part.approvalId,
-              approvalId: part.approvalId,
-              toolCallId: part.toolCallId,
-              name: call.name,
-              params: prepared === undefined ? call.params : prepared.params,
-              awaitDecision: Deferred.await(deferred).pipe(
-                Effect.tap((decision) =>
-                  Effect.sync(() => {
-                    if (!decision.approved) preparedCalls.delete(part.toolCallId);
-                  }),
-                ),
-                Effect.ensuring(
-                  Deferred.succeed(deferred, {
-                    approved: false,
-                    reason: "Approval decision is no longer pending",
-                  }).pipe(Effect.asVoid),
-                ),
-              ),
+              _tag: "Failure",
+              message: prepared.message,
+              cause: prepared.cause,
             };
-          }),
-        );
-      };
+          }
+          if (prepared?.veto !== undefined) {
+            preparedCalls.delete(part.toolCallId);
+            return { _tag: "Veto", reason: prepared.veto };
+          }
+          const deferred = yield* Deferred.make<ApprovalDecision>();
+          pendingApprovals.set(part.approvalId, deferred);
+          return {
+            _tag: "Pending",
+            approvalId: part.approvalId,
+            toolCallId: part.toolCallId,
+            name: call.name,
+            params: prepared === undefined ? call.params : prepared.params,
+            awaitDecision: Deferred.await(deferred).pipe(
+              Effect.tap((decision) =>
+                Effect.sync(() => {
+                  if (!decision.approved) preparedCalls.delete(part.toolCallId);
+                }),
+              ),
+              Effect.ensuring(
+                Deferred.succeed(deferred, {
+                  approved: false,
+                  reason: "Approval decision is no longer pending",
+                }).pipe(Effect.asVoid),
+              ),
+            ),
+          } satisfies ApprovalRequestOutcome;
+        },
+      );
 
-      const resolve: ApprovalGate["resolve"] = (id, decision) => {
-        const deferred = pendingApprovals.get(id);
-        if (deferred === undefined) {
-          return Effect.fail(
-            new ApprovalResolutionError({
-              message: "Approval decision has already been resolved",
-            }),
-          );
-        }
-        return Deferred.succeed(deferred, decision).pipe(
-          Effect.flatMap((resolved) =>
-            resolved
-              ? Effect.void
-              : Effect.fail(
-                  new ApprovalResolutionError({
-                    message: "Approval decision has already been resolved",
-                  }),
-                ),
-          ),
-        );
-      };
+      const resolve: ApprovalGate["resolve"] = Effect.fn("@mitome/core/ApprovalGate.resolve")(
+        function* (id, decision) {
+          const deferred = pendingApprovals.get(id);
+          if (deferred === undefined) return yield* new ApprovalResolutionError({});
+          const resolved = yield* Deferred.succeed(deferred, decision);
+          if (!resolved) return yield* new ApprovalResolutionError({});
+        },
+      );
 
       return {
         toolkit: { tools, handle },

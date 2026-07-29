@@ -123,3 +123,10 @@ export const providePlugin = <A, E>(
   const context = contexts.get(plugin);
   return (context === undefined ? effect : Effect.provide(effect, context)) as Effect.Effect<A, E>;
 };
+
+export const providePluginHook = <A, E>(
+  plugin: AnyPlugin,
+  contexts: PluginContexts,
+  effect: Effect.Effect<A, E, any> | undefined,
+): Effect.Effect<A, E> | undefined =>
+  effect === undefined ? undefined : providePlugin(plugin, contexts, effect);

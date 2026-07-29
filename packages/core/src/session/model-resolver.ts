@@ -26,34 +26,30 @@ export const makeModelResolver = (
 ): ModelResolver => {
   const models = new Map<string, RuntimeModel>();
 
-  return {
-    resolve: (qualifiedModelId) => {
+  const resolve: ModelResolver["resolve"] = Effect.fn("@mitome/core/ModelResolver.resolve")(
+    function* (qualifiedModelId) {
       const parsed = parseQualifiedModelId(qualifiedModelId);
       if (parsed === undefined) {
-        return Effect.fail(
-          new TurnError({
-            message: `Malformed Qualified Model id: ${String(qualifiedModelId)}`,
-            cause: qualifiedModelId,
-          }),
-        );
+        return yield* new TurnError({
+          message: `Malformed Qualified Model id: ${String(qualifiedModelId)}`,
+          cause: qualifiedModelId,
+        });
       }
       const provider = providers.get(parsed.providerId);
       if (provider === undefined) {
-        return Effect.fail(
-          new TurnError({
-            message: `Unregistered Provider id: ${parsed.providerId}`,
-            cause: qualifiedModelId,
-          }),
-        );
+        return yield* new TurnError({
+          message: `Unregistered Provider id: ${parsed.providerId}`,
+          cause: qualifiedModelId,
+        });
       }
 
       // parseQualifiedModelId only succeeds for strings.
       const cacheKey = qualifiedModelId as string;
       const cached = models.get(cacheKey);
-      if (cached !== undefined) return Effect.succeed(cached);
+      if (cached !== undefined) return cached;
 
       const metadata = getProviderMetadata(provider)!;
-      return Effect.try({
+      return yield* Effect.try({
         try: () => metadata.provision(parsed.modelId),
         catch: modelSetupTurnError,
       }).pipe(
@@ -70,5 +66,7 @@ export const makeModelResolver = (
         }),
       );
     },
-  };
+  );
+
+  return { resolve };
 };
