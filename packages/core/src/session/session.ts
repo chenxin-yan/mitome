@@ -1,21 +1,15 @@
 import { Context, Effect, Layer, Scope, Stream } from "effect";
-import { LanguageModel, Prompt, Tool } from "effect/unstable/ai";
-import type { Response } from "effect/unstable/ai";
+import { Prompt } from "effect/unstable/ai";
 import { compileAgentDefinition } from "../agent.js";
 import type { AgentDefinition, AgentDefinitionError } from "../agent.js";
-import { getProviderMetadata, parseQualifiedModelId } from "../provider.js";
 import type { AnyProvider, QualifiedModelId } from "../provider.js";
 import { providePlugin } from "../plugin.js";
 import type { AnyPlugin } from "../plugin.js";
-import {
-  SessionBusyError,
-  SessionReleasedError,
-  TurnError,
-  hookTurnError,
-  modelTurnError,
-} from "./errors.js";
+import { SessionBusyError, SessionReleasedError, TurnError, hookTurnError } from "./errors.js";
 import type { TurnEvent } from "./events.js";
-import { beginHookPhase, transformPrompt } from "./hooks.js";
+import { beginHookPhase } from "./hooks.js";
+import { makeModelResolver } from "./model-resolver.js";
+import { makeStepRunner } from "./step-runner.js";
 import { makeToolExecution } from "./tool-execution.js";
 
 type ProvidersOf<Definition extends AgentDefinition> =
@@ -35,17 +29,6 @@ export interface Session<
   readonly history: () => ReadonlyArray<Prompt.Message>;
 }
 
-type RuntimeModel = {
-  readonly context: Context.Context<LanguageModel.LanguageModel>;
-  readonly model: LanguageModel.Service;
-};
-
-const modelSetupTurnError = (cause: unknown) =>
-  new TurnError({
-    message: cause instanceof Error ? cause.message : String(cause),
-    cause,
-  });
-
 const createSessionImpl: (
   definition: AgentDefinition,
 ) => Effect.Effect<Session, AgentDefinitionError | TurnError, Scope.Scope> = Effect.fn(
@@ -54,7 +37,6 @@ const createSessionImpl: (
   const compiled = yield* compileAgentDefinition(definition);
 
   const sessionScope = yield* Effect.scope;
-  const models = new Map<string, RuntimeModel>();
   const pluginContexts = new Map<AnyPlugin, Context.Context<any>>();
   for (const plugin of compiled.plugins) {
     if (plugin.resource !== undefined) {
@@ -68,13 +50,15 @@ const createSessionImpl: (
     }
   }
   const toolExecution = yield* makeToolExecution(compiled, pluginContexts);
+  const modelResolver = makeModelResolver(compiled.providers, sessionScope);
+  const stepRunner = makeStepRunner(compiled, pluginContexts, toolExecution);
   let history = Prompt.make(
     compiled.instructions === "" ? [] : [{ role: "system", content: compiled.instructions }],
   );
   let isReleased = false;
   let isTurnActive = false;
 
-  // Hooks run with their Plugin's scoped resource (if any) in context.
+  // Hooks run with their Plugin's scoped Resource (if any) in context.
   const inContext = <A, E>(
     plugin: AnyPlugin,
     effect: Effect.Effect<A, E, any> | undefined,
@@ -98,199 +82,6 @@ const createSessionImpl: (
   // A failing sessionEnd Hook must not fail scope close or skip later cleanup.
   yield* Effect.addFinalizer(() => sessionHooks.cleanup);
 
-  type StepEvent = TurnEvent | { readonly type: "turn-complete"; readonly history: Prompt.Prompt };
-
-  const approvalEvents = (
-    part: { readonly approvalId: string; readonly toolCallId: string },
-    call: { readonly name: string; readonly params: unknown },
-    record: (decision: Prompt.ToolApprovalResponsePart) => void,
-  ): Stream.Stream<TurnEvent, TurnError> =>
-    Stream.unwrap(
-      toolExecution.approval.request(part, call).pipe(
-        Effect.map((outcome) => {
-          if (outcome._tag === "Failure") {
-            return Stream.fail(new TurnError({ message: outcome.message, cause: outcome.cause }));
-          }
-          if (outcome._tag === "Veto") {
-            record(
-              Prompt.toolApprovalResponsePart({
-                approvalId: part.approvalId,
-                approved: false,
-                reason: outcome.reason,
-              }),
-            );
-            return Stream.empty;
-          }
-          return Stream.concat(
-            Stream.succeed({
-              type: "approval-required",
-              approvalId: outcome.approvalId,
-              toolCallId: outcome.toolCallId,
-              name: outcome.name,
-              params: outcome.params,
-              approve: () => toolExecution.approval.resolve(outcome.id, { approved: true }),
-              deny: (reason) =>
-                toolExecution.approval.resolve(outcome.id, {
-                  approved: false,
-                  reason: reason ?? "Approval denied",
-                }),
-            } satisfies TurnEvent),
-            Stream.fromEffect(
-              outcome.awaitDecision.pipe(
-                Effect.tap((decision) =>
-                  Effect.sync(() => {
-                    record(
-                      Prompt.toolApprovalResponsePart({
-                        approvalId: outcome.approvalId,
-                        approved: decision.approved,
-                        ...(decision.reason === undefined ? {} : { reason: decision.reason }),
-                      }),
-                    );
-                  }),
-                ),
-              ),
-            ).pipe(Stream.drain),
-          );
-        }),
-      ),
-    );
-
-  const runStep = (prompt: Prompt.Prompt, selected: RuntimeModel) => {
-    const parts: Array<Response.AnyPart> = [];
-    const toolCalls = new Map<string, Response.ToolCallPart<string, unknown>>();
-    const decisions: Array<Prompt.ToolApprovalResponsePart> = [];
-    let endPrompt = prompt;
-    return Stream.unwrap(
-      beginHookPhase(
-        compiled.plugins,
-        (plugin) => inContext(plugin, plugin.hooks?.stepStart?.(prompt)),
-        (plugin) => inContext(plugin, plugin.hooks?.stepEnd?.(endPrompt)),
-        "Step end Hook failed",
-      ).pipe(
-        hookTurnError("Step start Hook failed"),
-        Effect.map((stepHooks) => {
-          return Stream.unwrap(
-            transformPrompt(compiled.plugins, pluginContexts, prompt).pipe(
-              hookTurnError("Pre-Step Hook failed"),
-              Effect.map((transformed) => {
-                endPrompt = transformed;
-                return (
-                  selected.model.streamText({
-                    prompt: transformed,
-                    toolkit: toolExecution.toolkit,
-                    concurrency: 1,
-                  }) as Stream.Stream<Response.StreamPart<Record<string, Tool.Any>>, unknown>
-                ).pipe(
-                  Stream.provideContext(selected.context),
-                  Stream.mapError(modelTurnError),
-                  Stream.tap((part) => Effect.sync(() => parts.push(part))),
-                  Stream.flatMap((part): Stream.Stream<StepEvent, TurnError> => {
-                    if (part.type === "text-delta")
-                      return Stream.succeed({ type: "model-output", text: part.delta });
-                    if (part.type === "tool-call") {
-                      toolCalls.set(part.id, part);
-                      return Stream.succeed({ type: "tool-call", id: part.id, name: part.name });
-                    }
-                    if (part.type === "tool-result") {
-                      return Stream.succeed({
-                        type: "tool-result",
-                        id: part.id,
-                        name: part.name,
-                        result: part.result,
-                        isFailure: part.isFailure,
-                      });
-                    }
-                    if (part.type !== "tool-approval-request") return Stream.empty;
-
-                    const call = toolCalls.get(part.toolCallId);
-                    if (call === undefined) {
-                      return Stream.fail(
-                        new TurnError({
-                          message: "Tool approval request is missing its Tool call",
-                          cause: part,
-                        }),
-                      );
-                    }
-                    return approvalEvents(part, call, (decision) => decisions.push(decision));
-                  }),
-                  Stream.concat(
-                    Stream.suspend(() => {
-                      const responsePrompt = Prompt.concat(prompt, Prompt.fromResponseParts(parts));
-                      const nextPrompt =
-                        decisions.length === 0
-                          ? responsePrompt
-                          : Prompt.concat(
-                              responsePrompt,
-                              Prompt.fromMessages([
-                                Prompt.makeMessage("tool", { content: decisions }),
-                              ]),
-                            );
-                      const next: Stream.Stream<StepEvent, TurnError> = parts.some(
-                        (part) => part.type === "tool-call" && part.providerExecuted !== true,
-                      )
-                        ? runStep(nextPrompt, selected)
-                        : Stream.succeed({ type: "turn-complete", history: nextPrompt });
-                      return Stream.concat(
-                        Stream.fromEffectDrain(
-                          stepHooks.end.pipe(hookTurnError("Step end Hook failed")),
-                        ),
-                        next,
-                      );
-                    }),
-                  ),
-                );
-              }),
-            ),
-          ).pipe(Stream.onExit(() => stepHooks.cleanup));
-        }),
-      ),
-    );
-  };
-
-  const resolveModel = (qualifiedModelId: unknown): Effect.Effect<RuntimeModel, TurnError> => {
-    const parsed = parseQualifiedModelId(qualifiedModelId);
-    if (parsed === undefined) {
-      return Effect.fail(
-        new TurnError({
-          message: `Malformed Qualified Model id: ${String(qualifiedModelId)}`,
-          cause: qualifiedModelId,
-        }),
-      );
-    }
-    const provider = compiled.providers.get(parsed.providerId);
-    if (provider === undefined) {
-      return Effect.fail(
-        new TurnError({
-          message: `Unregistered Provider id: ${parsed.providerId}`,
-          cause: qualifiedModelId,
-        }),
-      );
-    }
-
-    // parseQualifiedModelId only succeeds for strings.
-    const cacheKey = qualifiedModelId as string;
-    const cached = models.get(cacheKey);
-    if (cached !== undefined) return Effect.succeed(cached);
-
-    const metadata = getProviderMetadata(provider)!;
-    return Effect.try({
-      try: () => metadata.provision(parsed.modelId),
-      catch: modelSetupTurnError,
-    }).pipe(
-      Effect.flatMap((layer) =>
-        Layer.buildWithScope(layer, sessionScope).pipe(Effect.mapError(modelSetupTurnError)),
-      ),
-      Effect.map((context) => {
-        const selected = {
-          context,
-          model: Context.get(context, LanguageModel.LanguageModel),
-        };
-        models.set(cacheKey, selected);
-        return selected;
-      }),
-    );
-  };
-
   return {
     prompt: (text, options) =>
       Stream.suspend<TurnEvent, SessionBusyError | SessionReleasedError | TurnError, never>(() => {
@@ -307,7 +98,7 @@ const createSessionImpl: (
         const qualifiedModelId = options?.model ?? definition.model;
         isTurnActive = true;
         return Stream.unwrap(
-          resolveModel(qualifiedModelId).pipe(
+          modelResolver.resolve(qualifiedModelId).pipe(
             Effect.flatMap((selected) =>
               beginHookPhase(
                 compiled.plugins,
@@ -317,7 +108,7 @@ const createSessionImpl: (
               ).pipe(
                 hookTurnError("Turn start Hook failed"),
                 Effect.map((turnHooks) =>
-                  runStep(Prompt.concat(history, text), selected).pipe(
+                  stepRunner.run(Prompt.concat(history, text), selected).pipe(
                     Stream.mapEffect((event) => {
                       if (event.type !== "turn-complete") return Effect.succeed(event);
                       return turnHooks.end.pipe(
