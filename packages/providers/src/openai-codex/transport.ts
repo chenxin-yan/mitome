@@ -2,20 +2,19 @@ import { Effect, Stream } from "effect";
 import { AiError, LanguageModel } from "effect/unstable/ai";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 import { isExpired } from "../shared/oauth.js";
-import { loadCredential, refreshCredential } from "./credential-store.js";
+import { CredentialStore } from "./credential-store.js";
 import { networkError, requestFor } from "./request.js";
 import { decodeStream } from "./sse.js";
 import { type OAuthCredential } from "./types.js";
 
 export const streamText = (
   model: string,
-  configDirectory: string,
   baseUrl: string,
-  tokenUrl: string,
   sessionId: string,
   options: LanguageModel.ProviderOptions,
 ) => {
   const execute = (
+    store: CredentialStore["Service"],
     credential: OAuthCredential,
     retried: boolean,
   ): Effect.Effect<
@@ -41,9 +40,9 @@ export const streamText = (
       Effect.mapError(networkError),
       Effect.flatMap((response) => {
         if (response.status === 401 && !retried) {
-          return refreshCredential(configDirectory, tokenUrl, credential.access, false).pipe(
+          return store.refreshCredential(credential.access, false).pipe(
             Effect.mapError(networkError),
-            Effect.flatMap((next) => execute(next, true)),
+            Effect.flatMap((next) => execute(store, next, true)),
           );
         }
         if (response.status >= 200 && response.status < 300) {
@@ -72,13 +71,12 @@ export const streamText = (
   };
   return Stream.unwrap(
     Effect.gen(function* () {
-      const current = yield* loadCredential(configDirectory).pipe(Effect.mapError(networkError));
+      const store = yield* CredentialStore;
+      const current = yield* store.loadCredential.pipe(Effect.mapError(networkError));
       const credential = (yield* isExpired(current))
-        ? yield* refreshCredential(configDirectory, tokenUrl, undefined, true).pipe(
-            Effect.mapError(networkError),
-          )
+        ? yield* store.refreshCredential(undefined, true).pipe(Effect.mapError(networkError))
         : current;
-      return yield* execute(credential, false);
+      return yield* execute(store, credential, false);
     }),
   ).pipe(decodeStream);
 };
