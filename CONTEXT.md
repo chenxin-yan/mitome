@@ -4,9 +4,7 @@ Mitome exists to let people define and run AI agents for their own use cases.
 
 ## Public interface
 
-Users install `@mitome/sdk` with `@mitome/providers`. Promise-first APIs are imported from `@mitome/sdk`; Effect-native APIs are imported from `@mitome/sdk/effect`. `@mitome/core` is the published internal runtime engine, not a documented authoring surface.
-
-The root SDK and its Effect subpath intentionally expose different `TurnEvent` shapes for their respective runtimes.
+Users install `@mitome/sdk`, `@mitome/providers`, and `@mitome/plugins`; Promise-first APIs come from `@mitome/sdk`, while Effect-native APIs come from `@mitome/sdk/effect`. [ADR-0022](docs/adr/0022-publish-the-sdk-as-the-sole-documented-surface.md) defines the public surface. Core errors are public Schema-tagged errors, provider errors are internal `Data.TaggedError` values widened at the boundary, and the CLI uses a plain app-level error.
 
 ## Language
 

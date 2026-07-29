@@ -3,10 +3,10 @@
 ## Installation
 
 ```sh
-npm install @mitome/sdk @mitome/providers
+npm install @mitome/sdk @mitome/providers @mitome/plugins
 ```
 
-Import Promise-first APIs from `@mitome/sdk` or Effect-native APIs from `@mitome/sdk/effect`. Start a project with `npm create mitome`. To install the CLI, see [`@mitome/cli`](packages/cli/README.md).
+Import Promise-first APIs from `@mitome/sdk` or Effect-native APIs from `@mitome/sdk/effect`.
 
 ## Development
 

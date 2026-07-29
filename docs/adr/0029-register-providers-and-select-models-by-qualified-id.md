@@ -2,7 +2,7 @@
 
 To support Host model selection, an Agent Definition registers an unordered array of configured Providers, names one Default Model with a Qualified Model id written as `provider/model`, and keeps its ordered Plugin array in the same plain `defineAgent` object. A Provider exposes only its stable id and Mitome-supported `modelIds`; credential descriptors and Effect AI Model provisioning remain opaque, model hints do not restrict future or private ids beneath a registered Provider, and duplicate Provider ids reject the Definition. Default Model validation rejects an unregistered Provider before Session startup; a Host override does so before its Turn starts. Qualified Model ids split at the first `/`, leaving any later `/` characters in the Provider-native Model id.
 
-This replaces ADR-0016's pre-provisioned opaque Model value, amends ADR-0008's Agent Definition fields and ADR-0013's single-Model authentication selection, and reaffirms ADR-0012's open model-hint semantics. Retaining both Model values and Qualified Model ids would duplicate Provider configuration and prevent one Session from selecting different Models between Turns.
+This amends ADR-0013's single-Model authentication selection and carries forward ADR-0028's open model-hint semantics. Retaining both pre-provisioned Model values and Qualified Model ids would duplicate Provider configuration and prevent one Session from selecting different Models between Turns.
 
 ## Consequences
 
