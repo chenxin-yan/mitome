@@ -5,7 +5,7 @@ import { Data, Effect, Result, Schedule, Schema } from "effect";
 const AuthFile = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
 type AuthFile = typeof AuthFile.Type;
 
-class CredentialStoreError extends Data.TaggedError("CredentialStoreError")<{
+export class CredentialStoreError extends Data.TaggedError("CredentialStoreError")<{
   readonly message: string;
   readonly code?: string;
   readonly cause?: unknown;
@@ -102,10 +102,10 @@ export const readCredential = (
  * Provider's entry is visible and replaceable; every other entry is preserved.
  * A replacement of `undefined` removes the entry.
  */
-export const modifyCredential = <A, E = never, R = never>(
+export const modifyCredential = <A, E, R>(
   configDirectory: string,
   providerKey: string,
-  update: (current: unknown) => Effect.Effect<readonly [unknown, A], E, R> | readonly [unknown, A],
+  update: (current: unknown) => Effect.Effect<readonly [unknown, A], E, R>,
 ): Effect.Effect<A, CredentialStoreError | E, R> =>
   Effect.gen(function* () {
     yield* ensureDirectory(configDirectory);
@@ -114,8 +114,7 @@ export const modifyCredential = <A, E = never, R = never>(
       () =>
         Effect.gen(function* () {
           const auth = yield* readAuth(configDirectory);
-          const updated = update(auth[providerKey]);
-          const [next, value] = yield* Effect.isEffect(updated) ? updated : Effect.succeed(updated);
+          const [next, value] = yield* update(auth[providerKey]);
           if (next === undefined) {
             const { [providerKey]: _, ...remaining } = auth;
             yield* writeAuth(configDirectory, remaining);

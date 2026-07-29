@@ -6,8 +6,7 @@
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
-    "LICENSE",
-    "NOTICE"
+    "LICENSE"
   ],
   "type": "module",
   "sideEffects": false,

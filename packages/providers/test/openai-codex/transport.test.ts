@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Prompt } from "effect/unstable/ai";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import { memoryCredentialStoreLayer } from "../../src/openai-codex/credential-store.js";
+import { CredentialStore, type CredentialError } from "../../src/openai-codex/credential-store.js";
+import { token } from "../../src/openai-codex/oauth-token.js";
 import { streamText } from "../../src/openai-codex/transport.js";
 import { type OAuthCredential } from "../../src/openai-codex/types.js";
 import { sse } from "../support.js";
@@ -18,6 +19,29 @@ const credential = (
   accountId: `${access}-account`,
 });
 
+const memoryCredentialStoreLayer = (
+  initial: OAuthCredential,
+  refresh: (
+    current: OAuthCredential,
+    failedAccess: string | undefined,
+    expiredOnly: boolean,
+  ) => Effect.Effect<OAuthCredential, CredentialError> = (current) => Effect.succeed(current),
+): Layer.Layer<CredentialStore> =>
+  Layer.sync(CredentialStore, () => {
+    let current = initial;
+    return {
+      loadCredential: Effect.sync(() => current),
+      refreshCredential: (failedAccess, expiredOnly) =>
+        refresh(current, failedAccess, expiredOnly).pipe(
+          Effect.tap((next) =>
+            Effect.sync(() => {
+              current = next;
+            }),
+          ),
+        ),
+    };
+  });
+
 const providerOptions = {
   prompt: Prompt.make("Hi"),
   tools: [],
@@ -31,7 +55,12 @@ const completed = () =>
 const run = (
   initial: OAuthCredential,
   fetch: (request: Parameters<Parameters<typeof HttpClient.make>[0]>[0], url: URL) => Response,
-  refresh: Parameters<typeof memoryCredentialStoreLayer>[1] = (current) => Effect.succeed(current),
+  refresh: (
+    current: OAuthCredential,
+    failedAccess: string | undefined,
+    expiredOnly: boolean,
+    client: ReturnType<typeof HttpClient.make>,
+  ) => Effect.Effect<OAuthCredential, CredentialError> = (current) => Effect.succeed(current),
 ) => {
   const client = HttpClient.make((request, url) =>
     Effect.succeed(HttpClientResponse.fromWeb(request, fetch(request, url))),
@@ -42,7 +71,9 @@ const run = (
     ).pipe(
       Effect.provide(
         Layer.merge(
-          memoryCredentialStoreLayer(initial, refresh),
+          memoryCredentialStoreLayer(initial, (current, failedAccess, expiredOnly) =>
+            refresh(current, failedAccess, expiredOnly, client),
+          ),
           Layer.succeed(HttpClient.HttpClient, client),
         ),
       ),
@@ -124,6 +155,31 @@ describe("Codex transport", () => {
       { failedAccess: "proactive-access", expiredOnly: false },
     ]);
     expect(authorizations).toEqual(["Bearer proactive-access", "Bearer retried-access"]);
+  });
+
+  test("turns a refreshed token without an account claim into an AiError", async () => {
+    const claimlessAccess = `header.${Buffer.from("{}").toString("base64url")}.signature`;
+
+    await expect(
+      run(
+        credential("expired-access", 1),
+        () =>
+          Response.json({
+            access_token: claimlessAccess,
+            refresh_token: "refreshed-secret",
+            expires_in: 3_600,
+          }),
+        (_current, _failedAccess, _expiredOnly, client) =>
+          token("https://auth.test/token", {}).pipe(
+            Effect.provideService(HttpClient.HttpClient, client),
+          ),
+      ),
+    ).rejects.toMatchObject({
+      reason: {
+        _tag: "UnknownError",
+        description: "OAuth access token did not contain an account.",
+      },
+    });
   });
 
   test("fails after one Credential refresh when the Provider keeps returning 401", async () => {

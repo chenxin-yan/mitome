@@ -37,10 +37,15 @@ export interface OAuthToken {
   readonly expires: number;
 }
 
-class OAuthTokenError extends Data.TaggedError("OAuthTokenError")<{
+export class OAuthTokenError extends Data.TaggedError("OAuthTokenError")<{
   readonly message: string;
   readonly cause?: unknown;
 }> {}
+
+export type OAuthTokenFailure =
+  | Cause.TimeoutError
+  | OAuthTokenError
+  | HttpClientError.HttpClientError;
 
 const OAuthTokenResponse = Schema.Struct({
   access_token: Schema.String,
@@ -51,24 +56,27 @@ const OAuthTokenResponse = Schema.Struct({
 export const exchangeToken = (
   tokenUrl: string,
   form: Record<string, string>,
-): Effect.Effect<
-  OAuthToken,
-  Cause.TimeoutError | OAuthTokenError | HttpClientError.HttpClientError,
-  HttpClient.HttpClient
-> =>
+): Effect.Effect<OAuthToken, OAuthTokenFailure, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const request = HttpClientRequest.post(tokenUrl).pipe(HttpClientRequest.bodyUrlParams(form));
     const response = yield* HttpClient.execute(request);
     if (response.status < 200 || response.status >= 300) {
       return yield* new OAuthTokenError({ message: "OAuth token exchange failed." });
     }
-    const invalid = new OAuthTokenError({
-      message: "OAuth token exchange returned an invalid response.",
-    });
     const body = yield* response.json.pipe(
-      Effect.mapError(() => invalid),
-      Effect.flatMap(Schema.decodeUnknownEffect(OAuthTokenResponse)),
-      Effect.mapError(() => invalid),
+      Effect.mapError(
+        () => new OAuthTokenError({ message: "OAuth token exchange body was not valid JSON." }),
+      ),
+      Effect.flatMap((json) =>
+        Schema.decodeUnknownEffect(OAuthTokenResponse)(json).pipe(
+          Effect.mapError(
+            () =>
+              new OAuthTokenError({
+                message: "OAuth token exchange returned an invalid response.",
+              }),
+          ),
+        ),
+      ),
     );
     return {
       access: body.access_token,

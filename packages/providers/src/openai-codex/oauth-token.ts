@@ -1,10 +1,16 @@
-import { Effect, Schema } from "effect";
+import { Data, Effect, Schema } from "effect";
 import { type HttpClient } from "effect/unstable/http";
-import { exchangeToken, type OAuthToken } from "../shared/oauth.js";
+import { exchangeToken, type OAuthToken, type OAuthTokenFailure } from "../shared/oauth.js";
 import { type OAuthCredential } from "./types.js";
 
 const AccountClaim = Schema.Struct({ chatgpt_account_id: Schema.String });
 const missingAccount = () => new Error("OAuth access token did not contain an account.");
+
+export class OAuthCredentialError extends Data.TaggedError("OAuthCredentialError")<{
+  readonly message: string;
+}> {}
+
+export type OAuthCredentialFailure = OAuthTokenFailure | OAuthCredentialError;
 
 export const accountId = (access: string): string => {
   const payload = access.split(".")[1];
@@ -35,5 +41,13 @@ export const credential = (token: OAuthToken): OAuthCredential => ({
 export const token = (
   tokenUrl: string,
   form: Record<string, string>,
-): Effect.Effect<OAuthCredential, Error, HttpClient.HttpClient> =>
-  Effect.map(exchangeToken(tokenUrl, form), credential);
+): Effect.Effect<OAuthCredential, OAuthCredentialFailure, HttpClient.HttpClient> =>
+  Effect.flatMap(exchangeToken(tokenUrl, form), (exchanged) =>
+    Effect.try({
+      try: () => credential(exchanged),
+      catch: () =>
+        new OAuthCredentialError({
+          message: "OAuth access token did not contain an account.",
+        }),
+    }),
+  );

@@ -27,13 +27,15 @@ const directory = async () => {
 };
 
 const writeEffect = (configDirectory: string, providerKey: string, value: unknown) =>
-  modifyCredential(configDirectory, providerKey, () => [value, undefined]);
+  modifyCredential(configDirectory, providerKey, () => Effect.succeed([value, undefined]));
 
 const write = (configDirectory: string, providerKey: string, value: unknown) =>
   Effect.runPromise(writeEffect(configDirectory, providerKey, value));
 
 const remove = (configDirectory: string, providerKey: string) =>
-  Effect.runPromise(modifyCredential(configDirectory, providerKey, () => [undefined, undefined]));
+  Effect.runPromise(
+    modifyCredential(configDirectory, providerKey, () => Effect.succeed([undefined, undefined])),
+  );
 
 const contents = async (configDirectory: string): Promise<unknown> =>
   JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"));
@@ -49,7 +51,7 @@ describe("Credential storage", () => {
     await write(configDirectory, "beta", credential("beta"));
 
     const seen = await Effect.runPromise(
-      modifyCredential(configDirectory, "alpha", (current) => [current, current]),
+      modifyCredential(configDirectory, "alpha", (current) => Effect.succeed([current, current])),
     );
     expect(seen).toEqual(credential("alpha"));
 
@@ -79,7 +81,7 @@ describe("Credential storage", () => {
     const writer = (providerKey: string) =>
       spawnRuntime([
         "-e",
-        `import { Effect } from "effect"; const { modifyCredential } = await import(${JSON.stringify(source)}); await Effect.runPromise(modifyCredential(${JSON.stringify(configDirectory)}, ${JSON.stringify(providerKey)}, () => [${JSON.stringify(credential(providerKey))}, undefined]));`,
+        `import { Effect } from "effect"; const { modifyCredential } = await import(${JSON.stringify(source)}); await Effect.runPromise(modifyCredential(${JSON.stringify(configDirectory)}, ${JSON.stringify(providerKey)}, () => Effect.succeed([${JSON.stringify(credential(providerKey))}, undefined])));`,
       ]);
     const writers = [writer("first"), writer("second")];
     expect(await Promise.all(writers.map((child) => child.exited))).toEqual([0, 0]);

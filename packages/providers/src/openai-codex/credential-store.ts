@@ -1,34 +1,44 @@
 import { Context, Data, Effect, Layer, Schema } from "effect";
 import { HttpClient } from "effect/unstable/http";
-import { modifyCredential, readCredential } from "../shared/credential-store.js";
+import {
+  type CredentialStoreError,
+  modifyCredential,
+  readCredential,
+} from "../shared/credential-store.js";
 import { isExpired } from "../shared/oauth.js";
 import { oauth, provider } from "./constants.js";
-import { token } from "./oauth-token.js";
-import { type LogoutOptions, OAuthCredential } from "./types.js";
+import { token, type OAuthCredentialFailure } from "./oauth-token.js";
+import { OAuthCredential } from "./types.js";
 
-class CredentialUnavailableError extends Data.TaggedError("CredentialUnavailableError")<{
+export class CredentialUnavailableError extends Data.TaggedError("CredentialUnavailableError")<{
   readonly message: string;
 }> {}
 
-const credentialUnavailable = new CredentialUnavailableError({
-  message: "Codex Credential is unavailable. Run `mitome auth login` to authenticate.",
-});
+export type CredentialError =
+  | CredentialStoreError
+  | CredentialUnavailableError
+  | OAuthCredentialFailure;
 
 const credentialFrom = (
   value: unknown,
 ): Effect.Effect<OAuthCredential, CredentialUnavailableError> =>
   Schema.decodeUnknownEffect(OAuthCredential)(value).pipe(
-    Effect.mapError(() => credentialUnavailable),
+    Effect.mapError(
+      () =>
+        new CredentialUnavailableError({
+          message: "Codex Credential is unavailable. Run `mitome auth login` to authenticate.",
+        }),
+    ),
   );
 
 export class CredentialStore extends Context.Service<
   CredentialStore,
   {
-    readonly loadCredential: Effect.Effect<OAuthCredential, Error>;
+    readonly loadCredential: Effect.Effect<OAuthCredential, CredentialError>;
     readonly refreshCredential: (
       failedAccess: string | undefined,
       expiredOnly: boolean,
-    ) => Effect.Effect<OAuthCredential, Error>;
+    ) => Effect.Effect<OAuthCredential, CredentialError>;
   }
 >()("@mitome/providers/openai-codex/CredentialStore") {}
 
@@ -36,10 +46,12 @@ export class CredentialStore extends Context.Service<
 export const writeCredential = (
   configDirectory: string,
   credential: OAuthCredential,
-): Effect.Effect<void, Error> =>
-  modifyCredential(configDirectory, provider, () => [credential, undefined]);
+): Effect.Effect<void, CredentialStoreError> =>
+  modifyCredential(configDirectory, provider, () => Effect.succeed([credential, undefined]));
 
-export const loadCredential = (configDirectory: string): Effect.Effect<OAuthCredential, Error> =>
+export const loadCredential = (
+  configDirectory: string,
+): Effect.Effect<OAuthCredential, CredentialStoreError | CredentialUnavailableError> =>
   Effect.flatMap(readCredential(configDirectory, provider), credentialFrom);
 
 /** Refreshes the rotating Credential under the storage lock; a Credential already
@@ -49,7 +61,7 @@ export const refreshCredential = (
   tokenUrl: string,
   failedAccess: string | undefined,
   expiredOnly: boolean,
-): Effect.Effect<OAuthCredential, Error, HttpClient.HttpClient> =>
+): Effect.Effect<OAuthCredential, CredentialError, HttpClient.HttpClient> =>
   modifyCredential(configDirectory, provider, (stored) =>
     Effect.gen(function* () {
       const current = yield* credentialFrom(stored);
@@ -81,34 +93,3 @@ export const fsCredentialStoreLayer = (
       };
     }),
   );
-
-export const memoryCredentialStoreLayer = (
-  initial: OAuthCredential,
-  refresh: (
-    current: OAuthCredential,
-    failedAccess: string | undefined,
-    expiredOnly: boolean,
-  ) => Effect.Effect<OAuthCredential, Error> = (current) => Effect.succeed(current),
-): Layer.Layer<CredentialStore> =>
-  Layer.sync(CredentialStore, () => {
-    let current = initial;
-    return {
-      loadCredential: Effect.sync(() => current),
-      refreshCredential: (failedAccess, expiredOnly) =>
-        refresh(current, failedAccess, expiredOnly).pipe(
-          Effect.tap((next) =>
-            Effect.sync(() => {
-              current = next;
-            }),
-          ),
-        ),
-    };
-  });
-
-/** Removes only the Codex Credential. */
-export const logout = async (options: LogoutOptions): Promise<void> => {
-  await Effect.runPromise(
-    modifyCredential(options.configDirectory, provider, () => [undefined, undefined]),
-  );
-  options.output?.("Logged out.\n");
-};
