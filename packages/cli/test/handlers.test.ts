@@ -387,6 +387,8 @@ describe("CLI handlers", () => {
       const path = join(home, existing.name);
       await writeFile(path, existing.contents);
       const childHost = fakeChildHost();
+      // No scripted answers: the fake throws on any prompt, proving init
+      // refuses the clobber before prompting.
       const result = await runResult(runInit, Layer.merge(childHost.layer, fakePrompter()));
 
       expect(exitCode(result.exit), existing.name).toBe(1);
