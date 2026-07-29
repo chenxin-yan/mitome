@@ -227,6 +227,32 @@ describe("createSession", () => {
     }),
   );
 
+  it.effect("maps an Approval request without its Tool Call to TurnError", () =>
+    Effect.gen(function* () {
+      const model = makeProvider("test", [] as const, undefined, () =>
+        Layer.succeed(LanguageModel.LanguageModel, {
+          streamText: () =>
+            Stream.succeed(
+              Response.makePart("tool-approval-request", {
+                approvalId: "approval-missing",
+                toolCallId: "call-missing",
+              }),
+            ),
+        } as never),
+      );
+      const session = yield* createSession({
+        providers: [model],
+        model: "test/default",
+        plugins: [],
+      });
+
+      expect(yield* Effect.flip(Stream.runDrain(session.prompt("Hi")))).toMatchObject({
+        _tag: "TurnError",
+        message: "Tool approval request is missing its Tool call",
+      });
+    }),
+  );
+
   it.effect("rejects prompts after the session scope closes", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");

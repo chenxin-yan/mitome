@@ -7,7 +7,6 @@ import { getProviderMetadata, parseQualifiedModelId } from "../provider.js";
 import type { AnyProvider, QualifiedModelId } from "../provider.js";
 import { providePlugin } from "../plugin.js";
 import type { AnyPlugin } from "../plugin.js";
-import { makeApprovals } from "./approval.js";
 import {
   SessionBusyError,
   SessionReleasedError,
@@ -17,7 +16,7 @@ import {
 } from "./errors.js";
 import type { TurnEvent } from "./events.js";
 import { beginHookPhase, transformPrompt } from "./hooks.js";
-import { makeToolkit } from "./toolkit.js";
+import { makeToolExecution } from "./tool-execution.js";
 
 type ProvidersOf<Definition extends AgentDefinition> =
   Definition extends AgentDefinition<infer Providers, any, any> ? Providers : never;
@@ -68,11 +67,7 @@ const createSessionImpl: (
       );
     }
   }
-  const approvals = yield* makeApprovals(
-    compiled,
-    pluginContexts,
-    yield* makeToolkit(compiled, pluginContexts),
-  );
+  const toolExecution = yield* makeToolExecution(compiled, pluginContexts);
   let history = Prompt.make(
     compiled.instructions === "" ? [] : [{ role: "system", content: compiled.instructions }],
   );
@@ -105,6 +100,61 @@ const createSessionImpl: (
 
   type StepEvent = TurnEvent | { readonly type: "turn-complete"; readonly history: Prompt.Prompt };
 
+  const approvalEvents = (
+    part: { readonly approvalId: string; readonly toolCallId: string },
+    call: { readonly name: string; readonly params: unknown },
+    record: (decision: Prompt.ToolApprovalResponsePart) => void,
+  ): Stream.Stream<TurnEvent, TurnError> =>
+    Stream.unwrap(
+      toolExecution.approval.request(part, call).pipe(
+        Effect.map((outcome) => {
+          if (outcome._tag === "Failure") {
+            return Stream.fail(new TurnError({ message: outcome.message, cause: outcome.cause }));
+          }
+          if (outcome._tag === "Veto") {
+            record(
+              Prompt.toolApprovalResponsePart({
+                approvalId: part.approvalId,
+                approved: false,
+                reason: outcome.reason,
+              }),
+            );
+            return Stream.empty;
+          }
+          return Stream.concat(
+            Stream.succeed({
+              type: "approval-required",
+              approvalId: outcome.approvalId,
+              toolCallId: outcome.toolCallId,
+              name: outcome.name,
+              params: outcome.params,
+              approve: () => toolExecution.approval.resolve(outcome.id, { approved: true }),
+              deny: (reason) =>
+                toolExecution.approval.resolve(outcome.id, {
+                  approved: false,
+                  reason: reason ?? "Approval denied",
+                }),
+            } satisfies TurnEvent),
+            Stream.fromEffect(
+              outcome.awaitDecision.pipe(
+                Effect.tap((decision) =>
+                  Effect.sync(() => {
+                    record(
+                      Prompt.toolApprovalResponsePart({
+                        approvalId: outcome.approvalId,
+                        approved: decision.approved,
+                        ...(decision.reason === undefined ? {} : { reason: decision.reason }),
+                      }),
+                    );
+                  }),
+                ),
+              ),
+            ).pipe(Stream.drain),
+          );
+        }),
+      ),
+    );
+
   const runStep = (prompt: Prompt.Prompt, selected: RuntimeModel) => {
     const parts: Array<Response.AnyPart> = [];
     const toolCalls = new Map<string, Response.ToolCallPart<string, unknown>>();
@@ -127,7 +177,7 @@ const createSessionImpl: (
                 return (
                   selected.model.streamText({
                     prompt: transformed,
-                    toolkit: approvals.toolkit,
+                    toolkit: toolExecution.toolkit,
                     concurrency: 1,
                   }) as Stream.Stream<Response.StreamPart<Record<string, Tool.Any>>, unknown>
                 ).pipe(
@@ -161,9 +211,7 @@ const createSessionImpl: (
                         }),
                       );
                     }
-                    return approvals.onApprovalRequest(part, call, (decision) =>
-                      decisions.push(decision),
-                    );
+                    return approvalEvents(part, call, (decision) => decisions.push(decision));
                   }),
                   Stream.concat(
                     Stream.suspend(() => {
@@ -289,7 +337,7 @@ const createSessionImpl: (
         ).pipe(
           Stream.ensuring(
             Effect.sync(() => {
-              approvals.reset();
+              toolExecution.approval.reset();
               isTurnActive = false;
             }),
           ),
