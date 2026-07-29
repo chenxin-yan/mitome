@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Predicate, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 import type { AnyPlugin, ToolInputValidator, ToolResultValidator } from "./plugin.js";
 import { getProviderMetadata, parseQualifiedModelId } from "./provider.js";
@@ -52,40 +52,30 @@ export function defineAgent(definition: AgentDefinition): AgentDefinition {
   return definition;
 }
 
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
 export const compileAgentDefinition: (
-  definition: AgentDefinition,
+  definition: unknown,
 ) => Effect.Effect<CompiledAgent, AgentDefinitionError> = Effect.fn(
   "@mitome/core/compileAgentDefinition",
 )(function* (definition) {
-  if (!isObject(definition)) {
+  if (!Predicate.isObject(definition)) {
     return yield* new AgentDefinitionError({ issues: ["Agent Definition must be an object"] });
   }
-  const candidate: Record<string, unknown> = definition;
   const issues: Array<string> = [];
 
-  if ("instructions" in candidate) {
-    issues.push("Agent Definition Instructions must be contributed by Plugins");
-  }
-
   const providers = new Map<string, AnyProvider>();
-  const providerIds = new Set<string>();
-  const providerValues = candidate.providers;
+  const providerValues = definition.providers;
   if (!Array.isArray(providerValues)) {
     issues.push("Agent Definition Providers must be an array");
   } else {
     for (const [index, value] of providerValues.entries()) {
-      if (!isObject(value) || typeof value.id !== "string") {
+      if (!Predicate.isObject(value) || typeof value.id !== "string") {
         issues.push(`Provider at index ${index} must be an object with a string id`);
         continue;
       }
       const provider = value as unknown as AnyProvider;
-      if (providerIds.has(provider.id)) {
+      if (providers.has(provider.id)) {
         issues.push(`Duplicate Provider id: ${provider.id}`);
       }
-      providerIds.add(provider.id);
       providers.set(provider.id, provider);
       if (getProviderMetadata(provider) === undefined) {
         return yield* Effect.die(new Error("Provider was not created by @mitome/core"));
@@ -94,14 +84,14 @@ export const compileAgentDefinition: (
   }
 
   let defaultModel: ReturnType<typeof parseQualifiedModelId>;
-  const model = candidate.model;
+  const model = definition.model;
   if (typeof model !== "string") {
     issues.push("Agent Definition Model must be a string");
   } else {
     defaultModel = parseQualifiedModelId(model);
     if (defaultModel === undefined) {
       issues.push(`Malformed Qualified Model id: ${model}`);
-    } else if (!providerIds.has(defaultModel.providerId)) {
+    } else if (!providers.has(defaultModel.providerId)) {
       issues.push(`Unregistered Provider id: ${defaultModel.providerId}`);
     }
   }
@@ -117,13 +107,13 @@ export const compileAgentDefinition: (
   const toolNames = new Set<string>();
   const handlerNames = new Set<string>();
   const requiredHandlerNames = new Set<string>();
-  const pluginValues = candidate.plugins;
+  const pluginValues = definition.plugins;
 
   if (!Array.isArray(pluginValues)) {
     issues.push("Agent Definition Plugins must be an array");
   } else {
     for (const [index, value] of pluginValues.entries()) {
-      if (!isObject(value) || typeof value.name !== "string") {
+      if (!Predicate.isObject(value) || typeof value.name !== "string") {
         issues.push(`Plugin at index ${index} must be an object with a string name`);
         continue;
       }

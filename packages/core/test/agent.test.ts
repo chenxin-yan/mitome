@@ -11,7 +11,7 @@ import {
 import { makeTestProvider } from "./support/provider.js";
 
 const model = makeTestProvider(() => Stream.empty);
-const getAgentDefinitionError = (definition: AgentDefinition) =>
+const getAgentDefinitionError = (definition: unknown) =>
   Effect.flip(compileAgentDefinition(definition));
 
 type AgentDefinitionKeysAreExact = keyof AgentDefinition extends "providers" | "model" | "plugins"
@@ -76,7 +76,6 @@ describe("Agent Definition compilation", () => {
       const echo = Tool.make("echo", { success: Schema.String });
       const missing = Tool.make("missing", { success: Schema.String });
       const structural = {
-        instructions: "retired",
         providers: [null, provider, provider],
         model: "unregistered/model",
         plugins: [
@@ -99,10 +98,9 @@ describe("Agent Definition compilation", () => {
         ],
       };
 
-      const error = yield* getAgentDefinitionError(structural as unknown as AgentDefinition);
+      const error = yield* getAgentDefinitionError(structural);
       expect(error).toBeInstanceOf(AgentDefinitionError);
       expect(error.issues).toEqual([
-        "Agent Definition Instructions must be contributed by Plugins",
         "Provider at index 0 must be an object with a string id",
         "Duplicate Provider id: registered",
         "Unregistered Provider id: unregistered",
@@ -121,10 +119,12 @@ describe("Agent Definition compilation", () => {
 
   it.effect("reports malformed top-level structure", () =>
     Effect.gen(function* () {
-      expect((yield* getAgentDefinitionError(null as unknown as AgentDefinition)).issues).toEqual([
-        "Agent Definition must be an object",
-      ]);
-      expect((yield* getAgentDefinitionError({} as AgentDefinition)).issues).toEqual([
+      for (const value of [null, []]) {
+        expect((yield* getAgentDefinitionError(value)).issues).toEqual([
+          "Agent Definition must be an object",
+        ]);
+      }
+      expect((yield* getAgentDefinitionError({})).issues).toEqual([
         "Agent Definition Providers must be an array",
         "Agent Definition Model must be a string",
         "Agent Definition Plugins must be an array",
@@ -138,7 +138,7 @@ describe("Agent Definition compilation", () => {
         providers: [null],
         model: "test/default",
         plugins: [],
-      } as unknown as AgentDefinition;
+      };
 
       expect((yield* getAgentDefinitionError(definition)).issues).toEqual([
         "Provider at index 0 must be an object with a string id",
@@ -153,7 +153,7 @@ describe("Agent Definition compilation", () => {
         providers: [model],
         model: "test/default",
         plugins: [null, { name: 1, instructions: false }, { name: "named", instructions: 1 }],
-      } as unknown as AgentDefinition;
+      };
 
       expect((yield* getAgentDefinitionError(definition)).issues).toEqual([
         "Plugin at index 0 must be an object with a string name",
@@ -165,8 +165,11 @@ describe("Agent Definition compilation", () => {
 
   it.effect("reports malformed and unregistered Default Models", () =>
     Effect.gen(function* () {
-      const invalidDefinition = (selected: unknown) =>
-        ({ providers: [model], model: selected, plugins: [] }) as AgentDefinition;
+      const invalidDefinition = (selected: unknown) => ({
+        providers: [model],
+        model: selected,
+        plugins: [],
+      });
 
       expect((yield* getAgentDefinitionError(invalidDefinition(1))).issues).toEqual([
         "Agent Definition Model must be a string",

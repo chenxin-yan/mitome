@@ -641,22 +641,6 @@ describe("compiled mitome", () => {
     );
     expect(acceptedDefinition).toMatchObject({ exitCode: 0, stdout: "hello\n", stderr: "" });
 
-    for (const value of ['"old"', "undefined"]) {
-      const oldInstructions = await fixture(
-        promptEchoDefinitionSource().replace(
-          "providers: [provider], model:",
-          `instructions: ${value}, providers: [provider], model:`,
-        ),
-      );
-      const invalidInstructions = await output(
-        spawn("", ["hello", "--use", oldInstructions.definition], oldInstructions),
-      );
-      expect(invalidInstructions.exitCode).toBe(1);
-      expect(invalidInstructions.stderr).toContain(
-        "AgentDefinitionError: Agent Definition Instructions must be contributed by Plugins",
-      );
-    }
-
     const nonStringPluginInstructions = await fixture(
       promptEchoDefinitionSource().replace(
         "plugins: []",
