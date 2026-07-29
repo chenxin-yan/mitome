@@ -82,6 +82,10 @@ _Avoid_: Function, command
 The private set of services a Plugin acquires at Session creation, holds for the Session's lifetime, and releases at Session end; visible only to that Plugin's own Hooks and Tool handlers.
 _Avoid_: Dependency, state, shared context
 
+**Tool Call**:
+One Agent invocation of a Tool within a Step, gated by Approval before it may execute.
+_Avoid_: Function call, invocation (bare)
+
 **Approval**:
 A user decision allowing one pending Tool call to execute; the Turn stays paused until the decision is resolved or the Turn is interrupted.
 _Avoid_: Permission, confirmation
@@ -89,6 +93,10 @@ _Avoid_: Permission, confirmation
 **Host**:
 A program that drives Sessions on a user's behalf: starting Turns, presenting events, and resolving Approvals.
 _Avoid_: Frontend, client, harness
+
+**Child Host**:
+The CLI's capability for delegating Host work — running a Turn, installing Agent Definition dependencies, or Provider authentication — to a separate Host process.
+_Avoid_: Spawner, process manager, subprocess (bare)
 
 **Credential**:
 A stored secret that authorizes Mitome to use one Provider on behalf of the user.
