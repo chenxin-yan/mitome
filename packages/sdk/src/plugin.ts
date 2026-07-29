@@ -265,21 +265,12 @@ export function definePlugin<
               typeof needsApproval === "boolean"
                 ? needsApproval
                 : (params: unknown, context: ToolApprovalContext) =>
-                    // User predicates may reject with arbitrary values; catchCause handles them below.
                     // @effect-diagnostics-next-line unknownInEffectCatch:off
                     Effect.tryPromise({
                       try: () =>
                         Promise.resolve().then(() => needsApproval(params as never, context)),
                       catch: (cause) => cause,
-                    }).pipe(
-                      // Approval predicate failures fail closed: deny approval after logging.
-                      Effect.catchCause((cause) =>
-                        Effect.logWarning(
-                          "Plugin tool approval predicate failed; denying approval",
-                          cause,
-                        ).pipe(Effect.as(true)),
-                      ),
-                    ),
+                    }).pipe(Effect.orDie),
           }),
     });
   });

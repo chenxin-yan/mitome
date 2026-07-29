@@ -1,6 +1,6 @@
 import { Schema } from "effect";
+import type { AuthorizeOptions } from "../shared/oauth.js";
 
-type Input = () => Promise<string | undefined>;
 type Output = (text: string) => void;
 
 export const OAuthCredential = Schema.Struct({
@@ -12,13 +12,8 @@ export const OAuthCredential = Schema.Struct({
 });
 export type OAuthCredential = typeof OAuthCredential.Type;
 
-export interface LoginOptions {
+export interface LoginOptions extends AuthorizeOptions {
   readonly configDirectory: string;
-  readonly callbackPort?: number;
-  readonly tokenUrl?: string;
-  readonly openBrowser?: false | ((url: string) => void | Promise<void>);
-  readonly input: Input;
-  readonly output: Output;
 }
 
 export interface LogoutOptions {

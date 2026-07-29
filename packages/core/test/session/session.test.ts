@@ -149,7 +149,6 @@ describe("createSession", () => {
         }),
       );
 
-      expect(first.released()).toBe(true);
       expect(first.history()).toEqual([]);
     }),
   );

@@ -34,7 +34,6 @@ export interface Session<
     options?: PromptOptions<Providers>,
   ) => Stream.Stream<TurnEvent, SessionBusyError | SessionReleasedError | TurnError>;
   readonly history: () => ReadonlyArray<Prompt.Message>;
-  readonly released: () => boolean;
 }
 
 type RuntimeModel = {
@@ -297,7 +296,6 @@ const createSessionImpl: (
         );
       }),
     history: () => history.content,
-    released: () => isReleased,
   };
 });
 

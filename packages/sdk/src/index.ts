@@ -3,7 +3,6 @@ export {
   AgentDefinitionError,
   SessionBusyError,
   SessionReleasedError,
-  ToolExecutionDenied,
   TurnError,
   defineAgent,
 } from "@mitome/core";
@@ -15,6 +14,7 @@ export type {
   QualifiedModelId,
   ToolHookContext,
   ToolResultHookContext,
+  ToolExecutionDenied,
   ToolResultValidator,
 } from "@mitome/core";
 export { definePlugin, tool } from "./plugin.js";

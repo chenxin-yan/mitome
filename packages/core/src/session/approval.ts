@@ -1,4 +1,4 @@
-import { Deferred, Effect, Stream } from "effect";
+import { Cause, Deferred, Effect, Stream } from "effect";
 import { Prompt, Tool, Toolkit } from "effect/unstable/ai";
 import type { CompiledAgent } from "../agent.js";
 import type { PluginContexts } from "../plugin.js";
@@ -141,7 +141,9 @@ export const makeApprovals = (
                 Effect.tapCause((cause) =>
                   Effect.logWarning(`needsApproval predicate for "${tool.name}" failed`, cause),
                 ),
-                Effect.orElseSucceed(() => true),
+                Effect.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.succeed(true),
+                ),
               );
             }),
         ) as Tool.Any;

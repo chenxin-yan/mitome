@@ -1,19 +1,10 @@
 import { spawn as spawnChild } from "node:child_process";
+import { existsSync as exists } from "node:fs";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
-import {
-  access,
-  cp,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  stat,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { text } from "node:stream/consumers";
@@ -33,6 +24,8 @@ const aiOpenaiDir = dirname(
 );
 const cliPackage = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as {
   version: string;
+  dependencies?: Record<string, string>;
+  devDependencies: Record<string, string>;
 };
 const corePackage = JSON.parse(await readFile(join(coreDir, "package.json"), "utf8")) as {
   version: string;
@@ -333,20 +326,8 @@ const interactiveOutput = (child: ReturnType<typeof spawn>) => {
   };
 };
 
-const exists = async (path: string) => {
-  try {
-    await access(path);
-    return true;
-  } catch (error) {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
-};
-
-beforeAll(async () => {
-  if (!(await exists(binary))) {
+beforeAll(() => {
+  if (!exists(binary)) {
     throw new Error("Build @mitome/cli before running its subprocess tests");
   }
 });
@@ -377,7 +358,7 @@ describe("compiled mitome", () => {
       exitCode: 0,
       stderr: "",
     });
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
+    expect(exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
 
     const escaped = await fixture(promptEchoDefinitionSource());
     expect(
@@ -400,7 +381,7 @@ describe("compiled mitome", () => {
     const current = await scaffold("mitome-prompt-interrupt-");
 
     expect(await output(spawn("", ["init"], current))).toMatchObject({ exitCode: 130 });
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
+    expect(exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
   });
 
   test("exits 130 when input closes between chained prompts", async () => {
@@ -408,7 +389,7 @@ describe("compiled mitome", () => {
     await cachedModelHints(current);
 
     expect(await output(spawn("\n", ["init"], current))).toMatchObject({ exitCode: 130 });
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
+    expect(exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
   });
 
   test("installs Agent Definition dependencies without Bun on PATH or executing it", async () => {
@@ -424,11 +405,11 @@ describe("compiled mitome", () => {
     ).toMatchObject({
       exitCode: 0,
     });
-    expect(
-      await exists(join(dirname(current.definition), "node_modules", "local-dep", "index.js")),
-    ).toBe(true);
-    expect(await exists(join(dirname(current.definition), "bun.lock"))).toBe(true);
-    expect(await exists(join(current.root, "definition-ran"))).toBe(false);
+    expect(exists(join(dirname(current.definition), "node_modules", "local-dep", "index.js"))).toBe(
+      true,
+    );
+    expect(exists(join(dirname(current.definition), "bun.lock"))).toBe(true);
+    expect(exists(join(current.root, "definition-ran"))).toBe(false);
   });
 
   test("installs Core beside an Agent Definition and then runs it", async () => {
@@ -598,9 +579,9 @@ describe("compiled mitome", () => {
 
   test("imports an Agent Definition using real installed Effect without Bun on PATH", async () => {
     const current = await fixture();
-    expect(
-      await exists(join(dirname(current.definition), "node_modules", "effect", "index.js")),
-    ).toBe(false);
+    expect(exists(join(dirname(current.definition), "node_modules", "effect", "index.js"))).toBe(
+      false,
+    );
     expect(
       JSON.parse(
         await readFile(
@@ -789,7 +770,7 @@ export default {
     const missingCore = await output(spawn("", ["hello", "--use", missing.definition], missing));
     expect(missingCore.exitCode).toBe(1);
     expect(missingCore.stderr).toContain(`Install @mitome/core@${corePackage.version}`);
-    expect(await exists(join(missing.root, "marker"))).toBe(false);
+    expect(exists(join(missing.root, "marker"))).toBe(false);
 
     const mismatch = await fixture(
       'import { writeFileSync } from "node:fs"; writeFileSync("marker", "ran");',
@@ -809,7 +790,7 @@ export default {
     );
     expect(incompatibleCore.exitCode).toBe(1);
     expect(incompatibleCore.stderr).toContain("999.0.0");
-    expect(await exists(join(mismatch.root, "marker"))).toBe(false);
+    expect(exists(join(mismatch.root, "marker"))).toBe(false);
   });
 
   test("renders events and survives duplicate SIGINT during scoped Turn cleanup", async () => {
@@ -830,14 +811,14 @@ export default {
 
     const hostPid = Number(await readFile(signalProbe.pid, "utf8"));
     child.kill("SIGINT");
-    for (let attempt = 0; !(await exists(signalProbe.cleanupStarted)); attempt += 1) {
+    for (let attempt = 0; !exists(signalProbe.cleanupStarted); attempt += 1) {
       if (attempt === 500) throw new Error("Session cleanup did not start");
       await delay(10);
     }
     process.kill(hostPid, "SIGINT");
     const tail = await rest(reader);
     expect(await exited(child)).toBe(130);
-    expect(await exists(signalProbe.cleanupDone)).toBe(true);
+    expect(exists(signalProbe.cleanupDone)).toBe(true);
     expect(firstOutput + tail).not.toContain(" second");
   });
 
@@ -854,7 +835,7 @@ export default {
     expect(result.stdout).toContain("[approval dangerous auto-approved]");
     expect(result.stdout).not.toContain("Approve?");
     expect(result.stdout).toContain("continued");
-    expect(await exists(marker)).toBe(true);
+    expect(exists(marker)).toBe(true);
   });
 
   test("initializes an Agent Definition and stores a masked Credential", async () => {
@@ -936,7 +917,7 @@ export default {
     // Prompt.run consumes keypress events while active; feed the Credential
     // after the installer has completed and the password prompt is listening.
     const installedCore = join(config, "node_modules", "@mitome", "core", "package.json");
-    for (let attempt = 0; !(await exists(installedCore)); attempt += 1) {
+    for (let attempt = 0; !exists(installedCore); attempt += 1) {
       if (attempt === 500) throw new Error("Agent Definition dependencies were not installed");
       await delay(10);
     }
@@ -963,11 +944,11 @@ export default {
       "@mitome/sdk": corePackage.version,
     });
     expect(await readFile(join(config, "AGENTS.md"), "utf8")).toBe("You are a helpful Agent.\n");
-    expect(await exists(join(config, "instructions.md"))).toBe(false);
+    expect(exists(join(config, "instructions.md"))).toBe(false);
     expect(await readFile(join(config, ".env"), "utf8")).toBe(`OPENAI_API_KEY=${key}\n`);
     expect((await stat(join(config, ".env"))).mode & 0o777).toBe(0o600);
-    expect(await exists(join(config, ".env.example"))).toBe(false);
-    expect(await exists(join(config, "bun.lock"))).toBe(true);
+    expect(exists(join(config, ".env.example"))).toBe(false);
+    expect(exists(join(config, "bun.lock"))).toBe(true);
 
     // Prove the scaffold actually loads: auth logout imports it through the
     // auth-host, so a scaffold that no longer parses or mismatches the SDK/
@@ -996,7 +977,7 @@ export default {
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("already exists");
     expect(await readFile(join(config, "package.json"), "utf8")).toBe('{"name":"hand-edited"}\n');
-    expect(await exists(join(config, "index.ts"))).toBe(false);
+    expect(exists(join(config, "index.ts"))).toBe(false);
   });
 
   test("refuses to clobber a global AGENTS.md", async () => {
@@ -1010,7 +991,7 @@ export default {
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("AGENTS.md already exists");
     expect(await readFile(join(config, "AGENTS.md"), "utf8")).toBe("hand-written\n");
-    expect(await exists(join(config, "index.ts"))).toBe(false);
+    expect(exists(join(config, "index.ts"))).toBe(false);
   });
 
   test("initializes Codex without requesting an API key", async () => {
@@ -1031,7 +1012,7 @@ export default {
     expect(await readFile(join(config, "index.ts"), "utf8")).toContain(
       'import { codex } from "@mitome/providers/openai-codex"',
     );
-    expect(await exists(join(config, ".env"))).toBe(false);
+    expect(exists(join(config, ".env"))).toBe(false);
   });
 
   test("accepts a custom Model ID", async () => {
@@ -1066,7 +1047,7 @@ export default {
     const result = await interaction.output();
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("Model ID is required.");
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
+    expect(exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
   });
 
   test("auth delegates to the Agent Definition credential descriptor without exposing Credentials", async () => {
@@ -1202,7 +1183,7 @@ export default { providers: [provider], model: "test/default", plugins: [] };`,
     expect(
       await output(spawn("", ["auth", "logout", "--use", current.definition], current)),
     ).toMatchObject({ exitCode: 0 });
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", ".env"))).toBe(false);
+    expect(exists(join(current.env.XDG_CONFIG_HOME, "mitome", ".env"))).toBe(false);
   });
 
   test("auth login requires a non-empty Credential", async () => {
@@ -1212,7 +1193,7 @@ export default { providers: [provider], model: "test/default", plugins: [] };`,
     );
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("Credential value is required.");
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", ".env"))).toBe(false);
+    expect(exists(join(current.env.XDG_CONFIG_HOME, "mitome", ".env"))).toBe(false);
   });
 
   test("auth login without an Agent Definition directs users to init", async () => {
@@ -1230,7 +1211,7 @@ export default { providers: [provider], model: "test/default", plugins: [] };`,
     );
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("set the environment variable directly");
-    expect(await exists(join(current.env.XDG_CONFIG_HOME, "mitome", ".env"))).toBe(false);
+    expect(exists(join(current.env.XDG_CONFIG_HOME, "mitome", ".env"))).toBe(false);
   });
 
   test("auth login reports an Agent with no auth-capable Providers", async () => {
@@ -1240,13 +1221,9 @@ export default { providers: [provider], model: "test/default", plugins: [] };`,
     expect(result.stderr).toBe("Agent Definition has no auth-capable Providers.\n");
   });
 
-  test("uses Core directly without SDK runtime support", async () => {
-    const packageJson = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as {
-      dependencies?: Record<string, string>;
-      devDependencies: Record<string, string>;
-    };
-    expect(packageJson.devDependencies["@mitome/core"]).toBe("workspace:*");
-    expect(packageJson.dependencies?.["@mitome/sdk"]).toBeUndefined();
-    expect(packageJson.devDependencies["@mitome/sdk"]).toBeUndefined();
+  test("uses Core directly without SDK runtime support", () => {
+    expect(cliPackage.devDependencies["@mitome/core"]).toBe("workspace:*");
+    expect(cliPackage.dependencies?.["@mitome/sdk"]).toBeUndefined();
+    expect(cliPackage.devDependencies["@mitome/sdk"]).toBeUndefined();
   });
 });

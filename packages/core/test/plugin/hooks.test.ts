@@ -3,7 +3,6 @@ import { Cause, Effect, Exit, Stream } from "effect";
 import { Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { Schema } from "effect";
 import {
-  ToolExecutionDenied,
   TurnError,
   type AgentDefinition,
   createSession,
@@ -218,10 +217,6 @@ describe("Plugin Hooks", () => {
         type: "tool-result",
         isFailure: true,
         result: { type: "execution-denied", reason: "not now" },
-      });
-      expect(yield* Schema.decodeUnknownEffect(ToolExecutionDenied)(denial?.result)).toEqual({
-        type: "execution-denied",
-        reason: "not now",
       });
       expect(handlerCalls).toBe(0);
       expect(postCalls).toBe(0);

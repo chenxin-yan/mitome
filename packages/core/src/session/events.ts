@@ -1,11 +1,10 @@
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 import type { ApprovalResolutionError } from "./errors.js";
 
-export const ToolExecutionDenied = Schema.Struct({
-  type: Schema.Literal("execution-denied"),
-  reason: Schema.String,
-});
-export type ToolExecutionDenied = typeof ToolExecutionDenied.Type;
+export interface ToolExecutionDenied {
+  readonly type: "execution-denied";
+  readonly reason: string;
+}
 
 export type TurnEvent =
   | { readonly type: "model-output"; readonly text: string }
