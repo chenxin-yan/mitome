@@ -22,7 +22,7 @@ const callingModule = (): string => {
     const stack = error.stack as unknown as ReadonlyArray<NodeJS.CallSite>;
     for (const callsite of stack) {
       const fileName = callsite.getFileName() ?? callsite.getScriptNameOrSourceURL();
-      if (fileName === null || fileName === undefined) continue;
+      if (fileName === null) continue;
       const path = sourcePath(fileName);
       if (isAbsolute(path)) return path;
     }

@@ -150,7 +150,7 @@ describe("@mitome/plugins", () => {
       plugins: [instructionFiles({ paths: ["./fixtures/instructions.md"] })],
     });
 
-    expect(promiseDefinition.plugins[0]?.instructions).toBe("Promise SDK");
-    expect(effectDefinition.plugins[0]?.instructions).toBe("Sibling instructions.\n");
+    expect(promiseDefinition.plugins[0].instructions).toBe("Promise SDK");
+    expect(effectDefinition.plugins[0].instructions).toBe("Sibling instructions.\n");
   });
 });

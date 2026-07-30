@@ -8,7 +8,12 @@
     "typescript/no-misused-promises": "error",
     "typescript/no-unnecessary-type-assertion": "error",
     "typescript/return-await": "error",
-    "typescript/switch-exhaustiveness-check": "error"
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/no-unnecessary-condition": [
+      "error",
+      { "allowConstantLoopConditions": "only-allowed-literals" }
+    ],
+    "typescript/restrict-plus-operands": "error"
   },
   "env": {
     "builtin": true
