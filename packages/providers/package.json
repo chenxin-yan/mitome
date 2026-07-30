@@ -36,8 +36,7 @@
   },
   "dependencies": {
     "@effect/ai-openai": "catalog:",
-    "@effect/ai-openai-compat": "catalog:",
-    "effect": "catalog:"
+    "@effect/ai-openai-compat": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
@@ -45,12 +44,14 @@
     "@mitome/core": "workspace:*",
     "@types/node": "catalog:",
     "@types/ws": "^8.18.1",
+    "effect": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",
     "ws": "^8.21.0"
   },
   "peerDependencies": {
-    "@mitome/core": "workspace:*"
+    "@mitome/core": "workspace:*",
+    "effect": "4.0.0-beta.102"
   },
   "engines": {
     "node": ">=24"

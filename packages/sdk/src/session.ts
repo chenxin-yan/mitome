@@ -4,6 +4,7 @@ import type {
   AgentDefinition,
   AnyProvider,
   PromptOptions,
+  Session as CoreSession,
   TurnEvent as CoreTurnEvent,
 } from "@mitome/core";
 
@@ -20,6 +21,7 @@ export interface Session<
 > {
   /** Treat the returned iterable as single-use; requesting another iterator re-runs the Turn. */
   readonly prompt: (text: string, options?: PromptOptions<Providers>) => AsyncIterable<TurnEvent>;
+  readonly history: CoreSession<Providers>["history"];
 }
 
 class CallbackFailure {
@@ -35,13 +37,10 @@ const toSdkEvent = (event: CoreTurnEvent): TurnEvent => {
   };
 };
 
-// Stream.toAsyncIterable (effect#6595) is strictly pull-per-next: the turn
-// would only progress while the consumer awaits next(). SDK turns must keep
-// executing while the consumer processes the previous event (tool handlers
-// start without another pull) and be interrupted as a whole on early exit.
-// The ReadableStream bridge provides both: the producer runs in one forked
-// fiber with one-event readahead, and cancellation interrupts it. The scope
-// finalizer covers iterators abandoned without return().
+// Stream.toAsyncIterable is pull-per-next, but SDK turns need one-event
+// readahead so work continues while the consumer processes the previous event.
+// The ReadableStream bridge runs the producer in a forked fiber and cancellation
+// interrupts it; the scope finalizer covers iterators abandoned without return().
 const toAsyncIterable = (
   stream: Stream.Stream<CoreTurnEvent, unknown>,
   scope: Scope.Scope,
@@ -49,7 +48,9 @@ const toAsyncIterable = (
   [Symbol.asyncIterator]() {
     const reader = Stream.toReadableStream(stream).getReader();
     const cancel = () => reader.cancel().catch(() => undefined);
-    Effect.runSync(Scope.addFinalizer(scope, Effect.promise(cancel)));
+    if (scope.state._tag !== "Closed") {
+      Effect.runSync(Scope.addFinalizer(scope, Effect.promise(cancel)));
+    }
     let done = false;
     return {
       async next(): Promise<IteratorResult<TurnEvent>> {
@@ -93,6 +94,7 @@ export const withSession = <const Definition extends AgentDefinition, A>(
           try: () =>
             use({
               prompt: (text, options) => toAsyncIterable(session.prompt(text, options), scope),
+              history: session.history,
             }),
           catch: (error) => new CallbackFailure(error),
         });

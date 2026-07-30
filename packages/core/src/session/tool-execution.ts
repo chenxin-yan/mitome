@@ -46,9 +46,16 @@ type PreparedCall =
       readonly veto: string | undefined;
     }
   | {
-      readonly _tag: "Failure";
+      readonly _tag: "InputFailure";
       readonly pipeline: ToolPipeline;
       readonly params: unknown;
+      readonly reason: string;
+    }
+  | {
+      readonly _tag: "TurnFailure";
+      readonly pipeline: ToolPipeline;
+      readonly params: unknown;
+      readonly method: string;
       readonly message: string;
       readonly cause: unknown;
     };
@@ -67,7 +74,7 @@ const failureResult = (reason: string): Tool.HandlerResult<Tool.Any> => {
     encodedResult: result,
     isFailure: true,
     preliminary: false,
-  } as Tool.HandlerResult<Tool.Any>;
+  };
 };
 
 const validateResult = (
@@ -87,7 +94,7 @@ const validateResult = (
         ...handlerResult,
         result: validated,
         encodedResult: validated,
-      } as Tool.HandlerResult<Tool.Any>;
+      };
     }
     const schema = handlerResult.isFailure ? tool.failureSchema : tool.successSchema;
     const encodedResult = yield* Schema.encodeUnknownEffect(schema)(validated);
@@ -96,7 +103,7 @@ const validateResult = (
       encodedResult,
       isFailure: handlerResult.isFailure,
       preliminary: handlerResult.preliminary,
-    } as Tool.HandlerResult<Tool.Any>;
+    };
   }) as Effect.Effect<Tool.HandlerResult<Tool.Any>, unknown>;
 
 /**
@@ -115,7 +122,7 @@ export const makeToolExecution = (
     ),
   );
 
-  // Cross-Plugin handlers are heterogeneous, so their merged record cannot satisfy Toolkit.HandlersFrom.
+  // Definitions already type-check handlers; erase their heterogeneous merged internal record here.
   return toolkit.toHandlers(toolHandlers as never).pipe(
     Effect.flatMap((handlers) => Effect.provide(toolkit, handlers)),
     Effect.map((handlers): ToolExecution => {
@@ -205,27 +212,48 @@ export const makeToolExecution = (
               : yield* inputValidator(params).pipe(
                   Effect.map((value) => ({ _tag: "Ready" as const, value })),
                   Effect.catch((cause) =>
-                    Effect.succeed({ _tag: "Failure" as const, value: params, cause }),
+                    Effect.succeed({
+                      _tag: "InputFailure" as const,
+                      reason: `Tool input validation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+                    }),
+                  ),
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterruptsOnly(cause)
+                      ? Effect.interrupt
+                      : Effect.succeed({
+                          _tag: "Failure" as const,
+                          cause: Cause.squash(cause),
+                        }),
                   ),
                 );
+          if (input._tag === "InputFailure") {
+            return { _tag: "InputFailure", pipeline, params, reason: input.reason };
+          }
           if (input._tag === "Failure") {
             return {
-              _tag: "Failure",
+              _tag: "TurnFailure",
               pipeline,
               params,
-              message: "Tool input validation failed",
+              method: tool.name,
+              message: "Tool input validator failed",
               cause: input.cause,
             };
           }
           const preTool = yield* runPreTool(tool.name, input.value).pipe(
             Effect.map((veto) => ({ _tag: "Ready" as const, veto })),
             Effect.catch((cause) => Effect.succeed({ _tag: "Failure" as const, cause })),
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.interrupt
+                : Effect.succeed({ _tag: "Failure" as const, cause: Cause.squash(cause) }),
+            ),
           );
           return preTool._tag === "Failure"
             ? {
-                _tag: "Failure",
+                _tag: "TurnFailure",
                 pipeline,
                 params: input.value,
+                method: "preTool",
                 message: "Pre-Tool Hook failed",
                 cause: preTool.cause,
               }
@@ -246,27 +274,26 @@ export const makeToolExecution = (
               Effect.gen(function* () {
                 const prepared = yield* prepare(pipeline, params);
                 preparedCalls.set(context.toolCallId, prepared);
-                if (prepared._tag === "Failure" || prepared.veto !== undefined) return true;
+                if (prepared._tag === "InputFailure") return false;
+                if (prepared._tag === "TurnFailure") return true;
+                if (prepared.veto !== undefined) return true;
                 if (needsApproval === undefined || typeof needsApproval === "boolean") {
                   return needsApproval ?? false;
                 }
                 // Sync throws become defects; the Cause-level handlers below treat
                 // Fail and Die identically (log, then fail closed).
-                return yield* Effect.sync(() =>
-                  needsApproval(prepared.params as never, context),
-                ).pipe(
+                return yield* Effect.sync(() => needsApproval(prepared.params, context)).pipe(
                   Effect.flatMap((result) =>
                     Effect.isEffect(result) ? result : Effect.succeed(result),
                   ),
                   // Predicate failures cannot execute the Tool Call: log and fail closed.
-                  Effect.tapCause((cause) =>
-                    Effect.logWarning(
-                      `needsApproval predicate for "${compiledTool.tool.name}" failed`,
-                      cause,
-                    ),
-                  ),
                   Effect.catchCause((cause) =>
-                    Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.succeed(true),
+                    Cause.hasInterruptsOnly(cause)
+                      ? Effect.interrupt
+                      : Effect.logWarning(
+                          `needsApproval predicate for "${compiledTool.tool.name}" failed`,
+                          cause,
+                        ).pipe(Effect.as(true)),
                   ),
                 );
               }),
@@ -278,14 +305,20 @@ export const makeToolExecution = (
       const handle = ((name: string, params: unknown, toolCallId?: string) =>
         Effect.gen(function* () {
           const prepared = toolCallId === undefined ? undefined : preparedCalls.get(toolCallId);
-          const pipeline = prepared?.pipeline ?? (pipelines[name] as ToolPipeline);
+          const pipeline = prepared?.pipeline ?? pipelines[name]!;
           if (toolCallId !== undefined) preparedCalls.delete(toolCallId);
+          if (prepared?._tag === "InputFailure") {
+            return Stream.succeed(failureResult(prepared.reason));
+          }
+          if (prepared?._tag === "TurnFailure") {
+            return yield* Effect.fail(prepared.cause).pipe(
+              hookAiError(prepared.method, prepared.message),
+            );
+          }
           const veto =
             prepared === undefined
               ? yield* runPreTool(name, params).pipe(hookAiError("preTool", "Pre-Tool Hook failed"))
-              : prepared._tag === "Ready"
-                ? prepared.veto
-                : undefined;
+              : prepared.veto;
           if (veto !== undefined) return Stream.succeed(failureResult(veto));
           return yield* pipeline.execute(params);
         })) as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
@@ -293,7 +326,11 @@ export const makeToolExecution = (
       const request: ApprovalGate["request"] = Effect.fn("@mitome/core/ApprovalGate.request")(
         function* (part, call) {
           const prepared = preparedCalls.get(part.toolCallId);
-          if (prepared?._tag === "Failure") {
+          if (prepared?._tag === "InputFailure") {
+            preparedCalls.delete(part.toolCallId);
+            return { _tag: "Failure", message: prepared.reason, cause: prepared.reason };
+          }
+          if (prepared?._tag === "TurnFailure") {
             preparedCalls.delete(part.toolCallId);
             return {
               _tag: "Failure",
@@ -333,7 +370,9 @@ export const makeToolExecution = (
       const resolve: ApprovalGate["resolve"] = Effect.fn("@mitome/core/ApprovalGate.resolve")(
         function* (id, decision) {
           const deferred = pendingApprovals.get(id);
-          if (deferred === undefined) return yield* new ApprovalResolutionError({});
+          if (deferred === undefined) {
+            return yield* new ApprovalResolutionError({ reason: "not-pending" });
+          }
           const resolved = yield* Deferred.succeed(deferred, decision);
           if (!resolved) return yield* new ApprovalResolutionError({});
         },

@@ -4,7 +4,7 @@ import { FetchHttpClient, HttpClient } from "effect/unstable/http";
 import { configDirectory as processConfigDirectory, configDirectoryMessage } from "@mitome/core";
 import { oauth } from "./constants.js";
 import { CredentialStore, fsCredentialStoreLayer } from "./credential-store.js";
-import { networkError } from "./request.js";
+import { credentialError } from "./request.js";
 import { streamText } from "./transport.js";
 import { type CodexOptions } from "./types.js";
 
@@ -36,7 +36,7 @@ export const codexLayer = (
               Stream.provideService(HttpClient.HttpClient, httpClient),
               Stream.provideService(CredentialStore, credentialStore),
             );
-          yield* credentialStore.loadCredential.pipe(Effect.mapError(networkError));
+          yield* credentialStore.loadCredential.pipe(Effect.mapError(credentialError));
           return yield* LanguageModel.make({
             streamText: requestStream,
             generateText: (providerOptions) =>

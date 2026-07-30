@@ -105,8 +105,9 @@ const createSessionImpl: (
                       return turnHooks.end.pipe(
                         hookTurnError("Turn end Hook failed"),
                         Effect.map(() => {
-                          history = event.history;
-                          return { type: "response-complete" } as const;
+                          const { type: _type, history: nextHistory, ...finish } = event;
+                          history = nextHistory;
+                          return { type: "response-complete", ...finish } as const;
                         }),
                       );
                     }),

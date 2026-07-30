@@ -60,6 +60,9 @@ describe("scaffold plans", () => {
     expect(plan.get("index.ts")).toContain('import { defineAgent } from "@mitome/sdk/effect";');
     expect(plan.get("index.ts")).toContain('instructionFiles({ paths: ["./instructions.md"] })');
     expect(plan.get("instructions.md")).toBe("You are a helpful Agent.\n");
+    expect(JSON.parse(plan.get("package.json")!)).toMatchObject({
+      dependencies: { effect: "4.0.0-beta.102" },
+    });
     expect(JSON.parse(plan.get("tsconfig.json")!)).toEqual({
       compilerOptions: {
         target: "ESNext",
@@ -70,7 +73,7 @@ describe("scaffold plans", () => {
       },
       include: ["index.ts"],
     });
-    expect(plan.get("README.md")).toContain("npm install effect");
+    expect(plan.get("README.md")).not.toContain("npm install effect");
     expect(plan.get("README.md")).toContain("createSession");
   });
 
@@ -137,6 +140,7 @@ describe("create-mitome scaffold", () => {
         "@mitome/plugins": "0.0.0",
         "@mitome/providers": "0.0.0",
         "@mitome/sdk": "0.0.0",
+        ...(flavor === "effect" ? { effect: "4.0.0-beta.102" } : {}),
       },
     });
     const agent = await contents(path, "index.ts");
@@ -163,7 +167,7 @@ describe("create-mitome scaffold", () => {
       'import { codex } from "@mitome/providers/openai-codex";',
     );
     const readme = await contents(path, "README.md");
-    expect(readme).toContain("npm install effect");
+    expect(readme).not.toContain("npm install effect");
     expect(readme).toContain("createSession");
     expect(readme).toContain("mitome auth login --use .\n");
     expect(readme).toContain('mitome "hi" --use .\n');

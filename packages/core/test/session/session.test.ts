@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Cause, Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Prompt, Response } from "effect/unstable/ai";
+import { AiError, LanguageModel, Prompt, Response } from "effect/unstable/ai";
 import { type AgentDefinition, createSession, makeProvider, TurnError } from "../../src/index.js";
 import { makeDeterministicProvider, makeTestProvider } from "../support/provider.js";
 
@@ -33,6 +33,83 @@ describe("createSession", () => {
         { type: "response-complete" },
       ]);
       expect(yield* fixture.calls).toBe(1);
+    }),
+  );
+
+  it.effect("exposes reasoning and the final finish metadata", () =>
+    Effect.gen(function* () {
+      const firstUsage = new Response.Usage({
+        inputTokens: { total: 2 },
+        outputTokens: { total: 1 },
+      });
+      const finalUsage = new Response.Usage({
+        inputTokens: { total: 3 },
+        outputTokens: { total: 2, reasoning: 1 },
+      });
+      const model = makeTestProvider(() =>
+        Stream.fromIterable([
+          Response.makePart("reasoning-delta", { id: "reasoning", delta: "thinking" }),
+          Response.makePart("finish", { reason: "tool-calls", usage: firstUsage }),
+          Response.makePart("finish", { reason: "stop", usage: finalUsage }),
+        ]),
+      );
+      const session = yield* createSession({
+        providers: [model],
+        model: "test/default",
+        plugins: [],
+      });
+      const events = yield* Stream.runCollect(session.prompt("Hi"));
+
+      expect([...events]).toEqual([
+        { type: "reasoning", text: "thinking" },
+        { type: "response-complete", finishReason: "stop", usage: finalUsage },
+      ]);
+    }),
+  );
+
+  it.effect("preserves reasoning metadata in history without exposing it as an event", () =>
+    Effect.gen(function* () {
+      const metadata = {
+        openai: { itemId: "reasoning-1", encryptedContent: "encrypted-reasoning" },
+      };
+      let calls = 0;
+      let secondPrompt: Prompt.Prompt | undefined;
+      const model = makeTestProvider(({ prompt }) => {
+        calls += 1;
+        if (calls === 1) {
+          return Stream.fromIterable([
+            Response.makePart("reasoning-start", { id: "reasoning-1", metadata }),
+            Response.makePart("reasoning-delta", { id: "reasoning-1", delta: "summary" }),
+            Response.makePart("reasoning-end", { id: "reasoning-1", metadata }),
+            Response.makePart("tool-call", {
+              id: "call-1",
+              name: "lookup",
+              params: { query: "mitome" },
+              providerExecuted: false,
+            }),
+          ]);
+        }
+        secondPrompt = prompt;
+        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+      });
+      const session = yield* createSession({
+        providers: [model],
+        model: "test/default",
+        plugins: [],
+      });
+      const events = yield* Stream.runCollect(session.prompt("Hi"));
+
+      expect([...events]).toEqual([
+        { type: "reasoning", text: "summary" },
+        { type: "tool-call", id: "call-1", name: "lookup", params: { query: "mitome" } },
+        { type: "model-output", text: "done" },
+        { type: "response-complete" },
+      ]);
+      for (const prompt of [secondPrompt, Prompt.make(session.history())]) {
+        const assistant = prompt?.content.find((message) => message.role === "assistant");
+        const reasoning = assistant?.content.find((part) => part.type === "reasoning");
+        expect(reasoning).toMatchObject({ text: "summary", options: metadata });
+      }
     }),
   );
 
@@ -132,6 +209,54 @@ describe("createSession", () => {
       );
       expect(error).toBeInstanceOf(TurnError);
       expect(error).toMatchObject({ _tag: "TurnError", message: "no credential" });
+    }),
+  );
+
+  it.effect("surfaces provider AiError messages", () =>
+    Effect.gen(function* () {
+      const cause = AiError.make({
+        module: "Test Provider",
+        method: "streamText",
+        reason: new AiError.UnknownError({ description: "provider unavailable" }),
+      });
+      const session = yield* createSession({
+        providers: [makeTestProvider(() => Stream.fail(cause))],
+        model: "test/default",
+        plugins: [],
+      });
+
+      expect(yield* Effect.flip(Stream.runDrain(session.prompt("Hi")))).toMatchObject({
+        _tag: "TurnError",
+        message: cause.reason.message,
+        cause,
+      });
+    }),
+  );
+
+  it.effect("fails model error parts without committing Turn history", () =>
+    Effect.gen(function* () {
+      const cause = new Error("model stream failed");
+      const model = makeTestProvider(() =>
+        Stream.fromIterable([
+          Response.makePart("text-delta", { id: "partial", delta: "partial" }),
+          Response.makePart("error", { error: cause }),
+        ]),
+      );
+      const session = yield* createSession({
+        providers: [model],
+        model: "test/default",
+        plugins: [],
+      });
+      const events: Array<unknown> = [];
+      const error = yield* Effect.flip(
+        Stream.runDrain(
+          session.prompt("Hi").pipe(Stream.tap((event) => Effect.sync(() => events.push(event)))),
+        ),
+      );
+
+      expect(error).toMatchObject({ _tag: "TurnError", message: "Turn failed", cause });
+      expect(events).toEqual([{ type: "model-output", text: "partial" }]);
+      expect(session.history()).toEqual([]);
     }),
   );
 

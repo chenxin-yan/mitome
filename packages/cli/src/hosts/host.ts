@@ -21,6 +21,9 @@ const render = (event: TurnEvent): void => {
     case "model-output":
       process.stdout.write(event.text);
       break;
+    case "reasoning":
+      // The reference Host keeps reasoning and model metadata off stdout.
+      break;
     case "tool-call":
       process.stdout.write(`\n[tool ${event.name}]\n`);
       break;
@@ -33,6 +36,8 @@ const render = (event: TurnEvent): void => {
     case "response-complete":
       process.stdout.write("\n");
       break;
+    default:
+      event satisfies never;
   }
 };
 

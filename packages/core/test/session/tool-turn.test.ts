@@ -74,7 +74,7 @@ describe("createSession Tool Turn", () => {
       const events = yield* Stream.runCollect(session.prompt("Hi"));
 
       expect([...events]).toEqual([
-        { type: "tool-call", id: "call-1", name: "echo" },
+        { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
         { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },
         { type: "model-output", text: "done" },
         { type: "response-complete" },
@@ -120,7 +120,7 @@ describe("createSession Tool Turn", () => {
       const events = yield* Stream.runCollect(session.prompt("Find it"));
 
       expect([...events]).toEqual([
-        { type: "tool-call", id: "provider-call", name: "web-search" },
+        { type: "tool-call", id: "provider-call", name: "web-search", params: {} },
         {
           type: "tool-result",
           id: "provider-call",
@@ -170,7 +170,7 @@ describe("createSession Tool Turn", () => {
     }),
   );
 
-  it.effect("blocks Tool execution when input validation fails before pre-Tool Hooks", () =>
+  it.effect("returns input validation failures to the model without executing the Tool", () =>
     Effect.gen(function* () {
       const order: Array<string> = [];
       const validationFailure = new Error("invalid input");
@@ -227,14 +227,170 @@ describe("createSession Tool Turn", () => {
         ],
       });
 
+      const events = yield* Stream.runCollect(session.prompt("Hi"));
+
+      expect([...events]).toEqual([
+        { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
+        {
+          type: "tool-result",
+          id: "call-1",
+          name: "echo",
+          result: {
+            type: "execution-denied",
+            reason: "Tool input validation failed: invalid input",
+          },
+          isFailure: true,
+        },
+        { type: "model-output", text: "done" },
+        { type: "response-complete" },
+      ]);
+      expect(order).toEqual(["validator"]);
+      expect(modelCalls).toBe(2);
+    }),
+  );
+
+  it.effect("fails the Turn when an input validator defects", () =>
+    Effect.gen(function* () {
+      const order: Array<string> = [];
+      const defect = new Error("validator defect");
+      const provider = makeProvider("test", [] as const, undefined, () =>
+        Layer.effect(
+          LanguageModel.LanguageModel,
+          LanguageModel.make({
+            generateText: () => Effect.succeed([]),
+            streamText: () =>
+              Stream.succeed({
+                type: "tool-call" as const,
+                id: "call-1",
+                name: "echo",
+                params: { text: "hello" },
+              }),
+          }),
+        ),
+      );
+      const echo = Tool.make("echo", {
+        parameters: Schema.Struct({ text: Schema.String }),
+        success: Schema.String,
+      });
+      const session = yield* createSession({
+        providers: [provider],
+        model: "test/default",
+        plugins: [
+          {
+            name: "echo",
+            toolkit: Toolkit.make(echo),
+            handlers: {
+              echo: () =>
+                Effect.sync(() => {
+                  order.push("handler");
+                  return "handled";
+                }),
+            },
+            toolInputValidators: { echo: () => Effect.die(defect) },
+            hooks: {
+              preTool: () => Effect.sync(() => void order.push("preTool")),
+            },
+          },
+        ],
+      });
+
       const error = yield* Effect.flip(Stream.runDrain(session.prompt("Hi")));
 
       expect(error).toMatchObject({
         _tag: "TurnError",
-        message: "Tool input validation failed",
-        cause: validationFailure,
+        message: "Tool input validator failed",
+        cause: defect,
       });
-      expect(order).toEqual(["validator"]);
+      expect(order).toEqual([]);
+    }),
+  );
+
+  it.effect("fails closed if a prepared Hook failure reaches Tool handling", () =>
+    Effect.gen(function* () {
+      const order: Array<string> = [];
+      const failure = new Error("preTool failed");
+      let modelCalls = 0;
+      const provider = makeTestProvider((options) => {
+        modelCalls += 1;
+        if (modelCalls === 2) {
+          return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+        }
+        const call = Response.makePart("tool-call", {
+          id: "call-1",
+          name: "echo",
+          params: { text: "hello" },
+          providerExecuted: false,
+        });
+        return Stream.concat(
+          Stream.succeed(call),
+          Stream.unwrap(
+            Effect.gen(function* () {
+              const needsApproval = options.toolkit!.tools.echo!.needsApproval;
+              if (typeof needsApproval !== "function") {
+                return yield* Effect.die("Wrapped Tool has no Approval predicate");
+              }
+              const decision = needsApproval(call.params, {
+                toolCallId: call.id,
+                messages: [],
+              });
+              const required = yield* Effect.isEffect(decision)
+                ? decision
+                : Effect.succeed(decision);
+              if (!required) return yield* Effect.die("Prepared Hook failure did not fail closed");
+              return yield* options.toolkit!.handle(call.name, call.params, call.id).pipe(
+                Effect.map((results) =>
+                  Stream.map(results, (result) =>
+                    Response.makePart("tool-result", {
+                      id: call.id,
+                      name: call.name,
+                      providerExecuted: false,
+                      ...result,
+                    }),
+                  ),
+                ),
+              );
+            }),
+          ),
+        );
+      });
+      const echo = Tool.make("echo", {
+        parameters: Schema.Struct({ text: Schema.String }),
+        success: Schema.String,
+      });
+      const session = yield* createSession({
+        providers: [provider],
+        model: "test/default",
+        plugins: [
+          {
+            name: "echo",
+            toolkit: Toolkit.make(echo),
+            handlers: {
+              echo: () =>
+                Effect.sync(() => {
+                  order.push("handler");
+                  return "handled";
+                }),
+            },
+            hooks: {
+              preTool: () =>
+                Effect.sync(() => order.push("preTool")).pipe(Effect.andThen(Effect.fail(failure))),
+            },
+          },
+        ],
+      });
+
+      const error = yield* Effect.flip(Stream.runDrain(session.prompt("Hi")));
+
+      expect(error).toMatchObject({
+        _tag: "TurnError",
+        message: "Pre-Tool Hook failed: preTool failed",
+        cause: {
+          _tag: "AiError",
+          module: "@mitome/core",
+          method: "preTool",
+        },
+      });
+      expect(order).toEqual(["preTool"]);
       expect(modelCalls).toBe(1);
     }),
   );

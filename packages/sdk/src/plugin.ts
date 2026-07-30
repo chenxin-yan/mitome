@@ -1,5 +1,6 @@
 import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
+import type { Response as AiResponse } from "effect/unstable/ai";
 import type {
   Plugin,
   PluginHooks,
@@ -26,6 +27,12 @@ export interface HookContext<Resource = never> {
   readonly signal: AbortSignal;
 }
 
+export type ResponsePart = AiResponse.AnyPart;
+
+export interface StepEndContext<Resource = never> extends HookContext<Resource> {
+  readonly responseParts: ReadonlyArray<ResponsePart>;
+}
+
 export interface ToolApprovalContext {
   readonly toolCallId: string;
   readonly messages: ReadonlyArray<unknown>;
@@ -37,8 +44,8 @@ export interface PluginHooksDefinition<Resource = never> {
   readonly turnStart?: (text: string, context: HookContext<Resource>) => Promise<void>;
   readonly turnEnd?: (text: string, context: HookContext<Resource>) => Promise<void>;
   readonly stepStart?: (prompt: Prompt, context: HookContext<Resource>) => Promise<void>;
-  /** Receives the prompt used by the model, including any completed pre-Step transforms. */
-  readonly stepEnd?: (prompt: Prompt, context: HookContext<Resource>) => Promise<void>;
+  /** Receives the model prompt and emitted response parts; failed Steps provide their partial parts. */
+  readonly stepEnd?: (prompt: Prompt, context: StepEndContext<Resource>) => Promise<void>;
   readonly preStep?: (prompt: Prompt, context: HookContext<Resource>) => Promise<Prompt>;
   readonly preTool?: (
     context: ToolHookContext & HookContext<Resource>,
@@ -147,7 +154,8 @@ const adaptHooks = <Resource>(
     adapted.stepStart = (prompt) => promiseHook((context) => stepStart(prompt, context), resource);
   const stepEnd = hooks.stepEnd;
   if (stepEnd)
-    adapted.stepEnd = (prompt) => promiseHook((context) => stepEnd(prompt, context), resource);
+    adapted.stepEnd = (prompt, responseParts) =>
+      promiseHook((context) => stepEnd(prompt, { ...context, responseParts }), resource);
   const preStep = hooks.preStep;
   if (preStep)
     adapted.preStep = (prompt) =>
@@ -266,7 +274,7 @@ export function definePlugin<
                 : (params: unknown, context: ToolApprovalContext) =>
                     // Rejections become defects, matching Core's fail-closed approval handling.
                     Effect.promise(() =>
-                      Promise.resolve().then(() => needsApproval(params as never, context)),
+                      Promise.resolve().then(() => needsApproval(params, context)),
                     ),
           }),
     });

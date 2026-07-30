@@ -27,7 +27,6 @@ export interface CompiledTool {
 export interface CompiledAgent {
   readonly plugins: ReadonlyArray<AnyPlugin>;
   readonly providers: ReadonlyMap<string, AnyProvider>;
-  readonly defaultModel: { readonly providerId: string; readonly modelId: string };
   readonly tools: ReadonlyMap<string, CompiledTool>;
   readonly instructions: string;
 }
@@ -208,8 +207,6 @@ export const compileAgentDefinition: (
   return {
     plugins,
     providers,
-    // Empty `issues` implies the model parsed and resolved, so `defaultModel` is set.
-    defaultModel: defaultModel!,
     tools: new Map(
       Array.from(tools, ([name, compiledTool]) => [
         name,

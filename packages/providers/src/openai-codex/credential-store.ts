@@ -5,7 +5,7 @@ import {
   modifyCredential,
   readCredential,
 } from "../shared/credential-store.js";
-import { isExpired } from "../shared/oauth.js";
+import { isExpired, OAuthTokenError } from "../shared/oauth.js";
 import { oauth, provider } from "./constants.js";
 import { token, type OAuthCredentialFailure } from "./oauth-token.js";
 import { OAuthCredential } from "./types.js";
@@ -71,7 +71,16 @@ const refreshCredential = (
         grant_type: "refresh_token",
         refresh_token: current.refresh,
         client_id: oauth.clientId,
-      });
+      }).pipe(
+        Effect.mapError((error) =>
+          error instanceof OAuthTokenError
+            ? new OAuthTokenError({
+                message: `Codex sign-in expired or was revoked. Run \`mitome auth login\` to authenticate again. ${error.message}`,
+                cause: error,
+              })
+            : error,
+        ),
+      );
       return [next, next];
     }),
   );

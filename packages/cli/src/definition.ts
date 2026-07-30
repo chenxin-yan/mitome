@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
-import { Option } from "effect";
+import { Option, Schema } from "effect";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
 import { configDirectory, configDirectoryMessage } from "@mitome/core";
 import { isEnoent } from "./config.js";
@@ -47,9 +47,11 @@ export const checkRuntime = async (path: string): Promise<void> => {
     );
   }
   // A malformed package.json must fail loud.
-  let core: { version?: unknown };
+  let core: { readonly version?: unknown };
   try {
-    core = JSON.parse(await Bun.file(packagePath).text()) as { version?: unknown };
+    core = Schema.decodeUnknownSync(Schema.Struct({ version: Schema.optional(Schema.Unknown) }))(
+      JSON.parse(await Bun.file(packagePath).text()),
+    );
   } catch (error) {
     throw new Error(`Could not decode ${packagePath}.`, { cause: error });
   }

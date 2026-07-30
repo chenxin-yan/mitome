@@ -61,7 +61,7 @@ const defaultAgentDefinitionSource = (options: Omit<ScaffoldOptions, "flavor">):
 
 const instructionsSource = "You are a helpful Agent.\n";
 
-const agentPackageSource = (): string =>
+const agentPackageSource = (flavor: Flavor = "promise"): string =>
   `${JSON.stringify(
     {
       name: "mitome-agent",
@@ -71,6 +71,7 @@ const agentPackageSource = (): string =>
         "@mitome/plugins": packageJson.version,
         "@mitome/providers": packageJson.version,
         "@mitome/sdk": packageJson.version,
+        ...(flavor === "effect" ? { effect: "4.0.0-beta.102" } : {}),
       },
     },
     null,
@@ -97,8 +98,7 @@ const readmeSource = (flavor: Flavor): string => {
     flavor === "promise"
       ? `import agent from "./index.js";\nimport { withSession } from "@mitome/sdk";\n\nawait withSession(agent, async (session) => {\n  for await (const event of session.prompt("Hi")) console.log(event);\n});`
       : `import { Effect, Stream } from "effect";\nimport agent from "./index.js";\nimport { createSession } from "@mitome/sdk/effect";\n\nawait Effect.runPromise(\n  Effect.scoped(\n    Effect.gen(function* () {\n      const session = yield* createSession(agent);\n      yield* Stream.runForEach(session.prompt("Hi"), (event) => Effect.log(event));\n    }),\n  ),\n);`;
-  const effectInstall = flavor === "effect" ? "```sh\nnpm install effect\n```\n\n" : "";
-  return `# Mitome Agent\n\n## Next steps\n\n\`\`\`sh\nnpm install\nnpm install -g @mitome/cli\nmitome auth login --use .\nmitome "hi" --use .\n\`\`\`\n\n## Embed the Agent\n\n${effectInstall}\`\`\`ts\n${embed}\n\`\`\`\n`;
+  return `# Mitome Agent\n\n## Next steps\n\n\`\`\`sh\nnpm install\nnpm install -g @mitome/cli\nmitome auth login --use .\nmitome "hi" --use .\n\`\`\`\n\n## Embed the Agent\n\n\`\`\`ts\n${embed}\n\`\`\`\n`;
 };
 
 // The file set is static; exported so the CLI can refuse a clobbered
@@ -114,7 +114,7 @@ export const defaultAgentPlan = (options: Omit<ScaffoldOptions, "flavor">): File
 
 export const projectPlan = (options: ScaffoldOptions): FileMap =>
   new Map([
-    ["package.json", agentPackageSource()],
+    ["package.json", agentPackageSource(options.flavor)],
     ["index.ts", agentDefinitionSource(options)],
     ["instructions.md", instructionsSource],
     ["tsconfig.json", tsconfigSource],

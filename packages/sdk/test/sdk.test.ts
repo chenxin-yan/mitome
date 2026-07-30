@@ -58,6 +58,30 @@ describe("@mitome/sdk", () => {
     );
   });
 
+  test("exposes synchronous Core Session history", async () => {
+    const definition = defineAgent({
+      providers: [
+        makeTestProvider(() =>
+          Stream.fromIterable([
+            Response.makePart("text-start", { id: "response" }),
+            Response.makePart("text-delta", { id: "response", delta: "hello" }),
+            Response.makePart("text-end", { id: "response" }),
+          ]),
+        ),
+      ],
+      model: "test/default",
+      plugins: [],
+    });
+
+    const roles = await withSession(definition, async (session) => {
+      expect(session.history()).toEqual([]);
+      await Array.fromAsync(session.prompt("Hi"));
+      return session.history().map((message) => message.role);
+    });
+
+    expect(roles).toEqual(["user", "assistant"]);
+  });
+
   test("forwards a typed per-Turn Model override", async () => {
     const provider = (id: string, output: string) =>
       makeTestProvider(
@@ -129,6 +153,57 @@ describe("@mitome/sdk", () => {
 
     expect(caught).toBeInstanceOf(TurnError);
     expect(caught).toMatchObject({ _tag: "TurnError", name: "TurnError", cause });
+  });
+
+  test("passes reasoning and finish metadata through the Promise Session", async () => {
+    const usage = new Response.Usage({
+      inputTokens: { total: 3 },
+      outputTokens: { total: 2, reasoning: 1 },
+    });
+    const definition = defineAgent({
+      providers: [
+        makeTestProvider(() =>
+          Stream.fromIterable([
+            Response.makePart("reasoning-delta", { id: "reasoning", delta: "thinking" }),
+            Response.makePart("finish", { reason: "stop", usage }),
+          ]),
+        ),
+      ],
+      model: "test/default",
+      plugins: [],
+    });
+
+    const events = await withSession(definition, (session) =>
+      Array.fromAsync(session.prompt("Hi")),
+    );
+
+    expect(events).toEqual([
+      { type: "reasoning", text: "thinking" },
+      { type: "response-complete", finishReason: "stop", usage },
+    ]);
+  });
+
+  test("starts post-scope iteration with SessionReleasedError", async () => {
+    const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
+    const definition = defineAgent({
+      providers: [fixture.provider],
+      model: "test/default",
+      plugins: [],
+    });
+    let iterable!: AsyncIterable<unknown>;
+
+    await withSession(definition, async (session) => {
+      iterable = session.prompt("late");
+    });
+
+    let iterator!: AsyncIterator<unknown>;
+    expect(() => {
+      iterator = iterable[Symbol.asyncIterator]();
+    }).not.toThrow();
+    await expect(iterator.next()).rejects.toMatchObject({
+      _tag: "SessionReleasedError",
+      message: "Session scope has been released",
+    });
   });
 
   test("brackets a typed, terminating Turn stream", async () => {

@@ -53,6 +53,19 @@ const OAuthTokenResponse = Schema.Struct({
   expires_in: Schema.Finite,
 });
 
+const OAuthErrorResponse = Schema.Struct({
+  error: Schema.optional(Schema.String),
+  error_description: Schema.optional(Schema.String),
+});
+
+const redactFormValues = (value: string, form: Record<string, string>): string => {
+  let redacted = value;
+  for (const submitted of Object.values(form)) {
+    if (submitted !== "") redacted = redacted.replaceAll(submitted, "[redacted]");
+  }
+  return redacted.slice(0, 512);
+};
+
 export const exchangeToken = (
   tokenUrl: string,
   form: Record<string, string>,
@@ -61,7 +74,24 @@ export const exchangeToken = (
     const request = HttpClientRequest.post(tokenUrl).pipe(HttpClientRequest.bodyUrlParams(form));
     const response = yield* HttpClient.execute(request);
     if (response.status < 200 || response.status >= 300) {
-      return yield* new OAuthTokenError({ message: "OAuth token exchange failed." });
+      const failure = yield* response.json.pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(OAuthErrorResponse)),
+        Effect.orElseSucceed(() => ({ error: undefined, error_description: undefined })),
+      );
+      const code = failure.error === undefined ? undefined : redactFormValues(failure.error, form);
+      const description =
+        failure.error_description === undefined
+          ? undefined
+          : redactFormValues(failure.error_description, form);
+      const detail =
+        code === undefined
+          ? description
+          : description === undefined
+            ? code
+            : `${code}: ${description}`;
+      return yield* new OAuthTokenError({
+        message: `OAuth token exchange failed (HTTP ${response.status}${detail === undefined ? "" : `; ${detail}`}).`,
+      });
     }
     const body = yield* response.json.pipe(
       Effect.mapError(
@@ -123,8 +153,8 @@ const challenge = async (value: string): Promise<string> =>
 
 const defaultBrowser = (url: string): void => {
   const command =
-    process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+    process.platform === "darwin" ? "open" : process.platform === "win32" ? "rundll32" : "xdg-open";
+  const args = process.platform === "win32" ? ["url.dll,FileProtocolHandler", url] : [url];
   const child = spawn(command, args, { stdio: "ignore", detached: true });
   // spawn ENOENT (no browser); the printed URL/paste flow remains.
   child.on("error", () => {});

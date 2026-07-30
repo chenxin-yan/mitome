@@ -4,7 +4,12 @@
   "categories": {
     "correctness": "error"
   },
-  "rules": {},
+  "rules": {
+    "typescript/no-misused-promises": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/return-await": "error",
+    "typescript/switch-exhaustiveness-check": "error"
+  },
   "env": {
     "builtin": true
   },

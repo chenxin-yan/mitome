@@ -96,6 +96,62 @@ describe("Codex SSE decoder", () => {
     ]);
   });
 
+  test("captures encrypted reasoning output without exposing plaintext that was not sent", async () => {
+    expect(
+      await decode(
+        sse({
+          type: "response.output_item.added",
+          output_index: 0,
+          item: { type: "reasoning", id: "reasoning-1", summary: [] },
+        }),
+        sse({
+          type: "response.output_item.done",
+          output_index: 0,
+          item: {
+            type: "reasoning",
+            id: "reasoning-1",
+            encrypted_content: "encrypted-reasoning",
+            summary: [{ type: "summary_text", text: "Checked the repository." }],
+          },
+        }),
+        sse({ type: "response.completed" }),
+      ),
+    ).toEqual([
+      expect.objectContaining({ type: "reasoning-start", id: "reasoning-1:0" }),
+      expect.objectContaining({
+        type: "reasoning-delta",
+        id: "reasoning-1:0",
+        delta: "Checked the repository.",
+      }),
+      expect.objectContaining({
+        type: "reasoning-end",
+        id: "reasoning-1:0",
+        metadata: {
+          openai: { itemId: "reasoning-1", encryptedContent: "encrypted-reasoning" },
+        },
+      }),
+    ]);
+
+    expect(
+      await decode(
+        sse({
+          type: "response.output_item.done",
+          output_index: 0,
+          item: {
+            type: "reasoning",
+            id: "reasoning-opaque",
+            encrypted_content: "opaque-only",
+            summary: [],
+          },
+        }),
+        sse({ type: "response.completed" }),
+      ),
+    ).toEqual([
+      expect.objectContaining({ type: "reasoning-start", id: "reasoning-opaque:0" }),
+      expect.objectContaining({ type: "reasoning-end", id: "reasoning-opaque:0" }),
+    ]);
+  });
+
   test.each([
     {
       name: "prefers output_index when message events also carry item_id",

@@ -169,7 +169,6 @@ const spawn = (
 
 const exited = async (child: ReturnType<typeof spawnChild>): Promise<number | null> => {
   if (child.exitCode !== null || child.signalCode !== null) return child.exitCode;
-  // @ts-expect-error Bun's ChildProcess type omits its EventEmitter inheritance; node:events handles it.
   const [code] = await once(child, "close");
   return code;
 };
@@ -301,6 +300,16 @@ describe("compiled mitome", () => {
     const result = await output(spawn("", ["install", "--use", current.definition], current));
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("package.json");
+  });
+
+  test("prints aggregated Agent Definition errors", async () => {
+    const current = await fixture("export default {};\n");
+    const result = await output(spawn("", ["hello", "--use", current.definition], current));
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Agent Definition Providers must be an array");
+    expect(result.stderr).toContain("Agent Definition Model must be a string");
+    expect(result.stderr).toContain("Agent Definition Plugins must be an array");
   });
 
   test("runs one Turn end to end", async () => {

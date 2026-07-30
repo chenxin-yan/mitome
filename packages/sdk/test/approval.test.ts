@@ -300,6 +300,7 @@ describe("@mitome/sdk Tool Approval", () => {
       await iterator.return?.();
       await expect(pending.value.approve()).rejects.toMatchObject({
         _tag: "ApprovalResolutionError",
+        message: "Approval is no longer pending (the Turn ended or the request is missing)",
       });
 
       const next = [];

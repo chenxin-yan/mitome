@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { configDirectory, configDirectoryMessage } from "@mitome/core";
 
@@ -26,7 +26,8 @@ export const requireConfigDirectory = (): string => {
 
 const writeConfigEnv = async (contents: string): Promise<void> => {
   const directory = requireConfigDirectory();
-  await mkdir(directory, { recursive: true });
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await chmod(directory, 0o700);
   const temporary = await mkdtemp(join(directory, ".env-"));
   const file = join(temporary, "value");
   try {

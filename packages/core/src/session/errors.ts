@@ -31,10 +31,12 @@ export class TurnError extends Schema.TaggedErrorClass<TurnError>()("TurnError",
 
 export class ApprovalResolutionError extends Schema.TaggedErrorClass<ApprovalResolutionError>()(
   "ApprovalResolutionError",
-  {},
+  { reason: Schema.optional(Schema.Literal("not-pending")) },
 ) {
   override get message(): string {
-    return "Approval decision has already been resolved";
+    return this.reason === "not-pending"
+      ? "Approval is no longer pending (the Turn ended or the request is missing)"
+      : "Approval decision has already been resolved";
   }
 }
 
@@ -43,10 +45,7 @@ export const hookTurnError = (message: string) =>
 
 export const modelTurnError = (cause: unknown) =>
   new TurnError({
-    message:
-      AiError.isAiError(cause) && cause.module === coreModuleName
-        ? cause.reason.message
-        : "Turn failed",
+    message: AiError.isAiError(cause) ? cause.reason.message : "Turn failed",
     cause,
   });
 

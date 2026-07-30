@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from "vitest";
 import { setTimeout } from "node:timers/promises";
-import { Effect, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
+import { AiError, Tool, Toolkit } from "effect/unstable/ai";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createSession } from "@mitome/core";
+import { createSession, TurnError } from "@mitome/core";
 import { agent as definition, serve, spawnRuntime, sse } from "../support.js";
 import { writeCredential as writeCredentialEffect } from "../../src/openai-codex/credential-store.js";
 import { codex } from "../../src/openai-codex/index.js";
@@ -162,6 +163,190 @@ describe("Codex SSE", () => {
       ]);
     } finally {
       void server.stop(true);
+    }
+  });
+
+  test("replays encrypted reasoning before the paired Tool call on the next Step", async () => {
+    const configDirectory = await directory();
+    const requests: Array<Record<string, unknown>> = [];
+    const server = await serve({
+      async fetch(request) {
+        requests.push((await request.json()) as Record<string, unknown>);
+        if (requests.length === 1) {
+          return new Response(
+            sse({
+              type: "response.output_item.added",
+              output_index: 0,
+              item: { type: "reasoning", id: "reasoning-1", summary: [] },
+            }) +
+              sse({
+                type: "response.output_item.done",
+                output_index: 0,
+                item: {
+                  type: "reasoning",
+                  id: "reasoning-1",
+                  encrypted_content: "encrypted-reasoning",
+                  summary: [{ type: "summary_text", text: "Checked the repository." }],
+                },
+              }) +
+              sse({
+                type: "response.output_item.added",
+                output_index: 1,
+                item: { type: "function_call", call_id: "call-1", name: "echo" },
+              }) +
+              sse({
+                type: "response.function_call_arguments.done",
+                output_index: 1,
+                arguments: '{"text":"hello"}',
+              }) +
+              sse({
+                type: "response.output_item.done",
+                output_index: 1,
+                item: { type: "function_call", arguments: '{"text":"hello"}' },
+              }) +
+              sse({ type: "response.completed" }),
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        }
+        return new Response(
+          sse({
+            type: "response.output_item.added",
+            output_index: 0,
+            item: { type: "message", id: "message-1" },
+          }) +
+            sse({ type: "response.output_text.delta", output_index: 0, delta: "done" }) +
+            sse({
+              type: "response.output_item.done",
+              output_index: 0,
+              item: { type: "message", id: "message-1" },
+            }) +
+            sse({ type: "response.completed" }),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      },
+    });
+    const echo = Tool.make("echo", {
+      parameters: Schema.Struct({ text: Schema.String }),
+      success: Schema.String,
+    });
+    try {
+      const result = await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const session = yield* createSession(
+              definition(
+                codex({
+                  configDirectory,
+                  baseUrl: `http://127.0.0.1:${server.port}`,
+                }),
+                "future-private-model",
+                [
+                  {
+                    name: "echo",
+                    toolkit: Toolkit.make(echo),
+                    handlers: {
+                      echo: (params) => Effect.succeed((params as { readonly text: string }).text),
+                    },
+                  },
+                ],
+              ),
+            );
+            const events = yield* Stream.runCollect(session.prompt("Hi"));
+            return { events: [...events], history: session.history() };
+          }),
+        ),
+      );
+
+      expect(result.events).toEqual([
+        { type: "reasoning", text: "Checked the repository." },
+        { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
+        { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },
+        { type: "model-output", text: "done" },
+        { type: "response-complete" },
+      ]);
+      expect(JSON.stringify(result.events)).not.toContain("encrypted-reasoning");
+      expect(requests).toHaveLength(2);
+      expect(requests[1]?.input).toEqual([
+        { role: "user", content: "Hi" },
+        {
+          type: "reasoning",
+          id: "reasoning-1",
+          encrypted_content: "encrypted-reasoning",
+          summary: [{ type: "summary_text", text: "Checked the repository." }],
+        },
+        {
+          type: "function_call",
+          call_id: "call-1",
+          name: "echo",
+          arguments: '{"text":"hello"}',
+        },
+        { type: "function_call_output", call_id: "call-1", output: '"hello"' },
+      ]);
+      const assistant = result.history.find((message) => message.role === "assistant");
+      const reasoning =
+        assistant?.role === "assistant"
+          ? assistant.content.find((part) => part.type === "reasoning")
+          : undefined;
+      expect(reasoning).toMatchObject({
+        text: "Checked the repository.",
+        options: {
+          openai: { itemId: "reasoning-1", encryptedContent: "encrypted-reasoning" },
+        },
+      });
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test("surfaces revoked refresh grants as actionable Authentication errors", async () => {
+    const refresh = "synthetic-refresh-secret";
+    const configDirectory = await directory(credential("expired-access", refresh, 1));
+    let requests = 0;
+    const server = await serve({
+      fetch() {
+        requests += 1;
+        return Response.json(
+          {
+            error: "invalid_grant",
+            error_description: `refresh ${refresh} was revoked`,
+          },
+          { status: 400 },
+        );
+      },
+    });
+    try {
+      const error = await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const session = yield* createSession(
+              definition(
+                codex({
+                  configDirectory,
+                  baseUrl: `http://127.0.0.1:${server.port}`,
+                  tokenUrl: `http://127.0.0.1:${server.port}/oauth/token`,
+                }),
+                "future-private-model",
+              ),
+            );
+            return yield* Effect.flip(Stream.runDrain(session.prompt("Hi")));
+          }),
+        ),
+      );
+
+      expect(error).toBeInstanceOf(TurnError);
+      expect(error.message).toContain("mitome auth login");
+      expect(error.message).toContain("HTTP 400; invalid_grant");
+      expect(error.message).not.toContain(refresh);
+      expect(AiError.isAiError(error.cause)).toBe(true);
+      if (!AiError.isAiError(error.cause)) throw new Error("Expected an AiError cause");
+      expect(error.cause.reason).toMatchObject({
+        _tag: "AuthenticationError",
+        isRetryable: false,
+        message: expect.stringContaining("mitome auth login"),
+      });
+      expect(requests).toBe(1);
+    } finally {
+      await server.stop(true);
     }
   });
 

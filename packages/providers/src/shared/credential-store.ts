@@ -43,7 +43,9 @@ const acquireLock = (configDirectory: string) => {
     Effect.timeoutOrElse({
       duration: lockTimeout,
       orElse: () =>
-        new CredentialStoreError({ message: `Credential storage lock timed out: ${path}` }),
+        new CredentialStoreError({
+          message: `Credential storage lock timed out: ${path}. If no other process is authenticating, delete ${path} and retry.`,
+        }),
     }),
   );
 };

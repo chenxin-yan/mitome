@@ -1,21 +1,66 @@
+import { Result, Schema } from "effect";
 import { AiError, LanguageModel, Tool } from "effect/unstable/ai";
+import { HttpClientError } from "effect/unstable/http";
+import { type CredentialError } from "./credential-store.js";
+
+const makeError = (reason: AiError.AiErrorReason) =>
+  AiError.make({ module: "OpenAI Codex", method: "streamText", reason });
 
 export const providerError = (description: string) =>
-  AiError.make({
-    module: "OpenAI Codex",
-    method: "streamText",
-    reason: new AiError.UnknownError({ description }),
-  });
+  makeError(new AiError.UnknownError({ description }));
 
 export const invalidOutput = (description: string) =>
-  AiError.make({
-    module: "OpenAI Codex",
-    method: "streamText",
-    reason: new AiError.InvalidOutputError({ description }),
-  });
+  makeError(new AiError.InvalidOutputError({ description }));
 
-export const networkError = (cause: unknown) =>
-  providerError(cause instanceof Error ? cause.message : "Codex request failed");
+// Upstream's auth reason has a fixed API-key message; keep its taxonomy while naming the Codex login remedy.
+const authenticationMessages = new WeakMap<AiError.AuthenticationError, string>();
+
+class CodexAuthenticationError extends AiError.AuthenticationError {
+  override get message(): string {
+    return authenticationMessages.get(this) ?? super.message;
+  }
+}
+
+const authenticationError = (
+  kind: "ExpiredKey" | "MissingKey" | "Unknown",
+  description: string,
+) => {
+  const reason = new CodexAuthenticationError({ kind });
+  authenticationMessages.set(reason, description);
+  return makeError(reason);
+};
+
+export const httpError = (error: HttpClientError.HttpClientError) => {
+  const reason = error.reason;
+  return reason._tag === "TransportError" ||
+    reason._tag === "EncodeError" ||
+    reason._tag === "InvalidUrlError"
+    ? makeError(AiError.NetworkError.fromRequestError(reason))
+    : providerError(error.message);
+};
+
+export const credentialError = (error: CredentialError) => {
+  if (HttpClientError.isHttpClientError(error)) return httpError(error);
+  switch (error._tag) {
+    case "CredentialUnavailableError":
+      return authenticationError("MissingKey", error.message);
+    case "OAuthTokenError":
+      return authenticationError("ExpiredKey", error.message);
+    case "OAuthCredentialError":
+      return authenticationError("Unknown", error.message);
+    case "CredentialStoreError":
+      return providerError(`${error.message}${error.code === undefined ? "" : ` (${error.code})`}`);
+    case "TimeoutError":
+      return providerError("OAuth token exchange timed out");
+    default:
+      return error satisfies never;
+  }
+};
+
+const ReasoningOptions = Schema.Struct({
+  itemId: Schema.String,
+  encryptedContent: Schema.String,
+});
 
 const contentFor = (
   content: string | ReadonlyArray<{ readonly type: string; readonly text?: string }>,
@@ -50,8 +95,23 @@ export const requestFor = (
     }
     const content = contentFor(message.content);
     if (message.role === "assistant") {
-      if (content !== "") input.push({ role: "assistant", content });
+      let contentPending = content !== "";
       for (const part of message.content) {
+        if (part.type === "text" && contentPending) {
+          input.push({ role: "assistant", content });
+          contentPending = false;
+        }
+        if (part.type === "reasoning") {
+          const decoded = Schema.decodeUnknownResult(ReasoningOptions)(part.options.openai);
+          if (Result.isSuccess(decoded)) {
+            input.push({
+              type: "reasoning",
+              id: decoded.success.itemId,
+              encrypted_content: decoded.success.encryptedContent,
+              summary: part.text === "" ? [] : [{ type: "summary_text", text: part.text }],
+            });
+          }
+        }
         if (part.type === "tool-call") {
           input.push({
             type: "function_call",
@@ -72,7 +132,6 @@ export const requestFor = (
     instructions: system === undefined ? "" : contentFor(system.content),
     input,
     text: { verbosity: "low" },
-    // TODO: replay reasoning items for store:false continuity (#52).
     include: ["reasoning.encrypted_content"],
     prompt_cache_key: sessionId,
     tool_choice: "auto",

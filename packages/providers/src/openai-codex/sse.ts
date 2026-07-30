@@ -33,6 +33,13 @@ const FunctionCallDoneItem = Schema.Struct({
   id: Schema.optional(Schema.String),
   arguments: Schema.optional(Schema.String),
 });
+const ReasoningItem = Schema.Struct({
+  id: Schema.String,
+  encrypted_content: Schema.optional(Schema.NullOr(Schema.String)),
+  summary: Schema.Array(
+    Schema.Struct({ type: Schema.Literal("summary_text"), text: Schema.String }),
+  ),
+});
 const Delta = Schema.Struct({ delta: Schema.String });
 const FinalArguments = Schema.Struct({ arguments: Schema.String });
 
@@ -97,6 +104,26 @@ const decodeOutputItemDone = (
   const itemType = outputItemType(item);
   if (itemType === "message") {
     return state.textIds.delete(key) ? [Response.makePart("text-end", { id: key })] : [];
+  }
+  if (itemType === "reasoning") {
+    const reasoning = decode(ReasoningItem, item, () =>
+      invalidOutput("Codex sent incomplete reasoning"),
+    );
+    const id = `${reasoning.id}:0`;
+    const text = reasoning.summary.map(({ text }) => text).join("\n");
+    const metadata = {
+      openai: {
+        itemId: reasoning.id,
+        ...(reasoning.encrypted_content == null
+          ? {}
+          : { encryptedContent: reasoning.encrypted_content }),
+      },
+    };
+    return [
+      Response.makePart("reasoning-start", { id, metadata }),
+      ...(text === "" ? [] : [Response.makePart("reasoning-delta", { id, delta: text })]),
+      Response.makePart("reasoning-end", { id, metadata }),
+    ];
   }
   if (itemType === "function_call") {
     const done = decode(FunctionCallDoneItem, item, () =>

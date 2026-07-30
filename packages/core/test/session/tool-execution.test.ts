@@ -23,7 +23,7 @@ const prepare = (
 ): Effect.Effect<boolean> => {
   const needsApproval = execution.toolkit.tools.dangerous!.needsApproval;
   if (typeof needsApproval !== "function") throw new Error("Tool pipeline is not installed");
-  const result = needsApproval(params as never, { toolCallId, messages: [] });
+  const result = needsApproval(params, { toolCallId, messages: [] });
   return Effect.isEffect(result) ? result : Effect.succeed(result);
 };
 
@@ -73,7 +73,6 @@ const makeFixture = (options?: {
   const compiled: CompiledAgent = {
     plugins: [plugin],
     providers: new Map(),
-    defaultModel: { providerId: "test", modelId: "default" },
     tools: new Map([
       [
         dangerous.name,
@@ -99,9 +98,7 @@ const makeFixture = (options?: {
 };
 
 const execute = (execution: ToolExecution, params: unknown, toolCallId = "call-1") =>
-  execution.toolkit
-    .handle("dangerous", params as never, toolCallId)
-    .pipe(Effect.flatMap(Stream.runCollect));
+  execution.toolkit.handle("dangerous", params, toolCallId).pipe(Effect.flatMap(Stream.runCollect));
 
 describe("ToolExecution", () => {
   it.effect("resolves a cancelled pending Approval with the ensuring fallback", () =>

@@ -1,11 +1,13 @@
-import { Effect, Stream } from "effect";
+import { Effect, Schedule, Stream } from "effect";
 import { AiError, LanguageModel } from "effect/unstable/ai";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 import { isExpired } from "../shared/oauth.js";
 import { CredentialStore } from "./credential-store.js";
-import { networkError, requestFor } from "./request.js";
+import { credentialError, httpError, requestFor } from "./request.js";
 import { decodeStream } from "./sse.js";
 import { type OAuthCredential } from "./types.js";
+
+const requestRetrySchedule = Schedule.exponential("100 millis").pipe(Schedule.upTo({ times: 2 }));
 
 export const streamText = (
   model: string,
@@ -36,19 +38,14 @@ export const streamText = (
       }),
       HttpClientRequest.bodyJsonUnsafe(requestFor(model, options, sessionId)),
     );
-    return HttpClient.execute(request).pipe(
-      Effect.mapError(networkError),
+    const response = HttpClient.execute(request).pipe(
+      Effect.mapError(httpError),
       Effect.flatMap((response) => {
-        if (response.status === 401 && !retried) {
-          return store.refreshCredential(credential.access, false).pipe(
-            Effect.mapError(networkError),
-            Effect.flatMap((next) => execute(store, next, true)),
-          );
-        }
-        if (response.status >= 200 && response.status < 300) {
-          return Effect.succeed(
-            HttpClientResponse.stream(Effect.succeed(response)).pipe(Stream.mapError(networkError)),
-          );
+        if (
+          (response.status >= 200 && response.status < 300) ||
+          (response.status === 401 && !retried)
+        ) {
+          return Effect.succeed(response);
         }
         // The backend's error detail ("model not found", quota) beats a bare status.
         return response.text.pipe(
@@ -67,14 +64,33 @@ export const streamText = (
           ),
         );
       }),
+      Effect.retry({
+        while: (error) => error.isRetryable,
+        schedule: requestRetrySchedule,
+      }),
+    );
+    return response.pipe(
+      Effect.flatMap((response) => {
+        if (response.status === 401) {
+          return response.text.pipe(
+            Effect.ignore,
+            Effect.andThen(store.refreshCredential(credential.access, false)),
+            Effect.mapError(credentialError),
+            Effect.flatMap((next) => execute(store, next, true)),
+          );
+        }
+        return Effect.succeed(
+          HttpClientResponse.stream(Effect.succeed(response)).pipe(Stream.mapError(httpError)),
+        );
+      }),
     );
   };
   return Stream.unwrap(
     Effect.gen(function* () {
       const store = yield* CredentialStore;
-      const current = yield* store.loadCredential.pipe(Effect.mapError(networkError));
+      const current = yield* store.loadCredential.pipe(Effect.mapError(credentialError));
       const credential = (yield* isExpired(current))
-        ? yield* store.refreshCredential(undefined, true).pipe(Effect.mapError(networkError))
+        ? yield* store.refreshCredential(undefined, true).pipe(Effect.mapError(credentialError))
         : current;
       return yield* execute(store, credential, false);
     }),

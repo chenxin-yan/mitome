@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
@@ -14,6 +14,7 @@ vi.mock("../src/hosts/auth-host.ts", () => ({ default: "" }));
 
 import { ChildHost, type ProviderAuthentication } from "../src/child-host.ts";
 import { runAuth } from "../src/commands/auth.ts";
+import { updateConfigEnv } from "../src/config.ts";
 import { runInit } from "../src/commands/init.ts";
 import { runInstall, runPrompt } from "../src/commands/run.ts";
 import { Prompter, type PromptChoice } from "../src/prompter.ts";
@@ -195,20 +196,24 @@ describe("CLI handlers", () => {
     Effect.gen(function* () {
       const directory = yield* Effect.promise(temporaryDirectory);
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts")));
-      yield* Effect.promise(() =>
-        writeFile(join(directory, "node_modules", "@mitome", "core", "package.json"), "{"),
-      );
+      const packagePath = join(directory, "node_modules", "@mitome", "core", "package.json");
       const childHost = fakeChildHost();
-      const exit = yield* Effect.exit(
-        runPrompt({ prompt: "hello", use: Option.some(path) }).pipe(
-          Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
-        ),
-      );
 
-      expect(Exit.isFailure(exit)).toBe(true);
-      expect(exitCode(exit)).toBe(1);
-      expect((yield* TestConsole.errorLines).join("\n")).toContain("Could not decode");
-      expect((yield* TestConsole.errorLines).join("\n")).toContain("cause:");
+      for (const contents of ["{", "null"]) {
+        yield* Effect.promise(() => writeFile(packagePath, contents));
+        const beforeErrors = (yield* TestConsole.errorLines).length;
+        const exit = yield* Effect.exit(
+          runPrompt({ prompt: "hello", use: Option.some(path) }).pipe(
+            Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
+          ),
+        );
+        const errors = (yield* TestConsole.errorLines).slice(beforeErrors).join("\n");
+
+        expect(Exit.isFailure(exit)).toBe(true);
+        expect(exitCode(exit)).toBe(1);
+        expect(errors).toContain("Could not decode");
+        expect(errors).toContain("cause:");
+      }
       expect(childHost.calls.runHost).toEqual([]);
     }),
   );
@@ -255,6 +260,25 @@ describe("CLI handlers", () => {
       expect(exitCode(nonTypescript)).toBe(1);
       expect((yield* TestConsole.errorLines).join("\n")).toContain("must be a TypeScript module");
       expect(childHost.calls.install).toEqual([]);
+    }),
+  );
+
+  it.effect("creates and repairs private config directory permissions", () =>
+    Effect.gen(function* () {
+      const parent = yield* Effect.promise(temporaryDirectory);
+      const created = join(parent, "created");
+      const existing = join(parent, "existing");
+      yield* Effect.promise(() => mkdir(existing, { mode: 0o755 }));
+      yield* Effect.promise(() => chmod(existing, 0o755));
+
+      for (const directory of [created, existing]) {
+        process.env.MITOME_HOME = directory;
+        yield* Effect.promise(() => updateConfigEnv("OPENAI_API_KEY", "synthetic-secret"));
+        expect((yield* Effect.promise(() => stat(directory))).mode & 0o777).toBe(0o700);
+        expect((yield* Effect.promise(() => stat(join(directory, ".env")))).mode & 0o777).toBe(
+          0o600,
+        );
+      }
     }),
   );
 

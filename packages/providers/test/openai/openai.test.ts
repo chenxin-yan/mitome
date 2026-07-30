@@ -166,7 +166,7 @@ describe("openai", () => {
     expect(events).toEqual([
       { type: "model-output", text: "hel" },
       { type: "model-output", text: "lo" },
-      { type: "response-complete" },
+      expect.objectContaining({ type: "response-complete", finishReason: "stop" }),
     ]);
     expect(requests).toEqual([
       {
@@ -323,7 +323,7 @@ describe("openai", () => {
         ),
       );
       expect([...events]).toEqual([
-        { type: "tool-call", id: "call-1", name: "echo" },
+        { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
         {
           type: "tool-result",
           id: "call-1",
@@ -332,7 +332,7 @@ describe("openai", () => {
           isFailure: false,
         },
         { type: "model-output", text: "done" },
-        { type: "response-complete" },
+        expect.objectContaining({ type: "response-complete", finishReason: "stop" }),
       ]);
       expect(upgrades).toBe(1);
       expect(authorizations).toEqual(["Bearer synthetic-key"]);
@@ -419,7 +419,7 @@ describe("openai", () => {
       fetch,
     );
     expect([...events]).toEqual([
-      { type: "tool-call", id: "call-1", name: "echo" },
+      { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
       {
         type: "tool-result",
         id: "call-1",
@@ -428,7 +428,7 @@ describe("openai", () => {
         isFailure: false,
       },
       { type: "model-output", text: "done" },
-      { type: "response-complete" },
+      expect.objectContaining({ type: "response-complete", finishReason: "stop" }),
     ]);
     expect(calls).toBe(2);
     expect(followUp.input).toContainEqual({

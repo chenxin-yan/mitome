@@ -110,7 +110,7 @@ describe("openaiCompatible", () => {
     expect(events).toEqual([
       { type: "model-output", text: "hel" },
       { type: "model-output", text: "lo" },
-      { type: "response-complete" },
+      expect.objectContaining({ type: "response-complete", finishReason: "stop" }),
     ]);
 
     await run(
@@ -253,10 +253,10 @@ describe("openaiCompatible", () => {
       fetch,
     );
     expect([...events]).toEqual([
-      { type: "tool-call", id: "call-1", name: "echo" },
+      { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
       { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },
       { type: "model-output", text: "done" },
-      { type: "response-complete" },
+      expect.objectContaining({ type: "response-complete", finishReason: "stop" }),
     ]);
     expect(calls).toBe(2);
     // The follow-up request must carry the tool result attributed to the original call.

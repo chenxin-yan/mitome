@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { Effect, Schema, Stream } from "effect";
-import { Prompt, Response } from "effect/unstable/ai";
+import { Effect, Layer, Schema, Stream } from "effect";
+import { LanguageModel, Prompt, Response } from "effect/unstable/ai";
+import { makeProvider } from "@mitome/core";
 import {
   AgentDefinitionError,
   defineAgent,
@@ -12,7 +13,7 @@ import {
 import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
 
 describe("@mitome/sdk Tool", () => {
-  test("reports every Standard Schema issue with its path", async () => {
+  test("returns every input validation issue to the model without executing the Tool", async () => {
     const inputSchema: InputSchema<unknown> = {
       "~standard": {
         version: 1,
@@ -29,24 +30,80 @@ describe("@mitome/sdk Tool", () => {
         },
       },
     };
-    const plugin = definePlugin({
-      name: "validation",
-      tools: [
-        tool({
-          name: "validate",
-          inputSchema,
-          outputSchema: stringSchema,
-          handler: async () => "unused",
+    let modelCalls = 0;
+    let preToolCalls = 0;
+    let handlerCalls = 0;
+    const provider = makeProvider("test", [] as const, undefined, () =>
+      Layer.effect(
+        LanguageModel.LanguageModel,
+        LanguageModel.make({
+          generateText: () => Effect.succeed([]),
+          streamText: () => {
+            modelCalls += 1;
+            return Stream.succeed(
+              modelCalls === 1
+                ? {
+                    type: "tool-call" as const,
+                    id: "call-1",
+                    name: "validate",
+                    params: {},
+                  }
+                : { type: "text-delta" as const, id: "done", delta: "done" },
+            );
+          },
+        }),
+      ),
+    );
+    const definition = defineAgent({
+      providers: [provider],
+      model: "test/default",
+      plugins: [
+        definePlugin({
+          name: "validation",
+          tools: [
+            tool({
+              name: "validate",
+              inputSchema,
+              outputSchema: stringSchema,
+              handler: async () => {
+                handlerCalls += 1;
+                return "unused";
+              },
+            }),
+          ],
+          hooks: {
+            preTool: async () => {
+              preToolCalls += 1;
+            },
+          },
         }),
       ],
     });
 
-    const failure = await Effect.runPromise(
-      Effect.flip(plugin.toolInputValidators!["validate"]!({})),
+    const events = await withSession(definition, (session) =>
+      Array.fromAsync(session.prompt("Hi")),
     );
 
-    expect(failure).toMatchObject({
-      message: "user.name: name is required; tags.0: tag is invalid",
+    expect(events).toEqual([
+      { type: "tool-call", id: "call-1", name: "validate", params: {} },
+      {
+        type: "tool-result",
+        id: "call-1",
+        name: "validate",
+        result: {
+          type: "execution-denied",
+          reason:
+            "Tool input validation failed: user.name: name is required; tags.0: tag is invalid",
+        },
+        isFailure: true,
+      },
+      { type: "model-output", text: "done" },
+      { type: "response-complete" },
+    ]);
+    expect({ modelCalls, preToolCalls, handlerCalls }).toEqual({
+      modelCalls: 2,
+      preToolCalls: 0,
+      handlerCalls: 0,
     });
   });
 
@@ -77,7 +134,7 @@ describe("@mitome/sdk Tool", () => {
     });
 
     expect(events).toEqual([
-      { type: "tool-call", id: "call-1", name: "echo" },
+      { type: "tool-call", id: "call-1", name: "echo", params: "hello" },
       { type: "tool-result", id: "call-1", name: "echo", result: "HELLO", isFailure: false },
       { type: "model-output", text: "done" },
       { type: "response-complete" },
@@ -173,7 +230,7 @@ describe("@mitome/sdk Tool", () => {
 
     expect(calls).toBe(3);
     expect(events).toEqual([
-      { type: "tool-call", id: "call-2", name: "echo" },
+      { type: "tool-call", id: "call-2", name: "echo", params: "hello" },
       { type: "tool-result", id: "call-2", name: "echo", result: "second", isFailure: false },
       { type: "model-output", text: "done" },
       { type: "response-complete" },

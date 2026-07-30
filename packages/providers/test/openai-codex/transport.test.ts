@@ -1,11 +1,17 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Prompt } from "effect/unstable/ai";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import { CredentialStore, type CredentialError } from "../../src/openai-codex/credential-store.js";
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http";
+import {
+  CredentialStore,
+  CredentialUnavailableError,
+  type CredentialError,
+} from "../../src/openai-codex/credential-store.js";
 import { token } from "../../src/openai-codex/oauth-token.js";
+import { requestFor } from "../../src/openai-codex/request.js";
 import { streamText } from "../../src/openai-codex/transport.js";
 import { type OAuthCredential } from "../../src/openai-codex/types.js";
+import { CredentialStoreError } from "../../src/shared/credential-store.js";
 import { sse } from "../support.js";
 
 const credential = (
@@ -42,6 +48,12 @@ const memoryCredentialStoreLayer = (
     };
   });
 
+const failingCredentialStoreLayer = (error: CredentialError): Layer.Layer<CredentialStore> =>
+  Layer.succeed(CredentialStore, {
+    loadCredential: Effect.fail(error),
+    refreshCredential: () => Effect.fail(error),
+  });
+
 const providerOptions = {
   prompt: Prompt.make("Hi"),
   tools: [],
@@ -52,9 +64,32 @@ const completed = () =>
     headers: { "content-type": "text/event-stream" },
   });
 
+type TestRequest = Parameters<Parameters<typeof HttpClient.make>[0]>[0];
+type TestResponse = Response | HttpClientError.HttpClientError;
+
+const clientFor = (fetch: (request: TestRequest, url: URL) => TestResponse) =>
+  HttpClient.make((request, url) => {
+    const response = fetch(request, url);
+    return HttpClientError.isHttpClientError(response)
+      ? Effect.fail(response)
+      : Effect.succeed(HttpClientResponse.fromWeb(request, response));
+  });
+
+const runWithLayer = (
+  layer: Layer.Layer<CredentialStore>,
+  fetch: (request: TestRequest, url: URL) => TestResponse,
+) => {
+  const client = clientFor(fetch);
+  return Effect.runPromise(
+    Stream.runCollect(
+      streamText("gpt-5.4", "https://codex.test/backend-api", "session-1", providerOptions),
+    ).pipe(Effect.provide(Layer.merge(layer, Layer.succeed(HttpClient.HttpClient, client)))),
+  );
+};
+
 const run = (
   initial: OAuthCredential,
-  fetch: (request: Parameters<Parameters<typeof HttpClient.make>[0]>[0], url: URL) => Response,
+  fetch: (request: TestRequest, url: URL) => TestResponse,
   refresh: (
     current: OAuthCredential,
     failedAccess: string | undefined,
@@ -62,9 +97,7 @@ const run = (
     client: ReturnType<typeof HttpClient.make>,
   ) => Effect.Effect<OAuthCredential, CredentialError> = (current) => Effect.succeed(current),
 ) => {
-  const client = HttpClient.make((request, url) =>
-    Effect.succeed(HttpClientResponse.fromWeb(request, fetch(request, url))),
-  );
+  const client = clientFor(fetch);
   return Effect.runPromise(
     Stream.runCollect(
       streamText("gpt-5.4", "https://codex.test/backend-api", "session-1", providerOptions),
@@ -131,6 +164,189 @@ describe("Codex transport", () => {
     expect(request?.headers["session_id"]).toBeUndefined();
   });
 
+  test("replays encrypted reasoning immediately before its function call", () => {
+    const prompt = Prompt.fromMessages([
+      Prompt.makeMessage("assistant", {
+        content: [
+          Prompt.makePart("reasoning", {
+            text: "Checked the repository.",
+            options: {
+              openai: { itemId: "reasoning-1", encryptedContent: "encrypted-reasoning" },
+            },
+          }),
+          Prompt.makePart("tool-call", {
+            id: "call-1",
+            name: "lookup",
+            params: { query: "mitome" },
+            providerExecuted: false,
+          }),
+        ],
+      }),
+    ]);
+
+    expect(
+      requestFor(
+        "gpt-5.4",
+        { prompt, tools: [] } as unknown as LanguageModel.ProviderOptions,
+        "session-1",
+      ),
+    ).toMatchObject({
+      include: ["reasoning.encrypted_content"],
+      input: [
+        {
+          type: "reasoning",
+          id: "reasoning-1",
+          encrypted_content: "encrypted-reasoning",
+          summary: [{ type: "summary_text", text: "Checked the repository." }],
+        },
+        {
+          type: "function_call",
+          call_id: "call-1",
+          name: "lookup",
+          arguments: '{"query":"mitome"}',
+        },
+      ],
+    });
+  });
+
+  test("replays encrypted reasoning immediately before its assistant text", () => {
+    const prompt = Prompt.fromMessages([
+      Prompt.makeMessage("assistant", {
+        content: [
+          Prompt.makePart("reasoning", {
+            text: "Checked the repository.",
+            options: {
+              openai: { itemId: "reasoning-1", encryptedContent: "encrypted-reasoning" },
+            },
+          }),
+          Prompt.makePart("text", { text: "The repository is ready." }),
+        ],
+      }),
+      Prompt.makeMessage("user", {
+        content: [Prompt.makePart("text", { text: "Continue." })],
+      }),
+    ]);
+
+    expect(
+      requestFor(
+        "gpt-5.4",
+        { prompt, tools: [] } as unknown as LanguageModel.ProviderOptions,
+        "session-1",
+      ).input,
+    ).toEqual([
+      {
+        type: "reasoning",
+        id: "reasoning-1",
+        encrypted_content: "encrypted-reasoning",
+        summary: [{ type: "summary_text", text: "Checked the repository." }],
+      },
+      { role: "assistant", content: "The repository is ready." },
+      { role: "user", content: "Continue." },
+    ]);
+  });
+
+  test("preserves Credential auth and storage error taxonomy", async () => {
+    const unavailable = new CredentialUnavailableError({
+      message: "Codex Credential is unavailable. Run `mitome auth login` to authenticate.",
+    });
+    await expect(
+      runWithLayer(failingCredentialStoreLayer(unavailable), () => completed()),
+    ).rejects.toMatchObject({
+      reason: {
+        _tag: "AuthenticationError",
+        isRetryable: false,
+        message: expect.stringContaining("mitome auth login"),
+      },
+    });
+
+    const storage = new CredentialStoreError({
+      message: "Credential storage failed",
+      code: "EACCES",
+    });
+    await expect(
+      runWithLayer(failingCredentialStoreLayer(storage), () => completed()),
+    ).rejects.toMatchObject({
+      reason: {
+        _tag: "UnknownError",
+        description: "Credential storage failed (EACCES)",
+        isRetryable: false,
+      },
+    });
+  });
+
+  test("preserves HttpClient request taxonomy", async () => {
+    let requests = 0;
+    await expect(
+      run(credential(), (request) => {
+        requests += 1;
+        return new HttpClientError.HttpClientError({
+          reason: new HttpClientError.InvalidUrlError({
+            request,
+            description: "invalid Codex URL",
+          }),
+        });
+      }),
+    ).rejects.toMatchObject({
+      reason: { _tag: "NetworkError", reason: "InvalidUrlError", isRetryable: false },
+    });
+    expect(requests).toBe(1);
+  });
+
+  test("retries retryable pre-SSE failures at most twice", async () => {
+    let networkRequests = 0;
+    await run(credential(), (request) => {
+      networkRequests += 1;
+      return networkRequests === 1
+        ? new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({
+              request,
+              description: "connection reset",
+            }),
+          })
+        : completed();
+    });
+    expect(networkRequests).toBe(2);
+
+    let transientRequests = 0;
+    await run(credential(), () => {
+      transientRequests += 1;
+      return transientRequests === 1 ? new Response("busy", { status: 503 }) : completed();
+    });
+    expect(transientRequests).toBe(2);
+
+    let exhaustedRequests = 0;
+    await expect(
+      run(credential(), () => {
+        exhaustedRequests += 1;
+        return new Response("busy", { status: 503 });
+      }),
+    ).rejects.toMatchObject({ reason: { _tag: "InternalProviderError" } });
+    expect(exhaustedRequests).toBe(3);
+  });
+
+  test("does not retry non-retryable status or SSE failures", async () => {
+    let invalidRequests = 0;
+    await expect(
+      run(credential(), () => {
+        invalidRequests += 1;
+        return new Response("invalid", { status: 400 });
+      }),
+    ).rejects.toMatchObject({ reason: { _tag: "InvalidRequestError" } });
+    expect(invalidRequests).toBe(1);
+
+    let streamRequests = 0;
+    await expect(
+      run(credential(), () => {
+        streamRequests += 1;
+        return new Response(
+          sse({ type: "error", error: { message: "stream failed after headers" } }),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    ).rejects.toMatchObject({ reason: { description: "stream failed after headers" } });
+    expect(streamRequests).toBe(1);
+  });
+
   test("refreshes an expired Credential and retries once after a 401", async () => {
     const proactive = credential("proactive-access");
     const retried = credential("retried-access");
@@ -157,6 +373,36 @@ describe("Codex transport", () => {
     expect(authorizations).toEqual(["Bearer proactive-access", "Bearer retried-access"]);
   });
 
+  test("drains a 401 response before refreshing", async () => {
+    let drained = false;
+    let drainedBeforeRefresh = false;
+    let requests = 0;
+
+    await run(
+      credential(),
+      () => {
+        requests += 1;
+        if (requests > 1) return completed();
+        return new Response(
+          new ReadableStream({
+            pull(controller) {
+              drained = true;
+              controller.close();
+            },
+          }),
+          { status: 401 },
+        );
+      },
+      () =>
+        Effect.sync(() => {
+          drainedBeforeRefresh = drained;
+          return credential("retried-access");
+        }),
+    );
+
+    expect({ drainedBeforeRefresh, requests }).toEqual({ drainedBeforeRefresh: true, requests: 2 });
+  });
+
   test("turns a refreshed token without an account claim into an AiError", async () => {
     const claimlessAccess = `header.${Buffer.from("{}").toString("base64url")}.signature`;
 
@@ -176,8 +422,9 @@ describe("Codex transport", () => {
       ),
     ).rejects.toMatchObject({
       reason: {
-        _tag: "UnknownError",
-        description: "OAuth access token did not contain an account.",
+        _tag: "AuthenticationError",
+        isRetryable: false,
+        message: "OAuth access token did not contain an account.",
       },
     });
   });

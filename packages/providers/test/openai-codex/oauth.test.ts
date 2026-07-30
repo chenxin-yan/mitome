@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { Effect } from "effect";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -11,6 +11,9 @@ import {
 } from "../../src/openai-codex/credential-store.js";
 import { codex, login, logout } from "../../src/openai-codex/index.js";
 import { accountId } from "../../src/openai-codex/oauth-token.js";
+
+const spawn = vi.hoisted(() => vi.fn(() => ({ on: vi.fn(), unref: vi.fn() })));
+vi.mock("node:child_process", () => ({ spawn }));
 
 const temporaryDirectories: Array<string> = [];
 const marker = "synthetic-secret-marker";
@@ -44,7 +47,7 @@ const jwt = (accountId: string) =>
 
 const callbackPort = async (): Promise<number> => {
   const server = await serve({ fetch: () => new Response() });
-  const port = server.port!;
+  const port = server.port;
   await server.stop(true);
   return port;
 };
@@ -64,6 +67,10 @@ const tokenServer = async () => {
   });
   return { server, requests };
 };
+
+beforeEach(() => {
+  spawn.mockClear();
+});
 
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((path) => rm(path, { recursive: true, force: true })));
@@ -119,7 +126,7 @@ describe("Codex OAuth", () => {
         Buffer.from(
           await crypto.subtle.digest(
             "SHA-256",
-            new TextEncoder().encode(requests[0]!.code_verifier!),
+            new TextEncoder().encode(requests[0]!.code_verifier),
           ),
         ).toString("base64url"),
       );
@@ -128,6 +135,37 @@ describe("Codex OAuth", () => {
         "openai-codex": expect.objectContaining({ type: "oauth", accountId: "fixture-account" }),
       });
     } finally {
+      void server.stop(true);
+    }
+  });
+
+  test("opens the complete OAuth URL with the native Windows launcher", async () => {
+    const configDirectory = await directory();
+    const { server } = await tokenServer();
+    const platform = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+    let authorization = "";
+    try {
+      await login({
+        configDirectory,
+        callbackPort: 0,
+        tokenUrl: `http://127.0.0.1:${server.port}/oauth/token`,
+        input: async () => {
+          const state = new URL(authorization).searchParams.get("state")!;
+          return `http://localhost:0/auth/callback?code=${marker}-code&state=${state}`;
+        },
+        output: (text) => {
+          authorization = /https:\/\/\S+/.exec(text)?.[0] ?? authorization;
+        },
+      });
+
+      expect(authorization).toContain("&");
+      expect(spawn).toHaveBeenCalledWith(
+        "rundll32",
+        ["url.dll,FileProtocolHandler", authorization],
+        { stdio: "ignore", detached: true },
+      );
+    } finally {
+      platform.mockRestore();
       void server.stop(true);
     }
   });
@@ -162,7 +200,7 @@ describe("Codex OAuth", () => {
     const configDirectory = await directory();
     const { server } = await tokenServer();
     const occupied = await serve({ fetch: () => new Response("occupied") });
-    const occupiedPort = occupied.port!;
+    const occupiedPort = occupied.port;
     let state = "";
     try {
       await login({

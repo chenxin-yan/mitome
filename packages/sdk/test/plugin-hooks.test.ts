@@ -9,6 +9,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
   test("adapts Promise Hooks into the Core lifecycle in Agent Definition order", async () => {
     const log: Array<string> = [];
     const signals: Array<boolean> = [];
+    const responsePartTypes: Array<ReadonlyArray<string>> = [];
     const model = makeToolModel().provider;
     const core: Plugin = {
       name: "core",
@@ -43,6 +44,11 @@ describe("@mitome/sdk Plugin Hooks", () => {
         stepStart: async (_prompt, { signal }) => {
           signals.push(signal.aborted);
           log.push("sdk:step-start");
+        },
+        stepEnd: async (_prompt, { responseParts, signal }) => {
+          signals.push(signal.aborted);
+          responsePartTypes.push(responseParts.map((part) => part.type));
+          log.push("sdk:step-end");
         },
         preStep: async (prompt, { signal }) => {
           signals.push(signal.aborted);
@@ -79,13 +85,16 @@ describe("@mitome/sdk Plugin Hooks", () => {
       "sdk:pre-tool",
       "core:post-tool",
       "sdk:post-tool",
+      "sdk:step-end",
       "core:step-start",
       "sdk:step-start",
       "core:pre-step",
       "sdk:pre-step",
+      "sdk:step-end",
     ]);
-    expect(signals).toHaveLength(8);
+    expect(signals).toHaveLength(10);
     expect(signals.every((aborted) => !aborted)).toBe(true);
+    expect(responsePartTypes).toEqual([["tool-call", "tool-result"], ["text-delta"]]);
     expect(events).toContainEqual({
       type: "tool-result",
       id: "call-1",

@@ -53,6 +53,65 @@ describe("OAuth token exchange", () => {
     }),
   );
 
+  it.effect("reports safe OAuth status and error details without submitted secrets", () =>
+    Effect.gen(function* () {
+      const client = HttpClient.make((request) =>
+        Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            Response.json(
+              {
+                error: "invalid_grant",
+                error_description: "refresh secret-refresh was revoked",
+              },
+              { status: 400 },
+            ),
+          ),
+        ),
+      );
+      const error = yield* Effect.flip(
+        provideClient(
+          exchangeToken("https://auth.test/token", {
+            grant_type: "refresh_token",
+            refresh_token: "secret-refresh",
+          }),
+          client,
+        ),
+      );
+
+      expect(error.message).toBe(
+        "OAuth token exchange failed (HTTP 400; invalid_grant: refresh [redacted] was revoked).",
+      );
+      expect(error.message).not.toContain("secret-refresh");
+    }),
+  );
+
+  it.effect("redacts a submitted secret before truncating OAuth error details", () =>
+    Effect.gen(function* () {
+      const prefix = "x".repeat(500);
+      const secret = "secret-crossing-the-boundary";
+      const client = HttpClient.make((request) =>
+        Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            Response.json(
+              {
+                error_description: `${prefix}${secret} was revoked`,
+              },
+              { status: 400 },
+            ),
+          ),
+        ),
+      );
+      const error = yield* Effect.flip(
+        provideClient(exchangeToken("https://auth.test/token", { refresh_token: secret }), client),
+      );
+
+      expect(error.message).toContain(`${prefix}[redacted]`);
+      expect(error.message).not.toContain(secret.slice(0, 12));
+    }),
+  );
+
   it.effect("maps a malformed token body to the stable OAuth error", () =>
     Effect.gen(function* () {
       const client = HttpClient.make((request) =>

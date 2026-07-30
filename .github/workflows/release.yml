@@ -9,6 +9,10 @@ on:
         description: Existing package version to retry
         required: true
         type: string
+      release-sha:
+        description: Original merged version-change commit SHA to retry
+        required: true
+        type: string
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -23,6 +27,7 @@ jobs:
       pull-requests: write
     outputs:
       release-version: ${{ steps.release.outputs.version || inputs.version }}
+      release-sha: ${{ github.event_name == 'push' && github.sha || inputs.release-sha }}
     steps:
       - uses: actions/checkout@v7
         if: github.event_name == 'push'
@@ -35,8 +40,11 @@ jobs:
         run: |
           set -euo pipefail
           before="${{ github.event.before }}"
-          previous=$(git show "$before:packages/core/package.json" 2>/dev/null || true)
-          test -n "$previous" || exit 0
+          if ! previous=$(git show "$before:packages/core/package.json"); then
+            echo "::error::Could not read packages/core/package.json at $before" >&2
+            exit 1
+          fi
+          # All public packages are one Changesets fixed group, so core represents the release version.
           current_version=$(node -p 'require("./packages/core/package.json").version')
           previous_version=$(node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version' <<<"$previous")
           test "$current_version" != "$previous_version" || exit 0
@@ -62,21 +70,33 @@ jobs:
       contents: write
       id-token: write
     env:
+      RELEASE_SHA: ${{ needs.version-pr.outputs.release-sha }}
       RELEASE_TAG: v${{ needs.version-pr.outputs.release-version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.version-pr.outputs.release-sha }}
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
       - uses: actions/setup-node@v7
         with:
           node-version: 24.18.0
+      - name: Verify immutable release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "${RELEASE_TAG#v}" = "$(node -p 'require("./packages/core/package.json").version')"
       - run: bun install --frozen-lockfile
-      - run: test "${RELEASE_TAG#v}" = "$(node -p 'require("./packages/core/package.json").version')"
       - run: bun run build
       - run: bun run test:release
       # build:release cross-compiles a binary into every platform package.
       - run: bun run --cwd packages/cli build:release
-      # npm >=11.5.1 is required for trusted publishing via OIDC.
-      - run: npm install --global npm@11.5.1 && npm --version
+      # npm 11 is required for trusted publishing via OIDC.
+      - run: npm install --global npm@11.19.0 && npm --version
       - name: Pack packages in dependency order
         shell: bash
         run: |
@@ -86,36 +106,40 @@ jobs:
             cp LICENSE "$dir/"
             (cd "$dir" && bun pm pack --destination "$GITHUB_WORKSPACE/packages-to-publish" --ignore-scripts)
           done
-      - name: Create version tag
+      - name: Publish or verify packages in dependency order
         shell: bash
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null; then
-            echo "Tag already exists: $RELEASE_TAG" >&2
-            exit 1
-          fi
-          git tag "$RELEASE_TAG"
-          git push origin "refs/tags/$RELEASE_TAG"
-      - name: Publish packages in dependency order
-        shell: bash
-        run: |
-          set -euo pipefail
-          for dir in packages/core packages/sdk packages/providers packages/plugins packages/cli/npm/cli-* packages/cli; do
-            archive="packages-to-publish/mitome-$(basename "$dir")-${RELEASE_TAG#v}.tgz"
-            test -f "$archive"
-            npm publish "$archive" --access public
+
+          publish_archive() {
+            local archive=$1 name=$2
+            if npm view "${name}@${RELEASE_TAG#v}" version >/dev/null 2>&1; then
+              echo "Already published: ${name}"
+            else
+              npm publish "$archive" --access public
+            fi
+          }
+
+          for dir in packages/core packages/sdk packages/providers packages/plugins packages/cli/npm/cli-* packages/cli packages/create-mitome; do
+            package_dir=$(basename "$dir")
+            if test "$package_dir" = create-mitome; then
+              archive="packages-to-publish/create-mitome-${RELEASE_TAG#v}.tgz"
+            else
+              archive="packages-to-publish/mitome-${package_dir}-${RELEASE_TAG#v}.tgz"
+            fi
+            publish_archive "$archive" "$(node -p "require('./$dir/package.json').name")"
           done
-          archive="packages-to-publish/create-mitome-${RELEASE_TAG#v}.tgz"
-          test -f "$archive"
-          npm publish "$archive" --access public
-      - name: Create the immutable tagged release
+      - name: Create version tag if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null ||
+            { git tag "$RELEASE_TAG" "$RELEASE_SHA" && git push origin "refs/tags/$RELEASE_TAG"; }
+      - name: Create the tagged release if needed
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release already exists: $RELEASE_TAG" >&2
-            exit 1
-          fi
-          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG"
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 ||
+            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG"

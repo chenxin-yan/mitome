@@ -118,7 +118,9 @@ describe("Credential storage", () => {
         yield* TestClock.adjust("1 second");
         yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
       }
-      expect((yield* Fiber.join(fiber)).message).toBe(`Credential storage lock timed out: ${lock}`);
+      expect((yield* Fiber.join(fiber)).message).toBe(
+        `Credential storage lock timed out: ${lock}. If no other process is authenticating, delete ${lock} and retry.`,
+      );
     }),
   );
 

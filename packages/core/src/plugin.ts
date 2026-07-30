@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import { Prompt, Tool, Toolkit } from "effect/unstable/ai";
+import type { Response } from "effect/unstable/ai";
 
 export interface ToolHookContext {
   readonly name: string;
@@ -17,8 +18,11 @@ export interface PluginHooks<Resource = never> {
   readonly turnStart?: (text: string) => Effect.Effect<void, unknown, Resource>;
   readonly turnEnd?: (text: string) => Effect.Effect<void, unknown, Resource>;
   readonly stepStart?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown, Resource>;
-  /** Receives the prompt used by the model, including any completed pre-Step transforms. */
-  readonly stepEnd?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown, Resource>;
+  /** Receives the model prompt and emitted response parts; failed Steps provide their partial parts. */
+  readonly stepEnd?: (
+    prompt: Prompt.Prompt,
+    responseParts: ReadonlyArray<Response.AnyPart>,
+  ) => Effect.Effect<void, unknown, Resource>;
   readonly preStep?: (prompt: Prompt.Prompt) => Effect.Effect<Prompt.Prompt, unknown, Resource>;
   readonly preTool?: (
     context: ToolHookContext,

@@ -14,6 +14,7 @@ export type {
   PromptOptions,
   QualifiedModelId,
   ToolHookContext,
+  ToolInputValidator,
   ToolResultHookContext,
   ToolExecutionDenied,
   ToolResultValidator,
@@ -25,7 +26,9 @@ export type {
   OutputSchema,
   PluginHooksDefinition,
   Prompt,
+  ResponsePart,
   StandardSchema,
+  StepEndContext,
   Tool,
 } from "./plugin.js";
 export { withSession } from "./session.js";

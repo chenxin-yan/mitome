@@ -56,7 +56,6 @@ describe("Agent Definition compilation", () => {
 
       expect(compiled.plugins).toEqual([first, second]);
       expect([...compiled.providers]).toEqual([["test", model]]);
-      expect(compiled.defaultModel).toEqual({ providerId: "test", modelId: "default" });
       expect([...compiled.tools]).toEqual([
         [
           "echo",

@@ -12,7 +12,12 @@ import type { ToolExecution } from "./tool-execution.js";
 
 export type StepEvent =
   | TurnEvent
-  | { readonly type: "turn-complete"; readonly history: Prompt.Prompt };
+  | {
+      readonly type: "turn-complete";
+      readonly history: Prompt.Prompt;
+      readonly finishReason?: Response.FinishReason;
+      readonly usage?: Response.Usage;
+    };
 
 export interface StepRunner {
   readonly run: (
@@ -20,6 +25,32 @@ export interface StepRunner {
     selected: RuntimeModel,
   ) => Stream.Stream<StepEvent, TurnError>;
 }
+
+// Effect beta.102 drops response metadata during this fold; reasoning needs it for replay.
+const promptFromResponseParts = (parts: ReadonlyArray<Response.AnyPart>): Prompt.Prompt => {
+  const prompt = Prompt.fromResponseParts(parts);
+  const reasoningMetadata = parts.flatMap((part) =>
+    part.type === "reasoning" || part.type === "reasoning-end" ? [part.metadata] : [],
+  );
+  if (reasoningMetadata.length === 0) return prompt;
+  let reasoningIndex = 0;
+  return Prompt.fromMessages(
+    prompt.content.map((message) =>
+      message.role === "assistant"
+        ? Prompt.makeMessage("assistant", {
+            content: message.content.map((part) => {
+              if (part.type !== "reasoning") return part;
+              const options = reasoningMetadata[reasoningIndex++];
+              return options === undefined
+                ? part
+                : Prompt.makePart("reasoning", { text: part.text, options });
+            }),
+            options: message.options,
+          })
+        : message,
+    ),
+  );
+};
 
 export const makeStepRunner = (
   compiled: CompiledAgent,
@@ -93,7 +124,7 @@ export const makeStepRunner = (
       beginHookPhase(
         compiled.plugins,
         (plugin) => providePluginHook(plugin, contexts, plugin.hooks?.stepStart?.(prompt)),
-        (plugin) => providePluginHook(plugin, contexts, plugin.hooks?.stepEnd?.(endPrompt)),
+        (plugin) => providePluginHook(plugin, contexts, plugin.hooks?.stepEnd?.(endPrompt, parts)),
         "Step end Hook failed",
       ).pipe(
         hookTurnError("Step start Hook failed"),
@@ -103,6 +134,7 @@ export const makeStepRunner = (
               hookTurnError("Pre-Step Hook failed"),
               Effect.map((transformed) => {
                 endPrompt = transformed;
+                // Tool.Any leaks handler services; context is supplied below and model errors map to TurnError.
                 return (
                   selected.model.streamText({
                     prompt: transformed,
@@ -114,12 +146,21 @@ export const makeStepRunner = (
                   Stream.mapError(modelTurnError),
                   Stream.tap((part) => Effect.sync(() => parts.push(part))),
                   Stream.flatMap((part): Stream.Stream<StepEvent, TurnError> => {
+                    if (part.type === "error") return Stream.fail(modelTurnError(part.error));
                     if (part.type === "text-delta") {
                       return Stream.succeed({ type: "model-output", text: part.delta });
                     }
+                    if (part.type === "reasoning-delta") {
+                      return Stream.succeed({ type: "reasoning", text: part.delta });
+                    }
                     if (part.type === "tool-call") {
                       toolCalls.set(part.id, part);
-                      return Stream.succeed({ type: "tool-call", id: part.id, name: part.name });
+                      return Stream.succeed({
+                        type: "tool-call",
+                        id: part.id,
+                        name: part.name,
+                        params: part.params,
+                      });
                     }
                     if (part.type === "tool-result") {
                       return Stream.succeed({
@@ -145,7 +186,7 @@ export const makeStepRunner = (
                   }),
                   Stream.concat(
                     Stream.suspend(() => {
-                      const responsePrompt = Prompt.concat(prompt, Prompt.fromResponseParts(parts));
+                      const responsePrompt = Prompt.concat(prompt, promptFromResponseParts(parts));
                       const nextPrompt =
                         decisions.length === 0
                           ? responsePrompt
@@ -155,11 +196,20 @@ export const makeStepRunner = (
                                 Prompt.makeMessage("tool", { content: decisions }),
                               ]),
                             );
+                      const finish = parts.findLast(
+                        (part): part is Response.FinishPart => part.type === "finish",
+                      );
                       const next: Stream.Stream<StepEvent, TurnError> = parts.some(
                         (part) => part.type === "tool-call" && part.providerExecuted !== true,
                       )
                         ? run(nextPrompt, selected)
-                        : Stream.succeed({ type: "turn-complete", history: nextPrompt });
+                        : Stream.succeed({
+                            type: "turn-complete",
+                            history: nextPrompt,
+                            ...(finish === undefined
+                              ? {}
+                              : { finishReason: finish.reason, usage: finish.usage }),
+                          });
                       return Stream.concat(
                         Stream.fromEffectDrain(
                           stepHooks.end.pipe(hookTurnError("Step end Hook failed")),

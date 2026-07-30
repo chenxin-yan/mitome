@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect";
+import { Deferred, Effect, Fiber, Layer, Logger, Schema, Stream } from "effect";
 import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
 import {
   type AgentDefinition,
@@ -57,7 +57,7 @@ const start = (definition: AgentDefinition) =>
 
 type PreTool = NonNullable<NonNullable<AgentDefinition["plugins"][number]["hooks"]>["preTool"]>;
 
-const definition = (preTool?: PreTool) => {
+const definition = (preTool?: PreTool, needsApproval: Tool.Any["needsApproval"] = true) => {
   const fixture = approvalModel();
   let handlerCalls = 0;
   let postCalls = 0;
@@ -65,7 +65,7 @@ const definition = (preTool?: PreTool) => {
   const dangerous = Tool.make("dangerous", {
     parameters: Schema.Struct({ action: Schema.String }),
     success: Schema.String,
-    needsApproval: true,
+    needsApproval,
   });
   return {
     fixture,
@@ -132,6 +132,57 @@ describe("Session Approval event adaptation", () => {
         isFailure: false,
       });
       expect(current.fixture.calls()).toBe(2);
+    }),
+  );
+
+  it.effect("reports an ended Turn separately from a duplicate decision", () =>
+    Effect.gen(function* () {
+      const current = definition();
+      const turn = yield* start(current.definition);
+
+      yield* Fiber.interrupt(turn.turn);
+      expect(yield* Effect.flip(turn.pending.approve())).toMatchObject({
+        _tag: "ApprovalResolutionError",
+        message: "Approval is no longer pending (the Turn ended or the request is missing)",
+      });
+    }),
+  );
+
+  it.effect("does not warn for interrupt-only Approval predicate causes", () =>
+    Effect.gen(function* () {
+      const messages: Array<unknown> = [];
+      const logger = Logger.make(({ message }) => void messages.push(message));
+      const current = definition(undefined, () => Effect.interrupt);
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession(current.definition);
+          yield* Stream.runDrain(session.prompt("Hi"));
+        }),
+      ).pipe(Effect.provide(Logger.layer([logger])));
+
+      expect(messages).toEqual([]);
+      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
+    }),
+  );
+
+  it.effect("warns and fails closed for failed Approval predicates", () =>
+    Effect.gen(function* () {
+      const messages: Array<unknown> = [];
+      const logger = Logger.make(({ message }) => void messages.push(message));
+      const current = definition(undefined, () => Effect.die("predicate failed"));
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession(current.definition);
+          yield* Stream.runForEach(session.prompt("Hi"), (event) =>
+            event.type === "approval-required" ? event.deny("declined") : Effect.void,
+          );
+        }),
+      ).pipe(Effect.provide(Logger.layer([logger])));
+
+      expect(JSON.stringify(messages)).toContain(
+        'needsApproval predicate for \\"dangerous\\" failed',
+      );
+      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
     }),
   );
 
