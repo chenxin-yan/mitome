@@ -16,7 +16,7 @@ export interface AuthenticateOptions {
   readonly configDirectory: string;
   readonly input: () => Promise<string | undefined>;
   readonly output: (text: string) => void;
-  readonly openBrowser?: false;
+  readonly openBrowser?: false | undefined;
 }
 
 /** Host-facing contract implemented by a Provider's Auth capability module. */

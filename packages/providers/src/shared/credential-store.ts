@@ -7,7 +7,7 @@ type AuthFile = typeof AuthFile.Type;
 
 export class CredentialStoreError extends Data.TaggedError("CredentialStoreError")<{
   readonly message: string;
-  readonly code?: string;
+  readonly code?: string | undefined;
   readonly cause?: unknown;
 }> {}
 
@@ -22,7 +22,7 @@ const attempt = <A>(operation: () => Promise<A>): Effect.Effect<A, CredentialSto
       const error = cause as NodeJS.ErrnoException;
       return new CredentialStoreError({
         message: error.message,
-        ...(error.code === undefined ? {} : { code: error.code }),
+        code: error.code,
         cause,
       });
     },

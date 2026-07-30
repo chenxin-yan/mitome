@@ -15,8 +15,8 @@ export type StepEvent =
   | {
       readonly type: "turn-complete";
       readonly history: Prompt.Prompt;
-      readonly finishReason?: Response.FinishReason;
-      readonly usage?: Response.Usage;
+      readonly finishReason?: Response.FinishReason | undefined;
+      readonly usage?: Response.Usage | undefined;
     };
 
 export interface StepRunner {
@@ -100,7 +100,7 @@ export const makeStepRunner = (
                       Prompt.toolApprovalResponsePart({
                         approvalId: outcome.approvalId,
                         approved: decision.approved,
-                        ...(decision.reason === undefined ? {} : { reason: decision.reason }),
+                        reason: decision.reason,
                       }),
                     );
                   }),
@@ -206,9 +206,8 @@ export const makeStepRunner = (
                         : Stream.succeed({
                             type: "turn-complete",
                             history: nextPrompt,
-                            ...(finish === undefined
-                              ? {}
-                              : { finishReason: finish.reason, usage: finish.usage }),
+                            finishReason: finish?.reason,
+                            usage: finish?.usage,
                           });
                       return Stream.concat(
                         Stream.fromEffectDrain(

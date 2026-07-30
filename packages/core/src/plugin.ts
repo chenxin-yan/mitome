@@ -56,9 +56,9 @@ export interface Plugin<
 > {
   readonly [PluginContributionsTypeId]?: Contributions;
   readonly name: string;
-  readonly instructions?: string;
+  readonly instructions?: string | undefined;
   /** Required at runtime whenever hooks or handlers use a Resource; hooks run unprovided (missing-service defect) without it. */
-  readonly resource?: Layer.Layer<Resource, ResourceError, never>;
+  readonly resource?: Layer.Layer<Resource, ResourceError, never> | undefined;
   readonly toolkit?: Toolkit.Any;
   readonly handlers?: Record<
     string,
@@ -68,7 +68,7 @@ export interface Plugin<
   readonly toolInputValidators?: Readonly<Record<string, ToolInputValidator>>;
   /** Revalidates post-Tool transforms; keys must name Tools in this Plugin. */
   readonly toolResultValidators?: Readonly<Record<string, ToolResultValidator>>;
-  readonly hooks?: PluginHooks<Resource>;
+  readonly hooks?: PluginHooks<Resource> | undefined;
 }
 
 /**
@@ -100,7 +100,7 @@ export function definePlugin<Resource = never, ResourceError = never>(
 ): NoInfer<Plugin<Resource, ResourceError>>;
 export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
   readonly name: string;
-  readonly instructions?: string;
+  readonly instructions?: string | undefined;
   readonly toolkit: ToolkitValue;
   readonly handlers: Toolkit.HandlersFrom<Toolkit.Tools<NoInfer<ToolkitValue>>> &
     ServiceFree<Toolkit.Tools<NoInfer<ToolkitValue>>>;
@@ -110,7 +110,7 @@ export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
   readonly toolResultValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
   >;
-  readonly hooks?: PluginHooks;
+  readonly hooks?: PluginHooks | undefined;
 }): Plugin<never, never, ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>>;
 // The impl return must be assignable to every overload return; only never is.
 export function definePlugin(plugin: unknown): never {

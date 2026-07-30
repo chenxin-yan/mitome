@@ -6,7 +6,7 @@ export const makeApiKeyClient = <Id, E>(
   apiKeyEnv: string | undefined,
   baseUrl: string,
   layer: (options: {
-    readonly apiKey?: Redacted.Redacted;
+    readonly apiKey?: Redacted.Redacted | undefined;
     readonly apiUrl: string;
   }) => Layer.Layer<Id, E, HttpClient.HttpClient>,
 ): Layer.Layer<Id, E | string> =>
@@ -21,9 +21,7 @@ export const makeApiKeyClient = <Id, E>(
                 () => `Environment variable ${apiKeyEnv} is not set or empty` as const,
               ),
             );
-      return layer({ apiUrl: baseUrl, ...(apiKey === undefined ? {} : { apiKey }) }).pipe(
-        Layer.provide(FetchHttpClient.layer),
-      );
+      return layer({ apiUrl: baseUrl, apiKey }).pipe(Layer.provide(FetchHttpClient.layer));
     }),
   ).pipe(
     // Build a fresh fallback when the Layer runs so keys set after startup stay visible.

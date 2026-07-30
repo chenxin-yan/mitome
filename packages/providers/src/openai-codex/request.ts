@@ -142,9 +142,7 @@ export const requestFor = (
           tools: options.tools.map((tool) => ({
             type: "function",
             name: tool.name,
-            ...(Tool.getDescription(tool) === undefined
-              ? {}
-              : { description: Tool.getDescription(tool) }),
+            description: Tool.getDescription(tool),
             parameters: Tool.getJsonSchema(tool),
             strict: null,
           })),

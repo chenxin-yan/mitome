@@ -85,6 +85,13 @@ export const resourcePlugin: Plugin<string> = definePlugin({
   hooks: { sessionStart: Effect.asVoid(Effect.service(PluginResource)) },
 });
 
+definePlugin({
+  name: "explicit-undefined",
+  instructions: undefined,
+  resource: undefined,
+  hooks: undefined,
+});
+
 declare const decodingDependentSchema: Schema.Codec<string, string, Dependency, never>;
 const decodingDependent = Tool.make("decoding-dependent", {
   success: decodingDependentSchema,

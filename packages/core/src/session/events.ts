@@ -34,6 +34,6 @@ export type TurnEvent =
     }
   | {
       readonly type: "response-complete";
-      readonly finishReason?: Response.FinishReason;
-      readonly usage?: Response.Usage;
+      readonly finishReason?: Response.FinishReason | undefined;
+      readonly usage?: Response.Usage | undefined;
     };

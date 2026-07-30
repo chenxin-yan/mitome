@@ -265,18 +265,12 @@ export function definePlugin<
       description: tool.description,
       parameters: input.jsonSchema.input({ target: "draft-2020-12" }),
       failureMode: "return",
-      ...(needsApproval === undefined
-        ? {}
-        : {
-            needsApproval:
-              typeof needsApproval === "boolean"
-                ? needsApproval
-                : (params: unknown, context: ToolApprovalContext) =>
-                    // Rejections become defects, matching Core's fail-closed approval handling.
-                    Effect.promise(() =>
-                      Promise.resolve().then(() => needsApproval(params, context)),
-                    ),
-          }),
+      needsApproval:
+        typeof needsApproval === "function"
+          ? (params: unknown, context: ToolApprovalContext) =>
+              // Rejections become defects, matching Core's fail-closed approval handling.
+              Effect.promise(() => Promise.resolve().then(() => needsApproval(params, context)))
+          : needsApproval,
     });
   });
   const toolInputValidators = Object.fromEntries(
@@ -302,37 +296,36 @@ export function definePlugin<
     ]),
   );
 
+  const resource =
+    service === undefined
+      ? undefined
+      : Layer.effect(
+          service,
+          Effect.acquireRelease(
+            // @effect-diagnostics-next-line unknownInEffectCatch:off
+            Effect.tryPromise({
+              try: () => definition.setup!(),
+              catch: (cause) => cause,
+            }),
+            (value, exit) => {
+              if (definition.dispose === undefined) return Effect.void;
+              const run = Effect.promise(() => definition.dispose!(value));
+              // On failure exits a disposer defect would replace the primary
+              // cause; log it instead so the original tagged error survives.
+              return Exit.isFailure(exit)
+                ? run.pipe(
+                    Effect.catchCause((cause) => Effect.logWarning("Plugin dispose failed", cause)),
+                  )
+                : run;
+            },
+          ),
+        );
+
   return {
     name: definition.name,
-    ...(definition.instructions === undefined ? {} : { instructions: definition.instructions }),
-    ...(service === undefined
-      ? {}
-      : {
-          resource: Layer.effect(
-            service,
-            Effect.acquireRelease(
-              // @effect-diagnostics-next-line unknownInEffectCatch:off
-              Effect.tryPromise({
-                try: () => definition.setup!(),
-                catch: (cause) => cause,
-              }),
-              (value, exit) => {
-                if (definition.dispose === undefined) return Effect.void;
-                const run = Effect.promise(() => definition.dispose!(value));
-                // On failure exits a disposer defect would replace the primary
-                // cause; log it instead so the original tagged error survives.
-                return Exit.isFailure(exit)
-                  ? run.pipe(
-                      Effect.catchCause((cause) =>
-                        Effect.logWarning("Plugin dispose failed", cause),
-                      ),
-                    )
-                  : run;
-              },
-            ),
-          ),
-        }),
-    ...(hooks === undefined ? {} : { hooks }),
+    instructions: definition.instructions,
+    resource,
+    hooks,
     toolkit: Toolkit.make(...tools),
     toolInputValidators,
     toolResultValidators,

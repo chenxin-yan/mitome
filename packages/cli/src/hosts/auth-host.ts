@@ -64,7 +64,7 @@ if (operation === undefined) {
         return next.done ? undefined : next.value;
       },
       output: (text) => process.stdout.write(text),
-      ...(process.env.MITOME_NO_BROWSER === "1" ? { openBrowser: false } : {}),
+      openBrowser: process.env.MITOME_NO_BROWSER === "1" ? false : undefined,
     });
   } finally {
     reader.close();

@@ -28,9 +28,9 @@ describe("createSession", () => {
       const session = yield* createSession(definition);
       const events = yield* Stream.runCollect(session.prompt("Hi"));
 
-      expect([...events]).toEqual([
+      expect([...events]).toStrictEqual([
         { type: "model-output", text: "hello" },
-        { type: "response-complete" },
+        { type: "response-complete", finishReason: undefined, usage: undefined },
       ]);
       expect(yield* fixture.calls).toBe(1);
     }),

@@ -25,7 +25,7 @@ export interface OAuthConfig {
 export interface AuthorizeOptions {
   readonly callbackPort?: number;
   readonly tokenUrl?: string;
-  readonly openBrowser?: false | ((url: string) => void | Promise<void>);
+  readonly openBrowser?: false | ((url: string) => void | Promise<void>) | undefined;
   readonly input: () => Promise<string | undefined>;
   readonly output: (text: string) => void;
 }

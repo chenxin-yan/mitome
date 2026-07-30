@@ -16,7 +16,7 @@ type LiteralLoginOptions = {
   readonly configDirectory: string;
   readonly callbackPort?: number;
   readonly tokenUrl?: string;
-  readonly openBrowser?: false | ((url: string) => void | Promise<void>);
+  readonly openBrowser?: false | ((url: string) => void | Promise<void>) | undefined;
   readonly input: () => Promise<string | undefined>;
   readonly output: (text: string) => void;
 };
@@ -47,7 +47,7 @@ type PublicAuthenticate = (options: {
   readonly configDirectory: string;
   readonly input: () => Promise<string | undefined>;
   readonly output: (text: string) => void;
-  readonly openBrowser?: false;
+  readonly openBrowser?: false | undefined;
 }) => Promise<void>;
 
 const publicContracts: [

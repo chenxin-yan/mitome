@@ -67,7 +67,7 @@ const fakeChildHost = (
   options: {
     readonly runExitCode?: number;
     readonly installExitCode?: number;
-    readonly authentications?: ReadonlyArray<ProviderAuthentication>;
+    readonly authentications?: ReadonlyArray<ProviderAuthentication> | undefined;
   } = {},
 ) => {
   const calls: ChildHostCalls = { runHost: [], install: [], inspect: [], oauth: [] };
@@ -627,7 +627,7 @@ describe("CLI handlers", () => {
       const scenarios: ReadonlyArray<{
         readonly name: string;
         readonly answers: ReadonlyArray<PromptAnswer>;
-        readonly authentications?: ReadonlyArray<ProviderAuthentication>;
+        readonly authentications?: ReadonlyArray<ProviderAuthentication> | undefined;
       }> = [
         { name: "Provider selection", answers: [{ type: "abort" }] },
         {
@@ -656,11 +656,7 @@ describe("CLI handlers", () => {
       for (const scenario of scenarios) {
         const home = yield* Effect.promise(temporaryDirectory);
         process.env.MITOME_HOME = home;
-        const childHost = fakeChildHost(
-          scenario.authentications === undefined
-            ? {}
-            : { authentications: scenario.authentications },
-        );
+        const childHost = fakeChildHost({ authentications: scenario.authentications });
         const exit = yield* Effect.exit(
           runInit().pipe(
             Effect.provide(Layer.merge(childHost.layer, fakePrompter(scenario.answers))),
