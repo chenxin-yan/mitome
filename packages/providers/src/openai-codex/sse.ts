@@ -9,6 +9,7 @@ type StreamState = {
   readonly calls: Map<string, Call>;
   readonly textIds: Set<string>;
   terminal: boolean;
+  sawToolCall: boolean;
 };
 
 const Event = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
@@ -42,6 +43,31 @@ const ReasoningItem = Schema.Struct({
 });
 const Delta = Schema.Struct({ delta: Schema.String });
 const FinalArguments = Schema.Struct({ arguments: Schema.String });
+const TerminalEvent = Schema.Struct({
+  response: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        incomplete_details: Schema.optional(
+          Schema.NullOr(Schema.Struct({ reason: Schema.optional(Schema.String) })),
+        ),
+        usage: Schema.optional(
+          Schema.NullOr(
+            Schema.Struct({
+              input_tokens: Schema.optional(Schema.Number),
+              output_tokens: Schema.optional(Schema.Number),
+              input_tokens_details: Schema.optional(
+                Schema.NullOr(Schema.Struct({ cached_tokens: Schema.optional(Schema.Number) })),
+              ),
+              output_tokens_details: Schema.optional(
+                Schema.NullOr(Schema.Struct({ reasoning_tokens: Schema.optional(Schema.Number) })),
+              ),
+            }),
+          ),
+        ),
+      }),
+    ),
+  ),
+});
 
 const decode = <S extends Schema.ConstraintDecoder<unknown>>(
   schema: S,
@@ -139,6 +165,7 @@ const decodeOutputItemDone = (
       throw invalidOutput(`Invalid JSON arguments for Tool ${call.name}`);
     }
     state.calls.delete(key);
+    state.sawToolCall = true;
     return [
       Response.makePart("tool-params-end", { id: call.id }),
       Response.makePart("tool-call", {
@@ -150,6 +177,42 @@ const decodeOutputItemDone = (
     ];
   }
   return [];
+};
+
+// Terminal events carry completion status and usage; without a finish part the
+// Session's finishReason/usage metadata would be silently absent for Codex.
+const finishPart = (state: StreamState, event: unknown): Response.StreamPartEncoded => {
+  const decoded = decode(TerminalEvent, event, () =>
+    invalidOutput("Codex sent a malformed terminal event"),
+  );
+  const reason = decoded.response?.incomplete_details?.reason;
+  const usage = decoded.response?.usage;
+  const cached = usage?.input_tokens_details?.cached_tokens;
+  const reasoning = usage?.output_tokens_details?.reasoning_tokens;
+  return Response.makePart("finish", {
+    reason:
+      reason === undefined
+        ? state.sawToolCall
+          ? "tool-calls"
+          : "stop"
+        : reason === "max_output_tokens"
+          ? "length"
+          : reason === "content_filter"
+            ? "content-filter"
+            : "unknown",
+    usage: {
+      inputTokens: {
+        ...(usage?.input_tokens === undefined
+          ? {}
+          : { total: usage.input_tokens, uncached: usage.input_tokens - (cached ?? 0) }),
+        ...(cached === undefined ? {} : { cacheRead: cached }),
+      },
+      outputTokens: {
+        ...(usage?.output_tokens === undefined ? {} : { total: usage.output_tokens }),
+        ...(reasoning === undefined ? {} : { reasoning }),
+      },
+    },
+  });
 };
 
 const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPartEncoded> => {
@@ -166,7 +229,7 @@ const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPar
   }
   if (type === "response.done" || type === "response.completed" || type === "response.incomplete") {
     state.terminal = true;
-    return [];
+    return [finishPart(state, event)];
   }
   const key = itemKey(event);
   if (type === "response.output_item.added") {
@@ -220,6 +283,7 @@ export const decodeStream = <R>(
       calls: new Map(),
       textIds: new Set(),
       terminal: false,
+      sawToolCall: false,
     };
     return stream.pipe(
       Stream.decodeText,

@@ -93,6 +93,7 @@ describe("Codex SSE decoder", () => {
         params: { query: "mitome" },
         providerExecuted: false,
       },
+      { type: "finish", reason: "tool-calls" },
     ]);
   });
 
@@ -130,6 +131,7 @@ describe("Codex SSE decoder", () => {
           openai: { itemId: "reasoning-1", encryptedContent: "encrypted-reasoning" },
         },
       }),
+      expect.objectContaining({ type: "finish", reason: "stop" }),
     ]);
 
     expect(
@@ -149,7 +151,47 @@ describe("Codex SSE decoder", () => {
     ).toEqual([
       expect.objectContaining({ type: "reasoning-start", id: "reasoning-opaque:0" }),
       expect.objectContaining({ type: "reasoning-end", id: "reasoning-opaque:0" }),
+      expect.objectContaining({ type: "finish", reason: "stop" }),
     ]);
+  });
+
+  test.each([
+    {
+      name: "decodes terminal usage and maps incomplete reasons",
+      terminal: {
+        type: "response.incomplete",
+        response: {
+          incomplete_details: { reason: "max_output_tokens" },
+          usage: {
+            input_tokens: 100,
+            output_tokens: 20,
+            input_tokens_details: { cached_tokens: 40 },
+            output_tokens_details: { reasoning_tokens: 5 },
+          },
+        },
+      },
+      finish: {
+        type: "finish",
+        metadata: {},
+        reason: "length",
+        usage: {
+          inputTokens: { total: 100, uncached: 60, cacheRead: 40 },
+          outputTokens: { total: 20, reasoning: 5 },
+        },
+      },
+    },
+    {
+      name: "emits an empty-usage finish part for a bare terminal event",
+      terminal: { type: "response.completed" },
+      finish: {
+        type: "finish",
+        metadata: {},
+        reason: "stop",
+        usage: { inputTokens: {}, outputTokens: {} },
+      },
+    },
+  ])("$name", async ({ terminal, finish }) => {
+    expect(await decode(sse(terminal))).toMatchObject([finish]);
   });
 
   test.each([
@@ -179,6 +221,7 @@ describe("Codex SSE decoder", () => {
         { type: "text-start", id: "7" },
         { type: "text-delta", id: "7", delta: "hello" },
         { type: "text-end", id: "7" },
+        { type: "finish", reason: "stop" },
       ],
     },
     {
@@ -215,6 +258,7 @@ describe("Codex SSE decoder", () => {
           params: { query: "mitome" },
           providerExecuted: false,
         },
+        { type: "finish", reason: "tool-calls" },
       ],
     },
   ])("$name", async ({ events, expected }) => {

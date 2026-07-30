@@ -159,7 +159,11 @@ describe("Codex SSE", () => {
       expect(events).toEqual([
         { type: "model-output", text: "hel" },
         { type: "model-output", text: "lo" },
-        { type: "response-complete" },
+        {
+          type: "response-complete",
+          finishReason: "stop",
+          usage: { inputTokens: {}, outputTokens: {} },
+        },
       ]);
     } finally {
       void server.stop(true);
@@ -262,7 +266,11 @@ describe("Codex SSE", () => {
         { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
         { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },
         { type: "model-output", text: "done" },
-        { type: "response-complete" },
+        {
+          type: "response-complete",
+          finishReason: "stop",
+          usage: { inputTokens: {}, outputTokens: {} },
+        },
       ]);
       expect(JSON.stringify(result.events)).not.toContain("encrypted-reasoning");
       expect(requests).toHaveLength(2);
