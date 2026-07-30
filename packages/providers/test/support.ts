@@ -7,17 +7,6 @@ import type { AgentDefinition, AnyPlugin, AnyProvider } from "@mitome/core";
 export const sse = (data: unknown) =>
   `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
 
-export const withKey = async <A>(key: string, run: () => Promise<A>): Promise<A> => {
-  const previous = process.env[key];
-  process.env[key] = "synthetic-key";
-  try {
-    return await run();
-  } finally {
-    if (previous === undefined) delete process.env[key];
-    else process.env[key] = previous;
-  }
-};
-
 export const agent = (
   provider: AnyProvider,
   model: string,
@@ -43,32 +32,34 @@ const headers = (value: IncomingHttpHeaders): Array<[string, string]> =>
   );
 
 export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
-  const server = createServer(async (incoming, outgoing) => {
-    try {
-      const chunks: Array<Uint8Array> = [];
-      for await (const chunk of incoming) chunks.push(chunk);
-      const body = Buffer.concat(chunks);
-      const request = new Request(`http://${incoming.headers.host}${incoming.url}`, {
-        method: incoming.method ?? "GET",
-        headers: headers(incoming.headers),
-        ...(body.length === 0 ? {} : { body }),
-      });
-      const response = await fetch(request);
-      outgoing.writeHead(response.status, Object.fromEntries(response.headers));
-      if (response.body === null) {
+  const server = createServer((incoming, outgoing) => {
+    void (async () => {
+      try {
+        const chunks: Array<Uint8Array> = [];
+        for await (const chunk of incoming) chunks.push(chunk);
+        const body = Buffer.concat(chunks);
+        const request = new Request(`http://${incoming.headers.host}${incoming.url}`, {
+          method: incoming.method ?? "GET",
+          headers: headers(incoming.headers),
+          ...(body.length === 0 ? {} : { body }),
+        });
+        const response = await fetch(request);
+        outgoing.writeHead(response.status, Object.fromEntries(response.headers));
+        if (response.body === null) {
+          outgoing.end();
+          return;
+        }
+        const reader = response.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          outgoing.write(value);
+        }
         outgoing.end();
-        return;
+      } catch {
+        outgoing.writeHead(500).end();
       }
-      const reader = response.body.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        outgoing.write(value);
-      }
-      outgoing.end();
-    } catch {
-      outgoing.writeHead(500).end();
-    }
+    })();
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -92,6 +83,6 @@ export const spawnRuntime = (args: ReadonlyArray<string>) => {
       child.once("error", reject);
       child.once("exit", (code) => resolve(code ?? 1));
     }),
-    stderr: Readable.toWeb(child.stderr!),
+    stderr: Readable.toWeb(child.stderr),
   };
 };

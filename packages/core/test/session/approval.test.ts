@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { Deferred, Effect, Fiber, Layer, Logger, Schema, Stream } from "effect";
+import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
 import {
   type AgentDefinition,
   createSession,
@@ -27,11 +27,7 @@ const approvalModel = () => {
             });
           }
           prompt = options.prompt;
-          return Stream.succeed({
-            type: "text-delta" as const,
-            id: "done",
-            delta: "continued",
-          });
+          return Stream.succeed({ type: "text-delta" as const, id: "done", delta: "continued" });
         },
       }),
     ),
@@ -59,13 +55,13 @@ const start = (definition: AgentDefinition) =>
     return { events, pending, turn };
   });
 
-const definition = (
-  needsApproval: Tool.NeedsApproval<any>,
-  hooks?: AgentDefinition["plugins"][number]["hooks"],
-) => {
+type PreTool = NonNullable<NonNullable<AgentDefinition["plugins"][number]["hooks"]>["preTool"]>;
+
+const definition = (preTool?: PreTool, needsApproval: Tool.Any["needsApproval"] = true) => {
   const fixture = approvalModel();
   let handlerCalls = 0;
   let postCalls = 0;
+  let preToolCalls = 0;
   const dangerous = Tool.make("dangerous", {
     parameters: Schema.Struct({ action: Schema.String }),
     success: Schema.String,
@@ -73,7 +69,7 @@ const definition = (
   });
   return {
     fixture,
-    counts: () => ({ handlerCalls, postCalls }),
+    counts: () => ({ handlerCalls, postCalls, preToolCalls }),
     definition: {
       providers: [fixture.provider],
       model: "test/default",
@@ -89,7 +85,10 @@ const definition = (
               }),
           },
           hooks: {
-            ...hooks,
+            preTool: (context) =>
+              Effect.sync(() => {
+                preToolCalls += 1;
+              }).pipe(Effect.andThen(preTool?.(context) ?? Effect.void)),
             postTool: (context) =>
               Effect.sync(() => {
                 postCalls += 1;
@@ -102,17 +101,10 @@ const definition = (
   };
 };
 
-describe("Tool Approval", () => {
-  it.effect("runs pre-Tool once for an approved Tool and rejects a second decision", () =>
+describe("Session Approval event adaptation", () => {
+  it.effect("adapts an approved pending Tool Call", () =>
     Effect.gen(function* () {
-      let preToolCalls = 0;
-      const current = definition(true, {
-        preTool: () =>
-          Effect.sync(() => {
-            preToolCalls += 1;
-            return undefined;
-          }),
-      });
+      const current = definition();
       const turn = yield* start(current.definition);
 
       expect(turn.pending).toMatchObject({
@@ -121,17 +113,17 @@ describe("Tool Approval", () => {
         name: "dangerous",
         params: { action: "delete" },
       });
-      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
+      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
       expect(current.fixture.calls()).toBe(1);
 
       yield* turn.pending.approve();
       expect(yield* Effect.flip(turn.pending.deny("too late"))).toMatchObject({
         _tag: "ApprovalResolutionError",
+        message: "Approval decision has already been resolved",
       });
       yield* Fiber.join(turn.turn);
 
-      expect(current.counts()).toEqual({ handlerCalls: 1, postCalls: 1 });
-      expect(preToolCalls).toBe(1);
+      expect(current.counts()).toEqual({ handlerCalls: 1, postCalls: 1, preToolCalls: 1 });
       expect(turn.events).toContainEqual({
         type: "tool-result",
         id: "call-approval",
@@ -143,62 +135,66 @@ describe("Tool Approval", () => {
     }),
   );
 
-  it.effect("runs pre-Tool once for a plain executed Tool", () =>
+  it.effect("reports an ended Turn separately from a duplicate decision", () =>
     Effect.gen(function* () {
-      let preToolCalls = 0;
-      const current = definition(false, {
-        preTool: () =>
-          Effect.sync(() => {
-            preToolCalls += 1;
-            return undefined;
-          }),
-      });
-      const session = yield* createSession(current.definition);
-      yield* Stream.runDrain(session.prompt("Hi"));
-
-      expect(current.counts()).toEqual({ handlerCalls: 1, postCalls: 1 });
-      expect(preToolCalls).toBe(1);
-    }),
-  );
-
-  it.effect("prompts when a dynamic predicate returns true", () =>
-    Effect.gen(function* () {
-      const current = definition(
-        (params: { readonly action: string }) => params.action === "delete",
-      );
+      const current = definition();
       const turn = yield* start(current.definition);
 
-      expect(turn.pending.name).toBe("dangerous");
-      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
-      yield* turn.pending.approve();
-      yield* Fiber.join(turn.turn);
-
-      expect(current.counts()).toEqual({ handlerCalls: 1, postCalls: 1 });
+      yield* Fiber.interrupt(turn.turn);
+      expect(yield* Effect.flip(turn.pending.approve())).toMatchObject({
+        _tag: "ApprovalResolutionError",
+        message: "Approval is no longer pending (the Turn ended or the request is missing)",
+      });
     }),
   );
 
-  it.effect("executes without prompting when a dynamic predicate returns false", () =>
+  it.effect("does not warn for interrupt-only Approval predicate causes", () =>
     Effect.gen(function* () {
-      const current = definition(
-        (params: { readonly action: string }) => params.action !== "delete",
+      const messages: Array<unknown> = [];
+      const logger = Logger.make(({ message }) => void messages.push(message));
+      const current = definition(undefined, () => Effect.interrupt);
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession(current.definition);
+          yield* Stream.runDrain(session.prompt("Hi"));
+        }),
+      ).pipe(Effect.provide(Logger.layer([logger])));
+
+      expect(messages).toEqual([]);
+      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
+    }),
+  );
+
+  it.effect("warns and fails closed for failed Approval predicates", () =>
+    Effect.gen(function* () {
+      const messages: Array<unknown> = [];
+      const logger = Logger.make(({ message }) => void messages.push(message));
+      const current = definition(undefined, () => Effect.die("predicate failed"));
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession(current.definition);
+          yield* Stream.runForEach(session.prompt("Hi"), (event) =>
+            event.type === "approval-required" ? event.deny("declined") : Effect.void,
+          );
+        }),
+      ).pipe(Effect.provide(Logger.layer([logger])));
+
+      expect(JSON.stringify(messages)).toContain(
+        'needsApproval predicate for \\"dangerous\\" failed',
       );
-      const session = yield* createSession(current.definition);
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
-
-      expect(events.some((event) => event.type === "approval-required")).toBe(false);
-      expect(current.counts()).toEqual({ handlerCalls: 1, postCalls: 1 });
+      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
     }),
   );
 
-  it.effect("denies a pending approval and continues the Turn", () =>
+  it.effect("adapts a denied pending Tool Call and continues the Turn", () =>
     Effect.gen(function* () {
-      const current = definition(true);
+      const current = definition();
       const turn = yield* start(current.definition);
 
       yield* turn.pending.deny("not allowed");
       yield* Fiber.join(turn.turn);
 
-      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
+      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
       expect(turn.events).toContainEqual({
         type: "tool-result",
         id: "call-approval",
@@ -211,186 +207,10 @@ describe("Tool Approval", () => {
     }),
   );
 
-  it.effect("runs pre-Tool once when the model reorders params keys", () =>
-    Effect.gen(function* () {
-      // needsApproval sees decoded (declaration-ordered) params while immediate
-      // execution passes the raw model params: reordered keys must not desync
-      // the prepared pre-Tool state and re-run the Hook.
-      let preToolCalls = 0;
-      let handlerCalls = 0;
-      let calls = 0;
-      const model = makeProvider("test", [] as const, undefined, () =>
-        Layer.effect(
-          LanguageModel.LanguageModel,
-          LanguageModel.make({
-            generateText: () => Effect.succeed([]),
-            streamText: () => {
-              calls += 1;
-              if (calls === 1) {
-                return Stream.succeed({
-                  type: "tool-call" as const,
-                  id: "call-approval",
-                  name: "dangerous",
-                  // Key order differs from the schema declaration below.
-                  params: { target: "db", action: "delete" },
-                });
-              }
-              return Stream.succeed({
-                type: "text-delta" as const,
-                id: "done",
-                delta: "continued",
-              });
-            },
-          }),
-        ),
-      );
-      const dangerous = Tool.make("dangerous", {
-        parameters: Schema.Struct({
-          action: Schema.String,
-          target: Schema.String,
-        }),
-        success: Schema.String,
-        needsApproval: false,
-      });
-      const session = yield* createSession({
-        providers: [model],
-        model: "test/default",
-        plugins: [
-          {
-            name: "dangerous",
-            toolkit: Toolkit.make(dangerous),
-            handlers: {
-              dangerous: () =>
-                Effect.sync(() => {
-                  handlerCalls += 1;
-                  return "executed";
-                }),
-            },
-            hooks: {
-              preTool: () =>
-                Effect.sync(() => {
-                  preToolCalls += 1;
-                  return undefined;
-                }),
-            },
-          },
-        ],
-      });
-      yield* Stream.runDrain(session.prompt("Hi"));
-
-      expect(preToolCalls).toBe(1);
-      expect(handlerCalls).toBe(1);
-    }),
-  );
-
-  it.effect("runs pre-Tool once when decoded params add defaults", () =>
-    Effect.gen(function* () {
-      const fixture = approvalModel();
-      let preToolCalls = 0;
-      const dangerous = Tool.make("dangerous", {
-        parameters: Schema.Struct({
-          action: Schema.String,
-          destructive: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
-        }),
-        success: Schema.String,
-        needsApproval: false,
-      });
-      const session = yield* createSession({
-        providers: [fixture.provider],
-        model: "test/default",
-        plugins: [
-          {
-            name: "dangerous",
-            toolkit: Toolkit.make(dangerous),
-            handlers: { dangerous: () => Effect.succeed("executed") },
-            hooks: {
-              preTool: () =>
-                Effect.sync(() => {
-                  preToolCalls += 1;
-                }),
-            },
-          },
-        ],
-      });
-      yield* Stream.runDrain(session.prompt("Hi"));
-
-      expect(preToolCalls).toBe(1);
-    }),
-  );
-
-  it.effect("maps an approval request without its Tool call to TurnError", () =>
-    Effect.gen(function* () {
-      const model = makeProvider("test", [] as const, undefined, () =>
-        Layer.succeed(LanguageModel.LanguageModel, {
-          streamText: () =>
-            Stream.succeed(
-              Response.makePart("tool-approval-request", {
-                approvalId: "approval-missing",
-                toolCallId: "call-missing",
-              }),
-            ),
-        } as never),
-      );
-      const session = yield* createSession({
-        providers: [model],
-        model: "test/default",
-        plugins: [],
-      });
-
-      expect(yield* Effect.flip(Stream.runDrain(session.prompt("Hi")))).toMatchObject({
-        _tag: "TurnError",
-        message: "Tool approval request is missing its Tool call",
-      });
-    }),
-  );
-
-  it.effect("fails closed when a dynamic predicate fails", () =>
-    Effect.gen(function* () {
-      // A failing predicate is deliberately outside NeedsApproval's typed surface.
-      const current = definition((() =>
-        Effect.fail(
-          // @effect-diagnostics-next-line globalErrorInEffectFailure:off
-          new Error("predicate failed"),
-        )) as unknown as Tool.NeedsApproval<any>);
-      const turn = yield* start(current.definition);
-
-      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
-      yield* turn.pending.deny("declined");
-      expect(yield* Effect.flip(turn.pending.approve())).toMatchObject({
-        _tag: "ApprovalResolutionError",
-      });
-      yield* Fiber.join(turn.turn);
-
-      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
-      expect(turn.events).toContainEqual({
-        type: "tool-result",
-        id: "call-approval",
-        name: "dangerous",
-        result: { type: "execution-denied", reason: "declined" },
-        isFailure: true,
-      });
-      expect(JSON.stringify(current.fixture.prompt())).toContain("declined");
-    }),
-  );
-
-  it.effect("fails closed when a dynamic predicate throws", () =>
-    Effect.gen(function* () {
-      const current = definition(() => {
-        throw new Error("predicate threw");
-      });
-      const turn = yield* start(current.definition);
-
-      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
-      yield* turn.pending.deny("declined");
-      yield* Fiber.join(turn.turn);
-      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
-    }),
-  );
-
-  it.effect("preserves pre-Tool Hook failures", () =>
+  it.effect("adapts pre-Tool Hook failures to TurnError", () =>
     Effect.gen(function* () {
       const failure = new Error("pre-tool failed");
-      const current = definition(true, { preTool: () => Effect.fail(failure) });
+      const current = definition(() => Effect.fail(failure));
 
       expect(
         yield* Effect.flip(
@@ -399,49 +219,24 @@ describe("Tool Approval", () => {
             yield* Stream.runDrain(session.prompt("Hi"));
           }),
         ),
-      ).toMatchObject({
-        _tag: "TurnError",
-        cause: failure,
-      });
-      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
+      ).toMatchObject({ _tag: "TurnError", message: "Pre-Tool Hook failed", cause: failure });
+      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
     }),
   );
 
-  it.effect("vetoes before approval without prompting", () =>
+  it.effect("adapts a pre-Tool veto without requesting Approval", () =>
     Effect.gen(function* () {
-      const current = definition(true, {
-        preTool: () => Effect.succeed({ reason: "vetoed" }),
-      });
+      const current = definition(() => Effect.succeed({ reason: "vetoed" }));
       const session = yield* createSession(current.definition);
       const events = yield* Stream.runCollect(session.prompt("Hi"));
 
       expect(events.some((event) => event.type === "approval-required")).toBe(false);
-      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
+      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
       expect(events).toContainEqual({
         type: "tool-result",
         id: "call-approval",
         name: "dangerous",
         result: { type: "execution-denied", reason: "vetoed" },
-        isFailure: true,
-      });
-    }),
-  );
-
-  it.effect("does not prompt for an empty veto reason", () =>
-    Effect.gen(function* () {
-      const current = definition(true, {
-        preTool: () => Effect.succeed({ reason: "" }),
-      });
-      const session = yield* createSession(current.definition);
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
-
-      expect(events.some((event) => event.type === "approval-required")).toBe(false);
-      expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0 });
-      expect(events).toContainEqual({
-        type: "tool-result",
-        id: "call-approval",
-        name: "dangerous",
-        result: { type: "execution-denied", reason: "" },
         isFailure: true,
       });
     }),

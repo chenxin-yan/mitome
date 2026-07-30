@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import { Prompt, Tool, Toolkit } from "effect/unstable/ai";
+import type { Response } from "effect/unstable/ai";
 
 export interface ToolHookContext {
   readonly name: string;
@@ -17,8 +18,11 @@ export interface PluginHooks<Resource = never> {
   readonly turnStart?: (text: string) => Effect.Effect<void, unknown, Resource>;
   readonly turnEnd?: (text: string) => Effect.Effect<void, unknown, Resource>;
   readonly stepStart?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown, Resource>;
-  /** Receives the prompt used by the model, including any completed pre-Step transforms. */
-  readonly stepEnd?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown, Resource>;
+  /** Receives the model prompt and emitted response parts; failed Steps provide their partial parts. */
+  readonly stepEnd?: (
+    prompt: Prompt.Prompt,
+    responseParts: ReadonlyArray<Response.AnyPart>,
+  ) => Effect.Effect<void, unknown, Resource>;
   readonly preStep?: (prompt: Prompt.Prompt) => Effect.Effect<Prompt.Prompt, unknown, Resource>;
   readonly preTool?: (
     context: ToolHookContext,
@@ -52,9 +56,9 @@ export interface Plugin<
 > {
   readonly [PluginContributionsTypeId]?: Contributions;
   readonly name: string;
-  readonly instructions?: string;
+  readonly instructions?: string | undefined;
   /** Required at runtime whenever hooks or handlers use a Resource; hooks run unprovided (missing-service defect) without it. */
-  readonly resource?: Layer.Layer<Resource, ResourceError, never>;
+  readonly resource?: Layer.Layer<Resource, ResourceError, never> | undefined;
   readonly toolkit?: Toolkit.Any;
   readonly handlers?: Record<
     string,
@@ -64,7 +68,7 @@ export interface Plugin<
   readonly toolInputValidators?: Readonly<Record<string, ToolInputValidator>>;
   /** Revalidates post-Tool transforms; keys must name Tools in this Plugin. */
   readonly toolResultValidators?: Readonly<Record<string, ToolResultValidator>>;
-  readonly hooks?: PluginHooks<Resource>;
+  readonly hooks?: PluginHooks<Resource> | undefined;
 }
 
 /**
@@ -96,7 +100,7 @@ export function definePlugin<Resource = never, ResourceError = never>(
 ): NoInfer<Plugin<Resource, ResourceError>>;
 export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
   readonly name: string;
-  readonly instructions?: string;
+  readonly instructions?: string | undefined;
   readonly toolkit: ToolkitValue;
   readonly handlers: Toolkit.HandlersFrom<Toolkit.Tools<NoInfer<ToolkitValue>>> &
     ServiceFree<Toolkit.Tools<NoInfer<ToolkitValue>>>;
@@ -106,7 +110,7 @@ export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
   readonly toolResultValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
   >;
-  readonly hooks?: PluginHooks;
+  readonly hooks?: PluginHooks | undefined;
 }): Plugin<never, never, ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>>;
 // The impl return must be assignable to every overload return; only never is.
 export function definePlugin(plugin: unknown): never {
@@ -116,10 +120,17 @@ export function definePlugin(plugin: unknown): never {
 export type PluginContexts = ReadonlyMap<AnyPlugin, Context.Context<any>>;
 
 export const providePlugin = <A, E>(
-  plugin: AnyPlugin | undefined,
+  plugin: AnyPlugin,
   contexts: PluginContexts,
   effect: Effect.Effect<A, E, any>,
 ): Effect.Effect<A, E> => {
-  const context = plugin === undefined ? undefined : contexts.get(plugin);
+  const context = contexts.get(plugin);
   return (context === undefined ? effect : Effect.provide(effect, context)) as Effect.Effect<A, E>;
 };
+
+export const providePluginHook = <A, E>(
+  plugin: AnyPlugin,
+  contexts: PluginContexts,
+  effect: Effect.Effect<A, E, any> | undefined,
+): Effect.Effect<A, E> | undefined =>
+  effect === undefined ? undefined : providePlugin(plugin, contexts, effect);

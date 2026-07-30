@@ -1,18 +1,18 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
+import { compileAgentDefinition } from "../src/agent.js";
 import {
-  createSession,
-  defineAgent,
   AgentDefinitionError,
+  defineAgent,
   makeProvider,
   type AgentDefinition,
 } from "../src/index.js";
 import { makeTestProvider } from "./support/provider.js";
 
 const model = makeTestProvider(() => Stream.empty);
-const getAgentDefinitionError = (definition: AgentDefinition) =>
-  Effect.flip(createSession(definition));
+const getAgentDefinitionError = (definition: unknown) =>
+  Effect.flip(compileAgentDefinition(definition));
 
 type AgentDefinitionKeysAreExact = keyof AgentDefinition extends "providers" | "model" | "plugins"
   ? "providers" | "model" | "plugins" extends keyof AgentDefinition
@@ -25,89 +25,205 @@ void exactAgentDefinitionKeys;
 // @ts-expect-error Agent Definition Instructions are contributed by Plugins.
 defineAgent({ instructions: "old", providers: [model], model: "test/default", plugins: [] });
 
-describe("Agent Definition validation", () => {
-  it.effect("rejects the retired Instructions field from structural callers", () =>
+describe("Agent Definition compilation", () => {
+  it.effect("compiles the runtime data consumed by a Session", () =>
     Effect.gen(function* () {
-      const structural = {
-        instructions: "old",
-        providers: [model],
-        model: "test/default" as const,
-        plugins: [],
+      const echo = Tool.make("echo", { success: Schema.String });
+      const count = Tool.make("count", { success: Schema.Finite });
+      const echoHandler = () => Effect.succeed("echo");
+      const countHandler = () => Effect.succeed(1);
+      const echoInput = (input: unknown) => Effect.succeed(input);
+      const countResult = (result: unknown) => Effect.succeed(result);
+      const first = {
+        name: "first",
+        instructions: "First",
+        toolkit: Toolkit.make(echo),
+        toolInputValidators: { echo: echoInput },
       };
-      const definition: AgentDefinition = structural;
+      const second = {
+        name: "second",
+        instructions: "Second",
+        toolkit: Toolkit.make(count),
+        handlers: { echo: echoHandler, count: countHandler },
+        toolResultValidators: { count: countResult },
+      };
 
-      expect(yield* getAgentDefinitionError(definition)).toMatchObject({
-        message: "Agent Definition Instructions must be contributed by Plugins",
-      });
-    }),
-  );
-
-  it.effect("rejects duplicate Providers and invalid Default Model identifiers", () =>
-    Effect.gen(function* () {
-      const provider = makeProvider("registered", [] as const, undefined, () => {
-        throw new Error("validation must not provision Models");
-      });
-      const invalidDefinition = (model: string, providers = [provider]) =>
-        ({ providers, model, plugins: [] }) as AgentDefinition;
-
-      expect(
-        (yield* getAgentDefinitionError(
-          invalidDefinition("registered/model", [provider, provider]),
-        )).message,
-      ).toBe("Duplicate Provider id: registered");
-      expect((yield* getAgentDefinitionError(invalidDefinition("registered/"))).message).toBe(
-        "Malformed Model identifier: registered/",
-      );
-      expect((yield* getAgentDefinitionError(invalidDefinition("missing/model"))).message).toBe(
-        "Unregistered Provider id: missing",
-      );
-    }),
-  );
-
-  it.effect("rejects duplicate Plugin and Tool names before Session startup", () =>
-    Effect.gen(function* () {
-      const duplicatePlugins: AgentDefinition = {
+      const compiled = yield* compileAgentDefinition({
         providers: [model],
         model: "test/default",
-        plugins: [{ name: "same" }, { name: "same" }],
-      };
-      const duplicateTools: AgentDefinition = {
-        providers: [model],
-        model: "test/default",
-        plugins: [
-          { name: "one", toolkit: Toolkit.make(Tool.make("same", { success: Schema.String })) },
-          { name: "two", toolkit: Toolkit.make(Tool.make("same", { success: Schema.String })) },
+        plugins: [first, second],
+      });
+
+      expect(compiled.plugins).toEqual([first, second]);
+      expect([...compiled.providers]).toEqual([["test", model]]);
+      expect([...compiled.tools]).toEqual([
+        [
+          "echo",
+          {
+            tool: echo,
+            owner: first,
+            handler: echoHandler,
+            inputValidator: echoInput,
+            resultValidator: undefined,
+          },
         ],
-      };
-
-      expect(yield* getAgentDefinitionError(duplicatePlugins)).toBeInstanceOf(AgentDefinitionError);
-      expect(yield* getAgentDefinitionError(duplicateTools)).toBeInstanceOf(AgentDefinitionError);
+        [
+          "count",
+          {
+            tool: count,
+            owner: second,
+            handler: countHandler,
+            inputValidator: undefined,
+            resultValidator: countResult,
+          },
+        ],
+      ]);
+      expect(compiled.instructions).toBe("First\n\nSecond");
     }),
   );
 
-  it.effect("rejects duplicate Tool handler names before Session startup", () =>
+  it.effect("preserves special Tool names in the compiled registry", () =>
     Effect.gen(function* () {
-      const tool = Tool.make("echo", { success: Schema.String });
-      const definition: AgentDefinition = {
+      const tool = Tool.make("__proto__", { success: Schema.String });
+      const handler = () => Effect.succeed("ok");
+      const compiled = yield* compileAgentDefinition({
         providers: [model],
         model: "test/default",
         plugins: [
           {
-            name: "owner",
+            name: "special",
             toolkit: Toolkit.make(tool),
-            handlers: { echo: () => Effect.succeed("owner") },
+            handlers: Object.fromEntries([[tool.name, handler]]),
           },
-          { name: "override", handlers: { echo: () => Effect.succeed("override") } },
         ],
-      };
+      });
 
-      expect((yield* getAgentDefinitionError(definition)).message).toBe(
-        "Duplicate Tool handler name: echo",
-      );
+      expect(compiled.tools.get(tool.name)).toEqual({
+        tool,
+        owner: compiled.plugins[0],
+        handler,
+        inputValidator: undefined,
+        resultValidator: undefined,
+      });
     }),
   );
 
-  it.effect("rejects missing and orphaned Tool handlers before Session startup", () =>
+  it.effect("aggregates violations in deterministic order", () =>
+    Effect.gen(function* () {
+      const provider = makeProvider("registered", [] as const, undefined, () => {
+        throw new Error("compilation must not provision Models");
+      });
+      const echo = Tool.make("echo", { success: Schema.String });
+      const missing = Tool.make("missing", { success: Schema.String });
+      const structural = {
+        providers: [null, provider, provider],
+        model: "unregistered/model",
+        plugins: [
+          {
+            name: "same",
+            toolkit: Toolkit.make(echo, missing),
+            handlers: { echo: () => Effect.succeed("echo") },
+            toolInputValidators: { otherInput: Effect.succeed },
+            toolResultValidators: { otherResult: Effect.succeed },
+          },
+          {
+            name: "same",
+            instructions: 1,
+            toolkit: Toolkit.make(echo),
+            handlers: {
+              echo: () => Effect.succeed("duplicate"),
+              orphan: () => Effect.succeed("orphan"),
+            },
+          },
+        ],
+      };
+
+      const error = yield* getAgentDefinitionError(structural);
+      expect(error).toBeInstanceOf(AgentDefinitionError);
+      expect(error.issues).toEqual([
+        "Provider at index 0 must be an object with a string id",
+        "Duplicate Provider id: registered",
+        "Unregistered Provider id: unregistered",
+        "Tool input validator has no matching Tool: otherInput",
+        "Tool result validator has no matching Tool: otherResult",
+        "Plugin same Instructions must be a string",
+        "Duplicate Plugin name: same",
+        "Duplicate Tool name: echo",
+        "Duplicate Tool handler name: echo",
+        "Missing Tool handler: missing",
+        "Tool handler has no matching Tool: orphan",
+      ]);
+      expect(error.message).toBe(error.issues.join("\n"));
+    }),
+  );
+
+  it.effect("reports malformed top-level structure", () =>
+    Effect.gen(function* () {
+      for (const value of [null, []]) {
+        expect((yield* getAgentDefinitionError(value)).issues).toEqual([
+          "Agent Definition must be an object",
+        ]);
+      }
+      expect((yield* getAgentDefinitionError({})).issues).toEqual([
+        "Agent Definition Providers must be an array",
+        "Agent Definition Model must be a string",
+        "Agent Definition Plugins must be an array",
+      ]);
+    }),
+  );
+
+  it.effect("reports malformed Provider elements", () =>
+    Effect.gen(function* () {
+      const definition = {
+        providers: [null],
+        model: "test/default",
+        plugins: [],
+      };
+
+      expect((yield* getAgentDefinitionError(definition)).issues).toEqual([
+        "Provider at index 0 must be an object with a string id",
+        "Unregistered Provider id: test",
+      ]);
+    }),
+  );
+
+  it.effect("reports malformed Plugin elements and Instructions", () =>
+    Effect.gen(function* () {
+      const definition = {
+        providers: [model],
+        model: "test/default",
+        plugins: [null, { name: 1, instructions: false }, { name: "named", instructions: 1 }],
+      };
+
+      expect((yield* getAgentDefinitionError(definition)).issues).toEqual([
+        "Plugin at index 0 must be an object with a string name",
+        "Plugin at index 1 must be an object with a string name",
+        "Plugin named Instructions must be a string",
+      ]);
+    }),
+  );
+
+  it.effect("reports malformed and unregistered Default Models", () =>
+    Effect.gen(function* () {
+      const invalidDefinition = (selected: unknown) => ({
+        providers: [model],
+        model: selected,
+        plugins: [],
+      });
+
+      expect((yield* getAgentDefinitionError(invalidDefinition(1))).issues).toEqual([
+        "Agent Definition Model must be a string",
+      ]);
+      expect((yield* getAgentDefinitionError(invalidDefinition("test/"))).issues).toEqual([
+        "Malformed Qualified Model id: test/",
+      ]);
+      expect((yield* getAgentDefinitionError(invalidDefinition("missing/model"))).issues).toEqual([
+        "Unregistered Provider id: missing",
+      ]);
+    }),
+  );
+
+  it.effect("reports missing and orphaned Tool handlers", () =>
     Effect.gen(function* () {
       const missing: AgentDefinition = {
         providers: [model],
@@ -125,31 +241,12 @@ describe("Agent Definition validation", () => {
         plugins: [{ name: "orphaned", handlers: { echo: () => Effect.succeed("echo") } }],
       };
 
-      expect((yield* getAgentDefinitionError(missing)).message).toBe("Missing Tool handler: echo");
-      expect((yield* getAgentDefinitionError(orphaned)).message).toBe(
+      expect((yield* getAgentDefinitionError(missing)).issues).toEqual([
+        "Missing Tool handler: echo",
+      ]);
+      expect((yield* getAgentDefinitionError(orphaned)).issues).toEqual([
         "Tool handler has no matching Tool: echo",
-      );
-    }),
-  );
-
-  it.effect("rejects a Tool result validator outside its owning Plugin", () =>
-    Effect.gen(function* () {
-      const definition: AgentDefinition = {
-        providers: [model],
-        model: "test/default",
-        plugins: [
-          {
-            name: "validator",
-            toolkit: Toolkit.make(Tool.make("owned")),
-            handlers: { owned: () => Effect.void },
-            toolResultValidators: { other: Effect.succeed },
-          },
-        ],
-      };
-
-      expect((yield* getAgentDefinitionError(definition)).message).toBe(
-        "Tool result validator has no matching Tool: other",
-      );
+      ]);
     }),
   );
 });

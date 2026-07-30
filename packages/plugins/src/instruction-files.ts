@@ -22,7 +22,7 @@ const callingModule = (): string => {
     const stack = error.stack as unknown as ReadonlyArray<NodeJS.CallSite>;
     for (const callsite of stack) {
       const fileName = callsite.getFileName() ?? callsite.getScriptNameOrSourceURL();
-      if (fileName === null || fileName === undefined) continue;
+      if (fileName === null) continue;
       const path = sourcePath(fileName);
       if (isAbsolute(path)) return path;
     }
@@ -64,7 +64,7 @@ const discoveredPaths = (names: ReadonlyArray<string>): ReadonlyArray<string> =>
 
 /**
  * Creates a Plugin from synchronous instruction files at definition load time.
- * ADR-0025 intentionally confines these node:fs reads to this first-party package.
+ * ADR-0024 intentionally confines these node:fs reads to this first-party package.
  */
 export function instructionFiles(options: InstructionFilesOptions = {}): Plugin {
   const paths = explicitPaths(options.paths);

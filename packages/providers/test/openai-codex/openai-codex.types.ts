@@ -10,14 +10,13 @@ import {
   knownModelIds,
   login,
   logout,
-  writeCredential,
 } from "../../src/openai-codex/index.js";
 
 type LiteralLoginOptions = {
   readonly configDirectory: string;
   readonly callbackPort?: number;
   readonly tokenUrl?: string;
-  readonly openBrowser?: false | ((url: string) => void | Promise<void>);
+  readonly openBrowser?: false | ((url: string) => void | Promise<void>) | undefined;
   readonly input: () => Promise<string | undefined>;
   readonly output: (text: string) => void;
 };
@@ -43,17 +42,12 @@ type Equal<A, B> =
 type Assert<T extends true> = T;
 type PublicLogin = (options: LiteralLoginOptions) => Promise<void>;
 type PublicLogout = (options: LiteralLogoutOptions) => Promise<void>;
-type PublicWriteCredential = (
-  configDirectory: string,
-  providerKey: string,
-  credential: LiteralOAuthCredential,
-) => Promise<void>;
 type PublicAuthenticate = (options: {
   readonly operation: "login" | "logout";
   readonly configDirectory: string;
   readonly input: () => Promise<string | undefined>;
   readonly output: (text: string) => void;
-  readonly openBrowser?: false;
+  readonly openBrowser?: false | undefined;
 }) => Promise<void>;
 
 const publicContracts: [
@@ -63,11 +57,10 @@ const publicContracts: [
   >,
   Assert<Equal<typeof login, PublicLogin>>,
   Assert<Equal<typeof logout, PublicLogout>>,
-  Assert<Equal<typeof writeCredential, PublicWriteCredential>>,
   Assert<Equal<typeof authenticate, PublicAuthenticate>>,
   Assert<Equal<LoginOptions, LiteralLoginOptions>>,
   Assert<Equal<LogoutOptions, LiteralLogoutOptions>>,
   Assert<Equal<OAuthCredential, LiteralOAuthCredential>>,
   Assert<Equal<CodexOptions, LiteralCodexOptions>>,
-] = [true, true, true, true, true, true, true, true, true, true];
+] = [true, true, true, true, true, true, true, true, true];
 void publicContracts;

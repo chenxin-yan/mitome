@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { Result, Schema } from "effect";
 
-const catalogUrl = "https://models.dev/api.json";
+export const catalogUrl = "https://models.dev/api.json";
 const cacheName = "models-cache.json";
 const cacheTtl = 24 * 60 * 60 * 1000;
 const fetchTimeout = 3_000;
@@ -20,39 +21,38 @@ interface CachedCatalog {
   readonly fetchedAt: number;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
+const NonEmptyString = Schema.String.check(Schema.isNonEmpty());
+const CachedCatalogFromJson = Schema.fromJsonString(
+  Schema.Struct({
+    openai: Schema.NonEmptyArray(NonEmptyString),
+    fetchedAt: Schema.Finite,
+  }),
+);
+const ModelsDevEnvelope = Schema.Struct({
+  openai: Schema.Struct({ models: Schema.Record(Schema.String, Schema.Unknown) }),
+});
+const ModelsDevModel = Schema.Struct({ id: NonEmptyString, tool_call: Schema.Boolean });
 
 // models.dev describes the OpenAI API only; Codex suggestions come from the
 // hand-maintained list in @mitome/providers/openai-codex (ADR-0028). This is
 // the one tool-capable filter; scripts/generate-model-hints.ts imports it.
 export const toolCapableOpenAiIds = (payload: unknown): Array<string> => {
-  const models = isRecord(payload) && isRecord(payload.openai) ? payload.openai.models : undefined;
-  return isRecord(models)
-    ? Object.values(models).flatMap((model) =>
-        isRecord(model) &&
-        typeof model.id === "string" &&
-        model.id !== "" &&
-        model.tool_call === true
-          ? [model.id]
-          : [],
-      )
-    : [];
-};
-
-const cachedCatalog = (value: unknown): CachedCatalog | undefined => {
-  if (!isRecord(value) || typeof value.fetchedAt !== "number") return undefined;
-  const openai = Array.isArray(value.openai)
-    ? value.openai.filter((item): item is string => typeof item === "string" && item !== "")
-    : [];
-  return openai.length > 0 ? { openai, fetchedAt: value.fetchedAt } : undefined;
+  const envelope = Schema.decodeUnknownResult(ModelsDevEnvelope)(payload);
+  if (Result.isFailure(envelope)) return [];
+  return Object.values(envelope.success.openai.models).flatMap((model) => {
+    const decoded = Schema.decodeUnknownResult(ModelsDevModel)(model);
+    return Result.isSuccess(decoded) && decoded.success.tool_call ? [decoded.success.id] : [];
+  });
 };
 
 const readCache = async (path: string): Promise<CachedCatalog | undefined> => {
   try {
-    return cachedCatalog(JSON.parse(await readFile(path, "utf8")));
+    const decoded = Schema.decodeUnknownResult(CachedCatalogFromJson, {
+      onExcessProperty: "error",
+    })(await readFile(path, "utf8"));
+    return Result.isSuccess(decoded) ? decoded.success : undefined;
   } catch {
-    // Cache data is optional; a missing or malformed cache is an ordinary catalog miss.
+    // Cache data is optional; a missing cache is an ordinary catalog miss.
     return undefined;
   }
 };

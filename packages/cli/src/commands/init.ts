@@ -1,82 +1,56 @@
-import { mkdir, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { Effect } from "effect";
-import { Prompt } from "effect/unstable/cli";
 import {
-  agentPackageSource,
-  defaultAgentDefinitionSource,
-  instructionsSource,
+  customModel,
+  defaultAgentPlan,
+  defaultAgentPlanFiles,
+  ensureEmpty,
+  modelChoices,
+  providerChoices,
+  validateModelId,
+  writeScaffold,
 } from "create-mitome/template";
 import { knownModelIds as codexModelIds } from "@mitome/providers/openai-codex";
 import { knownModelIds as openAiModelIds } from "@mitome/providers/openai";
 import { modelCatalog } from "../catalog.js";
-import { install } from "../child-host.js";
-import { isEnoent, requireConfigDirectory } from "../config.js";
+import { ChildHost } from "../child-host.js";
+import { requireConfigDirectory } from "../config.js";
+import { Prompter } from "../prompter.js";
+import { attempt, fail, type ExitCode } from "../support.js";
 import { authenticateDefinition } from "./auth.js";
-import { attempt, fail, waitForChild } from "../support.js";
 
-type InitProvider = "openai" | "openai-codex";
-const customModel = Symbol("custom-model");
-
-const initializationPath = async (): Promise<string> => {
-  const directory = requireConfigDirectory();
+export const runInit = Effect.fn("@mitome/cli/runInit")(function* () {
+  const childHost = yield* ChildHost;
+  const prompter = yield* Prompter;
+  const directory = yield* attempt(async () => requireConfigDirectory());
   const path = join(directory, "index.ts");
-  for (const file of [path, join(directory, "AGENTS.md"), join(directory, "package.json")]) {
-    const existing = await stat(file).catch((error: unknown) => {
-      if (!isEnoent(error)) throw error;
-      return undefined;
-    });
-    if (existing !== undefined) {
-      throw new Error(
-        `${file} already exists; remove it, or run mitome install and mitome auth login.`,
-      );
-    }
-  }
-  return path;
-};
-
-const initialize = async (path: string, provider: InitProvider, model: string): Promise<number> => {
-  const directory = dirname(path);
-  await mkdir(directory, { recursive: true });
-  await writeFile(path, defaultAgentDefinitionSource({ provider, model }));
-  await writeFile(join(directory, "AGENTS.md"), instructionsSource);
-  await writeFile(join(directory, "package.json"), agentPackageSource());
-  return install(path);
-};
-
-export const runInit = Effect.gen(function* () {
-  const path = yield* attempt(initializationPath);
-  const provider = yield* Prompt.run(
-    Prompt.select<InitProvider>({
-      message: "Provider",
-      choices: [
-        { title: "OpenAI API", value: "openai" },
-        { title: "OpenAI Codex (ChatGPT)", value: "openai-codex" },
-      ],
-    }),
-  );
-  // models.dev only describes the OpenAI API; the Codex backend has no
+  // Fast-fail before prompting; writeScaffold still owns the ensure-empty
+  // semantic for the actual write.
+  yield* attempt(() => ensureEmpty(directory, defaultAgentPlanFiles));
+  const provider = yield* prompter.select({
+    message: "Provider",
+    choices: providerChoices.map(({ label, value }) => ({ title: label, value })),
+  });
+  // models.dev only describes the OpenAI API; the Codex Provider has no
   // discovery source, so its hand-maintained hints are used directly.
   const knownModels =
     provider === "openai-codex"
       ? codexModelIds
-      : yield* attempt(() => modelCatalog({ directory: dirname(path), fallback: openAiModelIds }));
-  const modelChoice = yield* Prompt.run(
-    Prompt.select<string | typeof customModel>({
-      message: "Model",
-      choices: [
-        ...knownModels.map((model) => ({ title: model, value: model })),
-        { title: "Custom model ID", value: customModel },
-      ],
-    }),
-  );
-  const model =
-    modelChoice === customModel
-      ? (yield* Prompt.run(Prompt.text({ message: "Model identifier" }))).trim()
-      : modelChoice;
-  if (model === "") return yield* fail("Model identifier is required.");
-  const exitCode = yield* waitForChild(() => initialize(path, provider, model));
-  process.exitCode = exitCode;
-  if (exitCode !== 0) return;
+      : yield* attempt(() => modelCatalog({ directory, fallback: openAiModelIds }));
+  const modelChoice = yield* prompter.select<string | typeof customModel>({
+    message: "Model",
+    choices: modelChoices(knownModels).map(({ label, value }) => ({ title: label, value })),
+  });
+  let model: string | undefined;
+  if (modelChoice === customModel) {
+    model = validateModelId(yield* prompter.text("Model ID"));
+  } else {
+    model = modelChoice;
+  }
+  if (model === undefined) return yield* fail("Model ID is required.");
+  yield* attempt(() => writeScaffold(directory, defaultAgentPlan({ provider, model })));
+  const exitCode = yield* childHost.install(path);
+  if (exitCode !== 0) return exitCode;
   yield* authenticateDefinition(path, "login");
+  return 0 satisfies ExitCode;
 });

@@ -7,6 +7,8 @@ interface TestModelOptions {
   readonly toolkit?: Toolkit.WithHandler<Record<string, Tool.Any>>;
 }
 
+// Deliberately raw Service fake; use makeStreamingTestProvider below for the real
+// LanguageModel.make pipeline. Sibling copy: packages/sdk/test/provider.ts.
 export const testLanguageModel = (
   streamText: (options: TestModelOptions) => unknown,
 ): LanguageModel.Service => ({ streamText }) as unknown as LanguageModel.Service;

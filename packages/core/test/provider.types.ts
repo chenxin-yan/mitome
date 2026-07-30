@@ -1,6 +1,6 @@
 import { Layer } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
-import { defineAgent, makeProvider, type ModelIdentifier, type Session } from "../src/index.js";
+import { defineAgent, makeProvider, type QualifiedModelId, type Session } from "../src/index.js";
 
 const layer = Layer.succeed(LanguageModel.LanguageModel, {} as LanguageModel.Service);
 const alpha = makeProvider("alpha", ["known", "other"] as const, undefined, () => layer);
@@ -17,12 +17,12 @@ const definition = defineAgent({
   plugins: [],
 });
 
-const known: ModelIdentifier<typeof alpha> = "alpha/known";
-const arbitrary: ModelIdentifier<typeof alpha> = "alpha/private/fine-tune";
+const known: QualifiedModelId<typeof alpha> = "alpha/known";
+const arbitrary: QualifiedModelId<typeof alpha> = "alpha/private/fine-tune";
 void known;
 void arbitrary;
 
-// @ts-expect-error Model identifiers must use a registered Provider prefix.
+// @ts-expect-error Qualified Model ids must use a registered Provider prefix.
 defineAgent({ providers: [alpha] as const, model: "beta/known", plugins: [] });
 
 // @ts-expect-error Agent Definitions reject excess keys.

@@ -6,35 +6,46 @@ const coreModuleName = "@mitome/core";
 /** Overlapping `Session.prompt()` while a Turn is active. */
 export class SessionBusyError extends Schema.TaggedErrorClass<SessionBusyError>()(
   "SessionBusyError",
-  { message: Schema.String },
-) {}
+  {},
+) {
+  override get message(): string {
+    return "Session is busy with an active Turn";
+  }
+}
 
 /** Prompt on a Session whose scope has already closed. */
 export class SessionReleasedError extends Schema.TaggedErrorClass<SessionReleasedError>()(
   "SessionReleasedError",
-  { message: Schema.String },
-) {}
+  {},
+) {
+  override get message(): string {
+    return "Session scope has been released";
+  }
+}
 
 /** A model, Tool, or Plugin Hook failed while completing a Turn. */
 export class TurnError extends Schema.TaggedErrorClass<TurnError>()("TurnError", {
   message: Schema.String,
-  cause: Schema.Unknown,
+  cause: Schema.Defect(),
 }) {}
 
 export class ApprovalResolutionError extends Schema.TaggedErrorClass<ApprovalResolutionError>()(
   "ApprovalResolutionError",
-  { message: Schema.String },
-) {}
+  { reason: Schema.optional(Schema.Literal("not-pending")) },
+) {
+  override get message(): string {
+    return this.reason === "not-pending"
+      ? "Approval is no longer pending (the Turn ended or the request is missing)"
+      : "Approval decision has already been resolved";
+  }
+}
 
 export const hookTurnError = (message: string) =>
   Effect.mapError((cause: unknown) => new TurnError({ message, cause }));
 
 export const modelTurnError = (cause: unknown) =>
   new TurnError({
-    message:
-      AiError.isAiError(cause) && cause.module === coreModuleName
-        ? cause.reason.message
-        : "Turn failed",
+    message: AiError.isAiError(cause) ? cause.reason.message : "Turn failed",
     cause,
   });
 

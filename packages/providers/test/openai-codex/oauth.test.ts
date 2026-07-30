@@ -1,14 +1,29 @@
-import { afterAll, describe, expect, test } from "vitest";
-import { setTimeout } from "node:timers/promises";
-import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { Effect } from "effect";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { credentialDescriptor } from "@mitome/core";
-import { serve, spawnRuntime } from "../support.js";
-import { codex, login, logout, writeCredential } from "../../src/openai-codex/index.js";
+import { serve } from "../support.js";
+import {
+  loadCredential as loadCredentialEffect,
+  writeCredential as writeCredentialEffect,
+} from "../../src/openai-codex/credential-store.js";
+import { codex, login, logout } from "../../src/openai-codex/index.js";
+import { accountId } from "../../src/openai-codex/oauth-token.js";
+
+const spawn = vi.hoisted(() => vi.fn(() => ({ on: vi.fn(), unref: vi.fn() })));
+vi.mock("node:child_process", () => ({ spawn }));
 
 const temporaryDirectories: Array<string> = [];
 const marker = "synthetic-secret-marker";
+
+const loadCredential = (configDirectory: string) =>
+  Effect.runPromise(loadCredentialEffect(configDirectory));
+const writeCredential = (
+  configDirectory: string,
+  value: Parameters<typeof writeCredentialEffect>[1],
+) => Effect.runPromise(writeCredentialEffect(configDirectory, value));
 
 const credential = (suffix: string) => ({
   type: "oauth" as const,
@@ -25,14 +40,14 @@ const directory = async () => {
 };
 
 // Real Codex access tokens nest the account under this claim.
+const accessToken = (claims: unknown) =>
+  `header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`;
 const jwt = (accountId: string) =>
-  `header.${Buffer.from(
-    JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } }),
-  ).toString("base64url")}.signature`;
+  accessToken({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } });
 
 const callbackPort = async (): Promise<number> => {
   const server = await serve({ fetch: () => new Response() });
-  const port = server.port!;
+  const port = server.port;
   await server.stop(true);
   return port;
 };
@@ -52,6 +67,10 @@ const tokenServer = async () => {
   });
   return { server, requests };
 };
+
+beforeEach(() => {
+  spawn.mockClear();
+});
 
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((path) => rm(path, { recursive: true, force: true })));
@@ -107,7 +126,7 @@ describe("Codex OAuth", () => {
         Buffer.from(
           await crypto.subtle.digest(
             "SHA-256",
-            new TextEncoder().encode(requests[0]!.code_verifier!),
+            new TextEncoder().encode(requests[0]!.code_verifier),
           ),
         ).toString("base64url"),
       );
@@ -116,6 +135,37 @@ describe("Codex OAuth", () => {
         "openai-codex": expect.objectContaining({ type: "oauth", accountId: "fixture-account" }),
       });
     } finally {
+      void server.stop(true);
+    }
+  });
+
+  test("opens the complete OAuth URL with the native Windows launcher", async () => {
+    const configDirectory = await directory();
+    const { server } = await tokenServer();
+    const platform = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+    let authorization = "";
+    try {
+      await login({
+        configDirectory,
+        callbackPort: 0,
+        tokenUrl: `http://127.0.0.1:${server.port}/oauth/token`,
+        input: async () => {
+          const state = new URL(authorization).searchParams.get("state")!;
+          return `http://localhost:0/auth/callback?code=${marker}-code&state=${state}`;
+        },
+        output: (text) => {
+          authorization = /https:\/\/\S+/.exec(text)?.[0] ?? authorization;
+        },
+      });
+
+      expect(authorization).toContain("&");
+      expect(spawn).toHaveBeenCalledWith(
+        "rundll32",
+        ["url.dll,FileProtocolHandler", authorization],
+        { stdio: "ignore", detached: true },
+      );
+    } finally {
+      platform.mockRestore();
       void server.stop(true);
     }
   });
@@ -150,7 +200,7 @@ describe("Codex OAuth", () => {
     const configDirectory = await directory();
     const { server } = await tokenServer();
     const occupied = await serve({ fetch: () => new Response("occupied") });
-    const occupiedPort = occupied.port!;
+    const occupiedPort = occupied.port;
     let state = "";
     try {
       await login({
@@ -203,58 +253,51 @@ describe("Codex OAuth", () => {
     }
   });
 
-  test("serializes atomic cross-process writes and logout preserves unrelated entries", async () => {
+  test("logout removes only the Codex entry", async () => {
     const configDirectory = await directory();
     await mkdir(configDirectory, { recursive: true });
     await writeFile(
       join(configDirectory, "auth.json"),
       JSON.stringify({ other: { retained: true } }),
     );
-    const source = new URL("../../dist/openai-codex/index.js", import.meta.url).href;
-    const writer = (providerKey: string) =>
-      spawnRuntime([
-        "-e",
-        `const { writeCredential } = await import(${JSON.stringify(source)}); await writeCredential(${JSON.stringify(configDirectory)}, ${JSON.stringify(providerKey)}, ${JSON.stringify(credential(providerKey))});`,
-      ]);
-    const writers = [writer("first"), writer("second")];
-    expect(await Promise.all(writers.map((writer) => writer.exited))).toEqual([0, 0]);
-    const contents = await readFile(join(configDirectory, "auth.json"), "utf8");
-    expect(JSON.parse(contents)).toMatchObject({
+    await writeCredential(configDirectory, credential("codex"));
+    expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toEqual({
       other: { retained: true },
-      first: { type: "oauth" },
-      second: { type: "oauth" },
+      "openai-codex": credential("codex"),
     });
-    await Promise.all(
-      Array.from({ length: 8 }, (_, index) =>
-        writeCredential(configDirectory, "openai-codex", credential(String(index))),
-      ),
-    );
+
     await logout({ configDirectory, output: () => {} });
-    expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toMatchObject({
+    expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toEqual({
       other: { retained: true },
-      first: { type: "oauth" },
-      second: { type: "oauth" },
     });
     expect((await stat(join(configDirectory, "auth.json"))).mode & 0o777).toBe(0o600);
   });
 
-  test("does not reap a stale storage lock", async () => {
+  test("names the recovery for an absent or malformed Credential", async () => {
+    const message = "Codex Credential is unavailable. Run `mitome auth login` to authenticate.";
+    await expect(loadCredential(await directory())).rejects.toThrow(message);
+
     const configDirectory = await directory();
-    await mkdir(configDirectory, { recursive: true });
-    const lock = join(configDirectory, "auth.lock");
-    await writeFile(lock, "");
-    const stale = new Date(Date.now() - 31_000);
-    await utimes(lock, stale, stale);
+    await writeFile(
+      join(configDirectory, "auth.json"),
+      JSON.stringify({ "openai-codex": { ...credential("malformed"), expires: "soon" } }),
+    );
+    await expect(loadCredential(configDirectory)).rejects.toThrow(message);
+  });
 
-    const write = writeCredential(configDirectory, "other", credential("stale"));
-    await setTimeout(50);
-    expect(await readFile(lock, "utf8")).toBe("");
-
-    await rm(lock);
-    await write;
-    expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toMatchObject({
-      other: { type: "oauth" },
-    });
+  test("decodes account claims without bypassing an authoritative nested claim", () => {
+    expect(accountId(accessToken({ chatgpt_account_id: "top-level" }))).toBe("top-level");
+    expect(() =>
+      accountId(
+        accessToken({
+          "https://api.openai.com/auth": {},
+          chatgpt_account_id: "must-not-fallback",
+        }),
+      ),
+    ).toThrow("OAuth access token did not contain an account.");
+    expect(() => accountId(accessToken([]))).toThrow(
+      "OAuth access token did not contain an account.",
+    );
   });
 
   test("never emits authorization or Credential values", async () => {

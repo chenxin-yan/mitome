@@ -43,6 +43,20 @@ describe("models.dev catalog", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  test("treats a cache with one malformed entry as a miss", async () => {
+    const path = await directory();
+    await writeFile(
+      join(path, "models-cache.json"),
+      JSON.stringify({ openai: ["cached", 1], fetchedAt: 1_000 }),
+    );
+    const fetch = vi.fn(async () => new Response(JSON.stringify(payload)));
+
+    await expect(
+      modelCatalog({ directory: path, fallback, fetch, now: () => 1_001 }),
+    ).resolves.toEqual(["gpt-5", "gpt-5-codex"]);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
   test("refreshes an expired cache with tool-capable models from models.dev", async () => {
     const path = await directory();
     await writeFile(
@@ -55,6 +69,26 @@ describe("models.dev catalog", () => {
       modelCatalog({ directory: path, fallback, fetch, now: () => 24 * 60 * 60 * 1_000 }),
     ).resolves.toEqual(["gpt-5", "gpt-5-codex"]);
     expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  test("filters malformed models without rejecting the models.dev response", async () => {
+    const path = await directory();
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            openai: {
+              models: {
+                valid: { id: "valid", tool_call: true },
+                missingId: { tool_call: true },
+                wrongCapability: { id: "wrong", tool_call: "yes" },
+              },
+            },
+          }),
+        ),
+    );
+
+    await expect(modelCatalog({ directory: path, fallback, fetch })).resolves.toEqual(["valid"]);
   });
 
   test("uses stale cache when fetching fails", async () => {

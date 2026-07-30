@@ -4,9 +4,7 @@ Mitome exists to let people define and run AI agents for their own use cases.
 
 ## Public interface
 
-Users install `@mitome/sdk` with `@mitome/providers`. Promise-first APIs are imported from `@mitome/sdk`; Effect-native APIs are imported from `@mitome/sdk/effect`. `@mitome/core` is the published internal runtime engine, not a documented authoring surface.
-
-The root SDK and its Effect subpath intentionally expose different `TurnEvent` shapes for their respective runtimes.
+Users install `@mitome/sdk`, `@mitome/providers`, and `@mitome/plugins`; Promise-first APIs come from `@mitome/sdk`, while Effect-native APIs come from `@mitome/sdk/effect`. [ADR-0022](docs/adr/0022-publish-the-sdk-as-the-sole-documented-surface.md) defines the public surface. Core errors are public Schema-tagged errors, provider errors are internal `Data.TaggedError` values widened at the boundary, and the CLI uses a plain app-level error.
 
 ## Language
 
@@ -50,12 +48,12 @@ _Avoid_: System prompt (the composed whole), prompt fragment
 A model available through a Provider that an Agent uses to generate Steps.
 _Avoid_: Provider, LLM
 
-**Model identifier**:
-A Provider-qualified name, written as `provider/model`, that selects one Model.
-_Avoid_: Model name, model key
+**Qualified Model id**:
+A Provider-qualified id, written as `provider/model`, that selects one Model. Its two parts are a Provider id and a Provider-native Model id.
+_Avoid_: Model identifier, Model name, model key
 
 **Model catalog**:
-The known Model identifiers a Provider offers for discovery and selection; it is a set of hints, not an entitlement authority or a closed registry.
+The known Provider-native Model ids a Provider offers for discovery and selection, unqualified and without a Provider prefix; it is a set of hints, not an entitlement authority or a closed registry.
 _Avoid_: Model registry, available Models
 
 **Default Model**:
@@ -78,6 +76,14 @@ _Avoid_: Middleware, event listener
 A named capability an Agent can invoke during a Session to inspect or affect something outside the model.
 _Avoid_: Function, command
 
+**Resource**:
+The private set of services a Plugin acquires at Session creation, holds for the Session's lifetime, and releases at Session end; visible only to that Plugin's own Hooks and Tool handlers.
+_Avoid_: Dependency, state, shared context
+
+**Tool Call**:
+One Agent invocation of a Tool within a Step, gated by Approval before it may execute.
+_Avoid_: Function call, invocation (bare)
+
 **Approval**:
 A user decision allowing one pending Tool call to execute; the Turn stays paused until the decision is resolved or the Turn is interrupted.
 _Avoid_: Permission, confirmation
@@ -85,6 +91,14 @@ _Avoid_: Permission, confirmation
 **Host**:
 A program that drives Sessions on a user's behalf: starting Turns, presenting events, and resolving Approvals.
 _Avoid_: Frontend, client, harness
+
+**Child Host**:
+The CLI's capability for delegating Host work — running a Turn, installing Agent Definition dependencies, or Provider authentication — to a separate Host process.
+_Avoid_: Spawner, process manager, subprocess (bare)
+
+**Prompter**:
+The CLI's capability for interactive terminal input — asking the user questions during init and auth flows.
+_Avoid_: Readline, stdin (bare), input handler
 
 **Credential**:
 A stored secret that authorizes Mitome to use one Provider on behalf of the user.

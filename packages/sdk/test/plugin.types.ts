@@ -2,7 +2,15 @@
 /** @effect-diagnostics missingEffectContext:skip-file */
 import { Schema } from "effect";
 import type { PluginHooks, Provider } from "@mitome/core";
-import { defineAgent, definePlugin, tool, type PluginHooksDefinition } from "../src/index.js";
+import {
+  defineAgent,
+  definePlugin,
+  tool,
+  type PluginHooksDefinition,
+  type ToolInputValidator,
+} from "../src/index.js";
+
+export type PublicToolInputValidator = ToolInputValidator;
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2

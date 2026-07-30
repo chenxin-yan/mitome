@@ -13,7 +13,7 @@ export const transportLayer = (
   client: Layer.Layer<OpenAiClient.OpenAiClient, unknown>,
 ): Layer.Layer<LanguageModel.LanguageModel, unknown> => {
   const supportsWebSocketHeaders =
-    "Bun" in globalThis || (typeof process !== "undefined" && process.versions.node !== undefined);
+    "Bun" in globalThis || (typeof process !== "undefined" && "node" in process.versions);
   const selected = transport ?? (supportsWebSocketHeaders ? "websocket" : "http");
   if (selected === "websocket" && !supportsWebSocketHeaders) {
     throw new Error("OpenAI WebSocket transport requires a Bun or Node server runtime");

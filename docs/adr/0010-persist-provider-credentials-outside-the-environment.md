@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0013
+status: amended by ADR-0013, ADR-0031
 ---
 
 # Persist provider credentials outside the environment

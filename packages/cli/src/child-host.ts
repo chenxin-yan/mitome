@@ -1,13 +1,18 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { configDirectory, type CredentialDescriptor } from "@mitome/core";
+import { Context, Effect, Layer, Result, Schema } from "effect";
+import {
+  configDirectory,
+  CredentialDescriptorSchema,
+  type CredentialDescriptor,
+} from "@mitome/core";
 import { requireConfigDirectory } from "./config.js";
-// Bun embeds hosts as source text at compile time; static analysis sees modules without default exports.
-// @ts-expect-error
+import { attempt, type CliError, type ExitCode } from "./support.js";
+// @ts-expect-error Bun embeds this as source text at compile time; TS sees a module without a default export.
 // oxlint-disable-next-line import/default
 import definitionHost from "./hosts/host.ts" with { type: "text" };
-// @ts-expect-error
+// @ts-expect-error Bun text import (see above).
 // oxlint-disable-next-line import/default
 import authHost from "./hosts/auth-host.ts" with { type: "text" };
 
@@ -21,33 +26,42 @@ export interface ProviderAuthentication {
   readonly credential: CredentialDescriptor;
 }
 
-const isCredentialDescriptor = (value: unknown): value is CredentialDescriptor =>
-  typeof value === "string"
-    ? /^[A-Za-z_][A-Za-z0-9_]*$/.test(value)
-    : typeof value === "object" &&
-      value !== null &&
-      Object.keys(value).length === 1 &&
-      "capability" in value &&
-      typeof value.capability === "object" &&
-      value.capability !== null &&
-      Object.keys(value.capability).length === 1 &&
-      "module" in value.capability &&
-      typeof value.capability.module === "string";
+export class ChildHost extends Context.Service<
+  ChildHost,
+  {
+    readonly runHost: (path: string, prompt: string) => Effect.Effect<ExitCode, CliError>;
+    readonly install: (path: string) => Effect.Effect<ExitCode, CliError>;
+    readonly inspectProviderAuthentication: (
+      path: string,
+    ) => Effect.Effect<ReadonlyArray<ProviderAuthentication>, CliError>;
+    readonly runOAuthAuth: (
+      path: string,
+      providerId: string,
+      command: "login" | "logout",
+    ) => Effect.Effect<void, CliError>;
+  }
+>()("@mitome/cli/ChildHost") {
+  static readonly layer = Layer.succeed(ChildHost, {
+    runHost: (path, prompt) => Effect.uninterruptible(attempt(() => runHost(path, prompt))),
+    install: (path) => Effect.uninterruptible(attempt(() => install(path))),
+    inspectProviderAuthentication: (path) =>
+      Effect.uninterruptible(attempt(() => inspectProviderAuthentication(path))),
+    runOAuthAuth: (path, providerId, command) =>
+      Effect.uninterruptible(attempt(() => runOAuthAuth(path, providerId, command))),
+  });
+}
 
-// Validates untrusted JSON crossing the auth-host process boundary.
-const isProviderAuthentication = (value: unknown): value is ProviderAuthentication =>
-  typeof value === "object" &&
-  value !== null &&
-  Object.keys(value).length === 2 &&
-  "id" in value &&
-  typeof value.id === "string" &&
-  value.id !== "" &&
-  "credential" in value &&
-  isCredentialDescriptor(value.credential);
+const ProviderAuthenticationSchema = Schema.Struct({
+  id: Schema.String.check(Schema.isNonEmpty()),
+  credential: CredentialDescriptorSchema,
+});
+const ProviderAuthenticationsFromJson = Schema.fromJsonString(
+  Schema.Array(ProviderAuthenticationSchema),
+);
 
 // No SIGINT forwarding (unlike runHost): the installer is short-lived and
 // terminal Ctrl-C reaches it through the process group.
-export const install = async (path: string): Promise<number> => {
+const install = async (path: string): Promise<ExitCode> => {
   const child = Bun.spawn([process.execPath, "install"], {
     cwd: dirname(path),
     env: childEnv,
@@ -58,7 +72,7 @@ export const install = async (path: string): Promise<number> => {
   return child.exited;
 };
 
-export const runHost = async (path: string, prompt: string): Promise<number> => {
+const runHost = async (path: string, prompt: string): Promise<ExitCode> => {
   const directory = configDirectory();
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.
@@ -79,7 +93,7 @@ export const runHost = async (path: string, prompt: string): Promise<number> => 
   }
 };
 
-export const inspectProviderAuthentication = async (
+const inspectProviderAuthentication = async (
   path: string,
 ): Promise<ReadonlyArray<ProviderAuthentication>> => {
   const directory = await mkdtemp(join(tmpdir(), "mitome-auth-"));
@@ -97,17 +111,19 @@ export const inspectProviderAuthentication = async (
     );
     if ((await child.exited) !== 0)
       throw new Error("Could not inspect Agent Definition authentication.");
-    const authentication: unknown = JSON.parse(await readFile(output, "utf8"));
-    if (!Array.isArray(authentication) || !authentication.every(isProviderAuthentication)) {
+    const authentication = Schema.decodeUnknownResult(ProviderAuthenticationsFromJson, {
+      onExcessProperty: "error",
+    })(await readFile(output, "utf8"));
+    if (Result.isFailure(authentication)) {
       throw new Error("Agent Definition returned invalid Provider authentication metadata.");
     }
-    return authentication;
+    return authentication.success;
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 };
 
-export const runOAuthAuth = async (
+const runOAuthAuth = async (
   path: string,
   providerId: string,
   command: "login" | "logout",

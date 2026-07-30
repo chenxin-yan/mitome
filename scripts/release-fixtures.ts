@@ -27,8 +27,8 @@ const run = async (
   });
   if (input !== undefined) {
     const stdin = child.stdin!;
-    stdin.write(input);
-    stdin.end();
+    await stdin.write(input);
+    await stdin.end();
   }
   if ((await child.exited) !== 0) throw new Error(`Command failed: ${command.join(" ")}`);
 };
@@ -69,6 +69,7 @@ try {
       publicPackages.map(async (name) => [packageName(name), `file:${await archiveFor(name)}`]),
     ),
   );
+  const effectArchive = `file:../vendor/effect-${effectVersion}.tgz`;
   const nodeModules = join(consumerDirectory, "node_modules");
   await mkdir(consumerDirectory, { recursive: true });
   await Bun.write(
@@ -76,20 +77,18 @@ try {
     JSON.stringify({
       name: "release-fixture",
       private: true,
-      dependencies: { ...dependencies, effect: "file:../vendor/effect" },
-      // effect must also be overridden: @effect/ai-openai(-compat) resolve their
-      // own copy otherwise, and two effect instances break Redacted/ServiceMap
-      // identity at runtime.
-      overrides: { ...dependencies, effect: "file:../vendor/effect" },
+      dependencies: { ...dependencies, effect: effectArchive },
+      overrides: dependencies,
     }),
   );
-  await cp(
-    await installedPackage("effect", effectVersion),
-    join(temporaryDirectory, "vendor", "effect"),
-    {
-      recursive: true,
-      dereference: true,
-    },
+  const effectDirectory = join(temporaryDirectory, "vendor", "effect");
+  await cp(await installedPackage("effect", effectVersion), effectDirectory, {
+    recursive: true,
+    dereference: true,
+  });
+  await run(
+    [process.execPath, "pm", "pack", "--destination", dirname(effectDirectory), "--ignore-scripts"],
+    effectDirectory,
   );
   // Platform binary packages are release-time artifacts; the fixture gates
   // the JS packages, so skip the (unpublished) optional dependencies.
@@ -108,7 +107,29 @@ try {
     if (/"(?:catalog|workspace):/.test(JSON.stringify(manifest))) {
       throw new Error(`${name} tarball retains a workspace-only dependency protocol.`);
     }
+    if (["core", "sdk", "providers"].includes(name)) {
+      if (manifest.dependencies?.effect !== undefined) {
+        throw new Error(`${name} tarball installs Effect instead of requiring its peer.`);
+      }
+      if (manifest.peerDependencies?.effect !== effectVersion) {
+        throw new Error(`${name} tarball does not require exact Effect ${effectVersion}.`);
+      }
+    }
   }
+  const effectResolutions = new Set(
+    [
+      consumerDirectory,
+      join(nodeModules, "@mitome", "core"),
+      join(nodeModules, "@mitome", "sdk"),
+      join(nodeModules, "@mitome", "providers"),
+      join(nodeModules, "@effect", "ai-openai"),
+      join(nodeModules, "@effect", "ai-openai-compat"),
+    ].map((directory) => Bun.resolveSync("effect/package.json", directory)),
+  );
+  if (effectResolutions.size !== 1) {
+    throw new Error(`Packed fixture resolved ${effectResolutions.size} Effect installations.`);
+  }
+  console.log("Packed fixture resolved one Effect installation.");
   await writeFile(
     join(consumerDirectory, "tsconfig.json"),
     JSON.stringify({
@@ -140,10 +161,11 @@ import { instructions } from "@mitome/plugins";
 if (sdkEffect.createSession !== core.createSession) throw new Error("SDK Effect facade duplicated the Core runtime.");
 if (openai().id !== "openai" || codex().id !== "openai-codex") throw new Error("Official Provider packages were not installed.");
 if (openaiCompatible({ id: "local", baseUrl: "http://localhost" }).id !== "local") throw new Error("OpenAI-compatible package was not installed.");
-// Deliberately partial mock; only streamText runs in this smoke.
-const provider = makeProvider("fixture", [] as const, undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
+// Built through the real published LanguageModel.make constructor; generateText is unused here.
+const provider = makeProvider("fixture", [] as const, undefined, () => Layer.effect(LanguageModel.LanguageModel, LanguageModel.make({
   streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "ok" })),
-} as unknown as LanguageModel.Service));
+  generateText: () => Effect.die("generateText is not used by this smoke"),
+})));
 const definition = defineAgent({
   providers: [provider] as const,
   model: "fixture/default",
@@ -168,13 +190,14 @@ if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke 
   await run([process.execPath, "smoke.ts"], consumerDirectory);
   const createdDirectory = join(temporaryDirectory, "created-agent");
   await mkdir(createdDirectory);
-  await run(["node", join(nodeModules, ".bin", "create-mitome")], createdDirectory, "1\n1\n1\n");
+  await run(["node", join(nodeModules, ".bin", "create-mitome")], createdDirectory, "1\n1\n2\n");
   const createdPackage = await Bun.file(join(createdDirectory, "package.json")).json();
   if (
     Object.keys(createdPackage.dependencies).join(",") !==
-    "@mitome/plugins,@mitome/providers,@mitome/sdk"
+      "@mitome/plugins,@mitome/providers,@mitome/sdk,effect" ||
+    createdPackage.dependencies.effect !== effectVersion
   ) {
-    throw new Error("create-mitome generated unexpected dependencies.");
+    throw new Error("create-mitome generated unexpected Effect dependencies.");
   }
   if (!(await Bun.file(join(createdDirectory, "instructions.md")).exists())) {
     throw new Error("create-mitome did not generate instructions.md.");

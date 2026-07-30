@@ -1,6 +1,6 @@
 import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
-import { AgentDefinitionError } from "@mitome/core";
+import type { Response as AiResponse } from "effect/unstable/ai";
 import type {
   Plugin,
   PluginHooks,
@@ -27,6 +27,12 @@ export interface HookContext<Resource = never> {
   readonly signal: AbortSignal;
 }
 
+export type ResponsePart = AiResponse.AnyPart;
+
+export interface StepEndContext<Resource = never> extends HookContext<Resource> {
+  readonly responseParts: ReadonlyArray<ResponsePart>;
+}
+
 export interface ToolApprovalContext {
   readonly toolCallId: string;
   readonly messages: ReadonlyArray<unknown>;
@@ -38,8 +44,8 @@ export interface PluginHooksDefinition<Resource = never> {
   readonly turnStart?: (text: string, context: HookContext<Resource>) => Promise<void>;
   readonly turnEnd?: (text: string, context: HookContext<Resource>) => Promise<void>;
   readonly stepStart?: (prompt: Prompt, context: HookContext<Resource>) => Promise<void>;
-  /** Receives the prompt used by the model, including any completed pre-Step transforms. */
-  readonly stepEnd?: (prompt: Prompt, context: HookContext<Resource>) => Promise<void>;
+  /** Receives the model prompt and emitted response parts; failed Steps provide their partial parts. */
+  readonly stepEnd?: (prompt: Prompt, context: StepEndContext<Resource>) => Promise<void>;
   readonly preStep?: (prompt: Prompt, context: HookContext<Resource>) => Promise<Prompt>;
   readonly preTool?: (
     context: ToolHookContext & HookContext<Resource>,
@@ -76,9 +82,7 @@ const standardInput = <Input>(schema: InputSchema<Input>): StandardInput<Input> 
   }
   const standard = schema["~standard"];
   if (!("validate" in standard) || !("jsonSchema" in standard)) {
-    throw new AgentDefinitionError({
-      message: "Tool input schema must provide validation and JSON Schema",
-    });
+    throw new Error("Tool input schema must provide validation and JSON Schema");
   }
   return standard;
 };
@@ -91,7 +95,7 @@ const standardOutput = <Output>(
   }
   const standard = schema["~standard"];
   if (!("validate" in standard)) {
-    throw new AgentDefinitionError({ message: "Tool output schema must provide validation" });
+    throw new Error("Tool output schema must provide validation");
   }
   return standard;
 };
@@ -116,19 +120,17 @@ const validate = async <Output>(
 };
 
 // Promise Hooks use an unknown error channel; Core owns lifecycle-specific error mapping.
-const promiseHook = <A, Resource>(
+const promiseHook = Effect.fn("@mitome/sdk/promiseHook")(function* <A, Resource>(
   callback: (context: HookContext<Resource>) => Promise<A>,
   resource: Context.Service<Resource, Resource> | undefined,
-): Effect.Effect<A, unknown, Resource> =>
-  Effect.gen(function* () {
-    const value =
-      resource === undefined ? (undefined as Resource) : yield* Effect.service(resource);
-    // @effect-diagnostics-next-line unknownInEffectCatch:off
-    return yield* Effect.tryPromise({
-      try: (signal) => callback({ resource: value, signal }),
-      catch: (cause) => cause,
-    });
+) {
+  const value = resource === undefined ? (undefined as Resource) : yield* Effect.service(resource);
+  // @effect-diagnostics-next-line unknownInEffectCatch:off
+  return yield* Effect.tryPromise({
+    try: (signal) => callback({ resource: value, signal }),
+    catch: (cause) => cause,
   });
+});
 
 const adaptHooks = <Resource>(
   hooks: PluginHooksDefinition<Resource> | undefined,
@@ -152,7 +154,8 @@ const adaptHooks = <Resource>(
     adapted.stepStart = (prompt) => promiseHook((context) => stepStart(prompt, context), resource);
   const stepEnd = hooks.stepEnd;
   if (stepEnd)
-    adapted.stepEnd = (prompt) => promiseHook((context) => stepEnd(prompt, context), resource);
+    adapted.stepEnd = (prompt, responseParts) =>
+      promiseHook((context) => stepEnd(prompt, { ...context, responseParts }), resource);
   const preStep = hooks.preStep;
   if (preStep)
     adapted.preStep = (prompt) =>
@@ -235,24 +238,21 @@ export function definePlugin<
   >,
 >(definition: PluginDefinition<Resource, Tools>): Plugin<Resource, unknown> {
   if (definition.dispose !== undefined && definition.setup === undefined) {
-    throw new AgentDefinitionError({
-      message: `Plugin "${definition.name}" declares dispose without setup`,
-    });
+    throw new Error(`Plugin "${definition.name}" declares dispose without setup`);
   }
   const names = new Set<string>();
-  const definitions = (
-    definition.tools as unknown as ReadonlyArray<Tool<any, any, Resource, string>>
-  ).map((tool) => {
-    if (names.has(tool.name)) {
-      throw new AgentDefinitionError({ message: `Duplicate Tool name: ${tool.name}` });
-    }
-    names.add(tool.name);
-    return {
-      tool,
-      input: standardInput(tool.inputSchema),
-      output: standardOutput(tool.outputSchema),
-    };
-  });
+  const definitions =
+    // The public overload proved every Tool Resource is satisfied (UnsatisfiedToolResources);
+    // the impl signature erased Resource, so rehydrate it here.
+    (definition.tools as unknown as ReadonlyArray<Tool<any, any, Resource, string>>).map((tool) => {
+      if (names.has(tool.name)) throw new Error(`Duplicate Tool name: ${tool.name}`);
+      names.add(tool.name);
+      return {
+        tool,
+        input: standardInput(tool.inputSchema),
+        output: standardOutput(tool.outputSchema),
+      };
+    });
 
   const service =
     definition.setup === undefined
@@ -265,29 +265,12 @@ export function definePlugin<
       description: tool.description,
       parameters: input.jsonSchema.input({ target: "draft-2020-12" }),
       failureMode: "return",
-      ...(needsApproval === undefined
-        ? {}
-        : {
-            needsApproval:
-              typeof needsApproval === "boolean"
-                ? needsApproval
-                : (params: unknown, context: ToolApprovalContext) =>
-                    // User predicates may reject with arbitrary values; catchCause handles them below.
-                    // @effect-diagnostics-next-line unknownInEffectCatch:off
-                    Effect.tryPromise({
-                      try: () =>
-                        Promise.resolve().then(() => needsApproval(params as never, context)),
-                      catch: (cause) => cause,
-                    }).pipe(
-                      // Approval predicate failures fail closed: deny approval after logging.
-                      Effect.catchCause((cause) =>
-                        Effect.logWarning(
-                          "Plugin tool approval predicate failed; denying approval",
-                          cause,
-                        ).pipe(Effect.as(true)),
-                      ),
-                    ),
-          }),
+      needsApproval:
+        typeof needsApproval === "function"
+          ? (params: unknown, context: ToolApprovalContext) =>
+              // Rejections become defects, matching Core's fail-closed approval handling.
+              Effect.promise(() => Promise.resolve().then(() => needsApproval(params, context)))
+          : needsApproval,
     });
   });
   const toolInputValidators = Object.fromEntries(
@@ -313,37 +296,36 @@ export function definePlugin<
     ]),
   );
 
+  const resource =
+    service === undefined
+      ? undefined
+      : Layer.effect(
+          service,
+          Effect.acquireRelease(
+            // @effect-diagnostics-next-line unknownInEffectCatch:off
+            Effect.tryPromise({
+              try: () => definition.setup!(),
+              catch: (cause) => cause,
+            }),
+            (value, exit) => {
+              if (definition.dispose === undefined) return Effect.void;
+              const run = Effect.promise(() => definition.dispose!(value));
+              // On failure exits a disposer defect would replace the primary
+              // cause; log it instead so the original tagged error survives.
+              return Exit.isFailure(exit)
+                ? run.pipe(
+                    Effect.catchCause((cause) => Effect.logWarning("Plugin dispose failed", cause)),
+                  )
+                : run;
+            },
+          ),
+        );
+
   return {
     name: definition.name,
-    ...(definition.instructions === undefined ? {} : { instructions: definition.instructions }),
-    ...(service === undefined
-      ? {}
-      : {
-          resource: Layer.effect(
-            service,
-            Effect.acquireRelease(
-              // @effect-diagnostics-next-line unknownInEffectCatch:off
-              Effect.tryPromise({
-                try: () => definition.setup!(),
-                catch: (cause) => cause,
-              }),
-              (value, exit) => {
-                if (definition.dispose === undefined) return Effect.void;
-                const run = Effect.promise(() => definition.dispose!(value));
-                // On failure exits a disposer defect would replace the primary
-                // cause; log it instead so the original tagged error survives.
-                return Exit.isFailure(exit)
-                  ? run.pipe(
-                      Effect.catchCause((cause) =>
-                        Effect.logWarning("Plugin dispose failed", cause),
-                      ),
-                    )
-                  : run;
-              },
-            ),
-          ),
-        }),
-    ...(hooks === undefined ? {} : { hooks }),
+    instructions: definition.instructions,
+    resource,
+    hooks,
     toolkit: Toolkit.make(...tools),
     toolInputValidators,
     toolResultValidators,

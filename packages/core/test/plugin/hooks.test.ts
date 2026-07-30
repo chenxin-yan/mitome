@@ -3,7 +3,6 @@ import { Cause, Effect, Exit, Stream } from "effect";
 import { Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { Schema } from "effect";
 import {
-  ToolExecutionDenied,
   TurnError,
   type AgentDefinition,
   createSession,
@@ -119,6 +118,7 @@ describe("Plugin Hooks", () => {
     Effect.gen(function* () {
       const fixture = toolModel();
       const log: Array<string> = [];
+      const responsePartTypes: Array<ReadonlyArray<string>> = [];
       let starts = 0;
       let ends = 0;
       const echo = Tool.make("echo", {
@@ -133,7 +133,11 @@ describe("Plugin Hooks", () => {
             name: "hooks",
             hooks: {
               stepStart: () => Effect.sync(() => void log.push(`stepStart(${++starts})`)),
-              stepEnd: () => Effect.sync(() => void log.push(`stepEnd(${++ends})`)),
+              stepEnd: (_prompt, responseParts) =>
+                Effect.sync(() => {
+                  log.push(`stepEnd(${++ends})`);
+                  responsePartTypes.push(responseParts.map((part) => part.type));
+                }),
             },
           },
           {
@@ -148,6 +152,7 @@ describe("Plugin Hooks", () => {
       yield* Stream.runDrain(session.prompt("Hi"));
 
       expect(log).toEqual(["stepStart(1)", "stepEnd(1)", "stepStart(2)", "stepEnd(2)"]);
+      expect(responsePartTypes).toEqual([["tool-call", "tool-result"], ["text-delta"]]);
     }),
   );
 
@@ -218,10 +223,6 @@ describe("Plugin Hooks", () => {
         type: "tool-result",
         isFailure: true,
         result: { type: "execution-denied", reason: "not now" },
-      });
-      expect(yield* Schema.decodeUnknownEffect(ToolExecutionDenied)(denial?.result)).toEqual({
-        type: "execution-denied",
-        reason: "not now",
       });
       expect(handlerCalls).toBe(0);
       expect(postCalls).toBe(0);

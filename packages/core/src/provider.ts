@@ -15,10 +15,21 @@ export interface Provider<
   readonly modelIds: ModelIds;
 }
 
+/** Any configured Provider, for code that holds Providers without knowing their catalog. */
 export type AnyProvider = Provider<string, ReadonlyArray<string>>;
 
-/** A Provider-qualified Model identifier. */
-export type ModelIdentifier<Value extends AnyProvider> =
+/**
+ * Constrains a Provider id literal so it can form a Qualified Model id.
+ *
+ * Shaped as an intersection rather than a bare conditional so it stays idempotent:
+ * `Id & ValidProviderId<Id>` collapses back to `ValidProviderId<Id>`, which is what lets
+ * wrapper factories forward an unresolved `Id` into `makeProvider`.
+ */
+export type ValidProviderId<Id extends string> = Id &
+  (Id extends "" | `${string}/${string}` ? never : unknown);
+
+/** A Provider-qualified Model id, written as `provider/model`. */
+export type QualifiedModelId<Value extends AnyProvider> =
   Value extends Provider<infer Id, infer ModelIds>
     ? `${Id}/${ModelIds[number] | (string & {})}`
     : never;
@@ -32,11 +43,12 @@ const providerMetadata = new WeakMap<AnyProvider, ProviderMetadata>();
 
 /** Creates a configured Provider without exposing credentials or provisioning behavior. */
 export const makeProvider = <const Id extends string, const ModelIds extends ReadonlyArray<string>>(
-  id: Id & (Id extends "" | `${string}/${string}` ? never : unknown),
+  id: ValidProviderId<Id>,
   modelIds: ModelIds,
   credential: CredentialDescriptor | undefined,
   provision: (modelId: string) => Layer.Layer<LanguageModel.LanguageModel, unknown, never>,
 ): Provider<Id, ModelIds> => {
+  // Runtime checks because Provider factories may forward an id typed as plain string.
   if (id.length === 0 || id.includes("/")) {
     throw new TypeError("Provider id must be non-empty and contain no '/'");
   }
@@ -44,11 +56,13 @@ export const makeProvider = <const Id extends string, const ModelIds extends Rea
     throw new TypeError("Provider credential must be a valid environment variable name");
   }
 
+  // Narrow away the ValidProviderId intersection so the branded cast keeps type overlap.
   const provider = { id: id as Id, modelIds } as Provider<Id, ModelIds>;
   providerMetadata.set(provider, { credential, provision });
   return provider;
 };
 
+/** Core-internal access to a Provider's hidden metadata; absent for Providers Core did not create. */
 export const getProviderMetadata = (provider: AnyProvider): ProviderMetadata | undefined =>
   providerMetadata.get(provider);
 
@@ -56,14 +70,18 @@ export const getProviderMetadata = (provider: AnyProvider): ProviderMetadata | u
 export const credentialDescriptor = (provider: AnyProvider): CredentialDescriptor | undefined =>
   providerMetadata.get(provider)?.credential;
 
-export const parseModelIdentifier = (
-  identifier: unknown,
+/**
+ * Splits a Qualified Model id at its first `/`, leaving later `/` characters in the
+ * Provider-native Model id. Returns undefined for anything that cannot select a Model.
+ */
+export const parseQualifiedModelId = (
+  qualifiedModelId: unknown,
 ): { readonly providerId: string; readonly modelId: string } | undefined => {
-  if (typeof identifier !== "string") return undefined;
-  const separator = identifier.indexOf("/");
-  if (separator <= 0 || separator === identifier.length - 1) return undefined;
+  if (typeof qualifiedModelId !== "string") return undefined;
+  const separator = qualifiedModelId.indexOf("/");
+  if (separator <= 0 || separator === qualifiedModelId.length - 1) return undefined;
   return {
-    providerId: identifier.slice(0, separator),
-    modelId: identifier.slice(separator + 1),
+    providerId: qualifiedModelId.slice(0, separator),
+    modelId: qualifiedModelId.slice(separator + 1),
   };
 };

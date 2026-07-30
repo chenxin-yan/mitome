@@ -1,17 +1,22 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Cause, Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Prompt, Response } from "effect/unstable/ai";
-import {
-  type AgentDefinition,
-  createSession,
-  makeProvider,
-  SessionBusyError,
-  SessionReleasedError,
-  TurnError,
-} from "../../src/index.js";
+import { AiError, LanguageModel, Prompt, Response } from "effect/unstable/ai";
+import { type AgentDefinition, createSession, makeProvider, TurnError } from "../../src/index.js";
 import { makeDeterministicProvider, makeTestProvider } from "../support/provider.js";
 
 describe("createSession", () => {
+  it("encodes TurnError defects for persistence", () => {
+    expect(
+      Schema.encodeUnknownSync(TurnError)(
+        new TurnError({ message: "Turn failed", cause: new Error("provider failed") }),
+      ),
+    ).toEqual({
+      _tag: "TurnError",
+      message: "Turn failed",
+      cause: { name: "Error", message: "provider failed" },
+    });
+  });
+
   it.effect("streams one model Step before completion", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");
@@ -23,11 +28,88 @@ describe("createSession", () => {
       const session = yield* createSession(definition);
       const events = yield* Stream.runCollect(session.prompt("Hi"));
 
-      expect([...events]).toEqual([
+      expect([...events]).toStrictEqual([
         { type: "model-output", text: "hello" },
-        { type: "response-complete" },
+        { type: "response-complete", finishReason: undefined, usage: undefined },
       ]);
       expect(yield* fixture.calls).toBe(1);
+    }),
+  );
+
+  it.effect("exposes reasoning and the final finish metadata", () =>
+    Effect.gen(function* () {
+      const firstUsage = new Response.Usage({
+        inputTokens: { total: 2 },
+        outputTokens: { total: 1 },
+      });
+      const finalUsage = new Response.Usage({
+        inputTokens: { total: 3 },
+        outputTokens: { total: 2, reasoning: 1 },
+      });
+      const model = makeTestProvider(() =>
+        Stream.fromIterable([
+          Response.makePart("reasoning-delta", { id: "reasoning", delta: "thinking" }),
+          Response.makePart("finish", { reason: "tool-calls", usage: firstUsage }),
+          Response.makePart("finish", { reason: "stop", usage: finalUsage }),
+        ]),
+      );
+      const session = yield* createSession({
+        providers: [model],
+        model: "test/default",
+        plugins: [],
+      });
+      const events = yield* Stream.runCollect(session.prompt("Hi"));
+
+      expect([...events]).toEqual([
+        { type: "reasoning", text: "thinking" },
+        { type: "response-complete", finishReason: "stop", usage: finalUsage },
+      ]);
+    }),
+  );
+
+  it.effect("preserves reasoning metadata in history without exposing it as an event", () =>
+    Effect.gen(function* () {
+      const metadata = {
+        openai: { itemId: "reasoning-1", encryptedContent: "encrypted-reasoning" },
+      };
+      let calls = 0;
+      let secondPrompt: Prompt.Prompt | undefined;
+      const model = makeTestProvider(({ prompt }) => {
+        calls += 1;
+        if (calls === 1) {
+          return Stream.fromIterable([
+            Response.makePart("reasoning-start", { id: "reasoning-1", metadata }),
+            Response.makePart("reasoning-delta", { id: "reasoning-1", delta: "summary" }),
+            Response.makePart("reasoning-end", { id: "reasoning-1", metadata }),
+            Response.makePart("tool-call", {
+              id: "call-1",
+              name: "lookup",
+              params: { query: "mitome" },
+              providerExecuted: false,
+            }),
+          ]);
+        }
+        secondPrompt = prompt;
+        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+      });
+      const session = yield* createSession({
+        providers: [model],
+        model: "test/default",
+        plugins: [],
+      });
+      const events = yield* Stream.runCollect(session.prompt("Hi"));
+
+      expect([...events]).toEqual([
+        { type: "reasoning", text: "summary" },
+        { type: "tool-call", id: "call-1", name: "lookup", params: { query: "mitome" } },
+        { type: "model-output", text: "done" },
+        { type: "response-complete" },
+      ]);
+      for (const prompt of [secondPrompt, Prompt.make(session.history())]) {
+        const assistant = prompt?.content.find((message) => message.role === "assistant");
+        const reasoning = assistant?.content.find((part) => part.type === "reasoning");
+        expect(reasoning).toMatchObject({ text: "summary", options: metadata });
+      }
     }),
   );
 
@@ -130,6 +212,54 @@ describe("createSession", () => {
     }),
   );
 
+  it.effect("surfaces provider AiError messages", () =>
+    Effect.gen(function* () {
+      const cause = AiError.make({
+        module: "Test Provider",
+        method: "streamText",
+        reason: new AiError.UnknownError({ description: "provider unavailable" }),
+      });
+      const session = yield* createSession({
+        providers: [makeTestProvider(() => Stream.fail(cause))],
+        model: "test/default",
+        plugins: [],
+      });
+
+      expect(yield* Effect.flip(Stream.runDrain(session.prompt("Hi")))).toMatchObject({
+        _tag: "TurnError",
+        message: cause.reason.message,
+        cause,
+      });
+    }),
+  );
+
+  it.effect("fails model error parts without committing Turn history", () =>
+    Effect.gen(function* () {
+      const cause = new Error("model stream failed");
+      const model = makeTestProvider(() =>
+        Stream.fromIterable([
+          Response.makePart("text-delta", { id: "partial", delta: "partial" }),
+          Response.makePart("error", { error: cause }),
+        ]),
+      );
+      const session = yield* createSession({
+        providers: [model],
+        model: "test/default",
+        plugins: [],
+      });
+      const events: Array<unknown> = [];
+      const error = yield* Effect.flip(
+        Stream.runDrain(
+          session.prompt("Hi").pipe(Stream.tap((event) => Effect.sync(() => events.push(event)))),
+        ),
+      );
+
+      expect(error).toMatchObject({ _tag: "TurnError", message: "Turn failed", cause });
+      expect(events).toEqual([{ type: "model-output", text: "partial" }]);
+      expect(session.history()).toEqual([]);
+    }),
+  );
+
   it.effect("isolates and releases session state", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");
@@ -149,7 +279,6 @@ describe("createSession", () => {
         }),
       );
 
-      expect(first.released()).toBe(true);
       expect(first.history()).toEqual([]);
     }),
   );
@@ -169,7 +298,10 @@ describe("createSession", () => {
 
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {
-        expect(Cause.squash(exit.cause)).toBeInstanceOf(SessionBusyError);
+        expect(Cause.squash(exit.cause)).toMatchObject({
+          _tag: "SessionBusyError",
+          message: "Session is busy with an active Turn",
+        });
       }
       expect(yield* fixture.calls).toBe(1);
     }),
@@ -228,6 +360,32 @@ describe("createSession", () => {
     }),
   );
 
+  it.effect("maps an Approval request without its Tool Call to TurnError", () =>
+    Effect.gen(function* () {
+      const model = makeProvider("test", [] as const, undefined, () =>
+        Layer.succeed(LanguageModel.LanguageModel, {
+          streamText: () =>
+            Stream.succeed(
+              Response.makePart("tool-approval-request", {
+                approvalId: "approval-missing",
+                toolCallId: "call-missing",
+              }),
+            ),
+        } as never),
+      );
+      const session = yield* createSession({
+        providers: [model],
+        model: "test/default",
+        plugins: [],
+      });
+
+      expect(yield* Effect.flip(Stream.runDrain(session.prompt("Hi")))).toMatchObject({
+        _tag: "TurnError",
+        message: "Tool approval request is missing its Tool call",
+      });
+    }),
+  );
+
   it.effect("rejects prompts after the session scope closes", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");
@@ -241,7 +399,10 @@ describe("createSession", () => {
 
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {
-        expect(Cause.squash(exit.cause)).toBeInstanceOf(SessionReleasedError);
+        expect(Cause.squash(exit.cause)).toMatchObject({
+          _tag: "SessionReleasedError",
+          message: "Session scope has been released",
+        });
       }
       expect(session.history()).toEqual([]);
     }),

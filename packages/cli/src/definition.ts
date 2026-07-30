@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
-import { Option } from "effect";
+import { Option, Schema } from "effect";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
 import { configDirectory, configDirectoryMessage } from "@mitome/core";
 import { isEnoent } from "./config.js";
@@ -47,7 +47,14 @@ export const checkRuntime = async (path: string): Promise<void> => {
     );
   }
   // A malformed package.json must fail loud.
-  const core = JSON.parse(await Bun.file(packagePath).text()) as { version?: unknown };
+  let core: { readonly version?: unknown };
+  try {
+    core = Schema.decodeUnknownSync(Schema.Struct({ version: Schema.optional(Schema.Unknown) }))(
+      JSON.parse(await Bun.file(packagePath).text()),
+    );
+  } catch (error) {
+    throw new Error(`Could not decode ${packagePath}.`, { cause: error });
+  }
   if (core.version !== corePackage.version) {
     throw new Error(
       `@mitome/core beside ${path} is ${String(core.version)}; install @mitome/core@${corePackage.version} with the Agent Definition dependencies (run \`mitome install\`).`,

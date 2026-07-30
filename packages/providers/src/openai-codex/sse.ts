@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Effect, Result, Schema, Stream } from "effect";
 import { AiError, Response, Tool } from "effect/unstable/ai";
 import { Sse } from "effect/unstable/encoding";
 import { invalidOutput, providerError } from "./request.js";
@@ -9,84 +9,255 @@ type StreamState = {
   readonly calls: Map<string, Call>;
   readonly textIds: Set<string>;
   terminal: boolean;
+  sawToolCall: boolean;
 };
 
-const string = (value: unknown): string | undefined =>
-  typeof value === "string" ? value : undefined;
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+const Event = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
+const ErrorEvent = Schema.Struct({
+  error: Schema.optional(Schema.Struct({ message: Schema.optional(Schema.String) })),
+  message: Schema.optional(Schema.String),
+});
+const FailedEvent = Schema.Struct({
+  response: Schema.optional(
+    Schema.Struct({
+      error: Schema.optional(Schema.Struct({ message: Schema.optional(Schema.String) })),
+    }),
+  ),
+});
+const ItemType = Schema.Struct({ type: Schema.String });
+const FunctionCallAddedItem = Schema.Struct({
+  call_id: Schema.optional(Schema.String),
+  id: Schema.optional(Schema.String),
+  name: Schema.String,
+});
+const FunctionCallDoneItem = Schema.Struct({
+  id: Schema.optional(Schema.String),
+  arguments: Schema.optional(Schema.String),
+});
+const ReasoningItem = Schema.Struct({
+  id: Schema.String,
+  encrypted_content: Schema.optional(Schema.NullOr(Schema.String)),
+  summary: Schema.Array(
+    Schema.Struct({ type: Schema.Literal("summary_text"), text: Schema.String }),
+  ),
+});
+const Delta = Schema.Struct({ delta: Schema.String });
+const FinalArguments = Schema.Struct({ arguments: Schema.String });
+const TerminalEvent = Schema.Struct({
+  response: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        incomplete_details: Schema.optional(
+          Schema.NullOr(Schema.Struct({ reason: Schema.optional(Schema.String) })),
+        ),
+        usage: Schema.optional(
+          Schema.NullOr(
+            Schema.Struct({
+              input_tokens: Schema.optional(Schema.Number),
+              output_tokens: Schema.optional(Schema.Number),
+              input_tokens_details: Schema.optional(
+                Schema.NullOr(Schema.Struct({ cached_tokens: Schema.optional(Schema.Number) })),
+              ),
+              output_tokens_details: Schema.optional(
+                Schema.NullOr(Schema.Struct({ reasoning_tokens: Schema.optional(Schema.Number) })),
+              ),
+            }),
+          ),
+        ),
+      }),
+    ),
+  ),
+});
+
+const decode = <S extends Schema.ConstraintDecoder<unknown>>(
+  schema: S,
+  input: unknown,
+  onFailure: () => unknown,
+) => {
+  const result = Schema.decodeUnknownResult(schema)(input);
+  if (Result.isFailure(result)) throw onFailure();
+  return result.success;
+};
+
 // The backend keys some events by item_id ("msg_…") and omits it on others
 // (output_item.added carries only output_index), so output_index is the one
 // key present on every per-item event — matching Pi's reference transport.
 const itemKey = (event: Record<string, unknown>) =>
   typeof event.output_index === "number"
     ? String(event.output_index)
-    : (string(event.item_id) ?? "output");
+    : typeof event.item_id === "string"
+      ? event.item_id
+      : "output";
+
+// Item type drives dispatch only; unknown/malformed items are ignored.
+const outputItemType = (item: unknown): string | undefined => {
+  const result = Schema.decodeUnknownResult(ItemType)(item);
+  return Result.isFailure(result) ? undefined : result.success.type;
+};
+
+const decodeOutputItemAdded = (
+  state: StreamState,
+  item: unknown,
+  key: string,
+): Array<Response.StreamPartEncoded> => {
+  const itemType = outputItemType(item);
+  if (itemType === "message") {
+    state.textIds.add(key);
+    return [Response.makePart("text-start", { id: key })];
+  }
+  if (itemType === "function_call") {
+    const added = decode(FunctionCallAddedItem, item, () =>
+      invalidOutput("Codex sent an incomplete Tool call"),
+    );
+    const id = added.call_id ?? added.id;
+    if (id === undefined) throw invalidOutput("Codex sent an incomplete Tool call");
+    const call = { id, name: added.name, arguments: "" };
+    state.calls.set(key, call);
+    // Argument deltas may arrive keyed by item_id instead of output_index.
+    if (added.id !== undefined) state.calls.set(added.id, call);
+    return [
+      Response.makePart("tool-params-start", { id, name: added.name, providerExecuted: false }),
+    ];
+  }
+  return [];
+};
+
+const decodeOutputItemDone = (
+  state: StreamState,
+  item: unknown,
+  key: string,
+): Array<Response.StreamPartEncoded> => {
+  const itemType = outputItemType(item);
+  if (itemType === "message") {
+    return state.textIds.delete(key) ? [Response.makePart("text-end", { id: key })] : [];
+  }
+  if (itemType === "reasoning") {
+    const reasoning = decode(ReasoningItem, item, () =>
+      invalidOutput("Codex sent incomplete reasoning"),
+    );
+    const id = `${reasoning.id}:0`;
+    const text = reasoning.summary.map(({ text }) => text).join("\n");
+    const metadata = {
+      openai: {
+        itemId: reasoning.id,
+        ...(reasoning.encrypted_content == null
+          ? {}
+          : { encryptedContent: reasoning.encrypted_content }),
+      },
+    };
+    return [
+      Response.makePart("reasoning-start", { id, metadata }),
+      ...(text === "" ? [] : [Response.makePart("reasoning-delta", { id, delta: text })]),
+      Response.makePart("reasoning-end", { id, metadata }),
+    ];
+  }
+  if (itemType === "function_call") {
+    const done = decode(FunctionCallDoneItem, item, () =>
+      invalidOutput("Codex completed an unknown Tool call"),
+    );
+    const call = state.calls.get(key) ?? state.calls.get(done.id ?? "");
+    if (call === undefined) throw invalidOutput("Codex completed an unknown Tool call");
+    const arguments_ = done.arguments ?? call.arguments;
+    let params: unknown;
+    try {
+      params = Tool.unsafeSecureJsonParse(arguments_ || "{}");
+    } catch {
+      throw invalidOutput(`Invalid JSON arguments for Tool ${call.name}`);
+    }
+    state.calls.delete(key);
+    state.sawToolCall = true;
+    return [
+      Response.makePart("tool-params-end", { id: call.id }),
+      Response.makePart("tool-call", {
+        id: call.id,
+        name: call.name,
+        params,
+        providerExecuted: false,
+      }),
+    ];
+  }
+  return [];
+};
+
+// Terminal events carry completion status and usage; without a finish part the
+// Session's finishReason/usage metadata would be silently absent for Codex.
+const finishPart = (state: StreamState, event: unknown): Response.StreamPartEncoded => {
+  const decoded = decode(TerminalEvent, event, () =>
+    invalidOutput("Codex sent a malformed terminal event"),
+  );
+  const reason = decoded.response?.incomplete_details?.reason;
+  const usage = decoded.response?.usage;
+  const cached = usage?.input_tokens_details?.cached_tokens;
+  const reasoning = usage?.output_tokens_details?.reasoning_tokens;
+  return Response.makePart("finish", {
+    reason:
+      reason === undefined
+        ? state.sawToolCall
+          ? "tool-calls"
+          : "stop"
+        : reason === "max_output_tokens"
+          ? "length"
+          : reason === "content_filter"
+            ? "content-filter"
+            : "unknown",
+    usage: {
+      inputTokens: {
+        ...(usage?.input_tokens === undefined
+          ? {}
+          : { total: usage.input_tokens, uncached: usage.input_tokens - (cached ?? 0) }),
+        ...(cached === undefined ? {} : { cacheRead: cached }),
+      },
+      outputTokens: {
+        ...(usage?.output_tokens === undefined ? {} : { total: usage.output_tokens }),
+        ...(reasoning === undefined ? {} : { reasoning }),
+      },
+    },
+  });
+};
 
 const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPartEncoded> => {
   if (data === "[DONE]") return [];
-  let event: Record<string, unknown>;
-  try {
-    event = JSON.parse(data) as Record<string, unknown>;
-  } catch {
-    throw invalidOutput("Codex sent malformed SSE JSON");
-  }
-  const type = string(event.type);
+  const event = decode(Event, data, () => invalidOutput("Codex sent malformed SSE JSON"));
+  const type = typeof event.type === "string" ? event.type : undefined;
   if (type === "error") {
-    const error = record(event.error);
-    throw providerError(string(error?.message) ?? string(event.message) ?? "Codex provider error");
+    const decoded = decode(ErrorEvent, event, () => providerError("Codex provider error"));
+    throw providerError(decoded.error?.message ?? decoded.message ?? "Codex provider error");
   }
   if (type === "response.failed") {
-    const response = record(event.response);
-    const error = record(response?.error);
-    throw providerError(string(error?.message) ?? "Codex response failed");
+    const decoded = decode(FailedEvent, event, () => providerError("Codex response failed"));
+    throw providerError(decoded.response?.error?.message ?? "Codex response failed");
   }
   if (type === "response.done" || type === "response.completed" || type === "response.incomplete") {
     state.terminal = true;
-    return [];
+    return [finishPart(state, event)];
   }
   const key = itemKey(event);
   if (type === "response.output_item.added") {
-    const item = record(event.item);
-    if (item?.type === "message") {
-      state.textIds.add(key);
-      return [Response.makePart("text-start", { id: key })];
-    }
-    if (item?.type === "function_call") {
-      const id = string(item.call_id) ?? string(item.id);
-      const name = string(item.name);
-      if (id === undefined || name === undefined)
-        throw invalidOutput("Codex sent an incomplete Tool call");
-      const call = { id, name, arguments: "" };
-      state.calls.set(key, call);
-      // Argument deltas may arrive keyed by item_id instead of output_index.
-      const itemId = string(item.id);
-      if (itemId !== undefined) state.calls.set(itemId, call);
-      return [Response.makePart("tool-params-start", { id, name, providerExecuted: false })];
-    }
-    return [];
+    return decodeOutputItemAdded(state, event.item, key);
   }
   if (type === "response.output_text.delta") {
-    const delta = string(event.delta);
-    if (delta === undefined || !state.textIds.has(key))
-      throw invalidOutput("Codex sent text without a message item");
-    return [Response.makePart("text-delta", { id: key, delta })];
+    const decoded = decode(Delta, event, () =>
+      invalidOutput("Codex sent text without a message item"),
+    );
+    if (!state.textIds.has(key)) throw invalidOutput("Codex sent text without a message item");
+    return [Response.makePart("text-delta", { id: key, delta: decoded.delta })];
   }
   if (type === "response.function_call_arguments.delta") {
+    const decoded = decode(Delta, event, () =>
+      invalidOutput("Codex sent arguments without a Tool call"),
+    );
     const call = state.calls.get(key);
-    const delta = string(event.delta);
-    if (call === undefined || delta === undefined)
-      throw invalidOutput("Codex sent arguments without a Tool call");
-    call.arguments += delta;
-    return [Response.makePart("tool-params-delta", { id: call.id, delta })];
+    if (call === undefined) throw invalidOutput("Codex sent arguments without a Tool call");
+    call.arguments += decoded.delta;
+    return [Response.makePart("tool-params-delta", { id: call.id, delta: decoded.delta })];
   }
   if (type === "response.function_call_arguments.done") {
+    const decoded = decode(FinalArguments, event, () =>
+      invalidOutput("Codex sent final arguments without a Tool call"),
+    );
     const call = state.calls.get(key);
-    const arguments_ = string(event.arguments);
-    if (call === undefined || arguments_ === undefined)
-      throw invalidOutput("Codex sent final arguments without a Tool call");
+    if (call === undefined) throw invalidOutput("Codex sent final arguments without a Tool call");
+    const arguments_ = decoded.arguments;
     const delta = arguments_.startsWith(call.arguments)
       ? arguments_.slice(call.arguments.length)
       : "";
@@ -94,30 +265,7 @@ const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPar
     return delta === "" ? [] : [Response.makePart("tool-params-delta", { id: call.id, delta })];
   }
   if (type === "response.output_item.done") {
-    const item = record(event.item);
-    if (item?.type === "message")
-      return state.textIds.delete(key) ? [Response.makePart("text-end", { id: key })] : [];
-    if (item?.type === "function_call") {
-      const call = state.calls.get(key) ?? state.calls.get(string(item.id) ?? "");
-      if (call === undefined) throw invalidOutput("Codex completed an unknown Tool call");
-      const arguments_ = string(item.arguments) ?? call.arguments;
-      let params: unknown;
-      try {
-        params = Tool.unsafeSecureJsonParse(arguments_ || "{}");
-      } catch {
-        throw invalidOutput(`Invalid JSON arguments for Tool ${call.name}`);
-      }
-      state.calls.delete(key);
-      return [
-        Response.makePart("tool-params-end", { id: call.id }),
-        Response.makePart("tool-call", {
-          id: call.id,
-          name: call.name,
-          params,
-          providerExecuted: false,
-        }),
-      ];
-    }
+    return decodeOutputItemDone(state, event.item, key);
   }
   return [];
 };
@@ -135,6 +283,7 @@ export const decodeStream = <R>(
       calls: new Map(),
       textIds: new Set(),
       terminal: false,
+      sawToolCall: false,
     };
     return stream.pipe(
       Stream.decodeText,

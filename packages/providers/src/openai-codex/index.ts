@@ -1,13 +1,11 @@
 import { type AuthCapability, makeProvider } from "@mitome/core";
-import { logout } from "./credential-store.js";
 import { provider } from "./constants.js";
-import { login } from "./login.js";
+import { login, logout } from "./login.js";
 import { codexLayer } from "./model.js";
 import { knownModelIds } from "./models.js";
 import { type CodexOptions } from "./types.js";
 
-export { writeCredential, logout } from "./credential-store.js";
-export { login } from "./login.js";
+export { login, logout } from "./login.js";
 export { knownModelIds, type KnownModelId } from "./models.js";
 export type { CodexOptions, LoginOptions, LogoutOptions, OAuthCredential } from "./types.js";
 

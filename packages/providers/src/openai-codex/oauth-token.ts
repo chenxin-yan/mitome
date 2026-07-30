@@ -1,64 +1,53 @@
+import { Data, Effect, Schema } from "effect";
+import { type HttpClient } from "effect/unstable/http";
+import { exchangeToken, type OAuthToken, type OAuthTokenFailure } from "../shared/oauth.js";
 import { type OAuthCredential } from "./types.js";
+
+const AccountClaim = Schema.Struct({ chatgpt_account_id: Schema.String });
+const missingAccount = () => new Error("OAuth access token did not contain an account.");
+
+export class OAuthCredentialError extends Data.TaggedError("OAuthCredentialError")<{
+  readonly message: string;
+}> {}
+
+export type OAuthCredentialFailure = OAuthTokenFailure | OAuthCredentialError;
 
 export const accountId = (access: string): string => {
   const payload = access.split(".")[1];
-  if (payload === undefined) throw new Error("OAuth access token did not contain an account.");
-  let parsed: unknown;
+  if (payload === undefined) throw missingAccount();
   try {
-    parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<
+      string,
+      unknown
+    >;
+    // A present nested object is authoritative, even when it lacks the account id.
+    const auth = claims["https://api.openai.com/auth"];
+    const source = typeof auth === "object" && auth !== null ? auth : claims;
+    const { chatgpt_account_id } = Schema.decodeUnknownSync(AccountClaim)(source);
+    if (chatgpt_account_id === "") throw missingAccount();
+    return chatgpt_account_id;
   } catch {
-    throw new Error("OAuth access token did not contain an account.");
+    throw missingAccount();
   }
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("OAuth access token did not contain an account.");
-  }
-  // Codex nests the account under this claim; some tokens carry it top-level.
-  const claims = parsed as Record<string, unknown>;
-  const auth = claims["https://api.openai.com/auth"];
-  const id =
-    typeof auth === "object" && auth !== null
-      ? (auth as Record<string, unknown>)["chatgpt_account_id"]
-      : claims["chatgpt_account_id"];
-  if (typeof id !== "string" || id === "") {
-    throw new Error("OAuth access token did not contain an account.");
-  }
-  return id;
 };
 
-export const token = async (
+/** Codex Credentials carry the account the unofficial backend routes on. */
+export const credential = (token: OAuthToken): OAuthCredential => ({
+  type: "oauth",
+  ...token,
+  accountId: accountId(token.access),
+});
+
+export const token = (
   tokenUrl: string,
   form: Record<string, string>,
-): Promise<OAuthCredential> => {
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(form),
-    // Keep refresh bounded while holding the storage lock, so a hung exchange does not hold it indefinitely.
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) throw new Error("OAuth token exchange failed.");
-  const body: unknown = await response.json();
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    !("access_token" in body) ||
-    !("refresh_token" in body) ||
-    !("expires_in" in body) ||
-    typeof body.access_token !== "string" ||
-    typeof body.refresh_token !== "string" ||
-    typeof body.expires_in !== "number"
-  ) {
-    throw new Error("OAuth token exchange returned an invalid response.");
-  }
-  return {
-    type: "oauth",
-    access: body.access_token,
-    refresh: body.refresh_token,
-    expires: Date.now() + body.expires_in * 1_000,
-    accountId: accountId(body.access_token),
-  };
-};
-
-// Refresh slightly early so a token expiring mid-flight doesn't cost a 401 round trip.
-export const isExpired = (credential: OAuthCredential): boolean =>
-  Date.now() >= credential.expires - 60_000;
+): Effect.Effect<OAuthCredential, OAuthCredentialFailure, HttpClient.HttpClient> =>
+  Effect.flatMap(exchangeToken(tokenUrl, form), (exchanged) =>
+    Effect.try({
+      try: () => credential(exchanged),
+      catch: () =>
+        new OAuthCredentialError({
+          message: "OAuth access token did not contain an account.",
+        }),
+    }),
+  );

@@ -29,6 +29,9 @@ export const jsonStringSchema: InputSchema<string> = {
   },
 };
 
+// Deliberately raw Service fake (bypasses LanguageModel.make's tool-call pipeline)
+// so tests can reach the Service-level toolkit directly. Sibling copy:
+// packages/core/test/support/provider.ts.
 export const testLanguageModel = (
   streamText: (options: TestModelOptions) => unknown,
 ): LanguageModel.Service => ({ streamText }) as unknown as LanguageModel.Service;

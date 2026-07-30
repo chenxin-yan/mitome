@@ -3,18 +3,20 @@ export {
   AgentDefinitionError,
   SessionBusyError,
   SessionReleasedError,
-  ToolExecutionDenied,
   TurnError,
   defineAgent,
 } from "@mitome/core";
 export type {
   AgentDefinition,
-  ModelIdentifier,
   Plugin,
   Provider,
   PluginHooks,
+  PromptOptions,
+  QualifiedModelId,
   ToolHookContext,
+  ToolInputValidator,
   ToolResultHookContext,
+  ToolExecutionDenied,
   ToolResultValidator,
 } from "@mitome/core";
 export { definePlugin, tool } from "./plugin.js";
@@ -24,7 +26,9 @@ export type {
   OutputSchema,
   PluginHooksDefinition,
   Prompt,
+  ResponsePart,
   StandardSchema,
+  StepEndContext,
   Tool,
 } from "./plugin.js";
 export { withSession } from "./session.js";
