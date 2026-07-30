@@ -133,8 +133,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null ||
-            { git tag "$RELEASE_TAG" "$RELEASE_SHA" && git push origin "refs/tags/$RELEASE_TAG"; }
+          existing="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" | cut -f1)"
+          if [[ -z "$existing" ]]; then
+            git tag "$RELEASE_TAG" "$RELEASE_SHA"
+            git push origin "refs/tags/$RELEASE_TAG"
+          else
+            # A pre-existing tag must point at the verified release source.
+            test "$existing" = "$RELEASE_SHA"
+          fi
       - name: Create the tagged release if needed
         env:
           GH_TOKEN: ${{ github.token }}
