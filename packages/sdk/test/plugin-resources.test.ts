@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { Cause, Context, Effect, Exit, Layer, Result, Schema, SchemaGetter, Stream } from "effect";
 import { Response, Tool as AiTool, Toolkit } from "effect/unstable/ai";
-import { createSession, type Plugin } from "@mitome/core";
+import { createSession, definePlugin as defineCorePlugin, type Plugin } from "@mitome/core";
 import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
 import { defineAgent, definePlugin, tool, withSession } from "../src/index.js";
 
@@ -402,14 +402,14 @@ describe("@mitome/sdk Plugin resources", () => {
       success: serviceString,
       failureMode: "return",
     });
-    const native: Plugin<string> = {
+    const native = defineCorePlugin({
       name: "native",
       resource: Layer.succeed(Prefix, "pre"),
       toolkit: Toolkit.make(echo),
       handlers: { "native-echo": () => Effect.succeed("hello") },
       // postTool forces the validateResult re-encoding path as well.
       hooks: { postTool: (context) => Effect.succeed(context.result) },
-    };
+    });
     let calls = 0;
     const model = makeTestProvider((options) => {
       calls += 1;

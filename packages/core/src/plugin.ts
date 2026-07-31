@@ -78,18 +78,24 @@ export interface Plugin<
  */
 export type AnyPlugin = Plugin<any, unknown, any> | Plugin<never, any, any>;
 
-type ServiceFree<Tools extends Record<string, Tool.Any>> = [
+type ServiceCoverage<Tools extends Record<string, Tool.Any>, Resource> = [
   Tool.HandlerServices<Tools[keyof Tools]> | Tool.ResultDecodingServices<Tools[keyof Tools]>,
-] extends [never]
+] extends [Resource]
   ? unknown
   : never;
 
-type ToolkitlessPlugin<LayerValue extends Layer.Layer<any, any, never>> = Omit<
+type LayerPlugin<LayerValue extends Layer.Layer<any, any, never>> = Omit<
   Plugin<Layer.Success<LayerValue>, Layer.Error<LayerValue>>,
-  "resource" | "toolkit" | "handlers" | "toolInputValidators" | "toolResultValidators" | "hooks"
+  "resource" | "hooks"
 > & {
   readonly resource?: LayerValue | undefined;
   readonly hooks?: PluginHooks<NoInfer<Layer.Success<LayerValue>>> | undefined;
+};
+
+type ToolkitlessPlugin<LayerValue extends Layer.Layer<any, any, never>> = Omit<
+  LayerPlugin<LayerValue>,
+  "toolkit" | "handlers" | "toolInputValidators" | "toolResultValidators"
+> & {
   readonly toolkit?: undefined;
   readonly handlers?: undefined;
   readonly toolInputValidators?: undefined;
@@ -106,25 +112,60 @@ type ResourceFreeToolkitlessPlugin = Omit<
   readonly hooks?: PluginHooks | undefined;
 };
 
-// NoInfer blocks contextual back-inference of Resource=any from AnyPlugin arrays.
-export function definePlugin<const LayerValue extends Layer.Layer<any, any, never>>(
-  plugin: ToolkitlessPlugin<LayerValue> & { readonly resource: LayerValue } & RejectAny<LayerValue>,
-): NoInfer<Plugin<Layer.Success<LayerValue>, Layer.Error<LayerValue>>>;
-export function definePlugin(plugin: ResourceFreeToolkitlessPlugin): NoInfer<Plugin>;
-export function definePlugin<const ToolkitValue extends Toolkit.Any>(plugin: {
+type ToolkitPlugin<ToolkitValue extends Toolkit.Any, Resource = never, ResourceError = never> = {
   readonly name: string;
   readonly instructions?: string | undefined;
+  readonly resource?: Layer.Layer<Resource, ResourceError, never> | undefined;
   readonly toolkit: ToolkitValue;
   readonly handlers: Toolkit.HandlersFrom<Toolkit.Tools<NoInfer<ToolkitValue>>> &
-    ServiceFree<Toolkit.Tools<NoInfer<ToolkitValue>>>;
+    ServiceCoverage<Toolkit.Tools<NoInfer<ToolkitValue>>, Resource>;
   readonly toolInputValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolInputValidator>>
   >;
   readonly toolResultValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
   >;
-  readonly hooks?: PluginHooks | undefined;
-}): Plugin<never, never, ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>>;
+  readonly hooks?: PluginHooks<Resource> | undefined;
+};
+
+type ResourcefulToolkitPlugin<
+  LayerValue extends Layer.Layer<any, any, never>,
+  ToolkitValue extends Toolkit.Any,
+> = Omit<
+  LayerPlugin<LayerValue>,
+  "resource" | "toolkit" | "handlers" | "toolInputValidators" | "toolResultValidators" | "hooks"
+> & {
+  readonly resource: LayerValue;
+  readonly toolkit: ToolkitValue;
+  readonly handlers: Toolkit.HandlersFrom<Toolkit.Tools<NoInfer<ToolkitValue>>> &
+    ServiceCoverage<Toolkit.Tools<NoInfer<ToolkitValue>>, Layer.Success<NoInfer<LayerValue>>>;
+  readonly toolInputValidators?: Readonly<
+    Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolInputValidator>>
+  >;
+  readonly toolResultValidators?: Readonly<
+    Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
+  >;
+  readonly hooks?: PluginHooks<Layer.Success<NoInfer<LayerValue>>> | undefined;
+};
+
+// NoInfer blocks contextual back-inference of Resource=any from AnyPlugin arrays.
+export function definePlugin<const LayerValue extends Layer.Layer<any, any, never>>(
+  plugin: ToolkitlessPlugin<LayerValue> & { readonly resource: LayerValue } & RejectAny<LayerValue>,
+): NoInfer<Plugin<Layer.Success<LayerValue>, Layer.Error<LayerValue>>>;
+export function definePlugin(plugin: ResourceFreeToolkitlessPlugin): NoInfer<Plugin>;
+export function definePlugin<const ToolkitValue extends Toolkit.Any>(
+  plugin: Omit<ToolkitPlugin<ToolkitValue>, "resource"> & { readonly resource?: undefined },
+): Plugin<never, never, ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>>;
+export function definePlugin<
+  const LayerValue extends Layer.Layer<any, any, never>,
+  const ToolkitValue extends Toolkit.Any,
+>(
+  plugin: ResourcefulToolkitPlugin<LayerValue, ToolkitValue> & RejectAny<LayerValue>,
+): Plugin<
+  Layer.Success<LayerValue>,
+  Layer.Error<LayerValue>,
+  ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>
+>;
 // The impl return must be assignable to every overload return; only never is.
 export function definePlugin(plugin: unknown): never {
   return plugin as never;

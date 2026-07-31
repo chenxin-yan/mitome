@@ -9,6 +9,7 @@ import {
   type AnyPlugin,
   type Plugin,
   type Provider,
+  type ToolContribution,
 } from "../../src/index.js";
 
 type Equal<Left, Right> =
@@ -115,15 +116,16 @@ export type InferredMergedPluginResource = Expect<
   Equal<ResourceOf<typeof mergedResourcePlugin>, string | number>
 >;
 
+// @ts-expect-error Hooks may only require services supplied by the resource Layer.
 definePlugin({
   name: "missing-resource",
   resource: Layer.succeed(PluginResource, "value"),
-  // @ts-expect-error Hooks may only require services supplied by the resource Layer.
   hooks: { sessionStart: Effect.asVoid(Effect.service(MissingPluginResource)) },
 });
 
 definePlugin<any>({
   name: "explicit-resource-escape",
+  // @ts-expect-error Explicit generics cannot widen the resource Layer's output.
   resource: Layer.succeed(PluginResource, "value"),
   // @ts-expect-error Explicit generics cannot widen the resource Layer's output.
   hooks: { sessionStart: Effect.asVoid(Effect.service(MissingPluginResource)) },
@@ -159,6 +161,67 @@ definePlugin({
   toolkit: Toolkit.make(decodingDependent),
   // @ts-expect-error Tool result decoding services require a Plugin resource Layer.
   handlers: { "decoding-dependent": () => Effect.succeed("result") },
+});
+
+const resourcefulDependent = Tool.make("resourceful-dependent", {
+  dependencies: [Dependency],
+  parameters: Schema.Struct({ amount: Schema.Finite }),
+  success: decodingDependentSchema,
+});
+const resourcefulToolkitPlugin = definePlugin({
+  name: "resourceful-toolkit",
+  resource: Layer.succeed(Dependency, { value: "resource" }),
+  toolkit: Toolkit.make(resourcefulDependent),
+  handlers: {
+    "resourceful-dependent": (params) => {
+      const amount: number = params.amount;
+      return Effect.map(Dependency, ({ value }) => `${value}:${amount}`);
+    },
+  },
+  hooks: { sessionStart: Effect.asVoid(Dependency) },
+});
+type ResourcefulToolkitContributions = ContributionsOf<typeof resourcefulToolkitPlugin>;
+export type ResourcefulToolkitResource = Expect<
+  Equal<ResourceOf<typeof resourcefulToolkitPlugin>, Dependency>
+>;
+export type ResourcefulToolkitContribution = Expect<
+  Equal<
+    ResourcefulToolkitContributions["resourceful-dependent"],
+    ToolContribution<{ readonly amount: number }, string>
+  >
+>;
+
+const uncoveredHandler = Tool.make("uncovered-handler", { dependencies: [MissingPluginResource] });
+definePlugin({
+  name: "uncovered-handler",
+  resource: Layer.succeed(Dependency, { value: "resource" }),
+  toolkit: Toolkit.make(uncoveredHandler),
+  // @ts-expect-error Tool handler services must be supplied by the resource Layer.
+  handlers: { "uncovered-handler": () => Effect.asVoid(MissingPluginResource) },
+});
+
+declare const missingDecodingSchema: Schema.Codec<
+  string,
+  string,
+  typeof MissingPluginResource,
+  never
+>;
+const uncoveredDecoding = Tool.make("uncovered-decoding", { success: missingDecodingSchema });
+definePlugin({
+  name: "uncovered-decoding",
+  resource: Layer.succeed(Dependency, { value: "resource" }),
+  toolkit: Toolkit.make(uncoveredDecoding),
+  // @ts-expect-error Tool result decoding services must be supplied by the resource Layer.
+  handlers: { "uncovered-decoding": () => Effect.succeed("result") },
+});
+
+definePlugin({
+  name: "uncovered-toolkit-hook",
+  resource: Layer.succeed(Dependency, { value: "resource" }),
+  toolkit: Toolkit.make(independent),
+  handlers: { independent: () => Effect.void },
+  // @ts-expect-error Hooks must only require services supplied by the resource Layer.
+  hooks: { sessionStart: Effect.asVoid(MissingPluginResource) },
 });
 
 const toolkitlessPlugin = definePlugin({ name: "toolkitless" });
