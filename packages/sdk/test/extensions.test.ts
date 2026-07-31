@@ -9,7 +9,7 @@ import { LanguageModel, Response } from "effect/unstable/ai";
 import { createSession, makeProvider } from "@mitome/core";
 import { defineAgent as definePromiseAgent } from "@mitome/sdk";
 import { defineAgent as defineEffectAgent } from "@mitome/sdk/effect";
-import { instructionFiles, instructions } from "../src/index.js";
+import { instructionFiles, instructions } from "../src/extensions/index.js";
 
 const cwd = process.cwd();
 const temporaryDirectories: Array<string> = [];
@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 const temporaryDirectory = (): string => {
-  const directory = mkdtempSync(join(tmpdir(), "mitome-plugins-"));
+  const directory = mkdtempSync(join(tmpdir(), "mitome-extensions-"));
   temporaryDirectories.push(directory);
   return directory;
 };
@@ -37,7 +37,7 @@ const provider = () =>
     ),
   );
 
-describe("@mitome/plugins", () => {
+describe("@mitome/sdk/extensions", () => {
   test("uses inline Instructions as the Session system message", async () => {
     const history = await Effect.runPromise(
       Effect.scoped(
@@ -45,7 +45,7 @@ describe("@mitome/plugins", () => {
           createSession({
             providers: [provider()],
             model: "test/default",
-            plugins: [instructions("Be helpful.")],
+            extensions: [instructions("Be helpful.")],
           }),
           (session) => session.history(),
         ),
@@ -69,7 +69,7 @@ describe("@mitome/plugins", () => {
     writeFileSync(join(root, "instructions.md"), "Bundled instructions.");
     writeFileSync(
       entry,
-      `import { instructionFiles } from ${JSON.stringify(fileURLToPath(new URL("../src/index.ts", import.meta.url)))};\nconsole.log(JSON.stringify(instructionFiles({ paths: ["./instructions.md"] })));\n`,
+      `import { instructionFiles } from ${JSON.stringify(fileURLToPath(new URL("../src/extensions/index.ts", import.meta.url)))};\nconsole.log(JSON.stringify(instructionFiles({ paths: ["./instructions.md"] })));\n`,
     );
     execFileSync("bun", ["build", entry, "--outfile", bundle, "--target", "node"]);
 
@@ -138,19 +138,19 @@ describe("@mitome/plugins", () => {
     );
   });
 
-  test("accepts Plugins from both SDK definition surfaces", () => {
+  test("accepts Extensions from both SDK definition surfaces", () => {
     const promiseDefinition = definePromiseAgent({
       providers: [provider()],
       model: "test/default",
-      plugins: [instructions("Promise SDK")],
+      extensions: [instructions("Promise SDK")],
     });
     const effectDefinition = defineEffectAgent({
       providers: [provider()],
       model: "test/default",
-      plugins: [instructionFiles({ paths: ["./fixtures/instructions.md"] })],
+      extensions: [instructionFiles({ paths: ["./fixtures/instructions.md"] })],
     });
 
-    expect(promiseDefinition.plugins[0].instructions).toBe("Promise SDK");
-    expect(effectDefinition.plugins[0].instructions).toBe("Sibling instructions.\n");
+    expect(promiseDefinition.extensions[0].instructions).toBe("Promise SDK");
+    expect(effectDefinition.extensions[0].instructions).toBe("Sibling instructions.\n");
   });
 });

@@ -9,7 +9,7 @@ const second = makeProvider("second", [] as const, undefined, () => layer);
 const definition = defineAgent({
   providers: [first, second] as const,
   model: "first/known",
-  plugins: [],
+  extensions: [],
 });
 
 void withSession(definition, async (session) => {

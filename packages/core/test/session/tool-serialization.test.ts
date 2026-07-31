@@ -59,7 +59,7 @@ describe("createSession Tool serialization", () => {
       const definition: AgentDefinition = {
         providers: [model],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "tools",
             toolkit: Toolkit.make(first, second),

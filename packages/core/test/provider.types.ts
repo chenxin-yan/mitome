@@ -14,7 +14,7 @@ makeProvider("invalid/id", [], undefined, () => layer);
 const definition = defineAgent({
   providers: [alpha, beta] as const,
   model: "alpha/known",
-  plugins: [],
+  extensions: [],
 });
 
 const known: QualifiedModelId<typeof alpha> = "alpha/known";
@@ -23,16 +23,20 @@ void known;
 void arbitrary;
 
 // @ts-expect-error Qualified Model ids must use a registered Provider prefix.
-defineAgent({ providers: [alpha] as const, model: "beta/known", plugins: [] });
+defineAgent({ providers: [alpha] as const, model: "beta/known", extensions: [] });
 
 // @ts-expect-error Agent Definitions reject excess keys.
-defineAgent({ providers: [alpha] as const, model: "alpha/known", plugins: [], extra: true });
+defineAgent({ providers: [alpha] as const, model: "alpha/known", extensions: [], extra: true });
 
 // @ts-expect-error Every registered value must be a Provider.
-defineAgent({ providers: [alpha, "not-a-provider"] as const, model: "alpha/known", plugins: [] });
+defineAgent({
+  providers: [alpha, "not-a-provider"] as const,
+  model: "alpha/known",
+  extensions: [],
+});
 
 const reordered = defineAgent({
-  plugins: [],
+  extensions: [],
   model: "beta/private",
   providers: [alpha, beta] as const,
 });

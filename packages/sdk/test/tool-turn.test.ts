@@ -5,7 +5,7 @@ import { makeProvider } from "@mitome/core";
 import {
   AgentDefinitionError,
   defineAgent,
-  definePlugin,
+  defineExtension,
   tool,
   withSession,
   type InputSchema,
@@ -57,8 +57,8 @@ describe("@mitome/sdk Tool", () => {
     const definition = defineAgent({
       providers: [provider],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "validation",
           tools: [
             tool({
@@ -112,9 +112,9 @@ describe("@mitome/sdk Tool", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [
-        definePlugin({
-          name: "echo-plugin",
+      extensions: [
+        defineExtension({
+          name: "echo-extension",
           tools: [
             tool({
               name: "echo",
@@ -186,9 +186,9 @@ describe("@mitome/sdk Tool", () => {
     const definition = defineAgent({
       providers: [model],
       model: "test/default",
-      plugins: [
-        definePlugin({
-          name: "echo-plugin",
+      extensions: [
+        defineExtension({
+          name: "echo-extension",
           tools: [
             tool({
               name: "echo",
@@ -269,9 +269,9 @@ describe("@mitome/sdk Tool", () => {
     const definition = defineAgent({
       providers: [model],
       model: "test/default",
-      plugins: [
-        definePlugin({
-          name: "echo-plugin",
+      extensions: [
+        defineExtension({
+          name: "echo-extension",
           tools: [
             tool({
               name: "echo",
@@ -313,8 +313,8 @@ describe("@mitome/sdk Tool", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "effect-schema",
           tools: [
             tool({
@@ -343,9 +343,9 @@ describe("@mitome/sdk Tool", () => {
     });
   });
 
-  test("rejects duplicate Tool names within a Plugin", () => {
+  test("rejects duplicate Tool names within an Extension", () => {
     expect(() =>
-      definePlugin({
+      defineExtension({
         name: "duplicate-tools",
         tools: [
           tool({
@@ -365,10 +365,10 @@ describe("@mitome/sdk Tool", () => {
     ).toThrow("Duplicate Tool name: echo");
   });
 
-  test("aggregates duplicate Tool names across Plugins when creating a Session", async () => {
+  test("aggregates duplicate Tool names across Extensions when creating a Session", async () => {
     const fixture = makeToolModel();
-    const plugin = (name: string) =>
-      definePlugin({
+    const extension = (name: string) =>
+      defineExtension({
         name,
         tools: [
           tool({
@@ -382,7 +382,7 @@ describe("@mitome/sdk Tool", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [plugin("first"), plugin("second")],
+      extensions: [extension("first"), extension("second")],
     });
 
     const failure = await withSession(definition, async () => undefined).catch((error) => error);
@@ -395,9 +395,9 @@ describe("@mitome/sdk Tool", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [
-        definePlugin({
-          name: "failing-plugin",
+      extensions: [
+        defineExtension({
+          name: "failing-extension",
           tools: [
             tool({
               name: "echo",

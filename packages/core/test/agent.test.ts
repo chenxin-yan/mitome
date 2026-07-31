@@ -14,16 +14,19 @@ const model = makeTestProvider(() => Stream.empty);
 const getAgentDefinitionError = (definition: unknown) =>
   Effect.flip(compileAgentDefinition(definition));
 
-type AgentDefinitionKeysAreExact = keyof AgentDefinition extends "providers" | "model" | "plugins"
-  ? "providers" | "model" | "plugins" extends keyof AgentDefinition
+type AgentDefinitionKeysAreExact = keyof AgentDefinition extends
+  | "providers"
+  | "model"
+  | "extensions"
+  ? "providers" | "model" | "extensions" extends keyof AgentDefinition
     ? true
     : false
   : false;
 const exactAgentDefinitionKeys: AgentDefinitionKeysAreExact = true;
 void exactAgentDefinitionKeys;
 
-// @ts-expect-error Agent Definition Instructions are contributed by Plugins.
-defineAgent({ instructions: "old", providers: [model], model: "test/default", plugins: [] });
+// @ts-expect-error Agent Definition Instructions are contributed by Extensions.
+defineAgent({ instructions: "old", providers: [model], model: "test/default", extensions: [] });
 
 describe("Agent Definition compilation", () => {
   it.effect("compiles the runtime data consumed by a Session", () =>
@@ -51,10 +54,10 @@ describe("Agent Definition compilation", () => {
       const compiled = yield* compileAgentDefinition({
         providers: [model],
         model: "test/default",
-        plugins: [first, second],
+        extensions: [first, second],
       });
 
-      expect(compiled.plugins).toEqual([first, second]);
+      expect(compiled.extensions).toEqual([first, second]);
       expect([...compiled.providers]).toEqual([["test", model]]);
       expect([...compiled.tools]).toEqual([
         [
@@ -89,7 +92,7 @@ describe("Agent Definition compilation", () => {
       const compiled = yield* compileAgentDefinition({
         providers: [model],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "special",
             toolkit: Toolkit.make(tool),
@@ -100,7 +103,7 @@ describe("Agent Definition compilation", () => {
 
       expect(compiled.tools.get(tool.name)).toEqual({
         tool,
-        owner: compiled.plugins[0],
+        owner: compiled.extensions[0],
         handler,
         inputValidator: undefined,
         resultValidator: undefined,
@@ -118,7 +121,7 @@ describe("Agent Definition compilation", () => {
       const structural = {
         providers: [null, provider, provider],
         model: "unregistered/model",
-        plugins: [
+        extensions: [
           {
             name: "same",
             toolkit: Toolkit.make(echo, missing),
@@ -146,8 +149,8 @@ describe("Agent Definition compilation", () => {
         "Unregistered Provider id: unregistered",
         "Tool input validator has no matching Tool: otherInput",
         "Tool result validator has no matching Tool: otherResult",
-        "Plugin same Instructions must be a string",
-        "Duplicate Plugin name: same",
+        "Extension same Instructions must be a string",
+        "Duplicate Extension name: same",
         "Duplicate Tool name: echo",
         "Duplicate Tool handler name: echo",
         "Missing Tool handler: missing",
@@ -167,7 +170,7 @@ describe("Agent Definition compilation", () => {
       expect((yield* getAgentDefinitionError({})).issues).toEqual([
         "Agent Definition Providers must be an array",
         "Agent Definition Model must be a string",
-        "Agent Definition Plugins must be an array",
+        "Agent Definition Extensions must be an array",
       ]);
     }),
   );
@@ -177,7 +180,7 @@ describe("Agent Definition compilation", () => {
       const definition = {
         providers: [null],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       };
 
       expect((yield* getAgentDefinitionError(definition)).issues).toEqual([
@@ -187,18 +190,18 @@ describe("Agent Definition compilation", () => {
     }),
   );
 
-  it.effect("reports malformed Plugin elements and Instructions", () =>
+  it.effect("reports malformed Extension elements and Instructions", () =>
     Effect.gen(function* () {
       const definition = {
         providers: [model],
         model: "test/default",
-        plugins: [null, { name: 1, instructions: false }, { name: "named", instructions: 1 }],
+        extensions: [null, { name: 1, instructions: false }, { name: "named", instructions: 1 }],
       };
 
       expect((yield* getAgentDefinitionError(definition)).issues).toEqual([
-        "Plugin at index 0 must be an object with a string name",
-        "Plugin at index 1 must be an object with a string name",
-        "Plugin named Instructions must be a string",
+        "Extension at index 0 must be an object with a string name",
+        "Extension at index 1 must be an object with a string name",
+        "Extension named Instructions must be a string",
       ]);
     }),
   );
@@ -208,7 +211,7 @@ describe("Agent Definition compilation", () => {
       const invalidDefinition = (selected: unknown) => ({
         providers: [model],
         model: selected,
-        plugins: [],
+        extensions: [],
       });
 
       expect((yield* getAgentDefinitionError(invalidDefinition(1))).issues).toEqual([
@@ -228,7 +231,7 @@ describe("Agent Definition compilation", () => {
       const missing: AgentDefinition = {
         providers: [model],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "missing",
             toolkit: Toolkit.make(Tool.make("echo", { success: Schema.String })),
@@ -238,7 +241,7 @@ describe("Agent Definition compilation", () => {
       const orphaned: AgentDefinition = {
         providers: [model],
         model: "test/default",
-        plugins: [{ name: "orphaned", handlers: { echo: () => Effect.succeed("echo") } }],
+        extensions: [{ name: "orphaned", handlers: { echo: () => Effect.succeed("echo") } }],
       };
 
       expect((yield* getAgentDefinitionError(missing)).issues).toEqual([

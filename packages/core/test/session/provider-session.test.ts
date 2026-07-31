@@ -27,7 +27,7 @@ describe("Provider-backed Sessions", () => {
         defineAgent({
           providers: [first, second] as const,
           model: "first/default",
-          plugins: [],
+          extensions: [],
         }),
       );
 
@@ -55,7 +55,7 @@ describe("Provider-backed Sessions", () => {
         defineAgent({
           providers: [provider] as const,
           model: "registered/default",
-          plugins: [
+          extensions: [
             {
               name: "hooks",
               hooks: {
@@ -127,7 +127,7 @@ describe("Provider-backed Sessions", () => {
         defineAgent({
           providers: [provider] as const,
           model: "tools/default",
-          plugins: [
+          extensions: [
             {
               name: "echo",
               toolkit: Toolkit.make(echo),
@@ -174,7 +174,7 @@ describe("Provider-backed Sessions", () => {
             defineAgent({
               providers: [unused, counting] as const,
               model: "counting/one",
-              plugins: [],
+              extensions: [],
             }),
           );
           expect(builds).toBe(0);

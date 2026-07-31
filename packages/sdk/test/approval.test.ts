@@ -4,7 +4,7 @@ import { LanguageModel } from "effect/unstable/ai";
 import { makeProvider } from "@mitome/core";
 import {
   defineAgent,
-  definePlugin,
+  defineExtension,
   tool,
   withSession,
   type InputSchema,
@@ -92,8 +92,8 @@ describe("@mitome/sdk Tool Approval", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "dangerous",
           tools: [
             tool({
@@ -140,8 +140,8 @@ describe("@mitome/sdk Tool Approval", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "dangerous",
           tools: [
             tool({
@@ -189,8 +189,8 @@ describe("@mitome/sdk Tool Approval", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "dangerous",
           tools: [
             tool({
@@ -227,8 +227,8 @@ describe("@mitome/sdk Tool Approval", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "dangerous",
           tools: [
             tool({
@@ -272,8 +272,8 @@ describe("@mitome/sdk Tool Approval", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "dangerous",
           tools: [
             tool({

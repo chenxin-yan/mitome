@@ -3,18 +3,18 @@ export { CredentialDescriptorSchema } from "./credential.js";
 export type { AuthCapability, AuthenticateOptions, CredentialDescriptor } from "./credential.js";
 export { AgentDefinitionError, defineAgent } from "./agent.js";
 export type { AgentDefinition } from "./agent.js";
-export { definePlugin } from "./plugin.js";
+export { defineExtension } from "./extension.js";
 export type {
-  AnyPlugin,
-  Plugin,
-  PluginHooks,
+  AnyExtension,
+  Extension,
+  ExtensionHooks,
   ToolContribution,
   ToolContributions,
   ToolHookContext,
   ToolInputValidator,
   ToolResultHookContext,
   ToolResultValidator,
-} from "./plugin.js";
+} from "./extension.js";
 export { credentialDescriptor, makeProvider } from "./provider.js";
 export type { AnyProvider, Provider, QualifiedModelId, ValidProviderId } from "./provider.js";
 export {

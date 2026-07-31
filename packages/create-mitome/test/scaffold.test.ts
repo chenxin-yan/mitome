@@ -137,7 +137,6 @@ describe("create-mitome scaffold", () => {
       private: true,
       type: "module",
       dependencies: {
-        "@mitome/plugins": "0.0.0",
         "@mitome/providers": "0.0.0",
         "@mitome/sdk": "0.0.0",
         ...(flavor === "effect" ? { effect: "4.0.0-beta.102" } : {}),
@@ -148,8 +147,8 @@ describe("create-mitome scaffold", () => {
     expect(agent).toContain(`providers: [${factory}]`);
     expect(agent).toContain(`model: "${id}/gpt-5.6"`);
     expect(agent).not.toContain("env(");
-    expect(agent).toContain('import { instructionFiles } from "@mitome/plugins";');
-    expect(agent).toContain('plugins: [instructionFiles({ paths: ["./instructions.md"] })]');
+    expect(agent).toContain('import { instructionFiles } from "@mitome/sdk/extensions";');
+    expect(agent).toContain('extensions: [instructionFiles({ paths: ["./instructions.md"] })]');
     expect(agent).not.toContain('instructions: "You are a helpful Agent."');
     expect(await contents(path, "instructions.md")).toBe("You are a helpful Agent.\n");
     expect(JSON.parse(await contents(path, "tsconfig.json")).include).toEqual(["index.ts"]);

@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import type { CompiledAgent } from "../../src/agent.js";
-import type { Plugin } from "../../src/plugin.js";
+import type { Extension } from "../../src/extension.js";
 import {
   type ApprovalRequestOutcome,
   type ToolExecution,
@@ -36,7 +36,7 @@ const request = (execution: ToolExecution, params: unknown, toolCallId = "call-1
 const makeFixture = (options?: {
   readonly needsApproval?: Tool.NeedsApproval<any>;
   readonly inputValidator?: (input: unknown) => Effect.Effect<unknown, unknown>;
-  readonly preTool?: Plugin["hooks"] extends infer Hooks
+  readonly preTool?: Extension["hooks"] extends infer Hooks
     ? Hooks extends { readonly preTool?: infer PreTool }
       ? PreTool
       : never
@@ -53,7 +53,7 @@ const makeFixture = (options?: {
     success: Schema.String,
     needsApproval: options?.needsApproval ?? true,
   });
-  const plugin: Plugin = {
+  const extension: Extension = {
     name: "dangerous",
     toolkit: Toolkit.make(dangerous),
     handlers: {},
@@ -71,14 +71,14 @@ const makeFixture = (options?: {
     },
   };
   const compiled: CompiledAgent = {
-    plugins: [plugin],
+    extensions: [extension],
     providers: new Map(),
     tools: new Map([
       [
         dangerous.name,
         {
           tool: dangerous,
-          owner: plugin,
+          owner: extension,
           handler: () =>
             Effect.sync(() => {
               handlerCalls += 1;

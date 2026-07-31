@@ -23,7 +23,7 @@ export class SessionReleasedError extends Schema.TaggedErrorClass<SessionRelease
   }
 }
 
-/** A model, Tool, or Plugin Hook failed while completing a Turn. */
+/** A model, Tool, or Extension Hook failed while completing a Turn. */
 export class TurnError extends Schema.TaggedErrorClass<TurnError>()("TurnError", {
   message: Schema.String,
   cause: Schema.Defect(),

@@ -1,17 +1,17 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Stream } from "effect";
 import { Response } from "effect/unstable/ai";
-import { type Plugin } from "@mitome/core";
-import { defineAgent, definePlugin, tool, withSession } from "../src/index.js";
+import { type Extension } from "@mitome/core";
+import { defineAgent, defineExtension, tool, withSession } from "../src/index.js";
 import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
 
-describe("@mitome/sdk Plugin Hooks", () => {
+describe("@mitome/sdk Extension Hooks", () => {
   test("adapts Promise Hooks into the Core lifecycle in Agent Definition order", async () => {
     const log: Array<string> = [];
     const signals: Array<boolean> = [];
     const responsePartTypes: Array<ReadonlyArray<string>> = [];
     const model = makeToolModel().provider;
-    const core: Plugin = {
+    const core: Extension = {
       name: "core",
       hooks: {
         sessionStart: Effect.sync(() => void log.push("core:session-start")),
@@ -22,7 +22,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
         postTool: ({ result }) => Effect.sync(() => (log.push("core:post-tool"), result)),
       },
     };
-    const sdk = definePlugin({
+    const sdk = defineExtension({
       name: "sdk",
       tools: [
         tool({
@@ -68,7 +68,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
     });
 
     const events = await withSession(
-      defineAgent({ providers: [model], model: "test/default", plugins: [core, sdk] }),
+      defineAgent({ providers: [model], model: "test/default", extensions: [core, sdk] }),
       (session) => Array.fromAsync(session.prompt("Hi")),
     );
 
@@ -114,8 +114,8 @@ describe("@mitome/sdk Plugin Hooks", () => {
         }),
       ],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "sdk",
           tools: [],
           hooks: { preStep: async () => undefined as never },
@@ -135,8 +135,8 @@ describe("@mitome/sdk Plugin Hooks", () => {
     const agent = defineAgent({
       providers: [makeToolModel().provider],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "sdk",
           tools: [],
           hooks: {
@@ -179,8 +179,8 @@ describe("@mitome/sdk Plugin Hooks", () => {
         ),
       ],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "blocking",
           tools: [],
           hooks: {
@@ -198,7 +198,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
               }),
           },
         }),
-        definePlugin({
+        defineExtension({
           name: "later",
           tools: [],
           hooks: {
@@ -229,8 +229,8 @@ describe("@mitome/sdk Plugin Hooks", () => {
         ),
       ],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "sdk",
           tools: [],
           hooks: { turnStart: async () => Promise.reject(original) },
@@ -245,7 +245,7 @@ describe("@mitome/sdk Plugin Hooks", () => {
 
   test("centrally validates SDK Tool transforms and observes SDK failures", async () => {
     let postCalls = 0;
-    const core: Plugin = {
+    const core: Extension = {
       name: "core",
       hooks: {
         postTool: ({ result }) =>
@@ -258,9 +258,9 @@ describe("@mitome/sdk Plugin Hooks", () => {
     const failing = defineAgent({
       providers: [makeToolModel().provider],
       model: "test/default",
-      plugins: [
+      extensions: [
         core,
-        definePlugin({
+        defineExtension({
           name: "sdk",
           tools: [
             tool({
@@ -284,9 +284,9 @@ describe("@mitome/sdk Plugin Hooks", () => {
     const invalid = defineAgent({
       providers: [makeToolModel().provider],
       model: "test/default",
-      plugins: [
+      extensions: [
         { name: "core", hooks: { postTool: () => Effect.succeed(1) } },
-        definePlugin({
+        defineExtension({
           name: "sdk",
           tools: [
             tool({

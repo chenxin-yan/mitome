@@ -7,7 +7,6 @@
       "@mitome/core",
       "@mitome/sdk",
       "@mitome/providers",
-      "@mitome/plugins",
       "@mitome/cli",
       "@mitome/cli-darwin-arm64",
       "@mitome/cli-darwin-x64",

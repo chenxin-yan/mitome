@@ -1,20 +1,24 @@
 import { describe, expect, test } from "vitest";
 import { Cause, Context, Effect, Exit, Layer, Result, Schema, SchemaGetter, Stream } from "effect";
 import { Response, Tool as AiTool, Toolkit } from "effect/unstable/ai";
-import { createSession, definePlugin as defineCorePlugin, type Plugin } from "@mitome/core";
+import {
+  createSession,
+  defineExtension as defineCoreExtension,
+  type Extension,
+} from "@mitome/core";
 import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
-import { defineAgent, definePlugin, tool, withSession } from "../src/index.js";
+import { defineAgent, defineExtension, tool, withSession } from "../src/index.js";
 
 const textModel = () =>
   makeTestProvider(() =>
     Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
   );
 
-describe("@mitome/sdk Plugin resources", () => {
+describe("@mitome/sdk Extension resources", () => {
   test("acquires resources before sessionStart in Agent Definition order and disposes them in reverse", async () => {
     const log: Array<string> = [];
-    const plugin = (name: string) =>
-      definePlugin({
+    const extension = (name: string) =>
+      defineExtension({
         name,
         tools: [],
         setup: async () => {
@@ -35,7 +39,7 @@ describe("@mitome/sdk Plugin resources", () => {
       defineAgent({
         providers: [textModel()],
         model: "test/default",
-        plugins: [plugin("first"), plugin("second"), plugin("third")],
+        extensions: [extension("first"), extension("second"), extension("third")],
       }),
       (session) => Array.fromAsync(session.prompt("Hi")),
     );
@@ -57,7 +61,7 @@ describe("@mitome/sdk Plugin resources", () => {
     const setupFailure = new Error("setup failed");
     const hookFailure = new Error("hook failed");
     const setupLog: Array<string> = [];
-    const first = definePlugin({
+    const first = defineExtension({
       name: "first",
       tools: [],
       setup: async () => {
@@ -68,7 +72,7 @@ describe("@mitome/sdk Plugin resources", () => {
         setupLog.push(`dispose:${resource}`);
       },
     });
-    const second = definePlugin({
+    const second = defineExtension({
       name: "second",
       tools: [],
       setup: async (): Promise<string> => {
@@ -79,15 +83,19 @@ describe("@mitome/sdk Plugin resources", () => {
 
     await expect(
       withSession(
-        defineAgent({ providers: [textModel()], model: "test/default", plugins: [first, second] }),
+        defineAgent({
+          providers: [textModel()],
+          model: "test/default",
+          extensions: [first, second],
+        }),
         async () => undefined,
       ),
     ).rejects.toMatchObject({ _tag: "TurnError", cause: setupFailure });
     expect(setupLog).toEqual(["setup:first", "setup:second", "dispose:first"]);
 
     const hookLog: Array<string> = [];
-    const plugin = (name: string, fail = false) =>
-      definePlugin({
+    const extension = (name: string, fail = false) =>
+      defineExtension({
         name,
         tools: [],
         setup: async () => {
@@ -109,7 +117,7 @@ describe("@mitome/sdk Plugin resources", () => {
         defineAgent({
           providers: [textModel()],
           model: "test/default",
-          plugins: [plugin("first"), plugin("second", true)],
+          extensions: [extension("first"), extension("second", true)],
         }),
         async () => undefined,
       ),
@@ -124,9 +132,9 @@ describe("@mitome/sdk Plugin resources", () => {
     ]);
   });
 
-  test("provides each Plugin only its own resource to Hooks and Tool handlers", async () => {
+  test("provides each Extension only its own resource to Hooks and Tool handlers", async () => {
     const log: Array<string> = [];
-    const alpha = definePlugin({
+    const alpha = defineExtension({
       name: "alpha",
       tools: [
         tool<string, string, { readonly name: string; readonly count: number }>({
@@ -142,7 +150,7 @@ describe("@mitome/sdk Plugin resources", () => {
       ],
       setup: async () => ({ name: "alpha", count: 1 }),
     });
-    const beta = definePlugin({
+    const beta = defineExtension({
       name: "beta",
       tools: [],
       setup: async () => ({ name: "beta", enabled: true }),
@@ -158,7 +166,7 @@ describe("@mitome/sdk Plugin resources", () => {
       defineAgent({
         providers: [makeToolModel("alpha-tool").provider],
         model: "test/default",
-        plugins: [alpha, beta],
+        extensions: [alpha, beta],
       }),
       (session) => Array.fromAsync(session.prompt("Hi")),
     );
@@ -175,7 +183,7 @@ describe("@mitome/sdk Plugin resources", () => {
 
   test("provides the resource to every Hook and disposes after sessionEnd", async () => {
     const log: Array<string> = [];
-    const plugin = definePlugin({
+    const extension = defineExtension({
       name: "all-hooks",
       tools: [
         tool<string, string, string>({
@@ -218,7 +226,7 @@ describe("@mitome/sdk Plugin resources", () => {
       defineAgent({
         providers: [makeToolModel("res-tool").provider],
         model: "test/default",
-        plugins: [plugin],
+        extensions: [extension],
       }),
       (session) => Array.fromAsync(session.prompt("Hi")),
     );
@@ -242,16 +250,16 @@ describe("@mitome/sdk Plugin resources", () => {
     ]);
   });
 
-  test("does not expose one core Plugin's resource to another", async () => {
+  test("does not expose one core Extension's resource to another", async () => {
     const Owned = Context.Service<string>("test/Owned");
     const Intruding = Context.Service<string>("test/Intruding");
-    const owner: Plugin<string> = {
+    const owner: Extension<string> = {
       name: "owner",
       resource: Layer.succeed(Owned, "owned"),
     };
-    // Both tags share the identifier type, so this compiles as Plugin<string>;
-    // only runtime per-plugin context isolation can reject the foreign lookup.
-    const intruder: Plugin<string> = {
+    // Both tags share the identifier type, so this compiles as Extension<string>;
+    // only runtime per-extension context isolation can reject the foreign lookup.
+    const intruder: Extension<string> = {
       name: "intruder",
       resource: Layer.succeed(Intruding, "intruding"),
       hooks: { sessionStart: Effect.asVoid(Effect.service(Owned)) },
@@ -264,7 +272,7 @@ describe("@mitome/sdk Plugin resources", () => {
             defineAgent({
               providers: [textModel()],
               model: "test/default",
-              plugins: [owner, intruder],
+              extensions: [owner, intruder],
             }),
           ),
         ),
@@ -282,8 +290,8 @@ describe("@mitome/sdk Plugin resources", () => {
     const definition = defineAgent({
       providers: [model],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "wait",
           tools: [
             tool<string, string, { readonly wait: (signal: AbortSignal) => Promise<string> }>({
@@ -335,10 +343,10 @@ describe("@mitome/sdk Plugin resources", () => {
     expect(disposed).toBe(1);
   });
 
-  test("mixes an Effect-native resource Plugin with an SDK resource Plugin", async () => {
+  test("mixes an Effect-native resource Extension with an SDK resource Extension", async () => {
     const log: Array<string> = [];
     const CoreResource = Context.Service<string>("test/CoreResource");
-    const core: Plugin<string> = {
+    const core: Extension<string> = {
       name: "core",
       resource: Layer.effect(
         CoreResource,
@@ -357,7 +365,7 @@ describe("@mitome/sdk Plugin resources", () => {
         ),
       },
     };
-    const sdk = definePlugin({
+    const sdk = defineExtension({
       name: "sdk",
       tools: [],
       setup: async () => {
@@ -371,7 +379,7 @@ describe("@mitome/sdk Plugin resources", () => {
     });
 
     await withSession(
-      defineAgent({ providers: [textModel()], model: "test/default", plugins: [core, sdk] }),
+      defineAgent({ providers: [textModel()], model: "test/default", extensions: [core, sdk] }),
       async () => undefined,
     );
     expect(log).toEqual([
@@ -384,9 +392,9 @@ describe("@mitome/sdk Plugin resources", () => {
     ]);
   });
 
-  test("provides the owning Plugin's resource to native Tool schema encoding", async () => {
+  test("provides the owning Extension's resource to native Tool schema encoding", async () => {
     const Prefix = Context.Service<string>("test/Prefix");
-    // Success schema whose encoding requires the Prefix service from the Plugin resource.
+    // Success schema whose encoding requires the Prefix service from the Extension resource.
     const serviceString = Schema.String.pipe(
       Schema.decodeTo(Schema.String, {
         decode: SchemaGetter.transformOrFail((value: string) =>
@@ -402,7 +410,7 @@ describe("@mitome/sdk Plugin resources", () => {
       success: serviceString,
       failureMode: "return",
     });
-    const native = defineCorePlugin({
+    const native = defineCoreExtension({
       name: "native",
       resource: Layer.succeed(Prefix, "pre"),
       toolkit: Toolkit.make(echo),
@@ -441,7 +449,7 @@ describe("@mitome/sdk Plugin resources", () => {
     });
 
     const events = await withSession(
-      defineAgent({ providers: [model], model: "test/default", plugins: [native] }),
+      defineAgent({ providers: [model], model: "test/default", extensions: [native] }),
       (session) => Array.fromAsync(session.prompt("Hi")),
     );
 
@@ -460,8 +468,8 @@ describe("@mitome/sdk Plugin resources", () => {
     const definition = defineAgent({
       providers: [textModel()],
       model: "test/default",
-      plugins: [
-        definePlugin({
+      extensions: [
+        defineExtension({
           name: "failing-dispose",
           tools: [],
           setup: async () => "resource",
@@ -493,7 +501,7 @@ describe("@mitome/sdk Plugin resources", () => {
   test("preserves the primary error when a disposer fails on a failed exit", async () => {
     const primary = new Error("primary");
     const log: Array<string> = [];
-    const plugin = definePlugin({
+    const extension = defineExtension({
       name: "failing-dispose",
       tools: [],
       setup: async () => "resource",
@@ -505,7 +513,7 @@ describe("@mitome/sdk Plugin resources", () => {
 
     await expect(
       withSession(
-        defineAgent({ providers: [textModel()], model: "test/default", plugins: [plugin] }),
+        defineAgent({ providers: [textModel()], model: "test/default", extensions: [extension] }),
         async () => {
           throw primary;
         },

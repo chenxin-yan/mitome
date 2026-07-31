@@ -1,12 +1,12 @@
 // oxlint-disable-next-line jsdoc/check-tag-names
 /** @effect-diagnostics missingEffectContext:skip-file */
 import { Schema } from "effect";
-import type { PluginHooks, Provider } from "@mitome/core";
+import type { ExtensionHooks, Provider } from "@mitome/core";
 import {
   defineAgent,
-  definePlugin,
+  defineExtension,
   tool,
-  type PluginHooksDefinition,
+  type ExtensionHooksDefinition,
   type ToolInputValidator,
 } from "../src/index.js";
 
@@ -17,7 +17,7 @@ type Equal<Left, Right> =
     ? true
     : false;
 type Expect<Value extends true> = Value;
-type ContributionsOf<Value> = Value extends import("@mitome/core").Plugin<
+type ContributionsOf<Value> = Value extends import("@mitome/core").Extension<
   infer _Resource,
   infer _Error,
   infer Contributions extends import("@mitome/core").ToolContributions
@@ -28,9 +28,11 @@ type ContributionsOf<Value> = Value extends import("@mitome/core").Plugin<
 const formatInputSchema = Schema.Struct({ value: Schema.Finite });
 declare const model: Provider<"test", readonly []>;
 
-export type PluginHookKeyParity = Expect<Equal<keyof PluginHooksDefinition, keyof PluginHooks>>;
+export type ExtensionHookKeyParity = Expect<
+  Equal<keyof ExtensionHooksDefinition, keyof ExtensionHooks>
+>;
 
-const inferencePlugin = definePlugin({
+const inferenceExtension = defineExtension({
   name: "inference",
   tools: [
     tool({
@@ -54,7 +56,7 @@ const inferencePlugin = definePlugin({
   },
 });
 
-definePlugin({
+defineExtension({
   name: "invalid-output",
   tools: [
     tool({
@@ -67,7 +69,7 @@ definePlugin({
   ],
 });
 
-definePlugin({
+defineExtension({
   name: "invalid-prompt",
   tools: [],
   hooks: {
@@ -77,7 +79,7 @@ definePlugin({
 });
 
 // Resource inferred from setup flows into hooks and tool handlers.
-const resourceInferencePlugin = definePlugin({
+const resourceInferenceExtension = defineExtension({
   name: "resource-inference",
   tools: [
     tool({
@@ -103,7 +105,7 @@ const resourceInferencePlugin = definePlugin({
 });
 
 // @ts-expect-error Tools declaring a Resource require setup.
-definePlugin({
+defineExtension({
   name: "resource-without-setup",
   tools: [
     tool<string, string, { readonly db: string }>({
@@ -116,7 +118,7 @@ definePlugin({
 });
 
 // @ts-expect-error Tool Resource must match setup Resource.
-definePlugin({
+defineExtension({
   name: "resource-mismatch",
   tools: [
     tool<string, string, { readonly db: string }>({
@@ -129,10 +131,10 @@ definePlugin({
   setup: async () => ({ cache: 1 }),
 });
 
-definePlugin<{ readonly db: string }>({
+defineExtension<{ readonly db: string }>({
   name: "explicit-resource-mismatch",
   tools: [
-    // @ts-expect-error An explicit Plugin Resource must constrain every Tool Resource.
+    // @ts-expect-error An explicit Extension Resource must constrain every Tool Resource.
     tool<string, string, { readonly cache: number }>({
       name: "cache",
       inputSchema: Schema.String,
@@ -144,7 +146,7 @@ definePlugin<{ readonly db: string }>({
 });
 
 // @ts-expect-error Setup Resource must satisfy every Tool Resource.
-definePlugin({
+defineExtension({
   name: "partial-resource",
   tools: [
     tool<string, string, { readonly db: string }>({
@@ -164,7 +166,7 @@ definePlugin({
 });
 
 // @ts-expect-error A Resource with optional fields cannot satisfy a Tool requiring them.
-definePlugin({
+defineExtension({
   name: "optional-resource",
   tools: [
     tool<string, string, { readonly db: string }>({
@@ -178,7 +180,7 @@ definePlugin({
 });
 
 // @ts-expect-error Any Tool Resource requires setup, including mixed Tool tuples.
-definePlugin({
+defineExtension({
   name: "mixed-without-setup",
   tools: [
     tool<string, string, { readonly db: string }>({
@@ -197,13 +199,13 @@ definePlugin({
 });
 
 // @ts-expect-error dispose requires setup.
-definePlugin({
+defineExtension({
   name: "dispose-without-setup",
   tools: [],
   dispose: async (resource: string) => void resource,
 });
 
-type InferenceContributions = ContributionsOf<typeof inferencePlugin>;
+type InferenceContributions = ContributionsOf<typeof inferenceExtension>;
 export type InferenceContributionKeys = Expect<
   Equal<keyof InferenceContributions, "format" | "enabled">
 >;
@@ -213,7 +215,7 @@ export type InferenceFormatInput = Expect<
 export type InferenceEnabledOutput = Expect<
   Equal<InferenceContributions["enabled"]["output"], boolean>
 >;
-type ResourceContributions = ContributionsOf<typeof resourceInferencePlugin>;
+type ResourceContributions = ContributionsOf<typeof resourceInferenceExtension>;
 export type ResourceContributionKeys = Expect<
   Equal<keyof ResourceContributions, "query" | "health">
 >;
@@ -221,15 +223,19 @@ export type ResourceQueryInput = Expect<Equal<ResourceContributions["query"]["in
 export type ResourceHealthOutput = Expect<
   Equal<ResourceContributions["health"]["output"], boolean>
 >;
-const sdkToolkitlessPlugin = definePlugin({ name: "sdk-toolkitless", tools: [] });
+const sdkToolkitlessExtension = defineExtension({ name: "sdk-toolkitless", tools: [] });
 const sdkDefinition = defineAgent({
   providers: [model],
   model: "test/default",
-  plugins: [inferencePlugin, resourceInferencePlugin, sdkToolkitlessPlugin] as const,
+  extensions: [inferenceExtension, resourceInferenceExtension, sdkToolkitlessExtension] as const,
 });
-export type SdkPluginTupleIsPreserved = Expect<
+export type SdkExtensionTupleIsPreserved = Expect<
   Equal<
-    typeof sdkDefinition.plugins,
-    readonly [typeof inferencePlugin, typeof resourceInferencePlugin, typeof sdkToolkitlessPlugin]
+    typeof sdkDefinition.extensions,
+    readonly [
+      typeof inferenceExtension,
+      typeof resourceInferenceExtension,
+      typeof sdkToolkitlessExtension,
+    ]
   >
 >;

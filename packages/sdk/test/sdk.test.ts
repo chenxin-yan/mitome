@@ -4,7 +4,7 @@ import * as core from "@mitome/core";
 import { Response } from "effect/unstable/ai";
 import { createSession } from "@mitome/core";
 import * as sdkEffect from "../src/effect.js";
-import { TurnError, defineAgent, definePlugin, withSession } from "../src/index.js";
+import { TurnError, defineAgent, defineExtension, withSession } from "../src/index.js";
 import { makeDeterministicProvider, makeTestProvider } from "./provider.js";
 
 class ModelFailure extends Schema.TaggedErrorClass<ModelFailure>()("ModelFailure", {
@@ -21,10 +21,10 @@ describe("@mitome/sdk", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [{ name: "first" }, { name: "second" }],
+      extensions: [{ name: "first" }, { name: "second" }],
     });
 
-    expect(definition.plugins.map((plugin) => plugin.name)).toEqual(["first", "second"]);
+    expect(definition.extensions.map((extension) => extension.name)).toEqual(["first", "second"]);
 
     await Effect.runPromise(
       Effect.scoped(
@@ -36,13 +36,13 @@ describe("@mitome/sdk", () => {
     );
   });
 
-  test("adapts SDK Plugin Instructions into Core Session history", async () => {
+  test("adapts SDK Extension Instructions into Core Session history", async () => {
     const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [
-        definePlugin({ name: "instructions", instructions: "SDK Instructions", tools: [] }),
+      extensions: [
+        defineExtension({ name: "instructions", instructions: "SDK Instructions", tools: [] }),
       ],
     });
 
@@ -70,7 +70,7 @@ describe("@mitome/sdk", () => {
         ),
       ],
       model: "test/default",
-      plugins: [],
+      extensions: [],
     });
 
     const roles = await withSession(definition, async (session) => {
@@ -93,7 +93,7 @@ describe("@mitome/sdk", () => {
     const definition = defineAgent({
       providers: [first, second] as const,
       model: "first/default",
-      plugins: [],
+      extensions: [],
     });
 
     const output = await withSession(definition, async (session) => {
@@ -115,7 +115,7 @@ describe("@mitome/sdk", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [],
+      extensions: [],
     });
     let caught: unknown;
 
@@ -137,7 +137,7 @@ describe("@mitome/sdk", () => {
     const definition = defineAgent({
       providers: [makeTestProvider(() => Stream.fail(cause))],
       model: "test/default",
-      plugins: [],
+      extensions: [],
     });
     let caught: unknown;
 
@@ -170,7 +170,7 @@ describe("@mitome/sdk", () => {
         ),
       ],
       model: "test/default",
-      plugins: [],
+      extensions: [],
     });
 
     const events = await withSession(definition, (session) =>
@@ -188,7 +188,7 @@ describe("@mitome/sdk", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [],
+      extensions: [],
     });
     let iterable!: AsyncIterable<unknown>;
 
@@ -211,7 +211,7 @@ describe("@mitome/sdk", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [],
+      extensions: [],
     });
 
     const events = await withSession(definition, async (session) => {

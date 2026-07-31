@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const rootDirectory = resolve(import.meta.dir, "..");
-const publicPackages = ["core", "sdk", "providers", "plugins", "cli", "create-mitome"] as const;
+const publicPackages = ["core", "sdk", "providers", "cli", "create-mitome"] as const;
 type PublicPackage = (typeof publicPackages)[number];
 const packageName = (name: PublicPackage): string =>
   name === "create-mitome" ? name : `@mitome/${name}`;
@@ -156,7 +156,7 @@ import * as sdkEffect from "@mitome/sdk/effect";
 import { openai } from "@mitome/providers/openai";
 import { openaiCompatible } from "@mitome/providers/openai-compatible";
 import { codex } from "@mitome/providers/openai-codex";
-import { instructions } from "@mitome/plugins";
+import { instructions } from "@mitome/sdk/extensions";
 
 if (sdkEffect.createSession !== core.createSession) throw new Error("SDK Effect facade duplicated the Core runtime.");
 if (openai().id !== "openai" || codex().id !== "openai-codex") throw new Error("Official Provider packages were not installed.");
@@ -169,13 +169,13 @@ const provider = makeProvider("fixture", [] as const, undefined, () => Layer.eff
 const definition = defineAgent({
   providers: [provider] as const,
   model: "fixture/default",
-  plugins: [instructions("Release fixture")],
+  extensions: [instructions("Release fixture")],
 });
 await Effect.runPromise(
   Effect.scoped(Effect.as(createSession(definition), undefined)),
 );
 if (definition.providers[0] !== provider) throw new Error("SDK wrapped the canonical Core Provider.");
-if (definition.plugins[0]?.instructions !== "Release fixture") throw new Error("Plugins package was not installed.");
+if (definition.extensions[0]?.instructions !== "Release fixture") throw new Error("SDK extensions subpath was not installed.");
 const events = await withSession(definition, async (session) => {
   const values = [];
   for await (const event of session.prompt("hello", { model: "fixture/override" })) values.push(event);
@@ -193,8 +193,7 @@ if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke 
   await run(["node", join(nodeModules, ".bin", "create-mitome")], createdDirectory, "1\n1\n2\n");
   const createdPackage = await Bun.file(join(createdDirectory, "package.json")).json();
   if (
-    Object.keys(createdPackage.dependencies).join(",") !==
-      "@mitome/plugins,@mitome/providers,@mitome/sdk,effect" ||
+    Object.keys(createdPackage.dependencies).join(",") !== "@mitome/providers,@mitome/sdk,effect" ||
     createdPackage.dependencies.effect !== effectVersion
   ) {
     throw new Error("create-mitome generated unexpected Effect dependencies.");
@@ -204,7 +203,7 @@ if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke 
   }
   const createdDefinition = await Bun.file(join(createdDirectory, "index.ts")).text();
   if (!createdDefinition.includes("instructionFiles")) {
-    throw new Error("create-mitome did not load instructions.md through @mitome/plugins.");
+    throw new Error("create-mitome did not load instructions.md through @mitome/sdk/extensions.");
   }
   if (
     !createdDefinition.includes("providers: [openai()]") ||

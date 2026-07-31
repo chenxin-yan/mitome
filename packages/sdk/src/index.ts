@@ -8,9 +8,9 @@ export {
 } from "@mitome/core";
 export type {
   AgentDefinition,
-  Plugin,
+  Extension,
   Provider,
-  PluginHooks,
+  ExtensionHooks,
   PromptOptions,
   QualifiedModelId,
   ToolHookContext,
@@ -19,17 +19,17 @@ export type {
   ToolExecutionDenied,
   ToolResultValidator,
 } from "@mitome/core";
-export { definePlugin, tool } from "./plugin.js";
+export { defineExtension, tool } from "./extension.js";
 export type {
   HookContext,
   InputSchema,
   OutputSchema,
-  PluginHooksDefinition,
+  ExtensionHooksDefinition,
   Prompt,
   ResponsePart,
   StandardSchema,
   StepEndContext,
   Tool,
-} from "./plugin.js";
+} from "./extension.js";
 export { withSession } from "./session.js";
 export type { Session, TurnEvent } from "./session.js";

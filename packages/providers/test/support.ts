@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import { type AddressInfo } from "node:net";
 import { Readable } from "node:stream";
-import type { AgentDefinition, AnyPlugin, AnyProvider } from "@mitome/core";
+import type { AgentDefinition, AnyExtension, AnyProvider } from "@mitome/core";
 
 export const sse = (data: unknown) =>
   `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
@@ -10,11 +10,11 @@ export const sse = (data: unknown) =>
 export const agent = (
   provider: AnyProvider,
   model: string,
-  plugins: ReadonlyArray<AnyPlugin> = [],
+  extensions: ReadonlyArray<AnyExtension> = [],
 ): AgentDefinition => ({
   providers: [provider],
   model: `${provider.id}/${model}`,
-  plugins,
+  extensions,
 });
 
 interface ServerOptions {

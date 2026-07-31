@@ -1,20 +1,20 @@
 import { Effect } from "effect";
 import { Prompt } from "effect/unstable/ai";
-import type { AnyPlugin, PluginContexts } from "../plugin.js";
-import { providePlugin } from "../plugin.js";
+import type { AnyExtension, ExtensionContexts } from "../extension.js";
+import { provideExtension } from "../extension.js";
 
 export const transformPrompt: (
-  plugins: ReadonlyArray<AnyPlugin>,
-  contexts: PluginContexts,
+  extensions: ReadonlyArray<AnyExtension>,
+  contexts: ExtensionContexts,
   prompt: Prompt.Prompt,
 ) => Effect.Effect<Prompt.Prompt, unknown> = Effect.fn("@mitome/core/transformPrompt")(
-  function* (plugins, contexts, prompt) {
+  function* (extensions, contexts, prompt) {
     let current = prompt;
-    for (const plugin of plugins) {
-      current = yield* providePlugin(
-        plugin,
+    for (const extension of extensions) {
+      current = yield* provideExtension(
+        extension,
         contexts,
-        plugin.hooks?.preStep?.(current) ?? Effect.succeed(current),
+        extension.hooks?.preStep?.(current) ?? Effect.succeed(current),
       );
     }
     return current;
@@ -27,32 +27,32 @@ export interface HookPhase {
 }
 
 const runCleanupHooks = (
-  plugins: ReadonlyArray<AnyPlugin>,
-  getHook: (plugin: AnyPlugin) => Effect.Effect<void, unknown> | undefined,
+  extensions: ReadonlyArray<AnyExtension>,
+  getHook: (extension: AnyExtension) => Effect.Effect<void, unknown> | undefined,
   message: string,
 ): Effect.Effect<void> =>
   Effect.forEach(
-    plugins,
-    (plugin) =>
-      (getHook(plugin) ?? Effect.void).pipe(
+    extensions,
+    (extension) =>
+      (getHook(extension) ?? Effect.void).pipe(
         Effect.catchCause((cause) => Effect.logWarning(message, cause)),
       ),
     { discard: true },
   );
 
 const runEndHooks = (
-  plugins: ReadonlyArray<AnyPlugin>,
-  getHook: (plugin: AnyPlugin) => Effect.Effect<void, unknown> | undefined,
+  extensions: ReadonlyArray<AnyExtension>,
+  getHook: (extension: AnyExtension) => Effect.Effect<void, unknown> | undefined,
   progress: { dispatched: number },
   failureMessage: string,
 ): Effect.Effect<void, unknown> =>
   Effect.gen(function* () {
     // Boxed so "no failure yet" is distinguishable from a failure value of undefined.
     let firstFailure: { readonly failure: unknown } | undefined = undefined;
-    for (const plugin of plugins) {
+    for (const extension of extensions) {
       // Interruption must continue with later cleanup, not invoke the active Hook twice.
       progress.dispatched += 1;
-      const hook = getHook(plugin) ?? Effect.void;
+      const hook = getHook(extension) ?? Effect.void;
       if (firstFailure === undefined) {
         firstFailure = yield* hook.pipe(
           Effect.as(undefined),
@@ -66,28 +66,30 @@ const runEndHooks = (
   });
 
 export const beginHookPhase: (
-  plugins: ReadonlyArray<AnyPlugin>,
-  getStart: (plugin: AnyPlugin) => Effect.Effect<void, unknown> | undefined,
-  getEnd: (plugin: AnyPlugin) => Effect.Effect<void, unknown> | undefined,
+  extensions: ReadonlyArray<AnyExtension>,
+  getStart: (extension: AnyExtension) => Effect.Effect<void, unknown> | undefined,
+  getEnd: (extension: AnyExtension) => Effect.Effect<void, unknown> | undefined,
   endFailureMessage: string,
 ) => Effect.Effect<HookPhase, unknown> = Effect.fn("@mitome/core/beginHookPhase")(
-  function* (plugins, getStart, getEnd, endFailureMessage) {
+  function* (extensions, getStart, getEnd, endFailureMessage) {
     let started = 0;
     const start = Effect.gen(function* () {
-      for (const plugin of plugins) {
-        yield* getStart(plugin) ?? Effect.void;
+      for (const extension of extensions) {
+        yield* getStart(extension) ?? Effect.void;
         started += 1;
       }
     });
     yield* start.pipe(
-      Effect.onError(() => runCleanupHooks(plugins.slice(0, started), getEnd, endFailureMessage)),
+      Effect.onError(() =>
+        runCleanupHooks(extensions.slice(0, started), getEnd, endFailureMessage),
+      ),
     );
 
     const progress = { dispatched: 0 };
     return {
-      end: runEndHooks(plugins, getEnd, progress, endFailureMessage),
+      end: runEndHooks(extensions, getEnd, progress, endFailureMessage),
       cleanup: Effect.suspend(() =>
-        runCleanupHooks(plugins.slice(progress.dispatched), getEnd, endFailureMessage),
+        runCleanupHooks(extensions.slice(progress.dispatched), getEnd, endFailureMessage),
       ),
     };
   },

@@ -4,10 +4,10 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import {
   defineAgent,
-  definePlugin,
+  defineExtension,
   type AgentDefinition,
-  type AnyPlugin,
-  type Plugin,
+  type AnyExtension,
+  type Extension,
   type Provider,
   type ToolContribution,
 } from "../../src/index.js";
@@ -18,11 +18,13 @@ type Equal<Left, Right> =
     : false;
 type Expect<Value extends true> = Value;
 type ContributionsOf<Value> =
-  Value extends Plugin<infer _Resource, infer _Error, infer Contributions> ? Contributions : never;
+  Value extends Extension<infer _Resource, infer _Error, infer Contributions>
+    ? Contributions
+    : never;
 type ResourceOf<Value> =
-  Value extends Plugin<infer Resource, infer _Error, infer _Contributions> ? Resource : never;
+  Value extends Extension<infer Resource, infer _Error, infer _Contributions> ? Resource : never;
 type ResourceErrorOf<Value> =
-  Value extends Plugin<infer _Resource, infer ResourceError, infer _Contributions>
+  Value extends Extension<infer _Resource, infer ResourceError, infer _Contributions>
     ? ResourceError
     : never;
 
@@ -33,7 +35,7 @@ class Dependency extends Context.Service<Dependency, { readonly value: string }>
 ) {}
 
 const independent = Tool.make("independent");
-const typedCorePlugin = definePlugin({
+const typedCoreExtension = defineExtension({
   name: "typed-core",
   toolkit: Toolkit.make(
     Tool.make("count", {
@@ -47,20 +49,20 @@ const typedCorePlugin = definePlugin({
     label: () => Effect.succeed(true),
   },
 });
-type TypedCoreContributions = ContributionsOf<typeof typedCorePlugin>;
+type TypedCoreContributions = ContributionsOf<typeof typedCoreExtension>;
 export type CoreContributionKeys = Expect<Equal<keyof TypedCoreContributions, "count" | "label">>;
 export type CoreCountInput = Expect<
   Equal<TypedCoreContributions["count"]["input"], { readonly amount: number }>
 >;
 export type CoreLabelOutput = Expect<Equal<TypedCoreContributions["label"]["output"], boolean>>;
 
-definePlugin({
+defineExtension({
   name: "independent",
   toolkit: Toolkit.make(independent),
   handlers: { independent: () => Effect.void },
 });
 
-definePlugin({
+defineExtension({
   name: "wrong-handler",
   toolkit: Toolkit.make(independent),
   // @ts-expect-error Toolkit handlers must use the Tool's exact name.
@@ -68,84 +70,86 @@ definePlugin({
 });
 
 // @ts-expect-error A Toolkit requiring a handler cannot omit it.
-definePlugin({ name: "missing-handler", toolkit: Toolkit.make(independent), handlers: {} });
+defineExtension({ name: "missing-handler", toolkit: Toolkit.make(independent), handlers: {} });
 
 const dependent = Tool.make("dependent", { dependencies: [Dependency] });
-definePlugin({
+defineExtension({
   name: "dependent",
   toolkit: Toolkit.make(dependent),
-  // @ts-expect-error Tool service dependencies require a Plugin resource Layer.
+  // @ts-expect-error Tool service dependencies require an Extension resource Layer.
   handlers: { dependent: () => Effect.map(Dependency, ({ value }) => value) },
 });
 
-// AnyPlugin must accept every Plugin parameterization; Layer's contravariant
+// AnyExtension must accept every Extension parameterization; Layer's contravariant
 // ROut vs covariant hook R means neither union arm alone suffices.
-declare const resourceful: Plugin<{ readonly db: string }, Error>;
-declare const unknownResource: Plugin<unknown, never>;
-declare const bare: Plugin;
-export const anyPlugins: ReadonlyArray<AnyPlugin> = [resourceful, unknownResource, bare];
+declare const resourceful: Extension<{ readonly db: string }, Error>;
+declare const unknownResource: Extension<unknown, never>;
+declare const bare: Extension;
+export const anyExtensions: ReadonlyArray<AnyExtension> = [resourceful, unknownResource, bare];
 
-const PluginResource = Context.Service<string>("@mitome/core/test/PluginResource");
-const AdditionalPluginResource = Context.Service<number>(
-  "@mitome/core/test/AdditionalPluginResource",
+const ExtensionResource = Context.Service<string>("@mitome/core/test/ExtensionResource");
+const AdditionalExtensionResource = Context.Service<number>(
+  "@mitome/core/test/AdditionalExtensionResource",
 );
-const MissingPluginResource = Context.Service<boolean>("@mitome/core/test/MissingPluginResource");
+const MissingExtensionResource = Context.Service<boolean>(
+  "@mitome/core/test/MissingExtensionResource",
+);
 
-export const resourcePlugin = definePlugin({
+export const resourceExtension = defineExtension({
   name: "resourceful",
-  resource: Layer.succeed(PluginResource, "value"),
-  hooks: { sessionStart: Effect.asVoid(Effect.service(PluginResource)) },
+  resource: Layer.succeed(ExtensionResource, "value"),
+  hooks: { sessionStart: Effect.asVoid(Effect.service(ExtensionResource)) },
 });
-export type InferredPluginResource = Expect<Equal<ResourceOf<typeof resourcePlugin>, string>>;
-export type InferredPluginResourceError = Expect<
-  Equal<ResourceErrorOf<typeof resourcePlugin>, never>
+export type InferredExtensionResource = Expect<Equal<ResourceOf<typeof resourceExtension>, string>>;
+export type InferredExtensionResourceError = Expect<
+  Equal<ResourceErrorOf<typeof resourceExtension>, never>
 >;
 
-const mergedResourcePlugin = definePlugin({
+const mergedResourceExtension = defineExtension({
   name: "merged-resourceful",
   resource: Layer.mergeAll(
-    Layer.succeed(PluginResource, "value"),
-    Layer.succeed(AdditionalPluginResource, 1),
+    Layer.succeed(ExtensionResource, "value"),
+    Layer.succeed(AdditionalExtensionResource, 1),
   ),
   hooks: {
-    sessionStart: Effect.asVoid(Effect.service(PluginResource)),
-    sessionEnd: Effect.asVoid(Effect.service(AdditionalPluginResource)),
+    sessionStart: Effect.asVoid(Effect.service(ExtensionResource)),
+    sessionEnd: Effect.asVoid(Effect.service(AdditionalExtensionResource)),
   },
 });
-export type InferredMergedPluginResource = Expect<
-  Equal<ResourceOf<typeof mergedResourcePlugin>, string | number>
+export type InferredMergedExtensionResource = Expect<
+  Equal<ResourceOf<typeof mergedResourceExtension>, string | number>
 >;
 
 // @ts-expect-error Hooks may only require services supplied by the resource Layer.
-definePlugin({
+defineExtension({
   name: "missing-resource",
-  resource: Layer.succeed(PluginResource, "value"),
-  hooks: { sessionStart: Effect.asVoid(Effect.service(MissingPluginResource)) },
+  resource: Layer.succeed(ExtensionResource, "value"),
+  hooks: { sessionStart: Effect.asVoid(Effect.service(MissingExtensionResource)) },
 });
 
-definePlugin<any>({
+defineExtension<any>({
   name: "explicit-resource-escape",
   // @ts-expect-error Explicit generics cannot widen the resource Layer's output.
-  resource: Layer.succeed(PluginResource, "value"),
+  resource: Layer.succeed(ExtensionResource, "value"),
   // @ts-expect-error Explicit generics cannot widen the resource Layer's output.
-  hooks: { sessionStart: Effect.asVoid(Effect.service(MissingPluginResource)) },
+  hooks: { sessionStart: Effect.asVoid(Effect.service(MissingExtensionResource)) },
 });
 
 class ResourceFailure {}
-const failingResourcePlugin = definePlugin({
+const failingResourceExtension = defineExtension({
   name: "failing-resource",
-  resource: Layer.effect(PluginResource, Effect.fail(new ResourceFailure())),
+  resource: Layer.effect(ExtensionResource, Effect.fail(new ResourceFailure())),
 });
-export type InferredPluginResourceFailure = Expect<
-  Equal<ResourceErrorOf<typeof failingResourcePlugin>, ResourceFailure>
+export type InferredExtensionResourceFailure = Expect<
+  Equal<ResourceErrorOf<typeof failingResourceExtension>, ResourceFailure>
 >;
 
-const resourceFreePlugin = definePlugin({ name: "resource-free" });
-export type InferredResourceFreePluginResource = Expect<
-  Equal<ResourceOf<typeof resourceFreePlugin>, never>
+const resourceFreeExtension = defineExtension({ name: "resource-free" });
+export type InferredResourceFreeExtensionResource = Expect<
+  Equal<ResourceOf<typeof resourceFreeExtension>, never>
 >;
 
-definePlugin({
+defineExtension({
   name: "explicit-undefined",
   instructions: undefined,
   resource: undefined,
@@ -156,10 +160,10 @@ declare const decodingDependentSchema: Schema.Codec<string, string, Dependency, 
 const decodingDependent = Tool.make("decoding-dependent", {
   success: decodingDependentSchema,
 });
-definePlugin({
+defineExtension({
   name: "decoding-dependent",
   toolkit: Toolkit.make(decodingDependent),
-  // @ts-expect-error Tool result decoding services require a Plugin resource Layer.
+  // @ts-expect-error Tool result decoding services require an Extension resource Layer.
   handlers: { "decoding-dependent": () => Effect.succeed("result") },
 });
 
@@ -168,7 +172,7 @@ const resourcefulDependent = Tool.make("resourceful-dependent", {
   parameters: Schema.Struct({ amount: Schema.Finite }),
   success: decodingDependentSchema,
 });
-const resourcefulToolkitPlugin = definePlugin({
+const resourcefulToolkitExtension = defineExtension({
   name: "resourceful-toolkit",
   resource: Layer.succeed(Dependency, { value: "resource" }),
   toolkit: Toolkit.make(resourcefulDependent),
@@ -180,9 +184,9 @@ const resourcefulToolkitPlugin = definePlugin({
   },
   hooks: { sessionStart: Effect.asVoid(Dependency) },
 });
-type ResourcefulToolkitContributions = ContributionsOf<typeof resourcefulToolkitPlugin>;
+type ResourcefulToolkitContributions = ContributionsOf<typeof resourcefulToolkitExtension>;
 export type ResourcefulToolkitResource = Expect<
-  Equal<ResourceOf<typeof resourcefulToolkitPlugin>, Dependency>
+  Equal<ResourceOf<typeof resourcefulToolkitExtension>, Dependency>
 >;
 export type ResourcefulToolkitContribution = Expect<
   Equal<
@@ -191,23 +195,25 @@ export type ResourcefulToolkitContribution = Expect<
   >
 >;
 
-const uncoveredHandler = Tool.make("uncovered-handler", { dependencies: [MissingPluginResource] });
-definePlugin({
+const uncoveredHandler = Tool.make("uncovered-handler", {
+  dependencies: [MissingExtensionResource],
+});
+defineExtension({
   name: "uncovered-handler",
   resource: Layer.succeed(Dependency, { value: "resource" }),
   toolkit: Toolkit.make(uncoveredHandler),
   // @ts-expect-error Tool handler services must be supplied by the resource Layer.
-  handlers: { "uncovered-handler": () => Effect.asVoid(MissingPluginResource) },
+  handlers: { "uncovered-handler": () => Effect.asVoid(MissingExtensionResource) },
 });
 
 declare const missingDecodingSchema: Schema.Codec<
   string,
   string,
-  typeof MissingPluginResource,
+  typeof MissingExtensionResource,
   never
 >;
 const uncoveredDecoding = Tool.make("uncovered-decoding", { success: missingDecodingSchema });
-definePlugin({
+defineExtension({
   name: "uncovered-decoding",
   resource: Layer.succeed(Dependency, { value: "resource" }),
   toolkit: Toolkit.make(uncoveredDecoding),
@@ -215,44 +221,44 @@ definePlugin({
   handlers: { "uncovered-decoding": () => Effect.succeed("result") },
 });
 
-definePlugin({
+defineExtension({
   name: "uncovered-toolkit-hook",
   resource: Layer.succeed(Dependency, { value: "resource" }),
   toolkit: Toolkit.make(independent),
   handlers: { independent: () => Effect.void },
   // @ts-expect-error Hooks must only require services supplied by the resource Layer.
-  hooks: { sessionStart: Effect.asVoid(MissingPluginResource) },
+  hooks: { sessionStart: Effect.asVoid(MissingExtensionResource) },
 });
 
-const toolkitlessPlugin = definePlugin({ name: "toolkitless" });
+const toolkitlessExtension = defineExtension({ name: "toolkitless" });
 const typedDefinition = defineAgent({
   providers: [model],
   model: "test/default",
-  plugins: [typedCorePlugin, toolkitlessPlugin, resourcePlugin] as const,
+  extensions: [typedCoreExtension, toolkitlessExtension, resourceExtension] as const,
 });
-export type PreservedPluginTuple = Expect<
+export type PreservedExtensionTuple = Expect<
   Equal<
-    typeof typedDefinition.plugins,
-    readonly [typeof typedCorePlugin, typeof toolkitlessPlugin, typeof resourcePlugin]
+    typeof typedDefinition.extensions,
+    readonly [typeof typedCoreExtension, typeof toolkitlessExtension, typeof resourceExtension]
   >
 >;
-const heterogeneousPlugins: ReadonlyArray<AnyPlugin> = [
-  typedCorePlugin,
-  toolkitlessPlugin,
-  resourcePlugin,
+const heterogeneousExtensions: ReadonlyArray<AnyExtension> = [
+  typedCoreExtension,
+  toolkitlessExtension,
+  resourceExtension,
 ];
 const heterogeneousDefinition: AgentDefinition<
   readonly [typeof model],
   "test/default",
-  readonly [typeof typedCorePlugin, typeof toolkitlessPlugin, typeof resourcePlugin]
+  readonly [typeof typedCoreExtension, typeof toolkitlessExtension, typeof resourceExtension]
 > = typedDefinition;
 const explicitlyTypedDefinition = defineAgent<readonly [typeof model], "test/default", readonly []>(
   {
     providers: [model],
     model: "test/default",
-    plugins: [],
+    extensions: [],
   },
 );
-void heterogeneousPlugins;
+void heterogeneousExtensions;
 void heterogeneousDefinition;
 void explicitlyTypedDefinition;

@@ -3,8 +3,8 @@ import { Prompt } from "effect/unstable/ai";
 import { compileAgentDefinition } from "../agent.js";
 import type { AgentDefinition, AgentDefinitionError } from "../agent.js";
 import type { AnyProvider, QualifiedModelId } from "../provider.js";
-import { providePluginHook } from "../plugin.js";
-import type { AnyPlugin } from "../plugin.js";
+import { provideExtensionHook } from "../extension.js";
+import type { AnyExtension } from "../extension.js";
 import { SessionBusyError, SessionReleasedError, TurnError, hookTurnError } from "./errors.js";
 import type { TurnEvent } from "./events.js";
 import { beginHookPhase } from "./hooks.js";
@@ -37,21 +37,21 @@ const createSessionImpl: (
   const compiled = yield* compileAgentDefinition(definition);
 
   const sessionScope = yield* Effect.scope;
-  const pluginContexts = new Map<AnyPlugin, Context.Context<any>>();
-  for (const plugin of compiled.plugins) {
-    if (plugin.resource !== undefined) {
-      pluginContexts.set(
-        plugin,
-        // The Plugin's Resource type is erased by AnyPlugin; providePlugin re-pairs it dynamically.
-        (yield* Layer.build(plugin.resource).pipe(
-          hookTurnError("Plugin setup failed"),
+  const extensionContexts = new Map<AnyExtension, Context.Context<any>>();
+  for (const extension of compiled.extensions) {
+    if (extension.resource !== undefined) {
+      extensionContexts.set(
+        extension,
+        // The Extension's Resource type is erased by AnyExtension; provideExtension re-pairs it dynamically.
+        (yield* Layer.build(extension.resource).pipe(
+          hookTurnError("Extension setup failed"),
         )) as Context.Context<any>,
       );
     }
   }
-  const toolExecution = yield* makeToolExecution(compiled, pluginContexts);
+  const toolExecution = yield* makeToolExecution(compiled, extensionContexts);
   const modelResolver = makeModelResolver(compiled.providers, sessionScope);
-  const stepRunner = makeStepRunner(compiled, pluginContexts, toolExecution);
+  const stepRunner = makeStepRunner(compiled, extensionContexts, toolExecution);
   let history = Prompt.make(
     compiled.instructions === "" ? [] : [{ role: "system", content: compiled.instructions }],
   );
@@ -66,9 +66,10 @@ const createSessionImpl: (
   );
 
   const sessionHooks = yield* beginHookPhase(
-    compiled.plugins,
-    (plugin) => providePluginHook(plugin, pluginContexts, plugin.hooks?.sessionStart),
-    (plugin) => providePluginHook(plugin, pluginContexts, plugin.hooks?.sessionEnd),
+    compiled.extensions,
+    (extension) =>
+      provideExtensionHook(extension, extensionContexts, extension.hooks?.sessionStart),
+    (extension) => provideExtensionHook(extension, extensionContexts, extension.hooks?.sessionEnd),
     "Session end Hook failed",
   ).pipe(hookTurnError("Session start Hook failed"));
 
@@ -90,11 +91,19 @@ const createSessionImpl: (
           modelResolver.resolve(qualifiedModelId).pipe(
             Effect.flatMap((selected) =>
               beginHookPhase(
-                compiled.plugins,
-                (plugin) =>
-                  providePluginHook(plugin, pluginContexts, plugin.hooks?.turnStart?.(text)),
-                (plugin) =>
-                  providePluginHook(plugin, pluginContexts, plugin.hooks?.turnEnd?.(text)),
+                compiled.extensions,
+                (extension) =>
+                  provideExtensionHook(
+                    extension,
+                    extensionContexts,
+                    extension.hooks?.turnStart?.(text),
+                  ),
+                (extension) =>
+                  provideExtensionHook(
+                    extension,
+                    extensionContexts,
+                    extension.hooks?.turnEnd?.(text),
+                  ),
                 "Turn end Hook failed",
               ).pipe(
                 hookTurnError("Turn start Hook failed"),

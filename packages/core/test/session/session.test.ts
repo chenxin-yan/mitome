@@ -23,7 +23,7 @@ describe("createSession", () => {
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       };
       const session = yield* createSession(definition);
       const events = yield* Stream.runCollect(session.prompt("Hi"));
@@ -56,7 +56,7 @@ describe("createSession", () => {
       const session = yield* createSession({
         providers: [model],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       });
       const events = yield* Stream.runCollect(session.prompt("Hi"));
 
@@ -95,7 +95,7 @@ describe("createSession", () => {
       const session = yield* createSession({
         providers: [model],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       });
       const events = yield* Stream.runCollect(session.prompt("Hi"));
 
@@ -126,7 +126,7 @@ describe("createSession", () => {
       const session = yield* createSession({
         providers: [model],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       });
       const events = yield* Stream.runCollect(session.prompt("Hi")).pipe(
         Effect.provideService(Greeting, { text: "from the caller" }),
@@ -139,7 +139,7 @@ describe("createSession", () => {
     }),
   );
 
-  it.effect("composes Plugin Instructions into model input and history", () =>
+  it.effect("composes Extension Instructions into model input and history", () =>
     Effect.gen(function* () {
       let modelPrompt: ReadonlyArray<Prompt.Message> = [];
       const model = makeTestProvider(({ prompt }) => {
@@ -149,17 +149,17 @@ describe("createSession", () => {
       const session = yield* createSession({
         providers: [model],
         model: "test/default",
-        plugins: [
-          { name: "first", instructions: "First Plugin" },
+        extensions: [
+          { name: "first", instructions: "First Extension" },
           { name: "empty", instructions: "" },
           { name: "missing" },
-          { name: "last", instructions: "Last Plugin" },
+          { name: "last", instructions: "Last Extension" },
         ],
       });
       const expected = [
         {
           role: "system" as const,
-          content: "First Plugin\n\nLast Plugin",
+          content: "First Extension\n\nLast Extension",
         },
       ];
 
@@ -178,7 +178,7 @@ describe("createSession", () => {
       const session = yield* createSession({
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [{ name: "empty", instructions: "" }, { name: "missing" }],
+        extensions: [{ name: "empty", instructions: "" }, { name: "missing" }],
       });
 
       expect(session.history().map((message) => message.role)).toEqual([]);
@@ -202,7 +202,7 @@ describe("createSession", () => {
           const session = yield* createSession({
             providers: [model],
             model: "test/default",
-            plugins: [],
+            extensions: [],
           });
           return yield* Effect.flip(Stream.runDrain(session.prompt("Hi")));
         }),
@@ -222,7 +222,7 @@ describe("createSession", () => {
       const session = yield* createSession({
         providers: [makeTestProvider(() => Stream.fail(cause))],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       });
 
       expect(yield* Effect.flip(Stream.runDrain(session.prompt("Hi")))).toMatchObject({
@@ -245,7 +245,7 @@ describe("createSession", () => {
       const session = yield* createSession({
         providers: [model],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       });
       const events: Array<unknown> = [];
       const error = yield* Effect.flip(
@@ -266,7 +266,7 @@ describe("createSession", () => {
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       };
       const first = yield* Effect.scoped(
         Effect.gen(function* () {
@@ -289,7 +289,7 @@ describe("createSession", () => {
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       };
       const session = yield* createSession(definition);
       const pull = yield* Stream.toPull(session.prompt("first"));
@@ -327,7 +327,7 @@ describe("createSession", () => {
       const session = yield* createSession({
         providers: [model],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       });
       const first = yield* Effect.forkChild(Stream.runDrain(session.prompt("first")));
       yield* Effect.promise(() => started);
@@ -349,7 +349,7 @@ describe("createSession", () => {
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       };
       const session = yield* createSession(definition);
       yield* Stream.runDrain(session.prompt("first"));
@@ -376,7 +376,7 @@ describe("createSession", () => {
       const session = yield* createSession({
         providers: [model],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       });
 
       expect(yield* Effect.flip(Stream.runDrain(session.prompt("Hi")))).toMatchObject({
@@ -392,7 +392,7 @@ describe("createSession", () => {
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       };
       const session = yield* Effect.scoped(createSession(definition));
       const exit = yield* Effect.exit(Stream.runCollect(session.prompt("late")));

@@ -6,8 +6,8 @@ import {
   TurnError,
   type AgentDefinition,
   createSession,
-  type Plugin,
-  type PluginHooks,
+  type Extension,
+  type ExtensionHooks,
 } from "../../src/index.js";
 import { makeTestProvider } from "../support/provider.js";
 
@@ -59,14 +59,14 @@ const toolModel = () => {
   };
 };
 
-describe("Plugin Hooks", () => {
+describe("Extension Hooks", () => {
   it.effect(
     "runs notification Hooks in Agent Definition order and passes transformed prompts onward",
     () =>
       Effect.gen(function* () {
         const log: Array<string> = [];
         let modelPrompt: Prompt.Prompt | undefined;
-        const plugin = (name: string, transform?: boolean): Plugin => ({
+        const extension = (name: string, transform?: boolean): Extension => ({
           name,
           hooks: {
             sessionStart: Effect.sync(() => void log.push(`${name}:session-start`)),
@@ -84,7 +84,7 @@ describe("Plugin Hooks", () => {
         const definition: AgentDefinition = {
           providers: [textModel((prompt) => (modelPrompt = prompt))],
           model: "test/default",
-          plugins: [plugin("first", true), plugin("second")],
+          extensions: [extension("first", true), extension("second")],
         };
 
         yield* Effect.scoped(
@@ -128,7 +128,7 @@ describe("Plugin Hooks", () => {
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "hooks",
             hooks: {
@@ -163,7 +163,7 @@ describe("Plugin Hooks", () => {
       const definition: AgentDefinition = {
         providers: [textModel((prompt) => void prompts.push(prompt))],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "inject",
             hooks: {
@@ -199,7 +199,7 @@ describe("Plugin Hooks", () => {
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "veto",
             hooks: {
@@ -241,7 +241,7 @@ describe("Plugin Hooks", () => {
       const valid: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "transform",
             hooks: {
@@ -271,9 +271,9 @@ describe("Plugin Hooks", () => {
         ...valid,
         providers: [invalidFixture.provider],
         model: "test/default",
-        plugins: [
+        extensions: [
           { name: "transform", hooks: { postTool: () => Effect.succeed(1) } },
-          valid.plugins[1]!,
+          valid.extensions[1]!,
         ],
       };
       let failure: unknown;
@@ -294,7 +294,7 @@ describe("Plugin Hooks", () => {
         createSession({
           providers: [textModel(() => undefined)],
           model: "test/default",
-          plugins: [
+          extensions: [
             {
               name: "bad",
               hooks: {
@@ -313,7 +313,7 @@ describe("Plugin Hooks", () => {
       const turnSession = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "bad",
             hooks: {
@@ -338,7 +338,7 @@ describe("Plugin Hooks", () => {
       const stepSession = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "bad",
             hooks: {
@@ -361,7 +361,7 @@ describe("Plugin Hooks", () => {
         createSession({
           providers: [textModel(() => undefined)],
           model: "test/default",
-          plugins: [
+          extensions: [
             {
               name: "started",
               hooks: {
@@ -387,7 +387,7 @@ describe("Plugin Hooks", () => {
       const turnSession = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "started",
             hooks: {
@@ -414,7 +414,7 @@ describe("Plugin Hooks", () => {
       const stepSession = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "started",
             hooks: {
@@ -446,7 +446,7 @@ describe("Plugin Hooks", () => {
         createSession({
           providers: [textModel(() => undefined)],
           model: "test/default",
-          plugins: [
+          extensions: [
             {
               name: "first",
               hooks: {
@@ -473,7 +473,7 @@ describe("Plugin Hooks", () => {
       const session = yield* createSession({
         providers: [failingModel],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "first",
             hooks: {
@@ -507,7 +507,7 @@ describe("Plugin Hooks", () => {
       const session = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "hooks",
             hooks: {
@@ -530,7 +530,7 @@ describe("Plugin Hooks", () => {
       const session = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "bad",
             hooks: {
@@ -551,7 +551,7 @@ describe("Plugin Hooks", () => {
     }),
   );
 
-  const failingTurnHooks: ReadonlyArray<readonly [string, PluginHooks]> = [
+  const failingTurnHooks: ReadonlyArray<readonly [string, ExtensionHooks]> = [
     [
       "stepStart",
       {
@@ -576,7 +576,7 @@ describe("Plugin Hooks", () => {
         const session = yield* createSession({
           providers: [fixture.provider],
           model: "test/default",
-          plugins: [
+          extensions: [
             { name: "bad", hooks },
             {
               name: "tool",
@@ -604,13 +604,13 @@ describe("Plugin Hooks", () => {
     );
   }
 
-  it.effect("fails startup and Turns for unrecovered Hooks while allowing Plugin recovery", () =>
+  it.effect("fails startup and Turns for unrecovered Hooks while allowing Extension recovery", () =>
     Effect.gen(function* () {
       const startup = new HookFailure({ message: "startup" });
       const startupDefinition: AgentDefinition = {
         providers: [textModel(() => undefined)],
         model: "test/default",
-        plugins: [{ name: "bad", hooks: { sessionStart: Effect.fail(startup) } }],
+        extensions: [{ name: "bad", hooks: { sessionStart: Effect.fail(startup) } }],
       };
       const startupExit = yield* Effect.exit(createSession(startupDefinition));
       expect(
@@ -624,7 +624,7 @@ describe("Plugin Hooks", () => {
       const turnDefinition: AgentDefinition = {
         providers: [textModel(() => undefined)],
         model: "test/default",
-        plugins: [{ name: "bad", hooks: { turnStart: () => Effect.fail(turn) } }],
+        extensions: [{ name: "bad", hooks: { turnStart: () => Effect.fail(turn) } }],
       };
       const turnSession = yield* createSession(turnDefinition);
       const turnExit = yield* Effect.exit(Stream.runDrain(turnSession.prompt("Hi")));
@@ -636,7 +636,7 @@ describe("Plugin Hooks", () => {
       const recovered: AgentDefinition = {
         providers: [textModel(() => undefined)],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "recover",
             hooks: { turnStart: () => Effect.fail(turn).pipe(Effect.ignore) },

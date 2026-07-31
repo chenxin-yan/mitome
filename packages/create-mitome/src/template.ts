@@ -47,7 +47,7 @@ const definitionSource = (
       ? 'import { openai } from "@mitome/providers/openai";'
       : 'import { codex } from "@mitome/providers/openai-codex";';
   const providerFactory = provider === "openai" ? "openai()" : "codex()";
-  return `import { defineAgent } from ${JSON.stringify(sdk)};\nimport { instructionFiles } from "@mitome/plugins";\n${providerImport}\n\nexport default defineAgent({\n  providers: [${providerFactory}],\n  model: ${JSON.stringify(`${provider}/${model}`)},\n  plugins: [instructionFiles(${instructionFilesOptions})],\n});\n`;
+  return `import { defineAgent } from ${JSON.stringify(sdk)};\nimport { instructionFiles } from "@mitome/sdk/extensions";\n${providerImport}\n\nexport default defineAgent({\n  providers: [${providerFactory}],\n  model: ${JSON.stringify(`${provider}/${model}`)},\n  extensions: [instructionFiles(${instructionFilesOptions})],\n});\n`;
 };
 
 const agentDefinitionSource = (options: ScaffoldOptions): string =>
@@ -68,7 +68,6 @@ const agentPackageSource = (flavor: Flavor = "promise"): string =>
       private: true,
       type: "module",
       dependencies: {
-        "@mitome/plugins": packageJson.version,
         "@mitome/providers": packageJson.version,
         "@mitome/sdk": packageJson.version,
         ...(flavor === "effect" ? { effect: "4.0.0-beta.102" } : {}),

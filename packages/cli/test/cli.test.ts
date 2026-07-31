@@ -44,7 +44,7 @@ const provider = makeProvider("test", [], undefined, () => Layer.succeed(Languag
     ${options.block ? 'Stream.fromEffect(Effect.sleep(10_000).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))' : 'Stream.fromEffect(Effect.sleep(100).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))'},
   ),
 }));
-export default { providers: [provider], model: "test/default", plugins: ${
+export default { providers: [provider], model: "test/default", extensions: ${
   options.signalProbe
     ? `[{ name: "cleanup", hooks: { sessionEnd: Effect.sync(() => {
       writeFileSync(${JSON.stringify(options.signalProbe.cleanupStarted)}, "");
@@ -71,7 +71,7 @@ const provider = makeProvider("test", [], undefined, () => Layer.succeed(Languag
     ].join(":"),
   })),
 }));
-export default { providers: [provider], model: "test/default", plugins: [] };
+export default { providers: [provider], model: "test/default", extensions: [] };
 `;
 
 const reexecDefinitionSource = (): string => `
@@ -84,7 +84,7 @@ const provider = makeProvider("test", [], undefined, () => Layer.succeed(Languag
     id: "reexec", delta: process.env.BUN_BE_BUN ?? "missing",
   })),
 }));
-export default { providers: [provider], model: "test/default", plugins: [] };
+export default { providers: [provider], model: "test/default", extensions: [] };
 `;
 
 type Fixture = {
@@ -309,7 +309,7 @@ describe("compiled mitome", () => {
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("Agent Definition Providers must be an array");
     expect(result.stderr).toContain("Agent Definition Model must be a string");
-    expect(result.stderr).toContain("Agent Definition Plugins must be an array");
+    expect(result.stderr).toContain("Agent Definition Extensions must be an array");
   });
 
   test("runs one Turn end to end", async () => {

@@ -2,8 +2,8 @@ import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import type { Response as AiResponse } from "effect/unstable/ai";
 import type {
-  Plugin,
-  PluginHooks,
+  Extension,
+  ExtensionHooks,
   ToolContribution,
   ToolHookContext,
   ToolResultHookContext,
@@ -38,7 +38,7 @@ export interface ToolApprovalContext {
   readonly messages: ReadonlyArray<unknown>;
 }
 
-export interface PluginHooksDefinition<Resource = never> {
+export interface ExtensionHooksDefinition<Resource = never> {
   readonly sessionStart?: (context: HookContext<Resource>) => Promise<void>;
   readonly sessionEnd?: (context: HookContext<Resource>) => Promise<void>;
   readonly turnStart?: (text: string, context: HookContext<Resource>) => Promise<void>;
@@ -133,12 +133,13 @@ const promiseHook = Effect.fn("@mitome/sdk/promiseHook")(function* <A, Resource>
 });
 
 const adaptHooks = <Resource>(
-  hooks: PluginHooksDefinition<Resource> | undefined,
+  hooks: ExtensionHooksDefinition<Resource> | undefined,
   resource: Context.Service<Resource, Resource> | undefined,
-): PluginHooks<Resource> | undefined => {
+): ExtensionHooks<Resource> | undefined => {
   if (hooks === undefined) return undefined;
-  const adapted: { -readonly [Key in keyof PluginHooks<Resource>]?: PluginHooks<Resource>[Key] } =
-    {};
+  const adapted: {
+    -readonly [Key in keyof ExtensionHooks<Resource>]?: ExtensionHooks<Resource>[Key];
+  } = {};
   const sessionStart = hooks.sessionStart;
   if (sessionStart) adapted.sessionStart = promiseHook(sessionStart, resource);
   const sessionEnd = hooks.sessionEnd;
@@ -201,7 +202,7 @@ type ToolContributions<Tools extends ReadonlyArray<Tool<any, any, never, string>
   >;
 };
 
-export interface PluginDefinition<
+export interface ExtensionDefinition<
   Resource = never,
   Tools extends ReadonlyArray<Tool<any, any, never, string>> = ReadonlyArray<
     Tool<any, any, Resource, string>
@@ -210,35 +211,35 @@ export interface PluginDefinition<
   readonly name: string;
   readonly instructions?: string;
   readonly tools: Tools;
-  readonly hooks?: PluginHooksDefinition<Resource>;
+  readonly hooks?: ExtensionHooksDefinition<Resource>;
   readonly setup?: () => Promise<Resource>;
   readonly dispose?: (resource: Resource) => Promise<void>;
 }
 
 // A declared Resource without setup would hand handlers `undefined as Resource`,
-// so setup is mandatory whenever anything in the Plugin declares a Resource.
-export function definePlugin<
+// so setup is mandatory whenever anything in the Extension declares a Resource.
+export function defineExtension<
   Resource = never,
   const Tools extends ReadonlyArray<Tool<any, any, never, string>> = ReadonlyArray<
     Tool<any, any, Resource, string>
   >,
 >(
-  definition: PluginDefinition<Resource, Tools> &
+  definition: ExtensionDefinition<Resource, Tools> &
     ([UnsatisfiedToolResources<Resource, Tools[number]>] extends [never] ? unknown : never) &
     ([Resource | ToolResources<Tools>] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : {
           readonly setup: () => Promise<Resource>;
         }),
-): NoInfer<Plugin<Resource, unknown, ToolContributions<Tools>>>;
-export function definePlugin<
+): NoInfer<Extension<Resource, unknown, ToolContributions<Tools>>>;
+export function defineExtension<
   Resource = never,
   Tools extends ReadonlyArray<Tool<any, any, never, string>> = ReadonlyArray<
     Tool<any, any, never, string>
   >,
->(definition: PluginDefinition<Resource, Tools>): Plugin<Resource, unknown> {
+>(definition: ExtensionDefinition<Resource, Tools>): Extension<Resource, unknown> {
   if (definition.dispose !== undefined && definition.setup === undefined) {
-    throw new Error(`Plugin "${definition.name}" declares dispose without setup`);
+    throw new Error(`Extension "${definition.name}" declares dispose without setup`);
   }
   const names = new Set<string>();
   const definitions =
@@ -314,7 +315,9 @@ export function definePlugin<
               // cause; log it instead so the original tagged error survives.
               return Exit.isFailure(exit)
                 ? run.pipe(
-                    Effect.catchCause((cause) => Effect.logWarning("Plugin dispose failed", cause)),
+                    Effect.catchCause((cause) =>
+                      Effect.logWarning("Extension dispose failed", cause),
+                    ),
                   )
                 : run;
             },

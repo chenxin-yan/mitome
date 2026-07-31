@@ -4,7 +4,7 @@ Mitome exists to let people define and run AI agents for their own use cases.
 
 ## Public interface
 
-Users install `@mitome/sdk`, `@mitome/providers`, and `@mitome/plugins`; Promise-first APIs come from `@mitome/sdk`, while Effect-native APIs come from `@mitome/sdk/effect`. [ADR-0022](docs/adr/0022-publish-the-sdk-as-the-sole-documented-surface.md) defines the public surface. Core errors are public Schema-tagged errors, provider errors are internal `Data.TaggedError` values widened at the boundary, and the CLI uses a plain app-level error.
+Users install `@mitome/sdk` and `@mitome/providers`; first-party Extensions ship at `@mitome/sdk/extensions`. Promise-first APIs come from `@mitome/sdk`, while Effect-native APIs come from `@mitome/sdk/effect`. [ADR-0022](docs/adr/0022-publish-the-sdk-as-the-sole-documented-surface.md) defines the public surface. Core errors are public Schema-tagged errors, provider errors are internal `Data.TaggedError` values widened at the boundary, and the CLI uses a plain app-level error.
 
 ## Language
 
@@ -25,7 +25,7 @@ One model generation within a Turn; a Turn may require multiple Steps to resolve
 _Avoid_: Turn, iteration
 
 **Agent Definition**:
-A user-authored declaration of exactly one Agent, its Providers, Default Model, and Plugins.
+A user-authored declaration of exactly one Agent, its Providers, Default Model, and Extensions.
 _Avoid_: Definition (bare), configuration, setup script, registry
 
 **Agent Definition module**:
@@ -36,12 +36,12 @@ _Avoid_: Agent Definition, entry file, setup script
 A directory selected as a load target whose Agent Definition module is `index.ts`.
 _Avoid_: Agent Definition, folder
 
-**Plugin**:
-A named, reusable extension included by an Agent Definition to add Tools, contribute Instructions, or participate in the Agent lifecycle.
-_Avoid_: Toolkit, package, add-on
+**Extension**:
+A named, reusable unit included by an Agent Definition to add Tools, contribute Instructions, or participate in the Agent lifecycle.
+_Avoid_: Plugin, Toolkit, package, add-on
 
 **Instructions**:
-A static markdown fragment a Plugin contributes to an Agent's system prompt, composed in Plugin definition order at Session creation.
+A static markdown fragment an Extension contributes to an Agent's system prompt, composed in Extension definition order at Session creation.
 _Avoid_: System prompt (the composed whole), prompt fragment
 
 **Model**:
@@ -65,11 +65,11 @@ A configured integration through which an Agent can access a family of Models fr
 _Avoid_: Vendor, backend, Provider adapter
 
 **Toolkit**:
-A collection of configured Tools that a Plugin may contribute.
-_Avoid_: Plugin
+A collection of configured Tools that an Extension may contribute.
+_Avoid_: Extension
 
 **Hook**:
-Plugin behavior attached to a named point in the Agent lifecycle, with an explicit contract to observe, transform, or veto.
+Extension behavior attached to a named point in the Agent lifecycle, with an explicit contract to observe, transform, or veto.
 _Avoid_: Middleware, event listener
 
 **Tool**:
@@ -77,7 +77,7 @@ A named capability an Agent can invoke during a Session to inspect or affect som
 _Avoid_: Function, command
 
 **Resource**:
-The private set of services a Plugin acquires at Session creation, holds for the Session's lifetime, and releases at Session end; visible only to that Plugin's own Hooks and Tool handlers.
+The private set of services an Extension acquires at Session creation, holds for the Session's lifetime, and releases at Session end; visible only to that Extension's own Hooks and Tool handlers.
 _Avoid_: Dependency, state, shared context
 
 **Tool Call**:

@@ -19,7 +19,7 @@ test("keeps the complete Effect facade export contract", async () => {
       "createSession",
       "credentialDescriptor",
       "defineAgent",
-      "definePlugin",
+      "defineExtension",
       "makeProvider",
     ]
   `);

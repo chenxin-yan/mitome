@@ -1,8 +1,8 @@
 import { Cause, Deferred, Effect, Schema, Stream } from "effect";
 import { Tool, Toolkit, type AiError } from "effect/unstable/ai";
 import type { CompiledAgent, CompiledTool } from "../agent.js";
-import type { PluginContexts, ToolResultValidator } from "../plugin.js";
-import { providePlugin } from "../plugin.js";
+import type { ExtensionContexts, ToolResultValidator } from "../extension.js";
+import { provideExtension } from "../extension.js";
 import { ApprovalResolutionError, hookAiError, toolAiError } from "./errors.js";
 import type { ToolExecutionDenied } from "./events.js";
 
@@ -112,7 +112,7 @@ const validateResult = (
  */
 export const makeToolExecution = (
   compiled: CompiledAgent,
-  contexts: PluginContexts,
+  contexts: ExtensionContexts,
 ): Effect.Effect<ToolExecution> => {
   const compiledTools = Array.from(compiled.tools.values());
   const toolkit = Toolkit.make(...compiledTools.map(({ tool }) => tool));
@@ -135,11 +135,11 @@ export const makeToolExecution = (
         params: unknown,
       ): Effect.Effect<string | undefined, unknown> =>
         Effect.gen(function* () {
-          for (const plugin of compiled.plugins) {
-            const veto = yield* providePlugin(
-              plugin,
+          for (const extension of compiled.extensions) {
+            const veto = yield* provideExtension(
+              extension,
               contexts,
-              plugin.hooks?.preTool?.({ name, params }) ?? Effect.void,
+              extension.hooks?.preTool?.({ name, params }) ?? Effect.void,
             );
             if (veto !== undefined) return veto.reason;
           }
@@ -151,9 +151,9 @@ export const makeToolExecution = (
           const { owner, resultValidator, tool } = compiledTool;
           const execute: ToolPipeline["execute"] = Effect.fn("@mitome/core/ToolPipeline.execute")(
             function* (params) {
-              // The whole Tool Call runs in the owning Plugin's context: the handler
+              // The whole Tool Call runs in the owning Extension's context: the handler
               // plus any schema decode/encode services from its Resource.
-              const results = yield* providePlugin(
+              const results = yield* provideExtension(
                 owner,
                 contexts,
                 baseHandle(tool.name, params).pipe(
@@ -168,17 +168,19 @@ export const makeToolExecution = (
                   ),
                 ),
               ).pipe(toolAiError(tool.name));
-              if (!compiled.plugins.some((plugin) => plugin.hooks?.postTool !== undefined)) {
+              if (
+                !compiled.extensions.some((extension) => extension.hooks?.postTool !== undefined)
+              ) {
                 return Stream.fromIterable(results);
               }
               const finalResults = yield* Effect.forEach(results, (handlerResult) =>
                 Effect.gen(function* () {
                   let result = handlerResult.result;
-                  for (const plugin of compiled.plugins) {
-                    const postTool = plugin.hooks?.postTool;
+                  for (const extension of compiled.extensions) {
+                    const postTool = extension.hooks?.postTool;
                     if (postTool !== undefined) {
-                      result = yield* providePlugin(
-                        plugin,
+                      result = yield* provideExtension(
+                        extension,
                         contexts,
                         postTool({
                           name: tool.name,
@@ -189,7 +191,7 @@ export const makeToolExecution = (
                       ).pipe(hookAiError("postTool", "Post-Tool Hook failed"));
                     }
                   }
-                  return yield* providePlugin(
+                  return yield* provideExtension(
                     owner,
                     contexts,
                     validateResult(tool, handlerResult, result, resultValidator),

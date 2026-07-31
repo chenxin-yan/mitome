@@ -55,7 +55,7 @@ const start = (definition: AgentDefinition) =>
     return { events, pending, turn };
   });
 
-type PreTool = NonNullable<NonNullable<AgentDefinition["plugins"][number]["hooks"]>["preTool"]>;
+type PreTool = NonNullable<NonNullable<AgentDefinition["extensions"][number]["hooks"]>["preTool"]>;
 
 const definition = (preTool?: PreTool, needsApproval: Tool.Any["needsApproval"] = true) => {
   const fixture = approvalModel();
@@ -73,7 +73,7 @@ const definition = (preTool?: PreTool, needsApproval: Tool.Any["needsApproval"] 
     definition: {
       providers: [fixture.provider],
       model: "test/default",
-      plugins: [
+      extensions: [
         {
           name: "dangerous",
           toolkit: Toolkit.make(dangerous),

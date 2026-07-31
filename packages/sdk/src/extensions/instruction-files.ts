@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Plugin } from "@mitome/core";
+import type { Extension } from "@mitome/core";
 
 export interface InstructionFilesOptions {
   readonly paths?: ReadonlyArray<string>;
@@ -63,10 +63,10 @@ const discoveredPaths = (names: ReadonlyArray<string>): ReadonlyArray<string> =>
 };
 
 /**
- * Creates a Plugin from synchronous instruction files at definition load time.
- * ADR-0024 intentionally confines these node:fs reads to this first-party package.
+ * Creates an Extension from synchronous instruction files at definition load time.
+ * ADR-0024 intentionally confines these node:fs reads to this first-party SDK subpath.
  */
-export function instructionFiles(options: InstructionFilesOptions = {}): Plugin {
+export function instructionFiles(options: InstructionFilesOptions = {}): Extension {
   const paths = explicitPaths(options.paths);
   const files = [
     ...paths,

@@ -5,7 +5,7 @@ Mitome runs user-authored AI agents in local, scoped Sessions. Start with the Pr
 ## Quickstart
 
 ```sh
-npm install @mitome/sdk @mitome/providers @mitome/plugins
+npm install @mitome/sdk @mitome/providers
 ```
 
 ```ts
@@ -15,7 +15,7 @@ import { openai } from "@mitome/providers/openai";
 const agent = defineAgent({
   providers: [openai()],
   model: "openai/gpt-5.4-mini",
-  plugins: [],
+  extensions: [],
 });
 
 await withSession(agent, async (session) => {
@@ -25,7 +25,7 @@ await withSession(agent, async (session) => {
 });
 ```
 
-Set `OPENAI_API_KEY` in the launching process. For CLI setup, an interactive Session, Plugins, Approvals, Effect usage, and credential guidance, read the [documentation](apps/docs/content/docs/index.mdx).
+Set `OPENAI_API_KEY` in the launching process. For CLI setup, an interactive Session, Extensions, Approvals, Effect usage, and credential guidance, read the [documentation](apps/docs/content/docs/index.mdx).
 
 The supported public surfaces are `@mitome/sdk` and `@mitome/sdk/effect`; `@mitome/core` is an internal runtime dependency.
 

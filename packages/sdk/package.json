@@ -18,6 +18,10 @@
     "./effect": {
       "types": "./dist/effect.d.ts",
       "default": "./dist/effect.js"
+    },
+    "./extensions": {
+      "types": "./dist/extensions/index.d.ts",
+      "default": "./dist/extensions/index.js"
     }
   },
   "publishConfig": {

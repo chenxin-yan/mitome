@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Exit } from "effect";
-import type { AnyPlugin } from "../../src/plugin.js";
+import type { AnyExtension } from "../../src/extension.js";
 import { beginHookPhase } from "../../src/session/hooks.js";
 
-const plugins = (...names: ReadonlyArray<string>): ReadonlyArray<AnyPlugin> =>
+const extensions = (...names: ReadonlyArray<string>): ReadonlyArray<AnyExtension> =>
   names.map((name) => ({ name }));
 
 describe("Hook phases", () => {
@@ -11,11 +11,11 @@ describe("Hook phases", () => {
     Effect.gen(function* () {
       const log: Array<string> = [];
       const phase = yield* beginHookPhase(
-        plugins("first", "second"),
+        extensions("first", "second"),
         () => Effect.void,
-        (plugin) =>
-          Effect.sync(() => void log.push(plugin.name)).pipe(
-            Effect.andThen(plugin.name === "first" ? Effect.interrupt : Effect.void),
+        (extension) =>
+          Effect.sync(() => void log.push(extension.name)).pipe(
+            Effect.andThen(extension.name === "first" ? Effect.interrupt : Effect.void),
           ),
         "end failed",
       );
@@ -33,14 +33,14 @@ describe("Hook phases", () => {
       const second = new Error("second");
       const log: Array<string> = [];
       const phase = yield* beginHookPhase(
-        plugins("first", "second", "third"),
+        extensions("first", "second", "third"),
         () => Effect.void,
-        (plugin) =>
-          Effect.sync(() => void log.push(plugin.name)).pipe(
+        (extension) =>
+          Effect.sync(() => void log.push(extension.name)).pipe(
             Effect.andThen(
-              plugin.name === "first"
+              extension.name === "first"
                 ? Effect.fail(first)
-                : plugin.name === "second"
+                : extension.name === "second"
                   ? Effect.fail(second)
                   : Effect.void,
             ),

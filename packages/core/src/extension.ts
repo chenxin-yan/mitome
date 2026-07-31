@@ -12,7 +12,7 @@ export interface ToolResultHookContext extends ToolHookContext {
   readonly isFailure: boolean;
 }
 
-export interface PluginHooks<Resource = never> {
+export interface ExtensionHooks<Resource = never> {
   readonly sessionStart?: Effect.Effect<void, unknown, Resource>;
   readonly sessionEnd?: Effect.Effect<void, unknown, Resource>;
   readonly turnStart?: (text: string) => Effect.Effect<void, unknown, Resource>;
@@ -47,14 +47,14 @@ type ToolkitContributions<Tools extends Record<string, Tool.Any>> = {
     Tool.Success<Tools[Name]>
   >;
 };
-declare const PluginContributionsTypeId: unique symbol;
+declare const ExtensionContributionsTypeId: unique symbol;
 
-export interface Plugin<
+export interface Extension<
   Resource = never,
   ResourceError = never,
   Contributions extends ToolContributions = EmptyToolContributions,
 > {
-  readonly [PluginContributionsTypeId]?: Contributions;
+  readonly [ExtensionContributionsTypeId]?: Contributions;
   readonly name: string;
   readonly instructions?: string | undefined;
   /** Required at runtime whenever hooks or handlers use a Resource; hooks run unprovided (missing-service defect) without it. */
@@ -66,17 +66,17 @@ export interface Plugin<
   >;
   /** Decodes Tool input for Hooks, approval predicates, and approval events. */
   readonly toolInputValidators?: Readonly<Record<string, ToolInputValidator>>;
-  /** Revalidates post-Tool transforms; keys must name Tools in this Plugin. */
+  /** Revalidates post-Tool transforms; keys must name Tools in this Extension. */
   readonly toolResultValidators?: Readonly<Record<string, ToolResultValidator>>;
-  readonly hooks?: PluginHooks<Resource> | undefined;
+  readonly hooks?: ExtensionHooks<Resource> | undefined;
 }
 
 /**
- * Any Plugin regardless of its Resource. Layer's ROut is contravariant while
+ * Any Extension regardless of its Resource. Layer's ROut is contravariant while
  * hook/handler Effects are covariant in R, so no single parameterization
- * accepts every Plugin; the union's arms cover both variance directions.
+ * accepts every Extension; the union's arms cover both variance directions.
  */
-export type AnyPlugin = Plugin<any, unknown, any> | Plugin<never, any, any>;
+export type AnyExtension = Extension<any, unknown, any> | Extension<never, any, any>;
 
 type ServiceCoverage<Tools extends Record<string, Tool.Any>, Resource> = [
   Tool.HandlerServices<Tools[keyof Tools]> | Tool.ResultDecodingServices<Tools[keyof Tools]>,
@@ -84,16 +84,16 @@ type ServiceCoverage<Tools extends Record<string, Tool.Any>, Resource> = [
   ? unknown
   : never;
 
-type LayerPlugin<LayerValue extends Layer.Layer<any, any, never>> = Omit<
-  Plugin<Layer.Success<LayerValue>, Layer.Error<LayerValue>>,
+type LayerExtension<LayerValue extends Layer.Layer<any, any, never>> = Omit<
+  Extension<Layer.Success<LayerValue>, Layer.Error<LayerValue>>,
   "resource" | "hooks"
 > & {
   readonly resource?: LayerValue | undefined;
-  readonly hooks?: PluginHooks<NoInfer<Layer.Success<LayerValue>>> | undefined;
+  readonly hooks?: ExtensionHooks<NoInfer<Layer.Success<LayerValue>>> | undefined;
 };
 
-type ToolkitlessPlugin<LayerValue extends Layer.Layer<any, any, never>> = Omit<
-  LayerPlugin<LayerValue>,
+type ToolkitlessExtension<LayerValue extends Layer.Layer<any, any, never>> = Omit<
+  LayerExtension<LayerValue>,
   "toolkit" | "handlers" | "toolInputValidators" | "toolResultValidators"
 > & {
   readonly toolkit?: undefined;
@@ -104,15 +104,15 @@ type ToolkitlessPlugin<LayerValue extends Layer.Layer<any, any, never>> = Omit<
 
 type RejectAny<Value> = 0 extends 1 & Value ? never : unknown;
 
-type ResourceFreeToolkitlessPlugin = Omit<
-  ToolkitlessPlugin<Layer.Layer<any, never, never>>,
+type ResourceFreeToolkitlessExtension = Omit<
+  ToolkitlessExtension<Layer.Layer<any, never, never>>,
   "resource" | "hooks"
 > & {
   readonly resource?: undefined;
-  readonly hooks?: PluginHooks | undefined;
+  readonly hooks?: ExtensionHooks | undefined;
 };
 
-type ToolkitPlugin<ToolkitValue extends Toolkit.Any, Resource = never, ResourceError = never> = {
+type ToolkitExtension<ToolkitValue extends Toolkit.Any, Resource = never, ResourceError = never> = {
   readonly name: string;
   readonly instructions?: string | undefined;
   readonly resource?: Layer.Layer<Resource, ResourceError, never> | undefined;
@@ -125,14 +125,14 @@ type ToolkitPlugin<ToolkitValue extends Toolkit.Any, Resource = never, ResourceE
   readonly toolResultValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
   >;
-  readonly hooks?: PluginHooks<Resource> | undefined;
+  readonly hooks?: ExtensionHooks<Resource> | undefined;
 };
 
-type ResourcefulToolkitPlugin<
+type ResourcefulToolkitExtension<
   LayerValue extends Layer.Layer<any, any, never>,
   ToolkitValue extends Toolkit.Any,
 > = Omit<
-  LayerPlugin<LayerValue>,
+  LayerExtension<LayerValue>,
   "resource" | "toolkit" | "handlers" | "toolInputValidators" | "toolResultValidators" | "hooks"
 > & {
   readonly resource: LayerValue;
@@ -145,46 +145,48 @@ type ResourcefulToolkitPlugin<
   readonly toolResultValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
   >;
-  readonly hooks?: PluginHooks<Layer.Success<NoInfer<LayerValue>>> | undefined;
+  readonly hooks?: ExtensionHooks<Layer.Success<NoInfer<LayerValue>>> | undefined;
 };
 
-// NoInfer blocks contextual back-inference of Resource=any from AnyPlugin arrays.
-export function definePlugin<const LayerValue extends Layer.Layer<any, any, never>>(
-  plugin: ToolkitlessPlugin<LayerValue> & { readonly resource: LayerValue } & RejectAny<LayerValue>,
-): NoInfer<Plugin<Layer.Success<LayerValue>, Layer.Error<LayerValue>>>;
-export function definePlugin(plugin: ResourceFreeToolkitlessPlugin): NoInfer<Plugin>;
-export function definePlugin<const ToolkitValue extends Toolkit.Any>(
-  plugin: Omit<ToolkitPlugin<ToolkitValue>, "resource"> & { readonly resource?: undefined },
-): Plugin<never, never, ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>>;
-export function definePlugin<
+// NoInfer blocks contextual back-inference of Resource=any from AnyExtension arrays.
+export function defineExtension<const LayerValue extends Layer.Layer<any, any, never>>(
+  extension: ToolkitlessExtension<LayerValue> & {
+    readonly resource: LayerValue;
+  } & RejectAny<LayerValue>,
+): NoInfer<Extension<Layer.Success<LayerValue>, Layer.Error<LayerValue>>>;
+export function defineExtension(extension: ResourceFreeToolkitlessExtension): NoInfer<Extension>;
+export function defineExtension<const ToolkitValue extends Toolkit.Any>(
+  extension: Omit<ToolkitExtension<ToolkitValue>, "resource"> & { readonly resource?: undefined },
+): Extension<never, never, ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>>;
+export function defineExtension<
   const LayerValue extends Layer.Layer<any, any, never>,
   const ToolkitValue extends Toolkit.Any,
 >(
-  plugin: ResourcefulToolkitPlugin<LayerValue, ToolkitValue> & RejectAny<LayerValue>,
-): Plugin<
+  extension: ResourcefulToolkitExtension<LayerValue, ToolkitValue> & RejectAny<LayerValue>,
+): Extension<
   Layer.Success<LayerValue>,
   Layer.Error<LayerValue>,
   ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>
 >;
 // The impl return must be assignable to every overload return; only never is.
-export function definePlugin(plugin: unknown): never {
-  return plugin as never;
+export function defineExtension(extension: unknown): never {
+  return extension as never;
 }
 
-export type PluginContexts = ReadonlyMap<AnyPlugin, Context.Context<any>>;
+export type ExtensionContexts = ReadonlyMap<AnyExtension, Context.Context<any>>;
 
-export const providePlugin = <A, E>(
-  plugin: AnyPlugin,
-  contexts: PluginContexts,
+export const provideExtension = <A, E>(
+  extension: AnyExtension,
+  contexts: ExtensionContexts,
   effect: Effect.Effect<A, E, any>,
 ): Effect.Effect<A, E> => {
-  const context = contexts.get(plugin);
+  const context = contexts.get(extension);
   return (context === undefined ? effect : Effect.provide(effect, context)) as Effect.Effect<A, E>;
 };
 
-export const providePluginHook = <A, E>(
-  plugin: AnyPlugin,
-  contexts: PluginContexts,
+export const provideExtensionHook = <A, E>(
+  extension: AnyExtension,
+  contexts: ExtensionContexts,
   effect: Effect.Effect<A, E, any> | undefined,
 ): Effect.Effect<A, E> | undefined =>
-  effect === undefined ? undefined : providePlugin(plugin, contexts, effect);
+  effect === undefined ? undefined : provideExtension(extension, contexts, effect);

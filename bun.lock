@@ -138,22 +138,6 @@
         "vitest": "catalog:",
       },
     },
-    "packages/plugins": {
-      "name": "@mitome/plugins",
-      "version": "0.0.0",
-      "devDependencies": {
-        "@mitome/config": "workspace:*",
-        "@mitome/core": "workspace:*",
-        "@mitome/sdk": "workspace:*",
-        "@types/node": "catalog:",
-        "effect": "catalog:",
-        "typescript": "catalog:",
-        "vitest": "catalog:",
-      },
-      "peerDependencies": {
-        "@mitome/core": "workspace:*",
-      },
-    },
     "packages/providers": {
       "name": "@mitome/providers",
       "version": "0.0.0",
@@ -414,8 +398,6 @@
     "@mitome/core": ["@mitome/core@workspace:packages/core"],
 
     "@mitome/docs": ["@mitome/docs@workspace:apps/docs"],
-
-    "@mitome/plugins": ["@mitome/plugins@workspace:packages/plugins"],
 
     "@mitome/providers": ["@mitome/providers@workspace:packages/providers"],
 

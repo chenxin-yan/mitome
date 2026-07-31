@@ -2,8 +2,8 @@ import { Effect, Stream } from "effect";
 import { Prompt, Tool } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
 import type { CompiledAgent } from "../agent.js";
-import type { PluginContexts } from "../plugin.js";
-import { providePluginHook } from "../plugin.js";
+import type { ExtensionContexts } from "../extension.js";
+import { provideExtensionHook } from "../extension.js";
 import { hookTurnError, modelTurnError, TurnError } from "./errors.js";
 import type { TurnEvent } from "./events.js";
 import { beginHookPhase, transformPrompt } from "./hooks.js";
@@ -54,7 +54,7 @@ const promptFromResponseParts = (parts: ReadonlyArray<Response.AnyPart>): Prompt
 
 export const makeStepRunner = (
   compiled: CompiledAgent,
-  contexts: PluginContexts,
+  contexts: ExtensionContexts,
   toolExecution: ToolExecution,
 ): StepRunner => {
   const approvalEvents = (
@@ -122,15 +122,17 @@ export const makeStepRunner = (
     let endPrompt = prompt;
     return Stream.unwrap(
       beginHookPhase(
-        compiled.plugins,
-        (plugin) => providePluginHook(plugin, contexts, plugin.hooks?.stepStart?.(prompt)),
-        (plugin) => providePluginHook(plugin, contexts, plugin.hooks?.stepEnd?.(endPrompt, parts)),
+        compiled.extensions,
+        (extension) =>
+          provideExtensionHook(extension, contexts, extension.hooks?.stepStart?.(prompt)),
+        (extension) =>
+          provideExtensionHook(extension, contexts, extension.hooks?.stepEnd?.(endPrompt, parts)),
         "Step end Hook failed",
       ).pipe(
         hookTurnError("Step start Hook failed"),
         Effect.map((stepHooks) =>
           Stream.unwrap(
-            transformPrompt(compiled.plugins, contexts, prompt).pipe(
+            transformPrompt(compiled.extensions, contexts, prompt).pipe(
               hookTurnError("Pre-Step Hook failed"),
               Effect.map((transformed) => {
                 endPrompt = transformed;

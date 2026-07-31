@@ -4,7 +4,7 @@ import { AiError, LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/
 import {
   type AgentDefinition,
   createSession,
-  definePlugin,
+  defineExtension,
   makeProvider,
 } from "../../src/index.js";
 import { makeTestProvider } from "../support/provider.js";
@@ -61,8 +61,8 @@ describe("createSession Tool Turn", () => {
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [
-          definePlugin({
+        extensions: [
+          defineExtension({
             name: "echo",
             toolkit: Toolkit.make(echo),
             handlers: { echo: ({ text }) => Effect.succeed(text) },
@@ -115,7 +115,7 @@ describe("createSession Tool Turn", () => {
       const session = yield* createSession({
         providers: [model],
         model: "test/default",
-        plugins: [],
+        extensions: [],
       });
       const events = yield* Stream.runCollect(session.prompt("Find it"));
 
@@ -155,7 +155,7 @@ describe("createSession Tool Turn", () => {
       const session = yield* createSession({
         providers: [model],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "echo",
             toolkit: Toolkit.make(echo),
@@ -203,7 +203,7 @@ describe("createSession Tool Turn", () => {
       const session = yield* createSession({
         providers: [provider],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "echo",
             toolkit: Toolkit.make(echo),
@@ -275,7 +275,7 @@ describe("createSession Tool Turn", () => {
       const session = yield* createSession({
         providers: [provider],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "echo",
             toolkit: Toolkit.make(echo),
@@ -360,7 +360,7 @@ describe("createSession Tool Turn", () => {
       const session = yield* createSession({
         providers: [provider],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "echo",
             toolkit: Toolkit.make(echo),
@@ -406,7 +406,7 @@ describe("createSession Tool Turn", () => {
       const session = yield* createSession({
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "echo",
             toolkit: Toolkit.make(echo),
@@ -463,7 +463,7 @@ describe("createSession Tool Turn", () => {
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "observe",
             hooks: {
@@ -520,7 +520,7 @@ describe("createSession Tool Turn", () => {
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
-        plugins: [
+        extensions: [
           {
             name: "transform",
             hooks: {

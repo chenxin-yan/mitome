@@ -39,7 +39,7 @@ if (existsSync(manifestPath)) {
   if (patched.length > 0) await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-// The definition side needs sdk/plugins dist too; `@mitome/cli^...` alone only
+// The definition side needs sdk/extensions dist too; `@mitome/cli^...` alone only
 // covers the CLI's own imports (core, providers).
 const build = Bun.spawnSync(
   [
@@ -48,7 +48,6 @@ const build = Bun.spawnSync(
     "build",
     "--filter=@mitome/cli^...",
     "--filter=@mitome/sdk",
-    "--filter=@mitome/plugins",
     "--output-logs=errors-only",
   ],
   {
