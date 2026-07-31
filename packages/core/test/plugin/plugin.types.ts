@@ -18,6 +18,12 @@ type Equal<Left, Right> =
 type Expect<Value extends true> = Value;
 type ContributionsOf<Value> =
   Value extends Plugin<infer _Resource, infer _Error, infer Contributions> ? Contributions : never;
+type ResourceOf<Value> =
+  Value extends Plugin<infer Resource, infer _Error, infer _Contributions> ? Resource : never;
+type ResourceErrorOf<Value> =
+  Value extends Plugin<infer _Resource, infer ResourceError, infer _Contributions>
+    ? ResourceError
+    : never;
 
 declare const model: Provider<"test", readonly []>;
 
@@ -79,11 +85,63 @@ declare const bare: Plugin;
 export const anyPlugins: ReadonlyArray<AnyPlugin> = [resourceful, unknownResource, bare];
 
 const PluginResource = Context.Service<string>("@mitome/core/test/PluginResource");
-export const resourcePlugin: Plugin<string> = definePlugin({
+const AdditionalPluginResource = Context.Service<number>(
+  "@mitome/core/test/AdditionalPluginResource",
+);
+const MissingPluginResource = Context.Service<boolean>("@mitome/core/test/MissingPluginResource");
+
+export const resourcePlugin = definePlugin({
   name: "resourceful",
   resource: Layer.succeed(PluginResource, "value"),
   hooks: { sessionStart: Effect.asVoid(Effect.service(PluginResource)) },
 });
+export type InferredPluginResource = Expect<Equal<ResourceOf<typeof resourcePlugin>, string>>;
+export type InferredPluginResourceError = Expect<
+  Equal<ResourceErrorOf<typeof resourcePlugin>, never>
+>;
+
+const mergedResourcePlugin = definePlugin({
+  name: "merged-resourceful",
+  resource: Layer.mergeAll(
+    Layer.succeed(PluginResource, "value"),
+    Layer.succeed(AdditionalPluginResource, 1),
+  ),
+  hooks: {
+    sessionStart: Effect.asVoid(Effect.service(PluginResource)),
+    sessionEnd: Effect.asVoid(Effect.service(AdditionalPluginResource)),
+  },
+});
+export type InferredMergedPluginResource = Expect<
+  Equal<ResourceOf<typeof mergedResourcePlugin>, string | number>
+>;
+
+definePlugin({
+  name: "missing-resource",
+  resource: Layer.succeed(PluginResource, "value"),
+  // @ts-expect-error Hooks may only require services supplied by the resource Layer.
+  hooks: { sessionStart: Effect.asVoid(Effect.service(MissingPluginResource)) },
+});
+
+definePlugin<any>({
+  name: "explicit-resource-escape",
+  resource: Layer.succeed(PluginResource, "value"),
+  // @ts-expect-error Explicit generics cannot widen the resource Layer's output.
+  hooks: { sessionStart: Effect.asVoid(Effect.service(MissingPluginResource)) },
+});
+
+class ResourceFailure {}
+const failingResourcePlugin = definePlugin({
+  name: "failing-resource",
+  resource: Layer.effect(PluginResource, Effect.fail(new ResourceFailure())),
+});
+export type InferredPluginResourceFailure = Expect<
+  Equal<ResourceErrorOf<typeof failingResourcePlugin>, ResourceFailure>
+>;
+
+const resourceFreePlugin = definePlugin({ name: "resource-free" });
+export type InferredResourceFreePluginResource = Expect<
+  Equal<ResourceOf<typeof resourceFreePlugin>, never>
+>;
 
 definePlugin({
   name: "explicit-undefined",
