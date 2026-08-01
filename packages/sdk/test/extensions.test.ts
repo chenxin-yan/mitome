@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { createSession, makeProvider } from "@mitome/core";
-import { defineAgent as definePromiseAgent } from "@mitome/sdk";
-import { defineAgent as defineEffectAgent } from "@mitome/sdk/effect";
+import { defineAgent as definePromiseAgent } from "../src/index.js";
+import { defineAgent as defineEffectAgent } from "../src/effect.js";
 import { instructionFiles, instructions } from "../src/extensions/index.js";
 
 const cwd = process.cwd();
