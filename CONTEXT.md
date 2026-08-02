@@ -20,6 +20,10 @@ _Avoid_: Chat, conversation
 The work triggered by one user message and completed by one final Agent response.
 _Avoid_: Request
 
+**Transcript**:
+The durable, ordered record of a Session's committed messages; it may outlive the Session that produced it and seed new Sessions.
+_Avoid_: Session (the live interaction), history (bare), log
+
 **Step**:
 One model generation within a Turn; a Turn may require multiple Steps to resolve Tool calls.
 _Avoid_: Turn, iteration
@@ -79,6 +83,14 @@ _Avoid_: Function, command
 **Resource**:
 The private set of services an Extension acquires at Session creation, holds for the Session's lifetime, and releases at Session end; visible only to that Extension's own Hooks and Tool handlers.
 _Avoid_: Dependency, state, shared context
+
+**Provided Service**:
+A service an Extension deliberately publishes from its Resource Layer as a typed contract; visible only to Extensions that declare it as an Extension Dependency, and shared as one instance per Session.
+_Avoid_: Export, API (bare), Resource
+
+**Extension Dependency**:
+An Extension's declaration that another Extension must be active in the same Agent Definition, loaded before it, with its Provided Services accessible to the dependent's Hooks and Tool handlers.
+_Avoid_: Plugin dependency, import, requirement (bare)
 
 **Tool Call**:
 One Agent invocation of a Tool within a Step, gated by Approval before it may execute.
