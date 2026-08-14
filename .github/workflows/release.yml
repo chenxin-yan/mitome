@@ -35,12 +35,13 @@ jobs:
           echo "version=$current_version" >> "$GITHUB_OUTPUT"
       - uses: jdx/mise-action@v4
       - run: bun install --frozen-lockfile
-      # v1; version PRs only. Publishing stays in the publish job so Bun packs catalogs.
-      - uses: changesets/action@v1
+      # Version PRs only. Publishing stays in the publish job so Bun packs catalogs.
+      - uses: changesets/action@v2
         with:
-          version: bun run version-packages
-          commit: "chore(release): version packages"
-          title: "chore(release): version packages"
+          version-script: bun run version-packages
+          commit-message: "chore(release): version packages"
+          pr-title: "chore(release): version packages"
+          push-with-git-cli: true
 
   publish:
     needs: version-pr
