@@ -111,7 +111,7 @@ const inspectProviderAuthentication = async (
     );
     if ((await child.exited) !== 0)
       throw new Error("Could not inspect Agent Definition authentication.");
-    const authentication = Schema.decodeUnknownResult(ProviderAuthenticationsFromJson, {
+    const authentication = Schema.decodeResult(ProviderAuthenticationsFromJson, {
       onExcessProperty: "error",
     })(await readFile(output, "utf8"));
     if (Result.isFailure(authentication)) {

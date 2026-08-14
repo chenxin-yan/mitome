@@ -53,13 +53,13 @@ const TerminalEvent = Schema.Struct({
         usage: Schema.optional(
           Schema.NullOr(
             Schema.Struct({
-              input_tokens: Schema.optional(Schema.Number),
-              output_tokens: Schema.optional(Schema.Number),
+              input_tokens: Schema.optional(Schema.Finite),
+              output_tokens: Schema.optional(Schema.Finite),
               input_tokens_details: Schema.optional(
-                Schema.NullOr(Schema.Struct({ cached_tokens: Schema.optional(Schema.Number) })),
+                Schema.NullOr(Schema.Struct({ cached_tokens: Schema.optional(Schema.Finite) })),
               ),
               output_tokens_details: Schema.optional(
-                Schema.NullOr(Schema.Struct({ reasoning_tokens: Schema.optional(Schema.Number) })),
+                Schema.NullOr(Schema.Struct({ reasoning_tokens: Schema.optional(Schema.Finite) })),
               ),
             }),
           ),

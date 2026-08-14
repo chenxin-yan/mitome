@@ -64,7 +64,7 @@ const readAuth = (configDirectory: string): Effect.Effect<AuthFile, CredentialSt
     const corrupted = new CredentialStoreError({
       message: `Credential storage at ${path} is corrupted; delete it and authenticate again.`,
     });
-    return yield* Schema.decodeUnknownEffect(AuthFile)(result.success).pipe(
+    return yield* Schema.decodeEffect(AuthFile)(result.success).pipe(
       Effect.mapError(() => corrupted),
     );
   });

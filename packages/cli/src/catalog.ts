@@ -47,7 +47,7 @@ export const toolCapableOpenAiIds = (payload: unknown): Array<string> => {
 
 const readCache = async (path: string): Promise<CachedCatalog | undefined> => {
   try {
-    const decoded = Schema.decodeUnknownResult(CachedCatalogFromJson, {
+    const decoded = Schema.decodeResult(CachedCatalogFromJson, {
       onExcessProperty: "error",
     })(await readFile(path, "utf8"));
     return Result.isSuccess(decoded) ? decoded.success : undefined;

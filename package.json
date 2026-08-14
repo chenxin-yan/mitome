@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "@changesets/cli": "2.31.1",
-    "@effect/tsgo": "0.24.3",
+    "@effect/tsgo": "0.36.4",
     "@types/bun": "catalog:",
     "oxfmt": "^0.61.0",
     "oxlint": "^1.73.0",
