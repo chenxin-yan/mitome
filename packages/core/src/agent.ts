@@ -31,7 +31,7 @@ export interface CompiledAgent {
   readonly instructions: string;
 }
 
-export class AgentDefinitionError extends Schema.TaggedErrorClass<AgentDefinitionError>()(
+export class AgentDefinitionError extends Schema.TaggedError<AgentDefinitionError>()(
   "AgentDefinitionError",
   { issues: Schema.NonEmptyArray(Schema.String) },
 ) {

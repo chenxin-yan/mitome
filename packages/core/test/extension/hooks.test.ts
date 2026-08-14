@@ -11,7 +11,7 @@ import {
 } from "../../src/index.js";
 import { makeTestProvider } from "../support/provider.js";
 
-class HookFailure extends Schema.TaggedErrorClass<HookFailure>()("HookFailure", {
+class HookFailure extends Schema.TaggedError<HookFailure>()("HookFailure", {
   message: Schema.String,
 }) {}
 

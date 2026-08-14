@@ -61,7 +61,7 @@ describe("scaffold plans", () => {
     expect(plan.get("index.ts")).toContain('instructionFiles({ paths: ["./instructions.md"] })');
     expect(plan.get("instructions.md")).toBe("You are a helpful Agent.\n");
     expect(JSON.parse(plan.get("package.json")!)).toMatchObject({
-      dependencies: { effect: "4.0.0-beta.102" },
+      dependencies: { effect: "4.0.0-rc.108" },
     });
     expect(JSON.parse(plan.get("tsconfig.json")!)).toEqual({
       compilerOptions: {
@@ -139,7 +139,7 @@ describe("create-mitome scaffold", () => {
       dependencies: {
         "@mitome/providers": "0.0.0",
         "@mitome/sdk": "0.0.0",
-        ...(flavor === "effect" ? { effect: "4.0.0-beta.102" } : {}),
+        ...(flavor === "effect" ? { effect: "4.0.0-rc.108" } : {}),
       },
     });
     const agent = await contents(path, "index.ts");

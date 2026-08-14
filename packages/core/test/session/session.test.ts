@@ -187,10 +187,9 @@ describe("createSession", () => {
 
   it.effect("wraps a failing lazy Provider build as a TurnError on first use", () =>
     Effect.gen(function* () {
-      class ProvisionFailure extends Schema.TaggedErrorClass<ProvisionFailure>()(
-        "ProvisionFailure",
-        { message: Schema.String },
-      ) {}
+      class ProvisionFailure extends Schema.TaggedError<ProvisionFailure>()("ProvisionFailure", {
+        message: Schema.String,
+      }) {}
       const model = makeProvider("test", [] as const, undefined, () =>
         Layer.effect(
           LanguageModel.LanguageModel,

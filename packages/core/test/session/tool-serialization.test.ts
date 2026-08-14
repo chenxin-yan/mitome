@@ -5,7 +5,7 @@ import { Response, Tool, Toolkit } from "effect/unstable/ai";
 import { createSession, type AgentDefinition } from "../../src/index.js";
 import { makeStreamingTestProvider } from "../support/provider.js";
 
-class HookFailure extends Schema.TaggedErrorClass<HookFailure>()("HookFailure", {
+class HookFailure extends Schema.TaggedError<HookFailure>()("HookFailure", {
   message: Schema.String,
 }) {}
 

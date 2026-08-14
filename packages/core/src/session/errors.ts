@@ -4,7 +4,7 @@ import { AiError } from "effect/unstable/ai";
 const coreModuleName = "@mitome/core";
 
 /** Overlapping `Session.prompt()` while a Turn is active. */
-export class SessionBusyError extends Schema.TaggedErrorClass<SessionBusyError>()(
+export class SessionBusyError extends Schema.TaggedError<SessionBusyError>()(
   "SessionBusyError",
   {},
 ) {
@@ -14,7 +14,7 @@ export class SessionBusyError extends Schema.TaggedErrorClass<SessionBusyError>(
 }
 
 /** Prompt on a Session whose scope has already closed. */
-export class SessionReleasedError extends Schema.TaggedErrorClass<SessionReleasedError>()(
+export class SessionReleasedError extends Schema.TaggedError<SessionReleasedError>()(
   "SessionReleasedError",
   {},
 ) {
@@ -24,12 +24,12 @@ export class SessionReleasedError extends Schema.TaggedErrorClass<SessionRelease
 }
 
 /** A model, Tool, or Extension Hook failed while completing a Turn. */
-export class TurnError extends Schema.TaggedErrorClass<TurnError>()("TurnError", {
+export class TurnError extends Schema.TaggedError<TurnError>()("TurnError", {
   message: Schema.String,
   cause: Schema.Defect(),
 }) {}
 
-export class ApprovalResolutionError extends Schema.TaggedErrorClass<ApprovalResolutionError>()(
+export class ApprovalResolutionError extends Schema.TaggedError<ApprovalResolutionError>()(
   "ApprovalResolutionError",
   { reason: Schema.optional(Schema.Literal("not-pending")) },
 ) {

@@ -70,7 +70,7 @@ const agentPackageSource = (flavor: Flavor = "promise"): string =>
       dependencies: {
         "@mitome/providers": packageJson.version,
         "@mitome/sdk": packageJson.version,
-        ...(flavor === "effect" ? { effect: "4.0.0-beta.102" } : {}),
+        ...(flavor === "effect" ? { effect: "4.0.0-rc.108" } : {}),
       },
     },
     null,

@@ -7,7 +7,7 @@ import * as sdkEffect from "../src/effect.js";
 import { TurnError, defineAgent, defineExtension, withSession } from "../src/index.js";
 import { makeDeterministicProvider, makeTestProvider } from "./provider.js";
 
-class ModelFailure extends Schema.TaggedErrorClass<ModelFailure>()("ModelFailure", {
+class ModelFailure extends Schema.TaggedError<ModelFailure>()("ModelFailure", {
   message: Schema.String,
 }) {}
 
