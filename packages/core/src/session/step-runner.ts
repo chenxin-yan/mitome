@@ -26,32 +26,6 @@ export interface StepRunner {
   ) => Stream.Stream<StepEvent, TurnError>;
 }
 
-// Effect beta.102 drops response metadata during this fold; reasoning needs it for replay.
-const promptFromResponseParts = (parts: ReadonlyArray<Response.AnyPart>): Prompt.Prompt => {
-  const prompt = Prompt.fromResponseParts(parts);
-  const reasoningMetadata = parts.flatMap((part) =>
-    part.type === "reasoning" || part.type === "reasoning-end" ? [part.metadata] : [],
-  );
-  if (reasoningMetadata.length === 0) return prompt;
-  let reasoningIndex = 0;
-  return Prompt.fromMessages(
-    prompt.content.map((message) =>
-      message.role === "assistant"
-        ? Prompt.makeMessage("assistant", {
-            content: message.content.map((part) => {
-              if (part.type !== "reasoning") return part;
-              const options = reasoningMetadata[reasoningIndex++];
-              return options === undefined
-                ? part
-                : Prompt.makePart("reasoning", { text: part.text, options });
-            }),
-            options: message.options,
-          })
-        : message,
-    ),
-  );
-};
-
 export const makeStepRunner = (
   compiled: CompiledAgent,
   contexts: ExtensionContexts,
@@ -188,7 +162,7 @@ export const makeStepRunner = (
                   }),
                   Stream.concat(
                     Stream.suspend(() => {
-                      const responsePrompt = Prompt.concat(prompt, promptFromResponseParts(parts));
+                      const responsePrompt = Prompt.concat(prompt, Prompt.fromResponseParts(parts));
                       const nextPrompt =
                         decisions.length === 0
                           ? responsePrompt

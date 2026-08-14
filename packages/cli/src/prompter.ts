@@ -1,5 +1,5 @@
 import * as BunTerminal from "@effect/platform-bun/BunTerminal";
-import { type Cause, Context, Effect, Layer, Queue, Redacted, Terminal } from "effect";
+import { Context, Effect, Layer, Redacted, Terminal } from "effect";
 import { Prompt } from "effect/unstable/cli";
 
 export interface PromptChoice<A> {
@@ -31,33 +31,10 @@ export class Prompter extends Context.Service<
 
       let stdinTrackingStarted = false;
       const terminal = yield* BunTerminal.make();
-      // The Bun terminal never ends its input queue at stdin EOF, so every prompt
-      // after EOF waits forever. Ending the queue makes prompts fail with their
-      // documented QuitError; buffered keypresses still deliver first.
-      // TODO: delete this workaround once NodeTerminal ends its queue on stdin EOF (effect#4895).
-      const promptTerminal = Terminal.make({
-        ...terminal,
-        readInput: terminal.readInput.pipe(
-          Effect.tap((input) =>
-            Effect.acquireRelease(
-              Effect.sync(() => {
-                const end = () => {
-                  stdinEnded = true;
-                  Queue.endUnsafe(input as Queue.Queue<Terminal.UserInput, Cause.Done>);
-                };
-                if (stdinEnded) end();
-                else process.stdin.once("end", end);
-                return end;
-              }),
-              (end) => Effect.sync(() => process.stdin.off("end", end)),
-            ),
-          ),
-        ),
-      });
       const context = Context.add(
         yield* Effect.context<Prompt.Environment>(),
         Terminal.Terminal,
-        promptTerminal,
+        terminal,
       );
 
       return {
