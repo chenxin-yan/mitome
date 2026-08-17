@@ -1,0 +1,7 @@
+# Gate OpenTUI and Solid on terminal validation
+
+The interactive Host specified by [#64](https://github.com/chenxin-yan/mitome/issues/64) will use OpenTUI core with its Solid reconciler only after the validation spike passes both automated and real-terminal checks. The coupled packages are pinned exactly to `@opentui/core@0.5.3` and `@opentui/solid@0.5.3`, with the reconciler's exact `solid-js@1.9.12` peer. The Solid preload and TUI package must resolve beside the selected Agent Definition and run inside the Bun Child Host with inherited stdio; Core and SDK remain Node-capable.
+
+The [spike report](../spikes/opentui-solid.md) records the evidence and current result. Native loading, rendering, streaming, component behavior, terminal restoration, and clean exit pass automated checks. Visible flicker, integrated terminal input, and the real terminal/OS matrix remain manual-pending, so the current gate is **no-go** for the production shell in #73. If those rows pass, the report may advance the gate to go without changing the architecture. If any fails, the stack decision returns to #64 before further TUI work.
+
+The production TUI remains a thin rendering layer over a headless view-model. Presence activation, `-p`/`--print`, non-TTY fallback, unsupported-terminal fallback, and the production shell belong to #73 rather than this spike. Tool Approvals continue to auto-approve as in the one-shot Host; interactive Approval remains deferred to a dedicated design.
