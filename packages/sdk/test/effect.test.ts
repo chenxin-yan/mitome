@@ -13,6 +13,9 @@ test("keeps the complete Effect facade export contract", async () => {
       "CredentialDescriptorSchema",
       "SessionBusyError",
       "SessionReleasedError",
+      "TranscriptMessageSchema",
+      "TranscriptSchema",
+      "TranscriptSchemaVersion",
       "TurnError",
       "configDirectory",
       "configDirectoryMessage",
@@ -21,6 +24,8 @@ test("keeps the complete Effect facade export contract", async () => {
       "defineAgent",
       "defineExtension",
       "makeProvider",
+      "makeTranscript",
+      "promptFromTranscript",
     ]
   `);
 });

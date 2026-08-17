@@ -3,8 +3,13 @@ export {
   AgentDefinitionError,
   SessionBusyError,
   SessionReleasedError,
+  TranscriptMessageSchema,
+  TranscriptSchema,
+  TranscriptSchemaVersion,
   TurnError,
   defineAgent,
+  makeTranscript,
+  promptFromTranscript,
 } from "@mitome/core";
 export type {
   AgentDefinition,
@@ -18,6 +23,9 @@ export type {
   ToolResultHookContext,
   ToolExecutionDenied,
   ToolResultValidator,
+  MakeTranscriptOptions,
+  Transcript,
+  TranscriptMessage,
 } from "@mitome/core";
 export { defineExtension, tool } from "./extension.js";
 export type {
