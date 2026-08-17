@@ -110,6 +110,9 @@ export interface MakeTranscriptOptions {
 }
 
 const encodeMessage = Schema.encodeSync(Prompt.Message);
+const encodeUserMessageParts = Schema.encodeSync(Schema.Array(Prompt.UserMessagePart));
+const encodeAssistantMessageParts = Schema.encodeSync(Schema.Array(Prompt.AssistantMessagePart));
+const encodeToolMessageParts = Schema.encodeSync(Schema.Array(Prompt.ToolMessagePart));
 
 const fileDataFromPrompt = (data: string | Uint8Array | URL) => {
   if (typeof data === "string") return { encoding: "string", value: data } as const;
@@ -122,10 +125,16 @@ const fileDataFromPrompt = (data: string | Uint8Array | URL) => {
 
 const messageFromPrompt = (message: Prompt.Message): unknown => {
   const encoded = encodeMessage(message);
-  if (encoded.role === "system" || typeof encoded.content === "string") return encoded;
+  if (message.role === "system") return encoded;
+  const content =
+    message.role === "user"
+      ? encodeUserMessageParts(message.content)
+      : message.role === "assistant"
+        ? encodeAssistantMessageParts(message.content)
+        : encodeToolMessageParts(message.content);
   return {
     ...encoded,
-    content: encoded.content.map((part) =>
+    content: content.map((part) =>
       part.type === "file" ? { ...part, data: fileDataFromPrompt(part.data) } : part,
     ),
   };

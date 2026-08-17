@@ -103,9 +103,34 @@ describe("TranscriptSchema", () => {
       });
       expect(JSON.stringify(encoded)).toContain("encrypted");
       expect(JSON.stringify(encoded)).toContain("provider-call-1");
+      expect(JSON.stringify(encoded)).toContain("response-1");
       expect(JSON.stringify(encoded)).toContain('"echoed":"hello"');
     }),
   );
+
+  it("preserves multiple text parts and their Provider options", () => {
+    const prompt = Prompt.make([
+      Prompt.makeMessage("assistant", {
+        content: [
+          Prompt.textPart({ text: "first", options: { test: { responseId: "response-1" } } }),
+          Prompt.textPart({ text: "second", options: { test: { responseId: "response-2" } } }),
+        ],
+      }),
+    ]);
+
+    const encoded = Schema.encodeSync(TranscriptSchema)(
+      makeTranscript({ id: "transcript-text-parts", messages: prompt.content }),
+    );
+    const decoded = Schema.decodeSync(TranscriptSchema)(encoded);
+
+    expect(promptFromTranscript(decoded).content[0]).toMatchObject({
+      role: "assistant",
+      content: [
+        { type: "text", text: "first", options: { test: { responseId: "response-1" } } },
+        { type: "text", text: "second", options: { test: { responseId: "response-2" } } },
+      ],
+    });
+  });
 
   it("preserves every Prompt content part and Provider option", () => {
     const prompt = Prompt.fromMessages([
