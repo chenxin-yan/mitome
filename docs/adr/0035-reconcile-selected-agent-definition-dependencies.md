@@ -1,0 +1,7 @@
+# Reconcile selected Agent Definition dependencies before import
+
+Before any CLI command imports an Agent Definition module, the CLI checks the selected Agent Definition directory's manifest, Bun lockfile, installed direct dependencies, and `@mitome/core` version. A missing or stale installation is reconciled with Bun's existing install machinery before the Child Host imports the module. An up-to-date installation does no package-manager work and emits no reconcile output; an install is narrated. The Definition directory's `package.json`, `node_modules`, and `bun.lock` remain the declaration, store, and sole reproducibility record—Mitome adds no dependency format or package store.
+
+Reconciliation uses only the Agent Definition module resolved by the selector rules in ADR-0027: either `--use` or the configured default established by ADR-0007. It never discovers the current working directory or reconciles an unselected directory. This preserves ADR-0023's requirement that project-local Definitions become trusted only through explicit selection while allowing a freshly cloned selected Definition to run without a separate setup command. Library consumers remain unaffected because reconciliation is a CLI Child Host concern.
+
+Importing a package absent from the manifest is not repaired speculatively. The module import fails with Bun's error naming that package, keeping the manifest authoritative and avoiding an implicit dependency declaration mechanism.

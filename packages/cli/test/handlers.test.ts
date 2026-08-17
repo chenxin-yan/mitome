@@ -67,6 +67,7 @@ const fakeChildHost = (
   options: {
     readonly runExitCode?: number;
     readonly installExitCode?: number;
+    readonly installRuntime?: boolean;
     readonly authentications?: ReadonlyArray<ProviderAuthentication> | undefined;
   } = {},
 ) => {
@@ -80,8 +81,16 @@ const fakeChildHost = (
           return options.runExitCode ?? 0;
         }),
       install: (path) =>
-        Effect.sync(() => {
+        Effect.promise(async () => {
           calls.install.push(path);
+          if (options.installRuntime === true) {
+            const core = join(dirname(path), "node_modules", "@mitome", "core");
+            await mkdir(core, { recursive: true });
+            await writeFile(
+              join(core, "package.json"),
+              JSON.stringify({ name: "@mitome/core", version: corePackage.version }),
+            );
+          }
           return options.installExitCode ?? 0;
         }),
       inspectProviderAuthentication: (path) =>
@@ -171,7 +180,43 @@ describe("CLI handlers", () => {
       );
 
       expect(exit).toEqual(Exit.succeed(23));
+      expect(childHost.calls.install).toEqual([]);
       expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello" }]);
+    }),
+  );
+
+  it.effect("reconciles a missing runtime before importing the selected Agent Definition", () =>
+    Effect.gen(function* () {
+      const directory = yield* Effect.promise(temporaryDirectory);
+      const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
+      const childHost = fakeChildHost({ installRuntime: true });
+      const exit = yield* Effect.exit(
+        runPrompt({ prompt: "hello", use: Option.some(path) }).pipe(
+          Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
+        ),
+      );
+
+      expect(exit).toEqual(Exit.succeed(0));
+      expect(childHost.calls.install).toEqual([path]);
+      expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello" }]);
+      expect(yield* TestConsole.logLines).toContain("Installing Agent Definition dependencies...");
+    }),
+  );
+
+  it.effect("does not import when automatic reconciliation fails", () =>
+    Effect.gen(function* () {
+      const directory = yield* Effect.promise(temporaryDirectory);
+      const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
+      const childHost = fakeChildHost({ installExitCode: 17 });
+      const exit = yield* Effect.exit(
+        runPrompt({ prompt: "hello", use: Option.some(path) }).pipe(
+          Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
+        ),
+      );
+
+      expect(exit).toEqual(Exit.succeed(17));
+      expect(childHost.calls.install).toEqual([path]);
+      expect(childHost.calls.runHost).toEqual([]);
     }),
   );
 
@@ -279,6 +324,31 @@ describe("CLI handlers", () => {
           0o600,
         );
       }
+    }),
+  );
+
+  it.effect("reconciles before authentication imports the selected Agent Definition", () =>
+    Effect.gen(function* () {
+      const directory = yield* Effect.promise(temporaryDirectory);
+      const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
+      const childHost = fakeChildHost({
+        installRuntime: true,
+        authentications: [{ id: "openai", credential: "OPENAI_API_KEY" }],
+      });
+      const exit = yield* Effect.exit(
+        runAuth("login", Option.some(path)).pipe(
+          Effect.provide(
+            Layer.merge(
+              childHost.layer,
+              fakePrompter([{ type: "password", value: "synthetic-secret" }]),
+            ),
+          ),
+        ),
+      );
+
+      expect(exit).toEqual(Exit.succeed(0));
+      expect(childHost.calls.install).toEqual([path]);
+      expect(childHost.calls.inspect).toEqual([path]);
     }),
   );
 

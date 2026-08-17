@@ -152,6 +152,38 @@ const installFixture = async (): Promise<Fixture> => {
   return current;
 };
 
+const reconcileFixture = async (): Promise<Fixture> => {
+  const current = await scaffold("mitome-reconcile-");
+  const definitionDirectory = dirname(current.definition);
+  const localCore = join(definitionDirectory, "packages", "core");
+  await mkdir(localCore, { recursive: true });
+  await cp(join(coreDir, "dist"), join(localCore, "dist"), { recursive: true });
+  await writeFile(
+    join(localCore, "package.json"),
+    JSON.stringify({
+      name: "@mitome/core",
+      version: "0.0.0",
+      type: "module",
+      exports: { ".": "./dist/index.js", "./package.json": "./package.json" },
+      peerDependencies: { effect: cliPackage.devDependencies.effect },
+    }),
+  );
+  await mkdir(definitionDirectory, { recursive: true });
+  await writeFile(current.definition, definitionSource("reconciled"));
+  await writeFile(
+    join(definitionDirectory, "package.json"),
+    JSON.stringify({
+      name: "definition",
+      private: true,
+      dependencies: {
+        "@mitome/core": "file:./packages/core",
+        effect: `file:${effectDir}`,
+      },
+    }),
+  );
+  return current;
+};
+
 const spawn = (
   input: string,
   args: ReadonlyArray<string>,
@@ -291,6 +323,92 @@ describe("compiled mitome", () => {
     );
     expect(exists(join(dirname(current.definition), "bun.lock"))).toBe(true);
     expect(exists(join(current.root, "definition-ran"))).toBe(false);
+  });
+
+  test("reconciles a selected fresh Agent Definition before importing it", async () => {
+    const current = await reconcileFixture();
+    const result = await output(spawn("", ["hello", "--use", current.definition], current));
+
+    expect(result).toMatchObject({
+      exitCode: 0,
+      stderr: expect.not.stringContaining("Cannot find package"),
+    });
+    expect(result.stdout).toContain("Installing Agent Definition dependencies...");
+    expect(result.stdout).toContain("reconciled second\n");
+    expect(exists(join(dirname(current.definition), "node_modules", "@mitome", "core"))).toBe(true);
+    expect(exists(join(dirname(current.definition), "bun.lock"))).toBe(true);
+  });
+
+  test("reconciles the configured default Agent Definition", async () => {
+    const current = await reconcileFixture();
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await cp(dirname(current.definition), config, { recursive: true });
+    await writeFile(join(config, "index.ts"), await readFile(current.definition, "utf8"));
+
+    const result = await output(spawn("", ["hello"], current));
+    expect(result).toMatchObject({ exitCode: 0 });
+    expect(result.stdout).toContain("Installing Agent Definition dependencies...");
+    expect(result.stdout).toContain("reconciled second\n");
+    expect(exists(join(config, "node_modules", "@mitome", "core"))).toBe(true);
+  });
+
+  test("keeps an up-to-date installation quiet and names undeclared missing Extensions", async () => {
+    const current = await reconcileFixture();
+    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
+      exitCode: 0,
+    });
+
+    const quiet = await output(spawn("", ["hello", "--use", current.definition], current));
+    expect(quiet).toMatchObject({
+      exitCode: 0,
+      stdout: "reconciled second\n",
+      stderr: "",
+    });
+
+    const definitionDirectory = dirname(current.definition);
+    const declaredExtension = join(definitionDirectory, "packages", "declared-extension");
+    await mkdir(declaredExtension, { recursive: true });
+    await writeFile(
+      join(declaredExtension, "package.json"),
+      JSON.stringify({ name: "declared-fixture-extension", version: "1.0.0" }),
+    );
+    const manifest = JSON.parse(
+      await readFile(join(definitionDirectory, "package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+    manifest.dependencies["declared-fixture-extension"] = "file:./packages/declared-extension";
+    await writeFile(join(definitionDirectory, "package.json"), JSON.stringify(manifest));
+    const stale = await output(spawn("", ["hello", "--use", current.definition], current));
+    expect(stale).toMatchObject({ exitCode: 0 });
+    expect(stale.stdout).toContain("Installing Agent Definition dependencies...");
+    expect(exists(join(definitionDirectory, "node_modules", "declared-fixture-extension"))).toBe(
+      true,
+    );
+
+    await writeFile(
+      current.definition,
+      'import extension from "missing-fixture-extension";\nexport default extension;\n',
+    );
+    const missing = await output(spawn("", ["hello", "--use", current.definition], current));
+    expect(missing.exitCode).not.toBe(0);
+    expect(missing.stdout).not.toContain("Installing Agent Definition dependencies");
+    expect(missing.stderr).toContain("missing-fixture-extension");
+  });
+
+  test("never reconciles a directory that was not selected", async () => {
+    const current = await reconcileFixture();
+    const unselected = join(current.root, "unselected");
+    await mkdir(unselected);
+    await writeFile(join(unselected, "index.ts"), "export default {};\n");
+    await writeFile(
+      join(unselected, "package.json"),
+      JSON.stringify({ dependencies: { "left-pad": "1.3.0" } }),
+    );
+
+    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
+      exitCode: 0,
+    });
+    expect(exists(join(unselected, "node_modules"))).toBe(false);
+    expect(exists(join(unselected, "bun.lock"))).toBe(false);
   });
 
   test("maps a non-zero Child Host exit code at the process boundary", async () => {
