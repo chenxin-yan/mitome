@@ -160,6 +160,27 @@ describe("TranscriptSchema", () => {
     expect(encodePrompt(promptFromTranscript(decoded))).toStrictEqual(encodePrompt(prompt));
   });
 
+  it("rejects invalid persisted file URLs during Transcript decode", () => {
+    expect(() =>
+      Schema.decodeSync(TranscriptSchema)({
+        schemaVersion: 1,
+        id: "transcript-1",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "file",
+                mediaType: "text/plain",
+                data: { encoding: "url", value: "relative/path" },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow(/Expected an absolute URL/);
+  });
+
   it("fails loudly on an unknown schema version", () => {
     expect(() =>
       Schema.decodeUnknownSync(TranscriptSchema)({
