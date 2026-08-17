@@ -33,12 +33,12 @@ const addCommand = Command.make(
   "add",
   { ...definitionCommandConfig, package: packageArgument },
   (options) => useExitCode(runAdd(options)),
-).pipe(Command.withDescription("Add an Extension dependency"));
+).pipe(Command.withDescription("Add an Extension to the Agent Definition"));
 const removeCommand = Command.make(
   "remove",
   { ...definitionCommandConfig, package: packageArgument },
   (options) => useExitCode(runRemove(options)),
-).pipe(Command.withDescription("Remove an Extension dependency"));
+).pipe(Command.withDescription("Remove an Extension from the Agent Definition"));
 const installCommand = Command.make("install", definitionCommandConfig, (options) =>
   useExitCode(runInstall(options)),
 ).pipe(Command.withDescription("Install Agent Definition dependencies"));

@@ -447,7 +447,7 @@ describe("compiled mitome", () => {
     expect(exists(join(unselected, "bun.lock"))).toBe(false);
   });
 
-  test("adds an Extension dependency only to the selected Agent Definition", async () => {
+  test("adds an Extension only to the selected Agent Definition", async () => {
     const current = await installFixture();
     const definitionDirectory = dirname(current.definition);
     const packagePath = join(definitionDirectory, "package.json");
@@ -465,8 +465,9 @@ describe("compiled mitome", () => {
     );
 
     expect(result).toMatchObject({ exitCode: 0 });
-    expect(result.stdout).toContain('import { localDep } from "local-dep";');
-    expect(result.stdout).toContain("extensions: [localDep()],");
+    expect(result.stdout).toContain(
+      'import { localDep } from "local-dep";\nextensions: [localDep()],',
+    );
     expect(JSON.parse(await readFile(packagePath, "utf8"))).toMatchObject({
       dependencies: { "local-dep": "file:../pkgs/local-dep" },
     });
@@ -476,7 +477,7 @@ describe("compiled mitome", () => {
     );
   });
 
-  test("removes and prunes an Extension dependency only from the selected Agent Definition", async () => {
+  test("removes and prunes an Extension only from the selected Agent Definition", async () => {
     const current = await installFixture();
     const definitionDirectory = dirname(current.definition);
     const packagePath = join(definitionDirectory, "package.json");
