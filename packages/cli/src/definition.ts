@@ -49,7 +49,23 @@ const dependencyFields: ReadonlyArray<DependencyField> = [
   "optionalDependencies",
   "peerDependencies",
 ];
-const packageName = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
+const packageName = /^(?:@[a-z0-9~*][a-z0-9._~*-]*\/)?[a-z0-9~*][a-z0-9._~*-]*$/i;
+
+const installedPackage = async (directory: string, name: string): Promise<string | undefined> => {
+  let current = directory;
+  while (true) {
+    const packagePath = join(current, "node_modules", name, "package.json");
+    try {
+      await stat(packagePath);
+      return packagePath;
+    } catch (error) {
+      if (!isEnoent(error)) throw error;
+    }
+    const parent = dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+};
 
 const withoutTrailingCommas = (source: string): string => {
   let result = "";
@@ -102,11 +118,7 @@ const missingDependency = async (
     Object.keys(record(manifest[field]) ?? {}),
   );
   for (const name of names) {
-    if (!packageName.test(name)) return true;
-    try {
-      await stat(join(directory, "node_modules", name, "package.json"));
-    } catch (error) {
-      if (!isEnoent(error)) throw error;
+    if (!packageName.test(name) || (await installedPackage(directory, name)) === undefined) {
       return true;
     }
   }
@@ -114,16 +126,13 @@ const missingDependency = async (
 };
 
 export const checkRuntime = async (path: string): Promise<void> => {
-  const packagePath = join(dirname(path), "node_modules", "@mitome", "core", "package.json");
-  let source;
-  try {
-    source = await readFile(packagePath, "utf8");
-  } catch (error) {
-    if (!isEnoent(error)) throw error;
+  const packagePath = await installedPackage(dirname(path), "@mitome/core");
+  if (packagePath === undefined) {
     throw new Error(
       `No @mitome/core is installed beside ${path} after installing Agent Definition dependencies. Add @mitome/core@${corePackage.version} to its package.json.`,
     );
   }
+  const source = await readFile(packagePath, "utf8");
   const core = Schema.decodeUnknownSync(
     Schema.Struct({ version: Schema.optional(Schema.Unknown) }),
   )(JSON.parse(source));
@@ -136,12 +145,8 @@ export const checkRuntime = async (path: string): Promise<void> => {
 
 export const definitionNeedsReconcile = async (path: string): Promise<boolean> => {
   const directory = dirname(path);
-  let packagePath;
-  try {
-    packagePath = Bun.resolveSync("@mitome/core/package.json", directory);
-  } catch {
-    return true;
-  }
+  const packagePath = await installedPackage(directory, "@mitome/core");
+  if (packagePath === undefined) return true;
   // A malformed installed package must fail loud rather than becoming an install loop.
   let core: { readonly version?: unknown };
   try {
@@ -172,6 +177,6 @@ export const definitionNeedsReconcile = async (path: string): Promise<boolean> =
   } catch (error) {
     if (!isEnoent(error)) return true;
   }
-  if (lockWorkspace === undefined || !sameDependencies(manifest, lockWorkspace)) return true;
+  if (lockWorkspace !== undefined && !sameDependencies(manifest, lockWorkspace)) return true;
   return missingDependency(directory, manifest);
 };

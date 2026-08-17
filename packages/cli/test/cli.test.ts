@@ -352,12 +352,40 @@ describe("compiled mitome", () => {
     expect(exists(join(config, "node_modules", "@mitome", "core"))).toBe(true);
   });
 
+  test("keeps a workspace Agent Definition with hoisted dependencies quiet", async () => {
+    const current = await fixture();
+    const directory = dirname(current.definition);
+    await cp(join(directory, "node_modules"), join(current.root, "node_modules"), {
+      recursive: true,
+    });
+    await rm(join(directory, "node_modules"), { recursive: true });
+    await writeFile(
+      join(directory, "package.json"),
+      JSON.stringify({
+        name: "definition",
+        dependencies: { "@mitome/core": "*", effect: "*" },
+      }),
+    );
+    await writeFile(
+      join(current.root, "package.json"),
+      JSON.stringify({ name: "workspace", private: true, workspaces: ["definition"] }),
+    );
+
+    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
+      exitCode: 0,
+      stdout: "first second\n",
+      stderr: "",
+    });
+    expect(exists(join(directory, "node_modules"))).toBe(false);
+  });
+
   test("keeps an up-to-date installation quiet and names undeclared missing Extensions", async () => {
     const current = await reconcileFixture();
     expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
       exitCode: 0,
     });
 
+    await rm(join(dirname(current.definition), "bun.lock"));
     const quiet = await output(spawn("", ["hello", "--use", current.definition], current));
     expect(quiet).toMatchObject({
       exitCode: 0,
@@ -392,6 +420,38 @@ describe("compiled mitome", () => {
     expect(missing.exitCode).not.toBe(0);
     expect(missing.stdout).not.toContain("Installing Agent Definition dependencies");
     expect(missing.stderr).toContain("missing-fixture-extension");
+  });
+
+  test("keeps installed legacy npm package names quiet", async () => {
+    const current = await reconcileFixture();
+    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
+      exitCode: 0,
+    });
+
+    const directory = dirname(current.definition);
+    const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    manifest.dependencies["legacy~name"] = "1.0.0";
+    manifest.dependencies["legacy*name"] = "1.0.0";
+    for (const name of ["legacy~name", "legacy*name"]) {
+      await mkdir(join(directory, "node_modules", name), { recursive: true });
+      await writeFile(
+        join(directory, "node_modules", name, "package.json"),
+        JSON.stringify({ name, version: "1.0.0" }),
+      );
+    }
+    await writeFile(join(directory, "package.json"), JSON.stringify(manifest));
+    await writeFile(
+      join(directory, "bun.lock"),
+      JSON.stringify({ workspaces: { "": { dependencies: manifest.dependencies } } }),
+    );
+
+    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
+      exitCode: 0,
+      stdout: "reconciled second\n",
+      stderr: "",
+    });
   });
 
   test("never reconciles a directory that was not selected", async () => {
