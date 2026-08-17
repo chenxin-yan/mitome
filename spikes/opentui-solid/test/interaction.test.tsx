@@ -20,7 +20,8 @@ describe("OpenTUI Solid spike", () => {
     await setup.flush();
     await setup.mockInput.pasteBracketedText("line one\nline two");
     setup.mockInput.pressTab();
-    await Bun.sleep(200);
+    const deadline = Date.now() + 1_000;
+    while (!state.streamCompleted && Date.now() < deadline) await Bun.sleep(10);
     await setup.flush();
 
     expect(state.streamCompleted).toBe(true);

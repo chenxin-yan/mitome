@@ -36,6 +36,7 @@ The Solid preload is required. The spike resolves `@opentui/solid/preload` besid
 | NixOS Linux 6.18.36 / util-linux `script(1)` 2.42.2 PTY | x86_64       | 1.3.14  | xterm-256color | Automated render, streaming, native load, terminal restoration, and exit passed; visual/input feel not assessed. |
 | Real Linux terminal emulator(s)                         | pending      | pending | pending        | MANUAL-PENDING                                                                                                   |
 | Real macOS terminal emulator(s)                         | pending      | pending | pending        | MANUAL-PENDING                                                                                                   |
+| Compiled Bun executable Child Host                      | pending      | pending | pending        | MANUAL-PENDING — the smoke currently re-executes development Bun, not the compiled `mitome` executable.          |
 
 ## Commands and observed evidence
 
@@ -61,3 +62,4 @@ For every agreed supported terminal/OS row:
 4. Press Tab and confirm focus moves to output; use Down to scroll.
 5. Press `q` while output is focused and confirm the alternate screen is restored with exit code 0.
 6. Record OS, architecture, terminal name/version, `TERM`, Bun version, result, and any artifact or visual defect in this report.
+7. Before advancing the gate, repeat the Child Host smoke from the compiled `mitome` executable and record native preload loading after its `BUN_BE_BUN` re-exec.
