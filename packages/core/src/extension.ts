@@ -56,6 +56,7 @@ export interface Extension<
 > {
   readonly [ExtensionContributionsTypeId]?: Contributions;
   readonly name: string;
+  readonly dependencies?: ReadonlyArray<AnyExtension> | undefined;
   readonly instructions?: string | undefined;
   /** Required at runtime whenever hooks or handlers use a Resource; hooks run unprovided (missing-service defect) without it. */
   readonly resource?: Layer.Layer<Resource, ResourceError, never> | undefined;
@@ -114,6 +115,7 @@ type ResourceFreeToolkitlessExtension = Omit<
 
 type ToolkitExtension<ToolkitValue extends Toolkit.Any, Resource = never, ResourceError = never> = {
   readonly name: string;
+  readonly dependencies?: ReadonlyArray<AnyExtension> | undefined;
   readonly instructions?: string | undefined;
   readonly resource?: Layer.Layer<Resource, ResourceError, never> | undefined;
   readonly toolkit: ToolkitValue;

@@ -34,6 +34,15 @@ class Dependency extends Context.Service<Dependency, { readonly value: string }>
   "@mitome/core/test/Dependency",
 ) {}
 
+const dependencyExtension = defineExtension({ name: "dependency" });
+const dependentExtension = defineExtension({
+  name: "dependent-extension",
+  dependencies: [dependencyExtension],
+});
+export type DependencyTupleIsPreserved = Expect<
+  Equal<typeof dependentExtension.dependencies, ReadonlyArray<AnyExtension> | undefined>
+>;
+
 const independent = Tool.make("independent");
 const typedCoreExtension = defineExtension({
   name: "typed-core",

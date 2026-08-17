@@ -1,0 +1,17 @@
+# Declare Extension Dependencies and Provided Services
+
+An Extension may declare other Extension values in `dependencies`. Agent Definition compilation follows those edges, auto-includes dependencies, deduplicates reference-identical values by name, and produces a deterministic dependency-first order stable with respect to the author's root and dependency declaration order. The resolved order governs resource acquisition, Hooks, and Instructions. Because the existing Session scope releases resources in reverse acquisition order, dependencies outlive their dependents.
+
+Names remain the runtime identity. Reaching two non-identical Extension values with the same name is a compile failure rather than an implicit configuration choice. Cycles are also compile failures and report their path. Malformed edges, name conflicts, cycles, and existing Definition problems aggregate deterministically in `AgentDefinitionError` so authors can fix the graph in one pass.
+
+An Extension may also publish selected outputs of its single Resource Layer through `provides`, a list of Effect service Tags. A dependency grants access only to those Provided Services; all other Layer outputs remain private. Dependents' Resource Layers, Tool handlers, result schemas, and Hooks may require their own Resource outputs plus the Provided Services of their declared dependencies. The existing compile-time coverage rule extends to that union. Session creation memoizes each resolved Extension context once, supplies selected Provided Services across declared edges, and retains reverse-topological teardown. There is no second Layer and dependencies are never inferred from service requirements.
+
+The Effect Tag-identity gate was probed against the pinned `effect@4.0.0-rc.108` using two physical copies of the package. Tags created by the copies with the same key were not reference-identical, but their `key` values were equal and a Context created by copy A was successfully read with the Tag from copy B. Effect v4 Context service identity is therefore the string key, not module-copy object identity. Provided Services can use Effect Tags directly across duplicated package copies; authors must give unrelated contracts distinct keys.
+
+This amends ADR-0004's no-wiring decision, un-defers ADR-0026's cross-Extension type dependencies, and extends ADR-0032's Layer-inferred coverage rule. The Extension type gains flat dependency and Provided-Service parameters rather than a recursive conditional-type tower. The Promise-first SDK exposes the same declarations and inference; Effect-native and Promise-authored Extensions share one graph.
+
+The following remain deferred:
+
+- **Lazy activation.** Keep compilation eager and Session acquisition deterministic. If measured startup cost from large graphs becomes material, preserve the compiled graph and activate a selected root's dependency closure on first use, memoizing one in-flight acquisition per Session.
+- **Definition-wide slots.** Dependencies continue to name configured Extension values. Add slot selection only when multiple interchangeable Extensions must satisfy a Definition-wide contract; resolution must occur before graph linearization.
+- **Spec or fragment merging.** Agent Definitions remain one generic-preserving plain value. Add provenance and precedence rules only when multiple declaration sources become a concrete requirement; do not overload dependency ordering with merge semantics.
