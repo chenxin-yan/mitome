@@ -31,6 +31,10 @@ export class ChildHost extends Context.Service<
   {
     readonly runHost: (path: string, prompt: string) => Effect.Effect<ExitCode, CliError>;
     readonly install: (path: string) => Effect.Effect<ExitCode, CliError>;
+    readonly removeDependency: (
+      path: string,
+      packageName: string,
+    ) => Effect.Effect<ExitCode, CliError>;
     readonly inspectProviderAuthentication: (
       path: string,
     ) => Effect.Effect<ReadonlyArray<ProviderAuthentication>, CliError>;
@@ -44,6 +48,8 @@ export class ChildHost extends Context.Service<
   static readonly layer = Layer.succeed(ChildHost, {
     runHost: (path, prompt) => Effect.uninterruptible(attempt(() => runHost(path, prompt))),
     install: (path) => Effect.uninterruptible(attempt(() => install(path))),
+    removeDependency: (path, packageName) =>
+      Effect.uninterruptible(attempt(() => removeDependency(path, packageName))),
     inspectProviderAuthentication: (path) =>
       Effect.uninterruptible(attempt(() => inspectProviderAuthentication(path))),
     runOAuthAuth: (path, providerId, command) =>
@@ -63,6 +69,17 @@ const ProviderAuthenticationsFromJson = Schema.fromJsonString(
 // terminal Ctrl-C reaches it through the process group.
 const install = async (path: string): Promise<ExitCode> => {
   const child = Bun.spawn([process.execPath, "install"], {
+    cwd: dirname(path),
+    env: childEnv,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  return child.exited;
+};
+
+const removeDependency = async (path: string, packageName: string): Promise<ExitCode> => {
+  const child = Bun.spawn([process.execPath, "remove", packageName], {
     cwd: dirname(path),
     env: childEnv,
     stdin: "inherit",

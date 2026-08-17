@@ -5,6 +5,7 @@ import { Argument, CliOutput, Command, Flag } from "effect/unstable/cli";
 import cliPackage from "../package.json" with { type: "json" };
 import { ChildHost } from "./child-host.js";
 import { runAuth } from "./commands/auth.js";
+import { runAdd, runRemove } from "./commands/dependencies.js";
 import { runInit } from "./commands/init.js";
 import { runInstall, runPrompt } from "./commands/run.js";
 import { Prompter } from "./prompter.js";
@@ -20,11 +21,24 @@ const useFlag = Flag.string("use").pipe(
 const promptArgument = Argument.string("prompt").pipe(
   Argument.withDescription("Prompt to send to the Agent"),
 );
+const packageArgument = Argument.string("package").pipe(
+  Argument.withDescription("Extension package to add or remove"),
+);
 
 const definitionCommandConfig = {
   use: useFlag,
 };
 
+const addCommand = Command.make(
+  "add",
+  { ...definitionCommandConfig, package: packageArgument },
+  (options) => useExitCode(runAdd(options)),
+).pipe(Command.withDescription("Add an Extension dependency"));
+const removeCommand = Command.make(
+  "remove",
+  { ...definitionCommandConfig, package: packageArgument },
+  (options) => useExitCode(runRemove(options)),
+).pipe(Command.withDescription("Remove an Extension dependency"));
 const installCommand = Command.make("install", definitionCommandConfig, (options) =>
   useExitCode(runInstall(options)),
 ).pipe(Command.withDescription("Install Agent Definition dependencies"));
@@ -53,7 +67,7 @@ const command = Command.make(
   (options) => useExitCode(runPrompt(options)),
 ).pipe(
   Command.withDescription("Run an Agent Definition"),
-  Command.withSubcommands([installCommand, initCommand, authCommand]),
+  Command.withSubcommands([addCommand, removeCommand, installCommand, initCommand, authCommand]),
 );
 
 export const runCli = Command.runWith(command, { version: cliPackage.version });
