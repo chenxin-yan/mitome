@@ -83,12 +83,12 @@ export const TranscriptMessageSchema = Schema.Union([
   }),
   Schema.Struct({
     role: Schema.Literal("user"),
-    content: Schema.Union([Schema.String, Schema.Array(userPart)]),
+    content: Schema.Array(userPart),
     options,
   }),
   Schema.Struct({
     role: Schema.Literal("assistant"),
-    content: Schema.Union([Schema.String, Schema.Array(assistantPart)]),
+    content: Schema.Array(assistantPart),
     options,
   }),
   Schema.Struct({
@@ -149,9 +149,7 @@ export const makeTranscript = (input: MakeTranscriptOptions): Transcript =>
   Schema.decodeUnknownSync(TranscriptSchema)({
     schemaVersion: TranscriptSchemaVersion,
     id: input.id,
-    ...(input.parentTranscriptId === undefined
-      ? {}
-      : { parentTranscriptId: input.parentTranscriptId }),
+    parentTranscriptId: input.parentTranscriptId,
     messages: input.messages.map(messageFromPrompt),
   });
 
@@ -167,7 +165,7 @@ const fileDataToPrompt = (data: typeof fileData.Type): string | Uint8Array | URL
 };
 
 const messageToPrompt = (message: TranscriptMessage): unknown => {
-  if (message.role === "system" || typeof message.content === "string") return message;
+  if (message.role === "system") return message;
   return {
     ...message,
     content: message.content.map((part) =>
