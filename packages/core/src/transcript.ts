@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Encoding, Result, Schema } from "effect";
 import { Prompt } from "effect/unstable/ai";
 
 export const TranscriptSchemaVersion = 1 as const;
@@ -17,9 +17,14 @@ const reasoningPart = Schema.Struct({
 const urlString = Schema.String.check(
   Schema.makeFilter((value) => (URL.canParse(value) ? undefined : "Expected an absolute URL")),
 );
+const base64String = Schema.String.check(
+  Schema.makeFilter((value) =>
+    Result.isSuccess(Encoding.decodeBase64(value)) ? undefined : "Expected a base64 string",
+  ),
+);
 const fileData = Schema.Union([
   Schema.Struct({ encoding: Schema.Literal("string"), value: Schema.String }),
-  Schema.Struct({ encoding: Schema.Literal("base64"), value: Schema.String }),
+  Schema.Struct({ encoding: Schema.Literal("base64"), value: base64String }),
   Schema.Struct({ encoding: Schema.Literal("url"), value: urlString }),
 ]);
 const filePart = Schema.Struct({

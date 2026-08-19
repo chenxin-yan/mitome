@@ -206,6 +206,27 @@ describe("TranscriptSchema", () => {
     ).toThrow(/Expected an absolute URL/);
   });
 
+  it("rejects malformed persisted base64 file data during Transcript decode", () => {
+    expect(() =>
+      Schema.decodeSync(TranscriptSchema)({
+        schemaVersion: 1,
+        id: "transcript-1",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "file",
+                mediaType: "application/octet-stream",
+                data: { encoding: "base64", value: "not base64!!" },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow(/Expected a base64 string/);
+  });
+
   it("fails loudly on an unknown schema version", () => {
     expect(() =>
       Schema.decodeUnknownSync(TranscriptSchema)({
