@@ -477,21 +477,28 @@ describe("compiled mitome", () => {
     );
   });
 
-  test("restores the manifest when the requested install fails", async () => {
+  test("restores the manifest and install state when the requested install fails", async () => {
     const current = await installFixture();
-    const packagePath = join(dirname(current.definition), "package.json");
-    const original = JSON.parse(await readFile(packagePath, "utf8")) as unknown;
+    const definitionDirectory = dirname(current.definition);
+    const packagePath = join(definitionDirectory, "package.json");
+    // A failing lifecycle script makes bun save the lockfile and node_modules before exiting
+    // nonzero, which is the state the rollback must undo.
+    const manifest = JSON.parse(await readFile(packagePath, "utf8")) as Record<string, unknown>;
+    delete (manifest.dependencies as Record<string, string>)["local-dep"];
+    manifest.scripts = { postinstall: "exit 1" };
+    await writeFile(packagePath, JSON.stringify(manifest));
 
     const result = await output(
-      spawn(
-        "",
-        ["add", "--use", current.definition, "missing-dep@file:../pkgs/missing-dep"],
-        current,
-      ),
+      spawn("", ["add", "--use", current.definition, "local-dep@file:../pkgs/local-dep"], current),
     );
 
     expect(result.exitCode).not.toBe(0);
-    expect(JSON.parse(await readFile(packagePath, "utf8"))).toEqual(original);
+    expect(JSON.parse(await readFile(packagePath, "utf8"))).toEqual(manifest);
+    expect(exists(join(definitionDirectory, "node_modules", "local-dep"))).toBe(false);
+    const lockPath = join(definitionDirectory, "bun.lock");
+    if (exists(lockPath)) {
+      expect(await readFile(lockPath, "utf8")).not.toContain("local-dep");
+    }
   });
 
   test("removes and prunes an Extension only from the selected Agent Definition", async () => {

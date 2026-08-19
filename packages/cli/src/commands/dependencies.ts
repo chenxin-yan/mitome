@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Console, Effect, Option } from "effect";
 import { ChildHost } from "../child-host.js";
@@ -99,6 +99,15 @@ export const runAdd = Effect.fn("@mitome/cli/runAdd")(function* ({
         else dependencies[spec.name] = previousVersion;
       }),
     );
+    // Bun may have extracted the package and saved the lockfile before a lifecycle script
+    // failed; bun does not prune extraneous node_modules entries, so remove a new one here
+    // and reconcile the lockfile with a best-effort install of the restored manifest.
+    if (previousVersion === undefined) {
+      yield* attempt(() =>
+        rm(join(dirname(definition), "node_modules", spec.name), { recursive: true, force: true }),
+      );
+    }
+    yield* childHost.install(definition).pipe(Effect.ignore);
     return exitCode;
   }
   // Inspection failures still leave the manual manifest path usable; the user can verify the export name.
