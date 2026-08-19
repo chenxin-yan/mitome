@@ -133,9 +133,17 @@ const installFixture = async (): Promise<Fixture> => {
   await mkdir(join(packages, "local-dep"), { recursive: true });
   await writeFile(
     join(packages, "local-dep", "package.json"),
-    JSON.stringify({ name: "local-dep", version: "1.0.0" }),
+    JSON.stringify({
+      name: "local-dep",
+      version: "1.0.0",
+      type: "module",
+      exports: "./index.js",
+    }),
   );
-  await writeFile(join(packages, "local-dep", "index.js"), 'export default "installed";\n');
+  await writeFile(
+    join(packages, "local-dep", "index.js"),
+    "export function helper() {}\nexport function localDep() { return { name: 'local' }; }\n",
+  );
   await mkdir(definitionDirectory, { recursive: true });
   await writeFile(
     current.definition,
@@ -437,6 +445,105 @@ describe("compiled mitome", () => {
     });
     expect(exists(join(unselected, "node_modules"))).toBe(false);
     expect(exists(join(unselected, "bun.lock"))).toBe(false);
+  });
+
+  test("adds an Extension only to the selected Agent Definition", async () => {
+    const current = await installFixture();
+    const definitionDirectory = dirname(current.definition);
+    const packagePath = join(definitionDirectory, "package.json");
+    const manifest = JSON.parse(await readFile(packagePath, "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    delete manifest.dependencies["local-dep"];
+    await writeFile(packagePath, JSON.stringify(manifest));
+    const unselectedPackagePath = join(current.root, "unselected", "package.json");
+    await mkdir(dirname(unselectedPackagePath), { recursive: true });
+    await writeFile(unselectedPackagePath, '{"name":"unselected","private":true}\n');
+
+    const result = await output(
+      spawn("", ["add", "--use", current.definition, "local-dep@file:../pkgs/local-dep"], current),
+    );
+
+    expect(result).toMatchObject({ exitCode: 0 });
+    expect(result.stdout).toContain(
+      'import { localDep } from "local-dep";\nextensions: [localDep()],',
+    );
+    expect(JSON.parse(await readFile(packagePath, "utf8"))).toMatchObject({
+      dependencies: { "local-dep": "file:../pkgs/local-dep" },
+    });
+    expect(exists(join(definitionDirectory, "node_modules", "local-dep", "index.js"))).toBe(true);
+    expect(await readFile(unselectedPackagePath, "utf8")).toBe(
+      '{"name":"unselected","private":true}\n',
+    );
+  });
+
+  test("rejects path-like package names before touching the manifest", async () => {
+    const current = await installFixture();
+    const packagePath = join(dirname(current.definition), "package.json");
+    const original = await readFile(packagePath, "utf8");
+
+    const result = await output(
+      spawn("", ["add", "--use", current.definition, "..@1.0.0"], current),
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Invalid package specifier");
+    expect(await readFile(packagePath, "utf8")).toBe(original);
+  });
+
+  test("restores the manifest and install state when the requested install fails", async () => {
+    const current = await installFixture();
+    const definitionDirectory = dirname(current.definition);
+    const packagePath = join(definitionDirectory, "package.json");
+    // A failing lifecycle script makes bun save the lockfile and node_modules before exiting
+    // nonzero, which is the state the rollback must undo.
+    const manifest = JSON.parse(await readFile(packagePath, "utf8")) as Record<string, unknown>;
+    delete (manifest.dependencies as Record<string, string>)["local-dep"];
+    manifest.scripts = { postinstall: "exit 1" };
+    await writeFile(packagePath, JSON.stringify(manifest));
+
+    const result = await output(
+      spawn("", ["add", "--use", current.definition, "local-dep@file:../pkgs/local-dep"], current),
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(JSON.parse(await readFile(packagePath, "utf8"))).toEqual(manifest);
+    expect(exists(join(definitionDirectory, "node_modules", "local-dep"))).toBe(false);
+    const lockPath = join(definitionDirectory, "bun.lock");
+    if (exists(lockPath)) {
+      expect(await readFile(lockPath, "utf8")).not.toContain("local-dep");
+    }
+  });
+
+  test("removes and prunes an Extension only from the selected Agent Definition", async () => {
+    const current = await installFixture();
+    const definitionDirectory = dirname(current.definition);
+    const packagePath = join(definitionDirectory, "package.json");
+    const unselectedPackagePath = join(current.root, "unselected", "package.json");
+    await mkdir(dirname(unselectedPackagePath), { recursive: true });
+    await writeFile(
+      unselectedPackagePath,
+      '{"name":"unselected","private":true,"dependencies":{"local-dep":"1.0.0"}}\n',
+    );
+    expect(
+      await output(spawn("", ["install", "--use", current.definition], current)),
+    ).toMatchObject({ exitCode: 0 });
+    expect(exists(join(definitionDirectory, "node_modules", "local-dep", "index.js"))).toBe(true);
+
+    const result = await output(
+      spawn("", ["remove", "--use", current.definition, "local-dep"], current),
+    );
+
+    expect(result).toMatchObject({ exitCode: 0 });
+    const updatedManifest = JSON.parse(await readFile(packagePath, "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(updatedManifest.dependencies?.["local-dep"]).toBeUndefined();
+    expect(exists(join(definitionDirectory, "node_modules", "local-dep"))).toBe(false);
+    expect(() => createRequire(current.definition).resolve("local-dep")).toThrow();
+    expect(await readFile(unselectedPackagePath, "utf8")).toBe(
+      '{"name":"unselected","private":true,"dependencies":{"local-dep":"1.0.0"}}\n',
+    );
   });
 
   test("maps a non-zero Child Host exit code at the process boundary", async () => {

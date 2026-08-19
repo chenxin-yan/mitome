@@ -22,6 +22,8 @@ const services = Layer.mergeAll(
   Layer.succeed(ChildHost, {
     runHost: () => unused,
     install: () => unused,
+    removeDependency: () => unused,
+    listExports: () => unused,
     inspectProviderAuthentication: () => unused,
     runOAuthAuth: () => unused,
   }),

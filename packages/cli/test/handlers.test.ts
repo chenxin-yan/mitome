@@ -28,6 +28,7 @@ type PromptAnswer =
 type ChildHostCalls = {
   readonly runHost: Array<{ readonly path: string; readonly prompt: string }>;
   readonly install: Array<string>;
+  readonly removeDependency: Array<{ readonly path: string; readonly packageName: string }>;
   readonly inspect: Array<string>;
   readonly oauth: Array<{
     readonly path: string;
@@ -71,7 +72,13 @@ const fakeChildHost = (
     readonly authentications?: ReadonlyArray<ProviderAuthentication> | undefined;
   } = {},
 ) => {
-  const calls: ChildHostCalls = { runHost: [], install: [], inspect: [], oauth: [] };
+  const calls: ChildHostCalls = {
+    runHost: [],
+    install: [],
+    removeDependency: [],
+    inspect: [],
+    oauth: [],
+  };
   return {
     calls,
     layer: Layer.succeed(ChildHost, {
@@ -93,6 +100,12 @@ const fakeChildHost = (
           }
           return options.installExitCode ?? 0;
         }),
+      removeDependency: (path, packageName) =>
+        Effect.sync(() => {
+          calls.removeDependency.push({ path, packageName });
+          return 0;
+        }),
+      listExports: () => Effect.succeed([]),
       inspectProviderAuthentication: (path) =>
         Effect.sync(() => {
           calls.inspect.push(path);

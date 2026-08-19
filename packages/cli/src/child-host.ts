@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Context, Effect, Layer, Result, Schema } from "effect";
 import {
   configDirectory,
@@ -31,6 +32,14 @@ export class ChildHost extends Context.Service<
   {
     readonly runHost: (path: string, prompt: string) => Effect.Effect<ExitCode, CliError>;
     readonly install: (path: string) => Effect.Effect<ExitCode, CliError>;
+    readonly removeDependency: (
+      path: string,
+      packageName: string,
+    ) => Effect.Effect<ExitCode, CliError>;
+    readonly listExports: (
+      packageName: string,
+      directory: string,
+    ) => Effect.Effect<ReadonlyArray<string>, CliError>;
     readonly inspectProviderAuthentication: (
       path: string,
     ) => Effect.Effect<ReadonlyArray<ProviderAuthentication>, CliError>;
@@ -44,6 +53,10 @@ export class ChildHost extends Context.Service<
   static readonly layer = Layer.succeed(ChildHost, {
     runHost: (path, prompt) => Effect.uninterruptible(attempt(() => runHost(path, prompt))),
     install: (path) => Effect.uninterruptible(attempt(() => install(path))),
+    removeDependency: (path, packageName) =>
+      Effect.uninterruptible(attempt(() => removeDependency(path, packageName))),
+    listExports: (packageName, directory) =>
+      Effect.uninterruptible(attempt(() => listExports(packageName, directory))),
     inspectProviderAuthentication: (path) =>
       Effect.uninterruptible(attempt(() => inspectProviderAuthentication(path))),
     runOAuthAuth: (path, providerId, command) =>
@@ -70,6 +83,47 @@ const install = async (path: string): Promise<ExitCode> => {
     stderr: "inherit",
   });
   return child.exited;
+};
+
+const removeDependency = async (path: string, packageName: string): Promise<ExitCode> => {
+  const child = Bun.spawn([process.execPath, "remove", packageName], {
+    cwd: dirname(path),
+    env: childEnv,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  return child.exited;
+};
+
+// Loads the package in a disposable child so import-time side effects (process.exit,
+// long-running work, never-settling top-level await) cannot terminate or hang the CLI.
+const exportProbeSource = [
+  "const loaded = await import(process.argv[1]);",
+  'const names = Object.entries(loaded).filter(([, value]) => typeof value === "function").map(([name]) => name);',
+  "await Bun.write(process.argv[2], JSON.stringify(names));",
+  "process.exit(0);",
+].join("\n");
+
+const listExports = async (
+  packageName: string,
+  directory: string,
+): Promise<ReadonlyArray<string>> => {
+  const moduleUrl = pathToFileURL(Bun.resolveSync(packageName, directory)).href;
+  const outputDirectory = await mkdtemp(join(tmpdir(), "mitome-exports-"));
+  // The names travel via file rather than stdout: importing the package may print.
+  const output = join(outputDirectory, "exports.json");
+  try {
+    const child = Bun.spawn(
+      [process.execPath, "--no-env-file", "--eval", exportProbeSource, moduleUrl, output],
+      { env: childEnv, stdout: "ignore", stderr: "ignore", timeout: 5000 },
+    );
+    if ((await child.exited) !== 0) throw new Error(`Could not inspect ${packageName} exports.`);
+    // The probe script two lines up is our own code; its output needs no schema validation.
+    return JSON.parse(await readFile(output, "utf8")) as ReadonlyArray<string>;
+  } finally {
+    await rm(outputDirectory, { recursive: true, force: true });
+  }
 };
 
 const runHost = async (path: string, prompt: string): Promise<ExitCode> => {
