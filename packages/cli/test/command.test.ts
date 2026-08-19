@@ -23,6 +23,7 @@ const services = Layer.mergeAll(
     runHost: () => unused,
     install: () => unused,
     removeDependency: () => unused,
+    listExports: () => unused,
     inspectProviderAuthentication: () => unused,
     runOAuthAuth: () => unused,
   }),

@@ -105,6 +105,7 @@ const fakeChildHost = (
           calls.removeDependency.push({ path, packageName });
           return 0;
         }),
+      listExports: () => Effect.succeed([]),
       inspectProviderAuthentication: (path) =>
         Effect.sync(() => {
           calls.inspect.push(path);

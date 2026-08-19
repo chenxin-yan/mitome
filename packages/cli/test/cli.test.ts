@@ -477,6 +477,23 @@ describe("compiled mitome", () => {
     );
   });
 
+  test("restores the manifest when the requested install fails", async () => {
+    const current = await installFixture();
+    const packagePath = join(dirname(current.definition), "package.json");
+    const original = JSON.parse(await readFile(packagePath, "utf8")) as unknown;
+
+    const result = await output(
+      spawn(
+        "",
+        ["add", "--use", current.definition, "missing-dep@file:../pkgs/missing-dep"],
+        current,
+      ),
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(JSON.parse(await readFile(packagePath, "utf8"))).toEqual(original);
+  });
+
   test("removes and prunes an Extension only from the selected Agent Definition", async () => {
     const current = await installFixture();
     const definitionDirectory = dirname(current.definition);

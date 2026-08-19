@@ -1,5 +1,4 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { Console, Effect, Option } from "effect";
 import { ChildHost } from "../child-host.js";
@@ -59,29 +58,18 @@ const factoryName = (packageName: string): string => {
     .replace(/[-_.]+([a-zA-Z0-9])/g, (_, character: string) => character.toUpperCase());
 };
 
-const usageSnippet = async (packageName: string, directory: string): Promise<string> => {
+const usageSnippet = (packageName: string, exportNames: ReadonlyArray<string>): string => {
   const derived = factoryName(packageName);
-  try {
-    const module: Record<string, unknown> = await import(
-      pathToFileURL(Bun.resolveSync(packageName, directory)).href
-    );
-    const candidates = Object.entries(module)
-      .filter(
-        ([name, value]) =>
-          name !== "default" && /^[a-zA-Z_$][\w$]*$/.test(name) && typeof value === "function",
-      )
-      .map(([name]) => name)
-      .sort();
-    const selected =
-      candidates.length === 1 ? candidates[0] : candidates.find((name) => name === derived);
-    if (selected !== undefined) {
-      return `import { ${selected} } from "${packageName}";\nextensions: [${selected}()],`;
-    }
-    if (candidates.length > 1) {
-      return `import { ${candidates.join(", ")} } from "${packageName}";\n// Choose one exported Extension factory:\nextensions: [/* ${candidates.map((name) => `${name}()`).join(" or ")} */],`;
-    }
-  } catch {
-    // Import errors still leave the manual manifest path usable; the user can verify the export name.
+  const candidates = exportNames
+    .filter((name) => name !== "default" && /^[a-zA-Z_$][\w$]*$/.test(name))
+    .sort();
+  const selected =
+    candidates.length === 1 ? candidates[0] : candidates.find((name) => name === derived);
+  if (selected !== undefined) {
+    return `import { ${selected} } from "${packageName}";\nextensions: [${selected}()],`;
+  }
+  if (candidates.length > 1) {
+    return `import { ${candidates.join(", ")} } from "${packageName}";\n// Choose one exported Extension factory:\nextensions: [/* ${candidates.map((name) => `${name}()`).join(" or ")} */],`;
   }
   return `import { ${derived} } from "${packageName}"; // verify export name\nextensions: [${derived}()],`;
 };
@@ -96,14 +84,29 @@ export const runAdd = Effect.fn("@mitome/cli/runAdd")(function* ({
   const childHost = yield* ChildHost;
   const definition = yield* attempt(() => definitionPath(use));
   const spec = yield* attempt(async () => packageSpec(input));
+  let previousVersion: string | undefined;
   yield* attempt(() =>
     writeDependencies(definition, (dependencies) => {
+      previousVersion = dependencies[spec.name];
       dependencies[spec.name] = spec.version;
     }),
   );
   const exitCode = yield* childHost.install(definition);
-  if (exitCode !== 0) return exitCode;
-  yield* Console.log(yield* attempt(() => usageSnippet(spec.name, dirname(definition))));
+  if (exitCode !== 0) {
+    // Restore the manifest so a failed install does not persist the new dependency.
+    yield* attempt(() =>
+      writeDependencies(definition, (dependencies) => {
+        if (previousVersion === undefined) delete dependencies[spec.name];
+        else dependencies[spec.name] = previousVersion;
+      }),
+    );
+    return exitCode;
+  }
+  // Inspection failures still leave the manual manifest path usable; the user can verify the export name.
+  const exportNames = yield* childHost
+    .listExports(spec.name, dirname(definition))
+    .pipe(Effect.orElseSucceed(() => []));
+  yield* Console.log(usageSnippet(spec.name, exportNames));
   return 0 satisfies ExitCode;
 });
 
