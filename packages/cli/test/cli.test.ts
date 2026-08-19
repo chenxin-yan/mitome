@@ -477,6 +477,20 @@ describe("compiled mitome", () => {
     );
   });
 
+  test("rejects path-like package names before touching the manifest", async () => {
+    const current = await installFixture();
+    const packagePath = join(dirname(current.definition), "package.json");
+    const original = await readFile(packagePath, "utf8");
+
+    const result = await output(
+      spawn("", ["add", "--use", current.definition, "..@1.0.0"], current),
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Invalid package specifier");
+    expect(await readFile(packagePath, "utf8")).toBe(original);
+  });
+
   test("restores the manifest and install state when the requested install fails", async () => {
     const current = await installFixture();
     const definitionDirectory = dirname(current.definition);

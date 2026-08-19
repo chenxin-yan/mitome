@@ -7,13 +7,17 @@ import { attempt, type ExitCode } from "../support.js";
 
 type Manifest = Record<string, unknown> & { readonly dependencies?: Record<string, string> };
 
+// npm package-name grammar; rejects path-like names such as ".." that would otherwise
+// escape node_modules when the failed-install rollback removes the package directory.
+const packageNamePattern = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+
 const packageSpec = (input: string): { readonly name: string; readonly version: string } => {
   const versionSeparator = input.startsWith("@")
     ? input.indexOf("@", input.indexOf("/") + 1)
     : input.indexOf("@");
   const name = versionSeparator === -1 ? input : input.slice(0, versionSeparator);
   const version = versionSeparator === -1 ? "latest" : input.slice(versionSeparator + 1);
-  if (name.length === 0 || (name.startsWith("@") && !name.includes("/")) || version.length === 0) {
+  if (!packageNamePattern.test(name) || version.length === 0) {
     throw new Error(`Invalid package specifier: ${input}`);
   }
   return { name, version };
@@ -127,7 +131,7 @@ export const runRemove = Effect.fn("@mitome/cli/runRemove")(function* ({
 }) {
   const childHost = yield* ChildHost;
   const definition = yield* attempt(() => definitionPath(use));
-  const removeExitCode = yield* childHost.removeDependency(definition, packageName);
-  if (removeExitCode !== 0) return removeExitCode;
-  return yield* childHost.install(definition);
+  // bun remove already uninstalls the package and reconciles the lockfile and node_modules;
+  // a follow-up install would only re-run lifecycle scripts a second time.
+  return yield* childHost.removeDependency(definition, packageName);
 });
