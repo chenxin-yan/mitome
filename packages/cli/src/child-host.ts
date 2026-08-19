@@ -96,8 +96,6 @@ const removeDependency = async (path: string, packageName: string): Promise<Exit
   return child.exited;
 };
 
-const ExportNamesFromJson = Schema.fromJsonString(Schema.Array(Schema.String));
-
 // Loads the package in a disposable child so import-time side effects (process.exit,
 // long-running work, never-settling top-level await) cannot terminate or hang the CLI.
 const exportProbeSource = [
@@ -121,11 +119,8 @@ const listExports = async (
       { env: childEnv, stdout: "ignore", stderr: "ignore", timeout: 5000 },
     );
     if ((await child.exited) !== 0) throw new Error(`Could not inspect ${packageName} exports.`);
-    const names = Schema.decodeResult(ExportNamesFromJson)(await readFile(output, "utf8"));
-    if (Result.isFailure(names)) {
-      throw new Error(`${packageName} export inspection returned invalid data.`);
-    }
-    return names.success;
+    // The probe script two lines up is our own code; its output needs no schema validation.
+    return JSON.parse(await readFile(output, "utf8")) as ReadonlyArray<string>;
   } finally {
     await rm(outputDirectory, { recursive: true, force: true });
   }

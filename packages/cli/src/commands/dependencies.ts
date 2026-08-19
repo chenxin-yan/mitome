@@ -5,8 +5,7 @@ import { ChildHost } from "../child-host.js";
 import { definitionPath } from "../definition.js";
 import { attempt, type ExitCode } from "../support.js";
 
-type Manifest = Record<string, unknown>;
-type ValidManifest = Manifest & { readonly dependencies?: Record<string, string> };
+type Manifest = Record<string, unknown> & { readonly dependencies?: Record<string, string> };
 
 const packageSpec = (input: string): { readonly name: string; readonly version: string } => {
   const versionSeparator = input.startsWith("@")
@@ -20,24 +19,14 @@ const packageSpec = (input: string): { readonly name: string; readonly version: 
   return { name, version };
 };
 
-const manifestAt = async (path: string): Promise<{ path: string; manifest: ValidManifest }> => {
+const manifestAt = async (path: string): Promise<{ path: string; manifest: Manifest }> => {
   const manifestPath = join(dirname(path), "package.json");
   const value: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`${manifestPath} must contain a JSON object.`);
   }
-  const manifest = value as Manifest;
-  const dependencies = manifest.dependencies;
-  if (
-    dependencies !== undefined &&
-    (typeof dependencies !== "object" ||
-      dependencies === null ||
-      Array.isArray(dependencies) ||
-      Object.values(dependencies).some((version) => typeof version !== "string"))
-  ) {
-    throw new Error(`${manifestPath} dependencies must be an object of package versions.`);
-  }
-  return { path: manifestPath, manifest };
+  // Deeper shape validation is bun install's job; it rejects a malformed manifest itself.
+  return { path: manifestPath, manifest: value as Manifest };
 };
 
 const writeDependencies = async (
@@ -67,9 +56,6 @@ const usageSnippet = (packageName: string, exportNames: ReadonlyArray<string>): 
     candidates.length === 1 ? candidates[0] : candidates.find((name) => name === derived);
   if (selected !== undefined) {
     return `import { ${selected} } from "${packageName}";\nextensions: [${selected}()],`;
-  }
-  if (candidates.length > 1) {
-    return `import { ${candidates.join(", ")} } from "${packageName}";\n// Choose one exported Extension factory:\nextensions: [/* ${candidates.map((name) => `${name}()`).join(" or ")} */],`;
   }
   return `import { ${derived} } from "${packageName}"; // verify export name\nextensions: [${derived}()],`;
 };
@@ -121,11 +107,5 @@ export const runRemove = Effect.fn("@mitome/cli/runRemove")(function* ({
   const definition = yield* attempt(() => definitionPath(use));
   const removeExitCode = yield* childHost.removeDependency(definition, packageName);
   if (removeExitCode !== 0) return removeExitCode;
-  yield* attempt(async () => {
-    const { manifest } = await manifestAt(definition);
-    if (manifest.dependencies?.[packageName] !== undefined) {
-      throw new Error(`Could not remove ${packageName} from the Agent Definition manifest.`);
-    }
-  });
   return yield* childHost.install(definition);
 });
