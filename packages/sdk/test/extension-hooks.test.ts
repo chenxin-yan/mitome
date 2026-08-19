@@ -1,11 +1,61 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Stream } from "effect";
 import { Response } from "effect/unstable/ai";
-import { type Extension } from "@mitome/core";
-import { defineAgent, defineExtension, tool, withSession } from "../src/index.js";
+import { defineAgent, defineExtension, tool, withSession, type Extension } from "../src/index.js";
 import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
 
+const textModel = () =>
+  makeTestProvider(() =>
+    Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" })),
+  );
+
 describe("@mitome/sdk Extension Hooks", () => {
+  test("runs auto-included dependencies once in dependency-first Hook and Instructions order", async () => {
+    const log: Array<string> = [];
+    const extension = (name: string, dependencies: ReadonlyArray<Extension> = []): Extension => ({
+      name,
+      dependencies,
+      instructions: name,
+      hooks: { sessionStart: Effect.sync(() => void log.push(name)) },
+    });
+    const shared = extension("shared");
+    const first = extension("first", [shared]);
+    const second = extension("second", [shared]);
+    const root = extension("root", [first, second]);
+
+    const instructions = await withSession(
+      defineAgent({ providers: [textModel()], model: "test/default", extensions: [root] }),
+      async (session) => session.history()[0]?.content,
+    );
+
+    expect(log).toEqual(["shared", "first", "second", "root"]);
+    expect(instructions).toBe("shared\n\nfirst\n\nsecond\n\nroot");
+  });
+
+  test("defineExtension dependencies acquire dependency-first and dispose dependent-first", async () => {
+    const log: Array<string> = [];
+    const dependency = defineExtension({
+      name: "dependency",
+      tools: [],
+      setup: async () => void log.push("setup:dependency"),
+      dispose: async () => void log.push("dispose:dependency"),
+    });
+    const root = defineExtension({
+      name: "root",
+      dependencies: [dependency],
+      tools: [],
+      setup: async () => void log.push("setup:root"),
+      dispose: async () => void log.push("dispose:root"),
+    });
+
+    await withSession(
+      defineAgent({ providers: [textModel()], model: "test/default", extensions: [root] }),
+      async () => {},
+    );
+
+    expect(log).toEqual(["setup:dependency", "setup:root", "dispose:root", "dispose:dependency"]);
+  });
+
   test("adapts Promise Hooks into the Core lifecycle in Agent Definition order", async () => {
     const log: Array<string> = [];
     const signals: Array<boolean> = [];

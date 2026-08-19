@@ -2,6 +2,7 @@ import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import type { Response as AiResponse } from "effect/unstable/ai";
 import type {
+  AnyExtension,
   Extension,
   ExtensionHooks,
   ToolContribution,
@@ -209,6 +210,7 @@ export interface ExtensionDefinition<
   >,
 > {
   readonly name: string;
+  readonly dependencies?: ReadonlyArray<AnyExtension>;
   readonly instructions?: string;
   readonly tools: Tools;
   readonly hooks?: ExtensionHooksDefinition<Resource>;
@@ -326,6 +328,7 @@ export function defineExtension<
 
   return {
     name: definition.name,
+    dependencies: definition.dependencies,
     instructions: definition.instructions,
     resource,
     hooks,

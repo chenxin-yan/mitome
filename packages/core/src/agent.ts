@@ -68,7 +68,6 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
   const tools = new Map<string, Omit<CompiledTool, "handler">>();
   const handlers = new Map<string, AnyToolHandler>();
   const instructions: Array<string> = [];
-  const extensionNames = new Set<string>();
   const requiredHandlerNames = new Set<string>();
 
   if (!Array.isArray(extensionValues)) {
@@ -76,20 +75,91 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
     return { extensions, tools, handlers, instructions, requiredHandlerNames };
   }
 
-  for (const [index, value] of extensionValues.entries()) {
-    if (!Predicate.isObject(value) || typeof value.name !== "string") {
-      issues.push(`Extension at index ${index} must be an object with a string name`);
-      continue;
+  const graphIssues: Array<string> = [];
+  const encountered: Array<AnyExtension> = [];
+  const discovered = new WeakSet<object>();
+  const extensionsByName = new Map<string, AnyExtension>();
+  const conflictingNames = new Set<string>();
+  const hasName = (value: unknown): value is { readonly name: string } =>
+    Predicate.isObject(value) && typeof value.name === "string";
+
+  // ponytail: recursive discover/visit overflow the call stack on dependency
+  // chains thousands deep; switch to an explicit stack if generated graphs need it.
+  const discover = (value: unknown, location: string): void => {
+    if (!hasName(value)) {
+      graphIssues.push(`${location} must be an object with a string name`);
+      return;
     }
+    if (discovered.has(value)) return;
+    discovered.add(value);
+
     const extension = value as unknown as AnyExtension;
+    encountered.push(extension);
+    const existing = extensionsByName.get(extension.name);
+    if (existing === undefined) {
+      extensionsByName.set(extension.name, extension);
+    } else if (existing !== extension && !conflictingNames.has(extension.name)) {
+      conflictingNames.add(extension.name);
+      graphIssues.push(`Conflicting Extension name: ${extension.name} refers to different values`);
+    }
+
+    if (extension.dependencies === undefined) return;
+    if (!Array.isArray(extension.dependencies)) {
+      graphIssues.push(`Extension ${extension.name} Dependencies must be an array`);
+      return;
+    }
+    for (const [index, dependency] of extension.dependencies.entries()) {
+      discover(dependency, `Extension dependency ${extension.name}[${index}]`);
+    }
+  };
+
+  for (const [index, value] of extensionValues.entries()) {
+    discover(value, `Extension at index ${index}`);
+  }
+
+  const states = new Map<AnyExtension, "visiting" | "visited">();
+  const stack: Array<AnyExtension> = [];
+  const cycles = new Set<string>();
+  const visit = (extension: AnyExtension): void => {
+    const state = states.get(extension);
+    if (state === "visited") return;
+    if (state === "visiting") {
+      const start = stack.indexOf(extension);
+      const path = [...stack.slice(start), extension].map(({ name }) => name).join(" -> ");
+      if (!cycles.has(path)) {
+        cycles.add(path);
+        graphIssues.push(`Extension dependency cycle: ${path}`);
+      }
+      return;
+    }
+
+    states.set(extension, "visiting");
+    stack.push(extension);
+    if (Array.isArray(extension.dependencies)) {
+      for (const dependency of extension.dependencies) {
+        if (!hasName(dependency)) continue;
+        const canonical = extensionsByName.get(dependency.name);
+        if (canonical !== undefined) visit(canonical);
+      }
+    }
+    stack.pop();
+    states.set(extension, "visited");
+    extensions.push(extension);
+  };
+
+  for (const value of extensionValues) {
+    if (!hasName(value)) continue;
+    const canonical = extensionsByName.get(value.name);
+    if (canonical !== undefined) visit(canonical);
+  }
+  issues.push(...graphIssues);
+
+  // Invalid graphs still validate every distinct value so one compilation reports
+  // graph and contribution problems together. Successful graphs compile in resolved order.
+  for (const extension of graphIssues.length === 0 ? extensions : encountered) {
     if (extension.instructions !== undefined && typeof extension.instructions !== "string") {
       issues.push(`Extension ${extension.name} Instructions must be a string`);
     }
-    if (extensionNames.has(extension.name)) {
-      issues.push(`Duplicate Extension name: ${extension.name}`);
-    }
-    extensionNames.add(extension.name);
-    extensions.push(extension);
     if (typeof extension.instructions === "string" && extension.instructions.length > 0) {
       instructions.push(extension.instructions);
     }

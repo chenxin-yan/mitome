@@ -45,7 +45,7 @@ A named, reusable unit included by an Agent Definition to add Tools, contribute 
 _Avoid_: Plugin, Toolkit, package, add-on
 
 **Instructions**:
-A static markdown fragment an Extension contributes to an Agent's system prompt, composed in Extension definition order at Session creation.
+A static markdown fragment an Extension contributes to an Agent's system prompt, composed in resolved dependency-first Extension order at Session creation.
 _Avoid_: System prompt (the composed whole), prompt fragment
 
 **Model**:
