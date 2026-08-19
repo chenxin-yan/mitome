@@ -26,3 +26,11 @@ export {
 export type { ToolExecutionDenied, TurnEvent } from "./session/events.js";
 export { createSession } from "./session/session.js";
 export type { PromptOptions, Session } from "./session/session.js";
+export {
+  makeTranscript,
+  promptFromTranscript,
+  TranscriptMessageSchema,
+  TranscriptSchema,
+  TranscriptSchemaVersion,
+} from "./transcript.js";
+export type { MakeTranscriptOptions, Transcript, TranscriptMessage } from "./transcript.js";
