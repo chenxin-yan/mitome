@@ -80,11 +80,13 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
   const discovered = new WeakSet<object>();
   const extensionsByName = new Map<string, AnyExtension>();
   const conflictingNames = new Set<string>();
+  const hasName = (value: unknown): value is { readonly name: string } =>
+    Predicate.isObject(value) && typeof value.name === "string";
 
   // ponytail: recursive discover/visit overflow the call stack on dependency
   // chains thousands deep; switch to an explicit stack if generated graphs need it.
   const discover = (value: unknown, location: string): void => {
-    if (!Predicate.isObject(value) || typeof value.name !== "string") {
+    if (!hasName(value)) {
       graphIssues.push(`${location} must be an object with a string name`);
       return;
     }
@@ -135,7 +137,7 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
     stack.push(extension);
     if (Array.isArray(extension.dependencies)) {
       for (const dependency of extension.dependencies) {
-        if (!Predicate.isObject(dependency) || typeof dependency.name !== "string") continue;
+        if (!hasName(dependency)) continue;
         const canonical = extensionsByName.get(dependency.name);
         if (canonical !== undefined) visit(canonical);
       }
@@ -146,7 +148,7 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
   };
 
   for (const value of extensionValues) {
-    if (!Predicate.isObject(value) || typeof value.name !== "string") continue;
+    if (!hasName(value)) continue;
     const canonical = extensionsByName.get(value.name);
     if (canonical !== undefined) visit(canonical);
   }

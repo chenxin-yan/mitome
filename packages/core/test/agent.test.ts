@@ -107,28 +107,11 @@ describe("Agent Definition compilation", () => {
     Effect.gen(function* () {
       const conflictA = { name: "conflict" };
       const conflictB = { name: "conflict" };
+      const conflictC = { name: "conflict" };
       const alpha: { name: string; dependencies?: Array<unknown> } = { name: "alpha" };
       const beta: { name: string; dependencies?: Array<unknown> } = { name: "beta" };
       alpha.dependencies = [beta];
       beta.dependencies = [alpha];
-
-      const conflictC = { name: "conflict" };
-
-      const error = yield* getAgentDefinitionError({
-        providers: [model],
-        model: "test/default",
-        extensions: [conflictA, { name: "owner", dependencies: [conflictB, conflictC] }, alpha],
-      });
-
-      expect(error.issues).toEqual([
-        "Conflicting Extension name: conflict refers to different values",
-        "Extension dependency cycle: alpha -> beta -> alpha",
-      ]);
-    }),
-  );
-
-  it.effect("reports self-dependencies and cycles entered mid-cycle", () =>
-    Effect.gen(function* () {
       const self: { name: string; dependencies?: Array<unknown> } = { name: "self" };
       self.dependencies = [self];
       const a: { name: string; dependencies?: Array<unknown> } = { name: "a" };
@@ -139,10 +122,18 @@ describe("Agent Definition compilation", () => {
       const error = yield* getAgentDefinitionError({
         providers: [model],
         model: "test/default",
-        extensions: [self, { name: "root", dependencies: [a] }],
+        extensions: [
+          conflictA,
+          { name: "owner", dependencies: [conflictB, conflictC] },
+          alpha,
+          self,
+          { name: "root", dependencies: [a] },
+        ],
       });
 
       expect(error.issues).toEqual([
+        "Conflicting Extension name: conflict refers to different values",
+        "Extension dependency cycle: alpha -> beta -> alpha",
         "Extension dependency cycle: self -> self",
         "Extension dependency cycle: a -> b -> a",
       ]);
