@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
-import { Option, Schema } from "effect";
+import { Option } from "effect";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
 import { configDirectory, configDirectoryMessage } from "@mitome/core";
 import { isEnoent } from "./config.js";
@@ -49,7 +49,6 @@ const dependencyFields: ReadonlyArray<DependencyField> = [
   "optionalDependencies",
   "peerDependencies",
 ];
-const packageName = /^(?:@[a-z0-9~*][a-z0-9._~*-]*\/)?[a-z0-9~*][a-z0-9._~*-]*$/i;
 
 const installedPackage = async (directory: string, name: string): Promise<string | undefined> => {
   let current = directory;
@@ -65,30 +64,6 @@ const installedPackage = async (directory: string, name: string): Promise<string
     if (parent === current) return undefined;
     current = parent;
   }
-};
-
-const withoutTrailingCommas = (source: string): string => {
-  let result = "";
-  let quoted = false;
-  let escaped = false;
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index]!;
-    if (quoted) {
-      result += character;
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === '"') quoted = false;
-      continue;
-    }
-    if (character === '"') quoted = true;
-    if (character === ",") {
-      let next = index + 1;
-      while (/\s/.test(source[next] ?? "")) next += 1;
-      if (source[next] === "}" || source[next] === "]") continue;
-    }
-    result += character;
-  }
-  return result;
 };
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -118,24 +93,31 @@ const missingDependency = async (
     Object.keys(record(manifest[field]) ?? {}),
   );
   for (const name of names) {
-    if (!packageName.test(name) || (await installedPackage(directory, name)) === undefined) {
-      return true;
-    }
+    if ((await installedPackage(directory, name)) === undefined) return true;
   }
   return false;
 };
 
+const installedCore = async (directory: string): Promise<{ version: unknown } | undefined> => {
+  const packagePath = await installedPackage(directory, "@mitome/core");
+  if (packagePath === undefined) return undefined;
+  // A malformed installed package must fail loud rather than becoming an install loop.
+  try {
+    const parsed = record(JSON.parse(await readFile(packagePath, "utf8")));
+    if (parsed === undefined) throw new Error("Not a JSON object.");
+    return { version: parsed.version };
+  } catch (error) {
+    throw new Error(`Could not decode ${packagePath}.`, { cause: error });
+  }
+};
+
 export const checkRuntime = async (path: string): Promise<void> => {
-  const packagePath = await installedPackage(dirname(path), "@mitome/core");
-  if (packagePath === undefined) {
+  const core = await installedCore(dirname(path));
+  if (core === undefined) {
     throw new Error(
       `No @mitome/core is installed beside ${path} after installing Agent Definition dependencies. Add @mitome/core@${corePackage.version} to its package.json.`,
     );
   }
-  const source = await readFile(packagePath, "utf8");
-  const core = Schema.decodeUnknownSync(
-    Schema.Struct({ version: Schema.optional(Schema.Unknown) }),
-  )(JSON.parse(source));
   if (core.version !== corePackage.version) {
     throw new Error(
       `@mitome/core beside ${path} is ${String(core.version)} after installing Agent Definition dependencies; its package.json must select @mitome/core@${corePackage.version}.`,
@@ -145,18 +127,8 @@ export const checkRuntime = async (path: string): Promise<void> => {
 
 export const definitionNeedsReconcile = async (path: string): Promise<boolean> => {
   const directory = dirname(path);
-  const packagePath = await installedPackage(directory, "@mitome/core");
-  if (packagePath === undefined) return true;
-  // A malformed installed package must fail loud rather than becoming an install loop.
-  let core: { readonly version?: unknown };
-  try {
-    core = Schema.decodeUnknownSync(Schema.Struct({ version: Schema.optional(Schema.Unknown) }))(
-      JSON.parse(await Bun.file(packagePath).text()),
-    );
-  } catch (error) {
-    throw new Error(`Could not decode ${packagePath}.`, { cause: error });
-  }
-  if (core.version !== corePackage.version) return true;
+  const core = await installedCore(directory);
+  if (core === undefined || core.version !== corePackage.version) return true;
 
   let manifest: Record<string, unknown>;
   try {
@@ -170,12 +142,13 @@ export const definitionNeedsReconcile = async (path: string): Promise<boolean> =
 
   let lockWorkspace: Record<string, unknown> | undefined;
   try {
+    // bun.lock is JSONC; Bun's jsonc import handles trailing commas and comments.
     const lock = record(
-      JSON.parse(withoutTrailingCommas(await readFile(join(directory, "bun.lock"), "utf8"))),
+      (await import(join(directory, "bun.lock"), { with: { type: "jsonc" } })).default,
     );
     lockWorkspace = record(record(lock?.workspaces)?.[""]);
   } catch (error) {
-    if (!isEnoent(error)) return true;
+    if ((error as { code?: string }).code !== "ERR_MODULE_NOT_FOUND") return true;
   }
   if (lockWorkspace !== undefined && !sameDependencies(manifest, lockWorkspace)) return true;
   return missingDependency(directory, manifest);

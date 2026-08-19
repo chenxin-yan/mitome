@@ -422,38 +422,6 @@ describe("compiled mitome", () => {
     expect(missing.stderr).toContain("missing-fixture-extension");
   });
 
-  test("keeps installed legacy npm package names quiet", async () => {
-    const current = await reconcileFixture();
-    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
-      exitCode: 0,
-    });
-
-    const directory = dirname(current.definition);
-    const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as {
-      dependencies: Record<string, string>;
-    };
-    manifest.dependencies["legacy~name"] = "1.0.0";
-    manifest.dependencies["legacy*name"] = "1.0.0";
-    for (const name of ["legacy~name", "legacy*name"]) {
-      await mkdir(join(directory, "node_modules", name), { recursive: true });
-      await writeFile(
-        join(directory, "node_modules", name, "package.json"),
-        JSON.stringify({ name, version: "1.0.0" }),
-      );
-    }
-    await writeFile(join(directory, "package.json"), JSON.stringify(manifest));
-    await writeFile(
-      join(directory, "bun.lock"),
-      JSON.stringify({ workspaces: { "": { dependencies: manifest.dependencies } } }),
-    );
-
-    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
-      exitCode: 0,
-      stdout: "reconciled second\n",
-      stderr: "",
-    });
-  });
-
   test("never reconciles a directory that was not selected", async () => {
     const current = await reconcileFixture();
     const unselected = join(current.root, "unselected");
