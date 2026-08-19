@@ -25,7 +25,18 @@ const manifestAt = async (path: string): Promise<{ path: string; manifest: Manif
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`${manifestPath} must contain a JSON object.`);
   }
-  // Deeper shape validation is bun install's job; it rejects a malformed manifest itself.
+  // writeDependencies spreads this field before bun can validate it, which would silently
+  // transform a malformed value (array, string) and break the failed-install rollback.
+  const dependencies = (value as Record<string, unknown>).dependencies;
+  if (
+    dependencies !== undefined &&
+    (typeof dependencies !== "object" ||
+      dependencies === null ||
+      Array.isArray(dependencies) ||
+      Object.values(dependencies).some((version) => typeof version !== "string"))
+  ) {
+    throw new Error(`${manifestPath} dependencies must be an object of package versions.`);
+  }
   return { path: manifestPath, manifest: value as Manifest };
 };
 
@@ -55,7 +66,9 @@ const usageSnippet = (packageName: string, exportNames: ReadonlyArray<string>): 
   const selected =
     candidates.length === 1 ? candidates[0] : candidates.find((name) => name === derived);
   if (selected !== undefined) {
-    return `import { ${selected} } from "${packageName}";\nextensions: [${selected}()],`;
+    // A lone export that does not match the derived name may be a helper, not the factory.
+    const hedge = selected === derived ? "" : " // verify export name";
+    return `import { ${selected} } from "${packageName}";${hedge}\nextensions: [${selected}()],`;
   }
   return `import { ${derived} } from "${packageName}"; // verify export name\nextensions: [${derived}()],`;
 };
