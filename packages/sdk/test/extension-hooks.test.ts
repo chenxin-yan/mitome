@@ -32,6 +32,30 @@ describe("@mitome/sdk Extension Hooks", () => {
     expect(instructions).toBe("shared\n\nfirst\n\nsecond\n\nroot");
   });
 
+  test("defineExtension dependencies acquire dependency-first and dispose dependent-first", async () => {
+    const log: Array<string> = [];
+    const dependency = defineExtension({
+      name: "dependency",
+      tools: [],
+      setup: async () => void log.push("setup:dependency"),
+      dispose: async () => void log.push("dispose:dependency"),
+    });
+    const root = defineExtension({
+      name: "root",
+      dependencies: [dependency],
+      tools: [],
+      setup: async () => void log.push("setup:root"),
+      dispose: async () => void log.push("dispose:root"),
+    });
+
+    await withSession(
+      defineAgent({ providers: [textModel()], model: "test/default", extensions: [root] }),
+      async () => {},
+    );
+
+    expect(log).toEqual(["setup:dependency", "setup:root", "dispose:root", "dispose:dependency"]);
+  });
+
   test("adapts Promise Hooks into the Core lifecycle in Agent Definition order", async () => {
     const log: Array<string> = [];
     const signals: Array<boolean> = [];

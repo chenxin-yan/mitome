@@ -112,16 +112,66 @@ describe("Agent Definition compilation", () => {
       alpha.dependencies = [beta];
       beta.dependencies = [alpha];
 
+      const conflictC = { name: "conflict" };
+
       const error = yield* getAgentDefinitionError({
         providers: [model],
         model: "test/default",
-        extensions: [conflictA, { name: "owner", dependencies: [conflictB] }, alpha],
+        extensions: [conflictA, { name: "owner", dependencies: [conflictB, conflictC] }, alpha],
       });
 
       expect(error.issues).toEqual([
         "Conflicting Extension name: conflict refers to different values",
         "Extension dependency cycle: alpha -> beta -> alpha",
       ]);
+    }),
+  );
+
+  it.effect("reports self-dependencies and cycles entered mid-cycle", () =>
+    Effect.gen(function* () {
+      const self: { name: string; dependencies?: Array<unknown> } = { name: "self" };
+      self.dependencies = [self];
+      const a: { name: string; dependencies?: Array<unknown> } = { name: "a" };
+      const b: { name: string; dependencies?: Array<unknown> } = { name: "b" };
+      a.dependencies = [b];
+      b.dependencies = [a];
+
+      const error = yield* getAgentDefinitionError({
+        providers: [model],
+        model: "test/default",
+        extensions: [self, { name: "root", dependencies: [a] }],
+      });
+
+      expect(error.issues).toEqual([
+        "Extension dependency cycle: self -> self",
+        "Extension dependency cycle: a -> b -> a",
+      ]);
+    }),
+  );
+
+  it.effect("compiles an auto-included dependency's Tool contributions", () =>
+    Effect.gen(function* () {
+      const tool = Tool.make("dep-tool", { success: Schema.String });
+      const handler = () => Effect.succeed("ok");
+      const dependency = {
+        name: "dependency",
+        toolkit: Toolkit.make(tool),
+        handlers: { "dep-tool": handler },
+      };
+
+      const compiled = yield* compileAgentDefinition({
+        providers: [model],
+        model: "test/default",
+        extensions: [{ name: "root", dependencies: [dependency] }],
+      });
+
+      expect(compiled.tools.get("dep-tool")).toEqual({
+        tool,
+        owner: dependency,
+        handler,
+        inputValidator: undefined,
+        resultValidator: undefined,
+      });
     }),
   );
 

@@ -39,9 +39,15 @@ const dependentExtension = defineExtension({
   name: "dependent-extension",
   dependencies: [dependencyExtension],
 });
-export type DependencyTupleIsPreserved = Expect<
+export type DependenciesWidenToAnyExtensionArray = Expect<
   Equal<typeof dependentExtension.dependencies, ReadonlyArray<AnyExtension> | undefined>
 >;
+
+defineExtension({
+  name: "bad-dependency",
+  // @ts-expect-error Dependencies must be Extension values.
+  dependencies: [{ notAnExtension: true }],
+});
 
 const independent = Tool.make("independent");
 const typedCoreExtension = defineExtension({

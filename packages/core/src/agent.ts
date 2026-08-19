@@ -79,7 +79,10 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
   const encountered: Array<AnyExtension> = [];
   const discovered = new WeakSet<object>();
   const extensionsByName = new Map<string, AnyExtension>();
+  const conflictingNames = new Set<string>();
 
+  // ponytail: recursive discover/visit overflow the call stack on dependency
+  // chains thousands deep; switch to an explicit stack if generated graphs need it.
   const discover = (value: unknown, location: string): void => {
     if (!Predicate.isObject(value) || typeof value.name !== "string") {
       graphIssues.push(`${location} must be an object with a string name`);
@@ -93,7 +96,8 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
     const existing = extensionsByName.get(extension.name);
     if (existing === undefined) {
       extensionsByName.set(extension.name, extension);
-    } else if (existing !== extension) {
+    } else if (existing !== extension && !conflictingNames.has(extension.name)) {
+      conflictingNames.add(extension.name);
       graphIssues.push(`Conflicting Extension name: ${extension.name} refers to different values`);
     }
 
