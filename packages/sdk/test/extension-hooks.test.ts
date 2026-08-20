@@ -88,6 +88,31 @@ describe("@mitome/sdk Extension Hooks", () => {
     expect(log).toEqual(["dispose:second", "dispose:first", "dispose:shared"]);
   });
 
+  test("keeps unpublished dependency services private at runtime", async () => {
+    class Public extends Context.Service<Public, { readonly value: string }>()("test/Public") {}
+    class Private extends Context.Service<Private, { readonly value: string }>()("test/Private") {}
+    const dependency: Extension<Public | Private> = {
+      name: "dependency",
+      provides: [Public],
+      resource: Layer.merge(
+        Layer.succeed(Public, { value: "public" }),
+        Layer.succeed(Private, { value: "private" }),
+      ),
+    };
+    const dependent: Extension<Private> = {
+      name: "dependent",
+      dependencies: [dependency],
+      hooks: { sessionStart: Effect.asVoid(Private) },
+    };
+
+    await expect(
+      withSession(
+        defineAgent({ providers: [textModel()], model: "test/default", extensions: [dependent] }),
+        async () => {},
+      ),
+    ).rejects.toThrow("Service not found: test/Private");
+  });
+
   test("defineExtension dependencies acquire dependency-first and dispose dependent-first", async () => {
     const log: Array<string> = [];
     const dependency = defineExtension({
