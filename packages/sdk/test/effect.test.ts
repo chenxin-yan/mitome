@@ -17,6 +17,7 @@ test("keeps the complete Effect facade export contract", async () => {
       "TranscriptSchema",
       "TranscriptSchemaVersion",
       "TurnError",
+      "compileAgentDefinition",
       "configDirectory",
       "configDirectoryMessage",
       "createSession",
