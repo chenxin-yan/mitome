@@ -6,13 +6,20 @@ export {
   TranscriptMessageSchema,
   TranscriptSchema,
   TranscriptSchemaVersion,
+  TranscriptEventRecordSchema,
+  TranscriptEventRecordVersion,
+  TranscriptNotFound,
+  TranscriptSummarySchema,
+  StoreError,
   TurnError,
   defineAgent,
   makeTranscript,
+  makeMemoryTranscriptStore,
   promptFromTranscript,
 } from "@mitome/core";
 export type {
   AgentDefinition,
+  CreateSessionOptions,
   Extension,
   Provider,
   ExtensionHooks,
@@ -25,7 +32,11 @@ export type {
   ToolResultValidator,
   MakeTranscriptOptions,
   Transcript,
+  TranscriptEventRecord,
+  TranscriptId,
   TranscriptMessage,
+  TranscriptStore,
+  TranscriptSummary,
 } from "@mitome/core";
 export { defineExtension, tool } from "./extension.js";
 export type {
@@ -40,4 +51,4 @@ export type {
   Tool,
 } from "./extension.js";
 export { withSession } from "./session.js";
-export type { Session, TurnEvent } from "./session.js";
+export type { Session, SessionOptions, TurnEvent } from "./session.js";
