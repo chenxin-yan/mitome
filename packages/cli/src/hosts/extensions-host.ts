@@ -13,12 +13,17 @@ const effect: typeof import("effect") = await import(pathToFileURL(effectPath).h
 const loaded = ((await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown })
   .default as AgentDefinition;
 
-const errorMessage = (error: unknown): string =>
-  typeof error === "object" && error !== null && "_tag" in error && "message" in error
-    ? `${String(error._tag)}: ${String(error.message)}`
-    : error instanceof Error
-      ? error.message
-      : String(error);
+const errorMessage = (error: unknown): string => {
+  const head =
+    typeof error === "object" && error !== null && "_tag" in error && "message" in error
+      ? `${String(error._tag)}: ${String(error.message)}`
+      : error instanceof Error
+        ? error.message
+        : String(error);
+  const cause =
+    typeof error === "object" && error !== null && "cause" in error ? error.cause : undefined;
+  return cause === undefined ? head : `${head}\n  cause: ${errorMessage(cause)}`;
+};
 
 const packageVersion = async (name: string): Promise<string> => {
   let current = dirname(definitionPath);
@@ -59,6 +64,7 @@ try {
     })),
   );
   await Bun.write(outputPath, JSON.stringify(extensions));
+  process.exit(0);
 } catch (error) {
   process.stderr.write(`${errorMessage(error)}\n`);
   process.exit(1);

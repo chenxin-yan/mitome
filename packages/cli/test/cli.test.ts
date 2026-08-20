@@ -105,6 +105,20 @@ export default {
 };
 `;
 
+const persistentExtensionListDefinitionSource = (): string => `
+import { Layer } from "effect";
+import { LanguageModel } from "effect/unstable/ai";
+import { makeProvider } from "@mitome/core";
+
+setInterval(() => {}, 60_000);
+const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {}));
+export default {
+  providers: [provider],
+  model: "test/default",
+  extensions: [{ name: process.env.MITOME_EXTENSION_NAME ?? "missing-env" }],
+};
+`;
+
 type Fixture = {
   readonly root: string;
   readonly definition: string;
@@ -621,6 +635,19 @@ describe("compiled mitome", () => {
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("Extension dependency cycle: fixture-cycle -> fixture-cycle");
     expect(result.stderr).toContain("Extension fixture-cycle Instructions must be a string");
+  });
+
+  test("loads config env while inspecting and exits despite active handles", async () => {
+    const current = await fixture(persistentExtensionListDefinitionSource());
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await mkdir(config, { recursive: true });
+    await writeFile(join(config, ".env"), "MITOME_EXTENSION_NAME=config-extension\n");
+
+    expect(await output(spawn("", ["ext", "list", "--use", current.definition], current))).toEqual({
+      exitCode: 0,
+      stdout: "config-extension\tunknown\tdirect\n",
+      stderr: "",
+    });
   });
 
   test("runs one Turn end to end", async () => {
