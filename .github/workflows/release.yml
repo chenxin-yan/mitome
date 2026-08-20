@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir packages-to-publish
-          for dir in packages/core packages/sdk packages/providers packages/cli/npm/cli-* packages/cli packages/create-mitome; do
+          for dir in packages/core packages/sdk packages/providers packages/tui packages/cli/npm/cli-* packages/cli packages/create-mitome; do
             cp LICENSE "$dir/"
             (cd "$dir" && bun pm pack --destination "$GITHUB_WORKSPACE/packages-to-publish" --ignore-scripts)
           done
@@ -93,7 +93,7 @@ jobs:
             fi
           }
 
-          for dir in packages/core packages/sdk packages/providers packages/cli/npm/cli-* packages/cli packages/create-mitome; do
+          for dir in packages/core packages/sdk packages/providers packages/tui packages/cli/npm/cli-* packages/cli packages/create-mitome; do
             package_dir=$(basename "$dir")
             if test "$package_dir" = create-mitome; then
               archive="packages-to-publish/create-mitome-${RELEASE_TAG#v}.tgz"

@@ -385,6 +385,10 @@ describe("compiled mitome", () => {
       expect(printed).toMatchObject({ exitCode: 0 });
       expect(printed.stdout).toContain("first second");
       expect(printed.stdout).not.toContain("TUI_PROMPT");
+
+      const missing = await ptyOutput([flag, "--use", current.definition], current);
+      expect(missing.exitCode).not.toBe(0);
+      expect(missing.stdout + missing.stderr).toContain("Missing argument prompt");
     }
 
     expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
@@ -392,6 +396,9 @@ describe("compiled mitome", () => {
       stdout: "first second\n",
       stderr: "",
     });
+    const missing = await output(spawn("", ["--use", current.definition], current));
+    expect(missing.exitCode).not.toBe(0);
+    expect(missing.stderr).toContain("Missing argument prompt");
   });
 
   test("reports an unsupported terminal and falls back to one-shot output", async () => {
@@ -404,6 +411,11 @@ describe("compiled mitome", () => {
     expect(result.stdout).toContain("falling back to one-shot output");
     expect(result.stdout).toContain("first second");
     expect(result.stdout).not.toContain("TUI_PROMPT");
+
+    const missing = await ptyOutput(["--use", current.definition], current, "xterm");
+    expect(missing.exitCode).not.toBe(0);
+    expect(missing.stdout + missing.stderr).toContain("Missing argument prompt");
+    expect(missing.stdout).not.toContain("TUI_PROMPT");
   });
 
   test("loads the config env file in the Child Host without cwd leakage", async () => {

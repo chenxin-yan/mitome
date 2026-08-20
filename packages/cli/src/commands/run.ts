@@ -35,20 +35,22 @@ export const runPrompt = Effect.fn("@mitome/cli/runPrompt")(function* ({
 
   const hasTui = yield* attempt(() => tuiInstalled(path));
   const promptValue = Option.getOrUndefined(prompt);
-  if (!hasTui) {
-    if (promptValue === undefined) return yield* fail("Missing argument prompt");
-    return yield* childHost.runHost(path, promptValue);
+  if (
+    hasTui &&
+    !print &&
+    process.stdout.isTTY === true &&
+    process.platform === "linux" &&
+    process.env.TERM_PROGRAM?.toLowerCase() === "ghostty"
+  ) {
+    return yield* childHost.runTui(path, promptValue ?? "");
   }
-  if (print || process.stdout.isTTY !== true) {
-    return yield* childHost.runHost(path, promptValue ?? "");
-  }
-  if (process.platform !== "linux" || process.env.TERM_PROGRAM?.toLowerCase() !== "ghostty") {
+  if (hasTui && !print && process.stdout.isTTY === true) {
     yield* Console.error(
       "@mitome/tui currently supports Ghostty on Linux; falling back to one-shot output.",
     );
-    return yield* childHost.runHost(path, promptValue ?? "");
   }
-  return yield* childHost.runTui(path, promptValue ?? "");
+  if (promptValue === undefined) return yield* fail("Missing argument prompt");
+  return yield* childHost.runHost(path, promptValue);
 });
 
 export const runInstall = Effect.fn("@mitome/cli/runInstall")(function* ({

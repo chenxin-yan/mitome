@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const rootDirectory = resolve(import.meta.dir, "..");
-const publicPackages = ["core", "sdk", "providers", "cli", "create-mitome"] as const;
+const publicPackages = ["core", "sdk", "providers", "tui", "cli", "create-mitome"] as const;
 type PublicPackage = (typeof publicPackages)[number];
 const packageName = (name: PublicPackage): string =>
   name === "create-mitome" ? name : `@mitome/${name}`;
