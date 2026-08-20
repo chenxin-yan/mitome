@@ -126,18 +126,30 @@ const listExports = async (
   }
 };
 
-const runHost = async (path: string, prompt: string): Promise<ExitCode> => {
+const runHost = (path: string, prompt: string): Promise<ExitCode> =>
+  runEmbeddedHost(hostSource, path, prompt);
+
+export const runEmbeddedHost = async (
+  source: string,
+  path: string,
+  prompt: string,
+  preload?: string,
+): Promise<ExitCode> => {
   const directory = configDirectory();
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.
   const envFlag =
     directory === undefined ? "--no-env-file" : `--env-file=${join(directory, ".env")}`;
-  const child = Bun.spawn([process.execPath, envFlag, "--eval", hostSource, path, prompt], {
-    env: childEnv,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+  const preloadArgs = preload === undefined ? [] : ["--preload", preload];
+  const child = Bun.spawn(
+    [process.execPath, envFlag, ...preloadArgs, "--eval", source, path, prompt],
+    {
+      env: childEnv,
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    },
+  );
   const forwardSigint = () => child.kill("SIGINT");
   process.once("SIGINT", forwardSigint);
   try {
