@@ -16,15 +16,31 @@ import definitionHost from "./hosts/host.ts" with { type: "text" };
 // @ts-expect-error Bun text import (see above).
 // oxlint-disable-next-line import/default
 import authHost from "./hosts/auth-host.ts" with { type: "text" };
+// @ts-expect-error Bun text import (see above).
+// oxlint-disable-next-line import/default
+import extensionsHost from "./hosts/extensions-host.ts" with { type: "text" };
 
 const hostSource: string = definitionHost;
 const authHostSource: string = authHost;
+const extensionsHostSource: string = extensionsHost;
 // process.execPath is the compiled mitome binary; BUN_BE_BUN re-executes it as plain Bun.
 const childEnv = { ...process.env, BUN_BE_BUN: "1" };
 
 export interface ProviderAuthentication {
   readonly id: string;
   readonly credential: CredentialDescriptor;
+}
+
+export interface ExtensionListItem {
+  readonly name: string;
+  readonly version: string;
+  readonly direct: boolean;
+  readonly dependents: ReadonlyArray<string>;
+}
+
+export interface ExtensionListResult {
+  readonly exitCode: ExitCode;
+  readonly extensions: ReadonlyArray<ExtensionListItem>;
 }
 
 export class ChildHost extends Context.Service<
@@ -40,6 +56,7 @@ export class ChildHost extends Context.Service<
       packageName: string,
       directory: string,
     ) => Effect.Effect<ReadonlyArray<string>, CliError>;
+    readonly inspectExtensions: (path: string) => Effect.Effect<ExtensionListResult, CliError>;
     readonly inspectProviderAuthentication: (
       path: string,
     ) => Effect.Effect<ReadonlyArray<ProviderAuthentication>, CliError>;
@@ -57,6 +74,7 @@ export class ChildHost extends Context.Service<
       Effect.uninterruptible(attempt(() => removeDependency(path, packageName))),
     listExports: (packageName, directory) =>
       Effect.uninterruptible(attempt(() => listExports(packageName, directory))),
+    inspectExtensions: (path) => Effect.uninterruptible(attempt(() => inspectExtensions(path))),
     inspectProviderAuthentication: (path) =>
       Effect.uninterruptible(attempt(() => inspectProviderAuthentication(path))),
     runOAuthAuth: (path, providerId, command) =>
@@ -123,6 +141,26 @@ const listExports = async (
     return JSON.parse(await readFile(output, "utf8")) as ReadonlyArray<string>;
   } finally {
     await rm(outputDirectory, { recursive: true, force: true });
+  }
+};
+
+const inspectExtensions = async (path: string): Promise<ExtensionListResult> => {
+  const directory = await mkdtemp(join(tmpdir(), "mitome-extensions-"));
+  const output = join(directory, "extensions.json");
+  try {
+    const child = Bun.spawn(
+      [process.execPath, "--no-env-file", "--eval", extensionsHostSource, path, output],
+      { env: childEnv, stdout: "ignore", stderr: "inherit" },
+    );
+    const exitCode = await child.exited;
+    if (exitCode !== 0) return { exitCode, extensions: [] };
+    return {
+      exitCode,
+      // The embedded host writes this private file; no untrusted input crosses the boundary.
+      extensions: JSON.parse(await readFile(output, "utf8")) as ReadonlyArray<ExtensionListItem>,
+    };
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 };
 
