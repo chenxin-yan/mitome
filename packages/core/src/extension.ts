@@ -48,18 +48,25 @@ type ToolkitContributions<Tools extends Record<string, Tool.Any>> = {
   >;
 };
 declare const ExtensionContributionsTypeId: unique symbol;
+declare const ExtensionDependenciesTypeId: unique symbol;
+declare const ExtensionProvidesTypeId: unique symbol;
 
 export interface Extension<
   Resource = never,
   ResourceError = never,
   Contributions extends ToolContributions = EmptyToolContributions,
+  Dependencies extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
+  Provides extends ReadonlyArray<Context.Key<any, any>> = readonly [],
 > {
   readonly [ExtensionContributionsTypeId]?: Contributions;
+  readonly [ExtensionDependenciesTypeId]?: Dependencies;
+  readonly [ExtensionProvidesTypeId]?: Provides;
   readonly name: string;
   readonly dependencies?: ReadonlyArray<AnyExtension> | undefined;
+  readonly provides?: ReadonlyArray<Context.Key<any, any>> | undefined;
   readonly instructions?: string | undefined;
   /** Required at runtime whenever hooks or handlers use a Resource; hooks run unprovided (missing-service defect) without it. */
-  readonly resource?: Layer.Layer<Resource, ResourceError, never> | undefined;
+  readonly resource?: Layer.Layer<Resource, ResourceError, any> | undefined;
   readonly toolkit?: Toolkit.Any;
   readonly handlers?: Record<
     string,
@@ -77,24 +84,63 @@ export interface Extension<
  * hook/handler Effects are covariant in R, so no single parameterization
  * accepts every Extension; the union's arms cover both variance directions.
  */
-export type AnyExtension = Extension<any, unknown, any> | Extension<never, any, any>;
+export type AnyExtension =
+  | Extension<any, unknown, any, any, any>
+  | Extension<never, any, any, any, any>;
 
-type ServiceCoverage<Tools extends Record<string, Tool.Any>, Resource> = [
+type ProvidedServicesOfExtension<Value> =
+  Value extends Extension<any, any, any, any, infer Provides>
+    ? Context.Service.Identifier<Provides[number]>
+    : never;
+type ProvidedServices<Dependencies extends ReadonlyArray<AnyExtension>> =
+  ProvidedServicesOfExtension<Dependencies[number]>;
+type AvailableServices<Resource, Dependencies extends ReadonlyArray<AnyExtension>> =
+  | Resource
+  | ProvidedServices<Dependencies>;
+type ServiceCoverage<Tools extends Record<string, Tool.Any>, Services> = [
   Tool.HandlerServices<Tools[keyof Tools]> | Tool.ResultDecodingServices<Tools[keyof Tools]>,
-] extends [Resource]
+] extends [Services]
+  ? unknown
+  : never;
+type LayerInputCoverage<
+  LayerValue extends Layer.Any,
+  Dependencies extends ReadonlyArray<AnyExtension>,
+> = [Layer.Services<LayerValue>] extends [ProvidedServices<Dependencies>] ? unknown : never;
+type ProvidesCoverage<
+  LayerValue extends Layer.Any,
+  Provides extends ReadonlyArray<Context.Key<any, any>>,
+> = [Context.Service.Identifier<Provides[number]>] extends [Layer.Success<LayerValue>]
   ? unknown
   : never;
 
-type LayerExtension<LayerValue extends Layer.Layer<any, any, never>> = Omit<
-  Extension<Layer.Success<LayerValue>, Layer.Error<LayerValue>>,
-  "resource" | "hooks"
+type LayerExtension<
+  LayerValue extends Layer.Any,
+  Dependencies extends ReadonlyArray<AnyExtension>,
+  Provides extends ReadonlyArray<Context.Key<any, any>>,
+> = Omit<
+  Extension<
+    Layer.Success<LayerValue>,
+    Layer.Error<LayerValue>,
+    EmptyToolContributions,
+    Dependencies,
+    Provides
+  >,
+  "dependencies" | "provides" | "resource" | "hooks"
 > & {
+  readonly dependencies?: Dependencies | undefined;
+  readonly provides?: Provides | undefined;
   readonly resource?: LayerValue | undefined;
-  readonly hooks?: ExtensionHooks<NoInfer<Layer.Success<LayerValue>>> | undefined;
+  readonly hooks?:
+    | ExtensionHooks<AvailableServices<NoInfer<Layer.Success<LayerValue>>, NoInfer<Dependencies>>>
+    | undefined;
 };
 
-type ToolkitlessExtension<LayerValue extends Layer.Layer<any, any, never>> = Omit<
-  LayerExtension<LayerValue>,
+type ToolkitlessExtension<
+  LayerValue extends Layer.Any,
+  Dependencies extends ReadonlyArray<AnyExtension>,
+  Provides extends ReadonlyArray<Context.Key<any, any>>,
+> = Omit<
+  LayerExtension<LayerValue, Dependencies, Provides>,
   "toolkit" | "handlers" | "toolInputValidators" | "toolResultValidators"
 > & {
   readonly toolkit?: undefined;
@@ -105,70 +151,133 @@ type ToolkitlessExtension<LayerValue extends Layer.Layer<any, any, never>> = Omi
 
 type RejectAny<Value> = 0 extends 1 & Value ? never : unknown;
 
-type ResourceFreeToolkitlessExtension = Omit<
-  ToolkitlessExtension<Layer.Layer<any, never, never>>,
+type ResourceFreeToolkitlessExtension<Dependencies extends ReadonlyArray<AnyExtension>> = Omit<
+  ToolkitlessExtension<Layer.Layer<never, never, never>, Dependencies, readonly []>,
   "resource" | "hooks"
 > & {
   readonly resource?: undefined;
-  readonly hooks?: ExtensionHooks | undefined;
+  readonly hooks?: ExtensionHooks<ProvidedServices<NoInfer<Dependencies>>> | undefined;
 };
 
-type ToolkitExtension<ToolkitValue extends Toolkit.Any, Resource = never, ResourceError = never> = {
+type ToolkitExtension<
+  ToolkitValue extends Toolkit.Any,
+  Dependencies extends ReadonlyArray<AnyExtension>,
+> = {
   readonly name: string;
-  readonly dependencies?: ReadonlyArray<AnyExtension> | undefined;
+  readonly dependencies?: Dependencies | undefined;
+  readonly provides?: readonly [] | undefined;
   readonly instructions?: string | undefined;
-  readonly resource?: Layer.Layer<Resource, ResourceError, never> | undefined;
+  readonly resource?: undefined;
   readonly toolkit: ToolkitValue;
   readonly handlers: Toolkit.HandlersFrom<Toolkit.Tools<NoInfer<ToolkitValue>>> &
-    ServiceCoverage<Toolkit.Tools<NoInfer<ToolkitValue>>, Resource>;
+    ServiceCoverage<Toolkit.Tools<NoInfer<ToolkitValue>>, ProvidedServices<NoInfer<Dependencies>>>;
   readonly toolInputValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolInputValidator>>
   >;
   readonly toolResultValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
   >;
-  readonly hooks?: ExtensionHooks<Resource> | undefined;
+  readonly hooks?: ExtensionHooks<ProvidedServices<NoInfer<Dependencies>>> | undefined;
 };
 
 type ResourcefulToolkitExtension<
-  LayerValue extends Layer.Layer<any, any, never>,
+  LayerValue extends Layer.Any,
   ToolkitValue extends Toolkit.Any,
+  Dependencies extends ReadonlyArray<AnyExtension>,
+  Provides extends ReadonlyArray<Context.Key<any, any>>,
 > = Omit<
-  LayerExtension<LayerValue>,
+  LayerExtension<LayerValue, Dependencies, Provides>,
   "resource" | "toolkit" | "handlers" | "toolInputValidators" | "toolResultValidators" | "hooks"
 > & {
   readonly resource: LayerValue;
   readonly toolkit: ToolkitValue;
   readonly handlers: Toolkit.HandlersFrom<Toolkit.Tools<NoInfer<ToolkitValue>>> &
-    ServiceCoverage<Toolkit.Tools<NoInfer<ToolkitValue>>, Layer.Success<NoInfer<LayerValue>>>;
+    ServiceCoverage<
+      Toolkit.Tools<NoInfer<ToolkitValue>>,
+      AvailableServices<Layer.Success<NoInfer<LayerValue>>, NoInfer<Dependencies>>
+    >;
   readonly toolInputValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolInputValidator>>
   >;
   readonly toolResultValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
   >;
-  readonly hooks?: ExtensionHooks<Layer.Success<NoInfer<LayerValue>>> | undefined;
+  readonly hooks?:
+    | ExtensionHooks<AvailableServices<Layer.Success<NoInfer<LayerValue>>, NoInfer<Dependencies>>>
+    | undefined;
 };
 
 // NoInfer blocks contextual back-inference of Resource=any from AnyExtension arrays.
 export function defineExtension<const LayerValue extends Layer.Layer<any, any, never>>(
-  extension: ToolkitlessExtension<LayerValue> & {
+  extension: ToolkitlessExtension<LayerValue, readonly [], readonly []> & {
     readonly resource: LayerValue;
   } & RejectAny<LayerValue>,
 ): NoInfer<Extension<Layer.Success<LayerValue>, Layer.Error<LayerValue>>>;
-export function defineExtension(extension: ResourceFreeToolkitlessExtension): NoInfer<Extension>;
-export function defineExtension<const ToolkitValue extends Toolkit.Any>(
-  extension: Omit<ToolkitExtension<ToolkitValue>, "resource"> & { readonly resource?: undefined },
-): Extension<never, never, ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>>;
+export function defineExtension<
+  const LayerValue extends Layer.Any,
+  const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
+  const Provides extends ReadonlyArray<Context.Key<any, any>> = readonly [],
+>(
+  extension: ToolkitlessExtension<LayerValue, Dependencies, Provides> & {
+    readonly resource: LayerValue;
+  } & ({ readonly dependencies: Dependencies } | { readonly provides: Provides }) &
+    RejectAny<LayerValue> &
+    LayerInputCoverage<LayerValue, NoInfer<Dependencies>> &
+    ProvidesCoverage<NoInfer<LayerValue>, Provides>,
+): NoInfer<
+  Extension<
+    Layer.Success<LayerValue>,
+    Layer.Error<LayerValue>,
+    EmptyToolContributions,
+    Dependencies,
+    Provides
+  >
+>;
+export function defineExtension<
+  const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
+>(
+  extension: ResourceFreeToolkitlessExtension<Dependencies>,
+): NoInfer<Extension<never, never, EmptyToolContributions, Dependencies, readonly []>>;
+export function defineExtension<
+  const ToolkitValue extends Toolkit.Any,
+  const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
+>(
+  extension: ToolkitExtension<ToolkitValue, Dependencies>,
+): Extension<
+  never,
+  never,
+  ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>,
+  Dependencies,
+  readonly []
+>;
 export function defineExtension<
   const LayerValue extends Layer.Layer<any, any, never>,
   const ToolkitValue extends Toolkit.Any,
 >(
-  extension: ResourcefulToolkitExtension<LayerValue, ToolkitValue> & RejectAny<LayerValue>,
+  extension: ResourcefulToolkitExtension<LayerValue, ToolkitValue, readonly [], readonly []> &
+    RejectAny<LayerValue>,
 ): Extension<
   Layer.Success<LayerValue>,
   Layer.Error<LayerValue>,
   ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>
+>;
+export function defineExtension<
+  const LayerValue extends Layer.Any,
+  const ToolkitValue extends Toolkit.Any,
+  const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
+  const Provides extends ReadonlyArray<Context.Key<any, any>> = readonly [],
+>(
+  extension: ResourcefulToolkitExtension<LayerValue, ToolkitValue, Dependencies, Provides> &
+    ({ readonly dependencies: Dependencies } | { readonly provides: Provides }) &
+    RejectAny<LayerValue> &
+    LayerInputCoverage<LayerValue, NoInfer<Dependencies>> &
+    ProvidesCoverage<NoInfer<LayerValue>, Provides>,
+): Extension<
+  Layer.Success<LayerValue>,
+  Layer.Error<LayerValue>,
+  ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>,
+  Dependencies,
+  Provides
 >;
 // The impl return must be assignable to every overload return; only never is.
 export function defineExtension(extension: unknown): never {

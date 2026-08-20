@@ -39,15 +39,23 @@ const createSessionImpl: (
   const sessionScope = yield* Effect.scope;
   const extensionContexts = new Map<AnyExtension, Context.Context<any>>();
   for (const extension of compiled.extensions) {
-    if (extension.resource !== undefined) {
-      extensionContexts.set(
-        extension,
-        // The Extension's Resource type is erased by AnyExtension; provideExtension re-pairs it dynamically.
-        (yield* Layer.build(extension.resource).pipe(
-          hookTurnError("Extension setup failed"),
-        )) as Context.Context<any>,
-      );
+    let context = Context.empty() as Context.Context<any>;
+    for (const dependency of extension.dependencies ?? []) {
+      const dependencyContext = extensionContexts.get(dependency);
+      if (dependencyContext !== undefined && dependency.provides !== undefined) {
+        context = Context.merge(context, Context.pick(...dependency.provides)(dependencyContext));
+      }
     }
+    if (extension.resource !== undefined) {
+      // AnyExtension erases Layer input/output types; the compiled graph restores
+      // the declared dependency context before hooks and handlers run.
+      const ownContext = (yield* Layer.build(extension.resource).pipe(
+        Effect.provide(context),
+        hookTurnError("Extension setup failed"),
+      )) as Context.Context<any>;
+      context = Context.merge(context, ownContext);
+    }
+    extensionContexts.set(extension, context);
   }
   const toolExecution = yield* makeToolExecution(compiled, extensionContexts);
   const modelResolver = makeModelResolver(compiled.providers, sessionScope);
