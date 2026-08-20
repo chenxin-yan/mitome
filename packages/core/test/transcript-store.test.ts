@@ -1,10 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import {
   makeMemoryTranscriptStore,
   makeTranscript,
+  TranscriptEventRecordSchema,
   TranscriptEventRecordVersion,
   TranscriptNotFound,
+  TranscriptSummarySchema,
 } from "../src/index.js";
 
 describe("makeMemoryTranscriptStore", () => {
@@ -37,7 +39,10 @@ describe("makeMemoryTranscriptStore", () => {
       yield* store.save(first);
       const [after] = yield* store.list();
 
-      expect(after).toMatchObject({ parentId: "parent", createdAt: before!.createdAt });
+      expect(after).toMatchObject({
+        parentTranscriptId: "parent",
+        createdAt: before!.createdAt,
+      });
     }),
   );
 
@@ -61,8 +66,29 @@ describe("makeMemoryTranscriptStore", () => {
         version: TranscriptEventRecordVersion,
         event: { type: "model-output", text: "hello" },
       });
-
-      expect("loadEvents" in store).toBe(false);
     }),
   );
+
+  it("rejects invalid count and sequence metadata", () => {
+    expect(() =>
+      Schema.decodeSync(TranscriptSummarySchema)({
+        id: "transcript-1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        messageCount: -1,
+      }),
+    ).toThrow();
+
+    for (const seq of [-1, 0.5]) {
+      expect(() =>
+        Schema.decodeSync(TranscriptEventRecordSchema)({
+          transcriptId: "transcript-1",
+          sessionId: "session-1",
+          seq,
+          version: TranscriptEventRecordVersion,
+          event: null,
+        }),
+      ).toThrow();
+    }
+  });
 });

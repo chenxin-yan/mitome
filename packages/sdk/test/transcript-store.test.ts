@@ -33,14 +33,22 @@ test("snapshots and resumes prior context through the public SDK", async () => {
     return textResponse("hello");
   });
 
-  const parentId = await withSession(definition, { store }, async (session) => {
-    await Array.fromAsync(session.prompt("first"));
-    return session.transcript().id;
-  });
-  const child = await withSession(definition, { store, resume: parentId }, async (session) => {
-    await Array.fromAsync(session.prompt("second"));
-    return session.transcript();
-  });
+  const parentId = await withSession(
+    definition,
+    async (session) => {
+      await Array.fromAsync(session.prompt("first"));
+      return session.transcript().id;
+    },
+    { store },
+  );
+  const child = await withSession(
+    definition,
+    async (session) => {
+      await Array.fromAsync(session.prompt("second"));
+      return session.transcript();
+    },
+    { store, resume: parentId },
+  );
 
   expect(prompts).toEqual([["user"], ["user", "assistant", "user"]]);
   expect(child.id).not.toBe(parentId);
@@ -51,16 +59,24 @@ test("snapshots and resumes prior context through the public SDK", async () => {
 test("two resumes create independent child Transcripts with parent provenance", async () => {
   const store = makeMemoryTranscriptStore();
   const definition = definitionWith(() => textResponse("done"));
-  const parentId = await withSession(definition, { store }, async (session) => {
-    await Array.fromAsync(session.prompt("parent"));
-    return session.transcript().id;
-  });
+  const parentId = await withSession(
+    definition,
+    async (session) => {
+      await Array.fromAsync(session.prompt("parent"));
+      return session.transcript().id;
+    },
+    { store },
+  );
 
   const resume = (text: string) =>
-    withSession(definition, { store, resume: parentId }, async (session) => {
-      await Array.fromAsync(session.prompt(text));
-      return session.transcript();
-    });
+    withSession(
+      definition,
+      async (session) => {
+        await Array.fromAsync(session.prompt(text));
+        return session.transcript();
+      },
+      { store, resume: parentId },
+    );
   const [first, second] = await Promise.all([resume("first fork"), resume("second fork")]);
 
   expect(first.id).not.toBe(second.id);
@@ -88,10 +104,14 @@ test("a hand-constructed Transcript seeds a Session", async () => {
     return textResponse("done");
   });
 
-  const transcript = await withSession(definition, { transcript: synthetic }, async (session) => {
-    await Array.fromAsync(session.prompt("continue"));
-    return session.transcript();
-  });
+  const transcript = await withSession(
+    definition,
+    async (session) => {
+      await Array.fromAsync(session.prompt("continue"));
+      return session.transcript();
+    },
+    { transcript: synthetic },
+  );
 
   expect(roles).toEqual(["user", "user"]);
   expect(transcript.parentTranscriptId).toBe("synthetic");
@@ -112,21 +132,29 @@ test("failed and interrupted Turns leave stored Transcripts unchanged", async ()
     return textResponse("saved");
   });
 
-  const transcriptId = await withSession(definition, { store }, async (session) => {
-    await Array.fromAsync(session.prompt("saved"));
-    const before = await Effect.runPromise(store.load(session.transcript().id));
+  const transcriptId = await withSession(
+    definition,
+    async (session) => {
+      await Array.fromAsync(session.prompt("saved"));
+      const before = await Effect.runPromise(store.load(session.transcript().id));
 
-    await expect(Array.fromAsync(session.prompt("failed"))).rejects.toBeInstanceOf(TurnError);
-    expect(await Effect.runPromise(store.load(before.id))).toEqual(before);
-    return before.id;
-  });
+      await expect(Array.fromAsync(session.prompt("failed"))).rejects.toBeInstanceOf(TurnError);
+      expect(await Effect.runPromise(store.load(before.id))).toEqual(before);
+      return before.id;
+    },
+    { store },
+  );
   const summariesBefore = await Effect.runPromise(store.list());
 
-  await withSession(definition, { store, resume: transcriptId }, async (session) => {
-    const iterator = session.prompt("interrupted")[Symbol.asyncIterator]();
-    await iterator.next();
-    await iterator.return?.();
-  });
+  await withSession(
+    definition,
+    async (session) => {
+      const iterator = session.prompt("interrupted")[Symbol.asyncIterator]();
+      await iterator.next();
+      await iterator.return?.();
+    },
+    { store, resume: transcriptId },
+  );
 
   expect(await Effect.runPromise(store.list())).toEqual(summariesBefore);
 });

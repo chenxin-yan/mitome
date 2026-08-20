@@ -1,6 +1,7 @@
 import { Encoding, Result, Schema } from "effect";
 import { Prompt } from "effect/unstable/ai";
-import type { TranscriptId } from "./transcript-store.js";
+
+export type TranscriptId = string;
 
 export const TranscriptSchemaVersion = 1 as const;
 

@@ -23,6 +23,10 @@ export interface PromptOptions<Providers extends ReadonlyArray<AnyProvider>> {
 }
 
 export interface CreateSessionOptions {
+  /**
+   * Seeds the Session's committed history. If it has no system message, the Agent's compiled
+   * instructions are intentionally not injected.
+   */
   readonly transcript?: Transcript | undefined;
   readonly store?: TranscriptStore | undefined;
 }

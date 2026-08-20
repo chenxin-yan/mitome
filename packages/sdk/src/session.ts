@@ -97,27 +97,12 @@ const toAsyncIterable = (
   },
 });
 
-interface WithSession {
-  <const Definition extends AgentDefinition, A>(
-    definition: Definition,
-    use: (session: Session<Definition["providers"]>) => Promise<A>,
-  ): Promise<A>;
-  <const Definition extends AgentDefinition, A>(
-    definition: Definition,
-    options: SessionOptions,
-    use: (session: Session<Definition["providers"]>) => Promise<A>,
-  ): Promise<A>;
-}
-
-export const withSession: WithSession = <const Definition extends AgentDefinition, A>(
+export const withSession = <const Definition extends AgentDefinition, A>(
   definition: Definition,
-  optionsOrUse: SessionOptions | ((session: Session<Definition["providers"]>) => Promise<A>),
-  use?: (session: Session<Definition["providers"]>) => Promise<A>,
-): Promise<A> => {
-  const options = typeof optionsOrUse === "function" ? {} : optionsOrUse;
-  const callback = typeof optionsOrUse === "function" ? optionsOrUse : use;
-  if (callback === undefined) throw new TypeError("withSession requires a callback");
-  return Effect.runPromiseExit(
+  use: (session: Session<Definition["providers"]>) => Promise<A>,
+  options: SessionOptions = {},
+): Promise<A> =>
+  Effect.runPromiseExit(
     Effect.scoped(
       Effect.gen(function* () {
         const transcript =
@@ -128,7 +113,7 @@ export const withSession: WithSession = <const Definition extends AgentDefinitio
         const scope = yield* Effect.scope;
         return yield* Effect.tryPromise({
           try: () =>
-            callback({
+            use({
               prompt: (text, promptOptions) =>
                 toAsyncIterable(session.prompt(text, promptOptions), scope),
               history: session.history,
@@ -144,4 +129,3 @@ export const withSession: WithSession = <const Definition extends AgentDefinitio
     if (failure instanceof CallbackFailure) throw failure.cause;
     throw failure;
   });
-};

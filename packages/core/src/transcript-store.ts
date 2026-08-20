@@ -1,23 +1,12 @@
 import { Effect, Schema } from "effect";
-import type { Transcript } from "./transcript.js";
-
-export type TranscriptId = string;
-
-const isoDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
-const isoDateString = Schema.String.check(
-  Schema.makeFilter((value) =>
-    isoDatePattern.test(value) && !Number.isNaN(Date.parse(value))
-      ? undefined
-      : "Expected an ISO-8601 timestamp",
-  ),
-);
+import type { Transcript, TranscriptId } from "./transcript.js";
 
 export const TranscriptSummarySchema = Schema.Struct({
   id: Schema.String,
-  parentId: Schema.optional(Schema.String),
-  createdAt: isoDateString,
-  updatedAt: isoDateString,
-  messageCount: Schema.Finite,
+  parentTranscriptId: Schema.optional(Schema.String),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  messageCount: Schema.Natural,
 });
 export type TranscriptSummary = typeof TranscriptSummarySchema.Type;
 
@@ -25,7 +14,7 @@ export const TranscriptEventRecordVersion = 1 as const;
 export const TranscriptEventRecordSchema = Schema.Struct({
   transcriptId: Schema.String,
   sessionId: Schema.String,
-  seq: Schema.Finite,
+  seq: Schema.Natural,
   version: Schema.Literal(TranscriptEventRecordVersion),
   event: Schema.Json,
 });
@@ -80,7 +69,7 @@ export const makeMemoryTranscriptStore = (): TranscriptStore => {
       Effect.sync(() =>
         Array.from(transcripts.values(), ({ transcript, createdAt, updatedAt }) => ({
           id: transcript.id,
-          parentId: transcript.parentTranscriptId,
+          parentTranscriptId: transcript.parentTranscriptId,
           createdAt,
           updatedAt,
           messageCount: transcript.messages.length,

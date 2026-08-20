@@ -33,7 +33,12 @@ export {
   TranscriptSchema,
   TranscriptSchemaVersion,
 } from "./transcript.js";
-export type { MakeTranscriptOptions, Transcript, TranscriptMessage } from "./transcript.js";
+export type {
+  MakeTranscriptOptions,
+  Transcript,
+  TranscriptId,
+  TranscriptMessage,
+} from "./transcript.js";
 export {
   makeMemoryTranscriptStore,
   StoreError,
@@ -44,7 +49,6 @@ export {
 } from "./transcript-store.js";
 export type {
   TranscriptEventRecord,
-  TranscriptId,
   TranscriptStore,
   TranscriptSummary,
 } from "./transcript-store.js";
