@@ -144,6 +144,10 @@ export const runEmbeddedHost = async (
   const child = Bun.spawn(
     [process.execPath, envFlag, ...preloadArgs, "--eval", source, path, prompt],
     {
+      // Bare preload specifiers (e.g. @opentui/solid/preload) resolve from the
+      // child's cwd, and compiled binaries cannot resolve subpath exports
+      // parent-side (ADR-0038) — so run the child beside the Agent Definition.
+      ...(preload === undefined ? {} : { cwd: dirname(path) }),
       env: childEnv,
       stdin: "inherit",
       stdout: "inherit",
