@@ -43,7 +43,6 @@ describe("@mitome/sdk Extension Hooks", () => {
       Shared,
       never,
       Readonly<Record<never, never>>,
-      readonly [],
       readonly [typeof Shared]
     > = {
       name: "shared",

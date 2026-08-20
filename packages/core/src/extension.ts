@@ -48,18 +48,15 @@ type ToolkitContributions<Tools extends Record<string, Tool.Any>> = {
   >;
 };
 declare const ExtensionContributionsTypeId: unique symbol;
-declare const ExtensionDependenciesTypeId: unique symbol;
 declare const ExtensionProvidesTypeId: unique symbol;
 
 export interface Extension<
   Resource = never,
   ResourceError = never,
   Contributions extends ToolContributions = EmptyToolContributions,
-  Dependencies extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
   Provides extends ReadonlyArray<Context.Key<any, any>> = readonly [],
 > {
   readonly [ExtensionContributionsTypeId]?: Contributions;
-  readonly [ExtensionDependenciesTypeId]?: Dependencies;
   readonly [ExtensionProvidesTypeId]?: Provides;
   readonly name: string;
   readonly dependencies?: ReadonlyArray<AnyExtension> | undefined;
@@ -84,14 +81,18 @@ export interface Extension<
  * hook/handler Effects are covariant in R, so no single parameterization
  * accepts every Extension; the union's arms cover both variance directions.
  */
-export type AnyExtension =
-  | Extension<any, unknown, any, any, any>
-  | Extension<never, any, any, any, any>;
+export type AnyExtension = Extension<any, unknown, any, any> | Extension<never, any, any, any>;
+
+type RejectAny<Value> = 0 extends 1 & Value ? never : unknown;
 
 type ProvidedServicesOfExtension<Value> =
-  Value extends Extension<any, any, any, any, infer Provides>
-    ? Context.Service.Identifier<Provides[number]>
-    : never;
+  RejectAny<Value> extends never
+    ? never
+    : Value extends Extension<any, any, any, infer Provides>
+      ? RejectAny<Provides> extends never
+        ? never
+        : Context.Service.Identifier<Provides[number]>
+      : never;
 type ProvidedServices<Dependencies extends ReadonlyArray<AnyExtension>> =
   ProvidedServicesOfExtension<Dependencies[number]>;
 type AvailableServices<Resource, Dependencies extends ReadonlyArray<AnyExtension>> =
@@ -118,13 +119,7 @@ type LayerExtension<
   Dependencies extends ReadonlyArray<AnyExtension>,
   Provides extends ReadonlyArray<Context.Key<any, any>>,
 > = Omit<
-  Extension<
-    Layer.Success<LayerValue>,
-    Layer.Error<LayerValue>,
-    EmptyToolContributions,
-    Dependencies,
-    Provides
-  >,
+  Extension<Layer.Success<LayerValue>, Layer.Error<LayerValue>, EmptyToolContributions, Provides>,
   "dependencies" | "provides" | "resource" | "hooks"
 > & {
   readonly dependencies?: Dependencies | undefined;
@@ -148,8 +143,6 @@ type ToolkitlessExtension<
   readonly toolInputValidators?: undefined;
   readonly toolResultValidators?: undefined;
 };
-
-type RejectAny<Value> = 0 extends 1 & Value ? never : unknown;
 
 type ResourceFreeToolkitlessExtension<Dependencies extends ReadonlyArray<AnyExtension>> = Omit<
   ToolkitlessExtension<Layer.Layer<never, never, never>, Dependencies, readonly []>,
@@ -225,19 +218,13 @@ export function defineExtension<
     LayerInputCoverage<LayerValue, NoInfer<Dependencies>> &
     ProvidesCoverage<NoInfer<LayerValue>, Provides>,
 ): NoInfer<
-  Extension<
-    Layer.Success<LayerValue>,
-    Layer.Error<LayerValue>,
-    EmptyToolContributions,
-    Dependencies,
-    Provides
-  >
+  Extension<Layer.Success<LayerValue>, Layer.Error<LayerValue>, EmptyToolContributions, Provides>
 >;
 export function defineExtension<
   const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
 >(
   extension: ResourceFreeToolkitlessExtension<Dependencies>,
-): NoInfer<Extension<never, never, EmptyToolContributions, Dependencies, readonly []>>;
+): NoInfer<Extension<never, never, EmptyToolContributions, readonly []>>;
 export function defineExtension<
   const ToolkitValue extends Toolkit.Any,
   const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
@@ -247,7 +234,6 @@ export function defineExtension<
   never,
   never,
   ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>,
-  Dependencies,
   readonly []
 >;
 export function defineExtension<
@@ -276,7 +262,6 @@ export function defineExtension<
   Layer.Success<LayerValue>,
   Layer.Error<LayerValue>,
   ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>,
-  Dependencies,
   Provides
 >;
 // The impl return must be assignable to every overload return; only never is.

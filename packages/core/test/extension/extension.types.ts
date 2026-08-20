@@ -27,8 +27,7 @@ type ResourceErrorOf<Value> =
   Value extends Extension<infer _Resource, infer ResourceError, infer _Contributions>
     ? ResourceError
     : never;
-type ProvidesOf<Value> =
-  Value extends Extension<any, any, any, any, infer Provides> ? Provides : never;
+type ProvidesOf<Value> = Value extends Extension<any, any, any, infer Provides> ? Provides : never;
 
 declare const model: Provider<"test", readonly []>;
 
@@ -183,6 +182,14 @@ defineExtension({
   dependencies: [providingExtension],
   // @ts-expect-error PrivateService is not published by the dependency.
   hooks: { sessionStart: Effect.asVoid(PrivateService) },
+});
+
+const widenedDependencies: ReadonlyArray<AnyExtension> = [providingExtension];
+defineExtension({
+  name: "widened-dependent",
+  dependencies: widenedDependencies,
+  // @ts-expect-error Widened dependency arrays cannot prove service coverage.
+  hooks: { sessionStart: Effect.asVoid(SharedService) },
 });
 
 // @ts-expect-error provides may only select outputs from the Extension resource Layer.

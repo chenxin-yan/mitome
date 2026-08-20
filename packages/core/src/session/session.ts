@@ -41,9 +41,11 @@ const createSessionImpl: (
   for (const extension of compiled.extensions) {
     let context = Context.empty() as Context.Context<any>;
     for (const dependency of extension.dependencies ?? []) {
-      const dependencyContext = extensionContexts.get(dependency);
-      if (dependencyContext !== undefined && dependency.provides !== undefined) {
-        context = Context.merge(context, Context.pick(...dependency.provides)(dependencyContext));
+      if (dependency.provides !== undefined) {
+        context = Context.merge(
+          context,
+          Context.pick(...dependency.provides)(extensionContexts.get(dependency)!),
+        );
       }
     }
     if (extension.resource !== undefined) {
