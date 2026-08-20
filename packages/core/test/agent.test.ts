@@ -185,6 +185,25 @@ describe("Agent Definition compilation", () => {
     }),
   );
 
+  it.effect("aggregates malformed provided Service declarations", () =>
+    Effect.gen(function* () {
+      const error = yield* getAgentDefinitionError({
+        providers: [model],
+        model: "test/default",
+        extensions: [
+          { name: "not-an-array", provides: null },
+          { name: "bad-elements", provides: [null, { key: "not-a-context-key" }] },
+        ],
+      });
+
+      expect(error.issues).toEqual([
+        "Extension not-an-array Provides must be an array",
+        "Extension bad-elements Provides[0] must be a Context Key",
+        "Extension bad-elements Provides[1] must be a Context Key",
+      ]);
+    }),
+  );
+
   it.effect("preserves special Tool names in the compiled registry", () =>
     Effect.gen(function* () {
       const tool = Tool.make("__proto__", { success: Schema.String });

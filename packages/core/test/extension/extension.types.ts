@@ -199,6 +199,24 @@ defineExtension({
   provides: [PrivateService],
 });
 
+const IdenticalServiceA = Context.Service<string>("@mitome/core/test/IdenticalServiceA");
+const IdenticalServiceB = Context.Service<string>("@mitome/core/test/IdenticalServiceB");
+const identicalServiceLayer = Layer.succeed(IdenticalServiceA, "value");
+// Function-style tags with the same identifier type are structurally identical;
+// Session construction validates their distinct runtime keys.
+const structurallyIdenticalProvider = defineExtension<
+  typeof identicalServiceLayer,
+  readonly [],
+  readonly [typeof IdenticalServiceB]
+>({
+  name: "structurally-identical-provider",
+  resource: identicalServiceLayer,
+  provides: [IdenticalServiceB],
+});
+export type InferredStructurallyIdenticalProvides = Expect<
+  Equal<ProvidesOf<typeof structurallyIdenticalProvider>, readonly [typeof IdenticalServiceB]>
+>;
+
 defineExtension({
   name: "missing-resource",
   resource: Layer.succeed(ExtensionResource, "value"),
