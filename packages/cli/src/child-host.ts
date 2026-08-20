@@ -19,10 +19,14 @@ import authHost from "./hosts/auth-host.ts" with { type: "text" };
 // @ts-expect-error Bun text import (see above).
 // oxlint-disable-next-line import/default
 import extensionsHost from "./hosts/extensions-host.ts" with { type: "text" };
+// @ts-expect-error Bun text import (see above).
+// oxlint-disable-next-line import/default
+import tuiHost from "./hosts/tui-host.ts" with { type: "text" };
 
 const hostSource: string = definitionHost;
 const authHostSource: string = authHost;
 const extensionsHostSource: string = extensionsHost;
+const tuiHostSource: string = tuiHost;
 // process.execPath is the compiled mitome binary; BUN_BE_BUN re-executes it as plain Bun.
 const childEnv = { ...process.env, BUN_BE_BUN: "1" };
 
@@ -52,6 +56,7 @@ export class ChildHost extends Context.Service<
   ChildHost,
   {
     readonly runHost: (path: string, prompt: string) => Effect.Effect<ExitCode, CliError>;
+    readonly runTui: (path: string, prompt: string) => Effect.Effect<ExitCode, CliError>;
     readonly install: (path: string) => Effect.Effect<ExitCode, CliError>;
     readonly removeDependency: (
       path: string,
@@ -74,6 +79,7 @@ export class ChildHost extends Context.Service<
 >()("@mitome/cli/ChildHost") {
   static readonly layer = Layer.succeed(ChildHost, {
     runHost: (path, prompt) => Effect.uninterruptible(attempt(() => runHost(path, prompt))),
+    runTui: (path, prompt) => Effect.uninterruptible(attempt(() => runTui(path, prompt))),
     install: (path) => Effect.uninterruptible(attempt(() => install(path))),
     removeDependency: (path, packageName) =>
       Effect.uninterruptible(attempt(() => removeDependency(path, packageName))),
@@ -190,6 +196,9 @@ const inspectExtensions = async (path: string): Promise<ExtensionListResult> => 
 
 const runHost = (path: string, prompt: string): Promise<ExitCode> =>
   runEmbeddedHost(hostSource, path, prompt);
+
+const runTui = (path: string, prompt: string): Promise<ExitCode> =>
+  runEmbeddedHost(tuiHostSource, path, prompt, "@opentui/solid/preload");
 
 export const runEmbeddedHost = async (
   source: string,

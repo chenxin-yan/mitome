@@ -21,6 +21,11 @@ const useFlag = Flag.string("use").pipe(
 );
 const promptArgument = Argument.string("prompt").pipe(
   Argument.withDescription("Prompt to send to the Agent"),
+  Argument.optional,
+);
+const printFlag = Flag.boolean("print").pipe(
+  Flag.withAlias("p"),
+  Flag.withDescription("Force one-shot output"),
 );
 const packageArgument = Argument.string("package").pipe(
   Argument.withDescription("Extension package to add or remove"),
@@ -71,6 +76,7 @@ const authCommand = Command.make("auth", {}, () =>
 const command = Command.make(
   "mitome",
   {
+    print: printFlag,
     prompt: promptArgument,
     use: useFlag,
   },

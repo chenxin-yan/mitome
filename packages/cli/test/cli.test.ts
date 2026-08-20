@@ -167,6 +167,31 @@ const writePackageVersion = async (
   await writeFile(join(directory, "package.json"), JSON.stringify({ name, version }));
 };
 
+const installTui = async (current: Fixture): Promise<void> => {
+  const nodeModules = join(dirname(current.definition), "node_modules");
+  const tui = join(nodeModules, "@mitome", "tui");
+  const solid = join(nodeModules, "@opentui", "solid");
+  await mkdir(tui, { recursive: true });
+  await mkdir(solid, { recursive: true });
+  await writeFile(
+    join(tui, "package.json"),
+    JSON.stringify({ name: "@mitome/tui", type: "module", exports: "./index.js" }),
+  );
+  await writeFile(
+    join(tui, "index.js"),
+    "export const runShell = (prompt) => process.stdout.write(`TUI_PROMPT ${JSON.stringify(prompt)}\\n`);\n",
+  );
+  await writeFile(
+    join(solid, "package.json"),
+    JSON.stringify({
+      name: "@opentui/solid",
+      type: "module",
+      exports: { "./preload": "./preload.js" },
+    }),
+  );
+  await writeFile(join(solid, "preload.js"), "");
+};
+
 const installFixture = async (): Promise<Fixture> => {
   const current = await scaffold("mitome-install-");
   const definitionDirectory = dirname(current.definition);
@@ -264,6 +289,23 @@ const output = async (child: ReturnType<typeof spawn>) => {
   return { stdout, stderr, exitCode };
 };
 
+const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
+
+const ptyOutput = (
+  args: ReadonlyArray<string>,
+  current: Fixture,
+  terminal = "ghostty",
+): Promise<Awaited<ReturnType<typeof output>>> => {
+  const command = [binary, ...args].map(shellQuote).join(" ");
+  const child = spawnChild("/usr/bin/script", ["-qec", command, "/dev/null"], {
+    cwd: current.root,
+    env: { ...current.env, TERM_PROGRAM: terminal },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdin.end();
+  return output(child);
+};
+
 type StdoutReader = AsyncIterator<string>;
 
 const rest = async (reader: StdoutReader) => {
@@ -310,6 +352,58 @@ describe("compiled mitome", () => {
       stdout: "1\n",
       stderr: "",
     });
+  });
+
+  test("keeps bare invocation unavailable without the TUI package", async () => {
+    const current = await fixture();
+
+    const result = await output(spawn("", ["--use", current.definition], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Missing argument prompt");
+  });
+
+  test("opens a present TUI in a supported terminal with optional prompt staging", async () => {
+    const current = await fixture();
+    await installTui(current);
+
+    const prompted = await ptyOutput(["hello", "--use", current.definition], current);
+    expect(prompted).toMatchObject({ exitCode: 0 });
+    expect(prompted.stdout).toContain('TUI_PROMPT "hello"');
+    expect(prompted.stdout).not.toContain("first second");
+
+    const bare = await ptyOutput(["--use", current.definition], current);
+    expect(bare).toMatchObject({ exitCode: 0 });
+    expect(bare.stdout).toContain('TUI_PROMPT ""');
+  });
+
+  test("forces one-shot output for --print and non-TTY stdout when the TUI is present", async () => {
+    const current = await fixture();
+    await installTui(current);
+
+    for (const flag of ["-p", "--print"]) {
+      const printed = await ptyOutput([flag, "hello", "--use", current.definition], current);
+      expect(printed).toMatchObject({ exitCode: 0 });
+      expect(printed.stdout).toContain("first second");
+      expect(printed.stdout).not.toContain("TUI_PROMPT");
+    }
+
+    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
+      exitCode: 0,
+      stdout: "first second\n",
+      stderr: "",
+    });
+  });
+
+  test("reports an unsupported terminal and falls back to one-shot output", async () => {
+    const current = await fixture();
+    await installTui(current);
+
+    const result = await ptyOutput(["hello", "--use", current.definition], current, "xterm");
+    expect(result).toMatchObject({ exitCode: 0 });
+    expect(result.stdout).toContain("currently supports Ghostty on Linux");
+    expect(result.stdout).toContain("falling back to one-shot output");
+    expect(result.stdout).toContain("first second");
+    expect(result.stdout).not.toContain("TUI_PROMPT");
   });
 
   test("loads the config env file in the Child Host without cwd leakage", async () => {

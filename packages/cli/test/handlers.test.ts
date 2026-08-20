@@ -12,6 +12,7 @@ import corePackage from "@mitome/core/package.json" with { type: "json" };
 vi.mock("../src/hosts/host.ts", () => ({ default: "" }));
 vi.mock("../src/hosts/auth-host.ts", () => ({ default: "" }));
 vi.mock("../src/hosts/extensions-host.ts", () => ({ default: "" }));
+vi.mock("../src/hosts/tui-host.ts", () => ({ default: "" }));
 
 import { ChildHost, type ProviderAuthentication } from "../src/child-host.ts";
 import { runAuth } from "../src/commands/auth.ts";
@@ -28,6 +29,7 @@ type PromptAnswer =
 
 type ChildHostCalls = {
   readonly runHost: Array<{ readonly path: string; readonly prompt: string }>;
+  readonly runTui: Array<{ readonly path: string; readonly prompt: string }>;
   readonly install: Array<string>;
   readonly removeDependency: Array<{ readonly path: string; readonly packageName: string }>;
   readonly inspect: Array<string>;
@@ -75,6 +77,7 @@ const fakeChildHost = (
 ) => {
   const calls: ChildHostCalls = {
     runHost: [],
+    runTui: [],
     install: [],
     removeDependency: [],
     inspect: [],
@@ -86,6 +89,11 @@ const fakeChildHost = (
       runHost: (path, prompt) =>
         Effect.sync(() => {
           calls.runHost.push({ path, prompt });
+          return options.runExitCode ?? 0;
+        }),
+      runTui: (path, prompt) =>
+        Effect.sync(() => {
+          calls.runTui.push({ path, prompt });
           return options.runExitCode ?? 0;
         }),
       install: (path) =>
@@ -189,7 +197,7 @@ describe("CLI handlers", () => {
       );
       const childHost = fakeChildHost({ runExitCode: 23 });
       const exit = yield* Effect.exit(
-        runPrompt({ prompt: "hello", use: Option.none() }).pipe(
+        runPrompt({ print: false, prompt: Option.some("hello"), use: Option.none() }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
@@ -206,7 +214,7 @@ describe("CLI handlers", () => {
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
       const childHost = fakeChildHost({ installRuntime: true });
       const exit = yield* Effect.exit(
-        runPrompt({ prompt: "hello", use: Option.some(path) }).pipe(
+        runPrompt({ print: false, prompt: Option.some("hello"), use: Option.some(path) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
@@ -224,7 +232,7 @@ describe("CLI handlers", () => {
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
       const childHost = fakeChildHost({ installExitCode: 17 });
       const exit = yield* Effect.exit(
-        runPrompt({ prompt: "hello", use: Option.some(path) }).pipe(
+        runPrompt({ print: false, prompt: Option.some("hello"), use: Option.some(path) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
@@ -263,7 +271,7 @@ describe("CLI handlers", () => {
         yield* Effect.promise(() => writeFile(packagePath, contents));
         const beforeErrors = (yield* TestConsole.errorLines).length;
         const exit = yield* Effect.exit(
-          runPrompt({ prompt: "hello", use: Option.some(path) }).pipe(
+          runPrompt({ print: false, prompt: Option.some("hello"), use: Option.some(path) }).pipe(
             Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
           ),
         );

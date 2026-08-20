@@ -66,6 +66,9 @@ const installedPackage = async (directory: string, name: string): Promise<string
   }
 };
 
+export const tuiInstalled = (path: string): Promise<boolean> =>
+  installedPackage(dirname(path), "@mitome/tui").then((packagePath) => packagePath !== undefined);
+
 const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)

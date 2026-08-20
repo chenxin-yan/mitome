@@ -1,7 +1,12 @@
 import { Console, Effect, Option } from "effect";
 import { ChildHost } from "../child-host.js";
-import { checkRuntime, definitionNeedsReconcile, definitionPath } from "../definition.js";
-import { attempt, type ExitCode } from "../support.js";
+import {
+  checkRuntime,
+  definitionNeedsReconcile,
+  definitionPath,
+  tuiInstalled,
+} from "../definition.js";
+import { attempt, fail, type ExitCode } from "../support.js";
 
 export const reconcileDefinition = Effect.fn("@mitome/cli/reconcileDefinition")(function* (
   path: string,
@@ -15,17 +20,35 @@ export const reconcileDefinition = Effect.fn("@mitome/cli/reconcileDefinition")(
 });
 
 export const runPrompt = Effect.fn("@mitome/cli/runPrompt")(function* ({
+  print,
   prompt,
   use,
 }: {
-  readonly prompt: string;
+  readonly print: boolean;
+  readonly prompt: Option.Option<string>;
   readonly use: Option.Option<string>;
 }) {
   const childHost = yield* ChildHost;
   const path = yield* attempt(() => definitionPath(use));
   const installExitCode = yield* reconcileDefinition(path);
   if (installExitCode !== 0) return installExitCode;
-  return yield* childHost.runHost(path, prompt);
+
+  const hasTui = yield* attempt(() => tuiInstalled(path));
+  const promptValue = Option.getOrUndefined(prompt);
+  if (!hasTui) {
+    if (promptValue === undefined) return yield* fail("Missing argument prompt");
+    return yield* childHost.runHost(path, promptValue);
+  }
+  if (print || process.stdout.isTTY !== true) {
+    return yield* childHost.runHost(path, promptValue ?? "");
+  }
+  if (process.platform !== "linux" || process.env.TERM_PROGRAM?.toLowerCase() !== "ghostty") {
+    yield* Console.error(
+      "@mitome/tui currently supports Ghostty on Linux; falling back to one-shot output.",
+    );
+    return yield* childHost.runHost(path, promptValue ?? "");
+  }
+  return yield* childHost.runTui(path, promptValue ?? "");
 });
 
 export const runInstall = Effect.fn("@mitome/cli/runInstall")(function* ({
