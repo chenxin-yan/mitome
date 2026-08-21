@@ -1,7 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Cause, Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
 import { AiError, LanguageModel, Prompt, Response } from "effect/unstable/ai";
-import { type AgentDefinition, createSession, makeProvider, TurnError } from "../../src/index.js";
+import {
+  AgentDefinitionError,
+  type AgentDefinition,
+  createSession,
+  defineExtension,
+  makeProvider,
+  TurnError,
+} from "../../src/index.js";
 import { makeDeterministicProvider, makeTestProvider } from "../support/provider.js";
 
 describe("createSession", () => {
@@ -16,6 +23,46 @@ describe("createSession", () => {
       cause: { name: "Error", message: "provider failed" },
     });
   });
+
+  it.effect("rejects provided Service tags absent from the resource Layer context", () =>
+    Effect.gen(function* () {
+      const ProvidedService = Context.Service<string>("ProvidedService");
+      const MissingService = Context.Service<string>("MissingService");
+      const resource = Layer.succeed(ProvidedService, "value");
+      const extension = defineExtension<
+        typeof resource,
+        readonly [],
+        readonly [typeof MissingService]
+      >({
+        name: "invalid-provider",
+        resource,
+        provides: [MissingService],
+      });
+      const dependentResource = Layer.effect(
+        Context.Service<number>("DependentService"),
+        Effect.as(MissingService, 1),
+      );
+      const dependent = defineExtension<typeof dependentResource, readonly [typeof extension]>({
+        name: "dependent",
+        dependencies: [extension],
+        resource: dependentResource,
+      });
+      const error = yield* Effect.flip(
+        createSession({
+          providers: [makeTestProvider(() => Stream.empty)],
+          model: "test/default",
+          extensions: [dependent],
+        }),
+      );
+
+      expect(error).toBeInstanceOf(AgentDefinitionError);
+      expect(error).toMatchObject({
+        issues: [
+          "Extension invalid-provider Provided Service MissingService is missing from its resource Layer",
+        ],
+      });
+    }),
+  );
 
   it.effect("streams one model Step before completion", () =>
     Effect.gen(function* () {

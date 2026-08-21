@@ -27,6 +27,7 @@ type ResourceErrorOf<Value> =
   Value extends Extension<infer _Resource, infer ResourceError, infer _Contributions>
     ? ResourceError
     : never;
+type ProvidesOf<Value> = Value extends Extension<any, any, any, infer Provides> ? Provides : never;
 
 declare const model: Provider<"test", readonly []>;
 
@@ -135,10 +136,91 @@ export type InferredMergedExtensionResource = Expect<
   Equal<ResourceOf<typeof mergedResourceExtension>, string | number>
 >;
 
-// @ts-expect-error Hooks may only require services supplied by the resource Layer.
+class SharedService extends Context.Service<SharedService, { readonly value: string }>()(
+  "@mitome/core/test/SharedService",
+) {}
+class PrivateService extends Context.Service<PrivateService, { readonly secret: string }>()(
+  "@mitome/core/test/PrivateService",
+) {}
+class DependentResource extends Context.Service<DependentResource, { readonly value: string }>()(
+  "@mitome/core/test/DependentResource",
+) {}
+
+const providingExtension = defineExtension({
+  name: "provider",
+  resource: Layer.mergeAll(
+    Layer.succeed(SharedService, { value: "shared" }),
+    Layer.succeed(PrivateService, { secret: "private" }),
+  ),
+  provides: [SharedService],
+});
+export type InferredProvidedServices = Expect<
+  Equal<ProvidesOf<typeof providingExtension>, readonly [typeof SharedService]>
+>;
+
+defineExtension({
+  name: "layer-dependent",
+  dependencies: [providingExtension],
+  resource: Layer.effect(
+    DependentResource,
+    Effect.map(SharedService, ({ value }) => ({ value })),
+  ),
+  hooks: { sessionStart: Effect.asVoid(SharedService) },
+});
+
+const sharedDependentTool = Tool.make("shared-dependent", { dependencies: [SharedService] });
+defineExtension({
+  name: "tool-dependent",
+  dependencies: [providingExtension],
+  toolkit: Toolkit.make(sharedDependentTool),
+  handlers: { "shared-dependent": () => Effect.map(SharedService, ({ value }) => value) },
+  hooks: { sessionStart: Effect.asVoid(SharedService) },
+});
+
+defineExtension({
+  name: "private-dependent",
+  dependencies: [providingExtension],
+  // @ts-expect-error PrivateService is not published by the dependency.
+  hooks: { sessionStart: Effect.asVoid(PrivateService) },
+});
+
+const widenedDependencies: ReadonlyArray<AnyExtension> = [providingExtension];
+defineExtension({
+  name: "widened-dependent",
+  dependencies: widenedDependencies,
+  // @ts-expect-error Widened dependency arrays cannot prove service coverage.
+  hooks: { sessionStart: Effect.asVoid(SharedService) },
+});
+
+// @ts-expect-error provides may only select outputs from the Extension resource Layer.
+defineExtension({
+  name: "invalid-provider",
+  resource: Layer.succeed(SharedService, { value: "shared" }),
+  provides: [PrivateService],
+});
+
+const IdenticalServiceA = Context.Service<string>("@mitome/core/test/IdenticalServiceA");
+const IdenticalServiceB = Context.Service<string>("@mitome/core/test/IdenticalServiceB");
+const identicalServiceLayer = Layer.succeed(IdenticalServiceA, "value");
+// Function-style tags with the same identifier type are structurally identical;
+// Session construction validates their distinct runtime keys.
+const structurallyIdenticalProvider = defineExtension<
+  typeof identicalServiceLayer,
+  readonly [],
+  readonly [typeof IdenticalServiceB]
+>({
+  name: "structurally-identical-provider",
+  resource: identicalServiceLayer,
+  provides: [IdenticalServiceB],
+});
+export type InferredStructurallyIdenticalProvides = Expect<
+  Equal<ProvidesOf<typeof structurallyIdenticalProvider>, readonly [typeof IdenticalServiceB]>
+>;
+
 defineExtension({
   name: "missing-resource",
   resource: Layer.succeed(ExtensionResource, "value"),
+  // @ts-expect-error Hooks may only require services supplied by the resource Layer.
   hooks: { sessionStart: Effect.asVoid(Effect.service(MissingExtensionResource)) },
 });
 

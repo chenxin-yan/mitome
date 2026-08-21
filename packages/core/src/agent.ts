@@ -1,4 +1,4 @@
-import { Effect, Predicate, Schema } from "effect";
+import { Context, Effect, Predicate, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 import type { AnyExtension, ToolInputValidator, ToolResultValidator } from "./extension.js";
 import { getProviderMetadata, parseQualifiedModelId } from "./provider.js";
@@ -157,6 +157,18 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
   // Invalid graphs still validate every distinct value so one compilation reports
   // graph and contribution problems together. Successful graphs compile in resolved order.
   for (const extension of graphIssues.length === 0 ? extensions : encountered) {
+    if (extension.provides !== undefined) {
+      if (!Array.isArray(extension.provides)) {
+        issues.push(`Extension ${extension.name} Provides must be an array`);
+      } else {
+        for (const [index, service] of extension.provides.entries()) {
+          if (!Context.isKey(service)) {
+            issues.push(`Extension ${extension.name} Provides[${index}] must be a Context Key`);
+          }
+        }
+      }
+    }
+
     if (extension.instructions !== undefined && typeof extension.instructions !== "string") {
       issues.push(`Extension ${extension.name} Instructions must be a string`);
     }

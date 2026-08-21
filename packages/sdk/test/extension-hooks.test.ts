@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { Effect, Stream } from "effect";
+import { Context, Effect, Layer, Stream } from "effect";
 import { Response } from "effect/unstable/ai";
 import { defineAgent, defineExtension, tool, withSession, type Extension } from "../src/index.js";
 import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
@@ -30,6 +30,86 @@ describe("@mitome/sdk Extension Hooks", () => {
 
     expect(log).toEqual(["shared", "first", "second", "root"]);
     expect(instructions).toBe("shared\n\nfirst\n\nsecond\n\nroot");
+  });
+
+  test("shares one published service instance and releases dependents before it", async () => {
+    class Shared extends Context.Service<Shared, { count: number }>()("test/Shared") {}
+    class First extends Context.Service<First, { readonly count: number }>()("test/First") {}
+    class Second extends Context.Service<Second, { readonly count: number }>()("test/Second") {}
+
+    const log: Array<string> = [];
+    const observed: Array<{ count: number }> = [];
+    const shared: Extension<
+      Shared,
+      never,
+      Readonly<Record<never, never>>,
+      readonly [typeof Shared]
+    > = {
+      name: "shared",
+      provides: [Shared],
+      resource: Layer.effect(
+        Shared,
+        Effect.acquireRelease(
+          Effect.sync(() => ({ count: 0 })),
+          () => Effect.sync(() => void log.push("dispose:shared")),
+        ),
+      ),
+    };
+    const dependent = <Service extends First | Second>(
+      name: string,
+      service: Context.Service<Service, { readonly count: number }>,
+    ): Extension<Service> => ({
+      name,
+      dependencies: [shared],
+      resource: Layer.effect(
+        service,
+        Effect.acquireRelease(
+          Effect.map(Shared, (instance) => {
+            observed.push(instance);
+            instance.count += 1;
+            return { count: instance.count };
+          }),
+          () => Effect.sync(() => void log.push(`dispose:${name}`)),
+        ),
+      ),
+    });
+    const first = dependent("first", First);
+    const second = dependent("second", Second);
+
+    await withSession(
+      defineAgent({ providers: [textModel()], model: "test/default", extensions: [first, second] }),
+      async () => {},
+    );
+
+    expect(observed).toHaveLength(2);
+    expect(observed[0]).toBe(observed[1]);
+    expect(observed[0]?.count).toBe(2);
+    expect(log).toEqual(["dispose:second", "dispose:first", "dispose:shared"]);
+  });
+
+  test("keeps unpublished dependency services private at runtime", async () => {
+    class Public extends Context.Service<Public, { readonly value: string }>()("test/Public") {}
+    class Private extends Context.Service<Private, { readonly value: string }>()("test/Private") {}
+    const dependency: Extension<Public | Private> = {
+      name: "dependency",
+      provides: [Public],
+      resource: Layer.merge(
+        Layer.succeed(Public, { value: "public" }),
+        Layer.succeed(Private, { value: "private" }),
+      ),
+    };
+    const dependent: Extension<Private> = {
+      name: "dependent",
+      dependencies: [dependency],
+      hooks: { sessionStart: Effect.asVoid(Private) },
+    };
+
+    await expect(
+      withSession(
+        defineAgent({ providers: [textModel()], model: "test/default", extensions: [dependent] }),
+        async () => {},
+      ),
+    ).rejects.toThrow("Service not found: test/Private");
   });
 
   test("defineExtension dependencies acquire dependency-first and dispose dependent-first", async () => {
