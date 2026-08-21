@@ -6,6 +6,7 @@ import cliPackage from "../package.json" with { type: "json" };
 import { ChildHost } from "./child-host.js";
 import { runAuth } from "./commands/auth.js";
 import { runAdd, runRemove } from "./commands/dependencies.js";
+import { runExtensionList } from "./commands/extensions.js";
 import { runInit } from "./commands/init.js";
 import { runInstall, runPrompt } from "./commands/run.js";
 import { Prompter } from "./prompter.js";
@@ -39,6 +40,15 @@ const removeCommand = Command.make(
   { ...definitionCommandConfig, package: packageArgument },
   (options) => useExitCode(runRemove(options)),
 ).pipe(Command.withDescription("Remove an Extension from the Agent Definition"));
+const extensionListCommand = Command.make("list", definitionCommandConfig, (options) =>
+  useExitCode(runExtensionList(options)),
+).pipe(Command.withDescription("List resolved Extensions"));
+const extensionCommand = Command.make("ext", {}, () =>
+  fail("Usage: mitome ext list [--use <path>]"),
+).pipe(
+  Command.withDescription("Inspect resolved Extensions"),
+  Command.withSubcommands([extensionListCommand]),
+);
 const installCommand = Command.make("install", definitionCommandConfig, (options) =>
   useExitCode(runInstall(options)),
 ).pipe(Command.withDescription("Install Agent Definition dependencies"));
@@ -67,7 +77,14 @@ const command = Command.make(
   (options) => useExitCode(runPrompt(options)),
 ).pipe(
   Command.withDescription("Run an Agent Definition"),
-  Command.withSubcommands([addCommand, removeCommand, installCommand, initCommand, authCommand]),
+  Command.withSubcommands([
+    addCommand,
+    removeCommand,
+    extensionCommand,
+    installCommand,
+    initCommand,
+    authCommand,
+  ]),
 );
 
 export const runCli = Command.runWith(command, { version: cliPackage.version });

@@ -11,6 +11,7 @@ import corePackage from "@mitome/core/package.json" with { type: "json" };
 // Vitest cannot parse Bun's `with { type: "text" }` imports in child-host.ts.
 vi.mock("../src/hosts/host.ts", () => ({ default: "" }));
 vi.mock("../src/hosts/auth-host.ts", () => ({ default: "" }));
+vi.mock("../src/hosts/extensions-host.ts", () => ({ default: "" }));
 
 import { ChildHost, type ProviderAuthentication } from "../src/child-host.ts";
 import { runAuth } from "../src/commands/auth.ts";
@@ -106,6 +107,7 @@ const fakeChildHost = (
           return 0;
         }),
       listExports: () => Effect.succeed([]),
+      inspectExtensions: () => Effect.succeed({ exitCode: 0, extensions: [] }),
       inspectProviderAuthentication: (path) =>
         Effect.sync(() => {
           calls.inspect.push(path);

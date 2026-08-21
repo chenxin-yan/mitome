@@ -16,15 +16,36 @@ import definitionHost from "./hosts/host.ts" with { type: "text" };
 // @ts-expect-error Bun text import (see above).
 // oxlint-disable-next-line import/default
 import authHost from "./hosts/auth-host.ts" with { type: "text" };
+// @ts-expect-error Bun text import (see above).
+// oxlint-disable-next-line import/default
+import extensionsHost from "./hosts/extensions-host.ts" with { type: "text" };
 
 const hostSource: string = definitionHost;
 const authHostSource: string = authHost;
+const extensionsHostSource: string = extensionsHost;
 // process.execPath is the compiled mitome binary; BUN_BE_BUN re-executes it as plain Bun.
 const childEnv = { ...process.env, BUN_BE_BUN: "1" };
+
+const configEnvFlag = (): string => {
+  const directory = configDirectory();
+  return directory === undefined ? "--no-env-file" : `--env-file=${join(directory, ".env")}`;
+};
 
 export interface ProviderAuthentication {
   readonly id: string;
   readonly credential: CredentialDescriptor;
+}
+
+export interface ExtensionListItem {
+  readonly name: string;
+  readonly version: string;
+  readonly direct: boolean;
+  readonly dependents: ReadonlyArray<string>;
+}
+
+export interface ExtensionListResult {
+  readonly exitCode: ExitCode;
+  readonly extensions: ReadonlyArray<ExtensionListItem>;
 }
 
 export class ChildHost extends Context.Service<
@@ -40,6 +61,7 @@ export class ChildHost extends Context.Service<
       packageName: string,
       directory: string,
     ) => Effect.Effect<ReadonlyArray<string>, CliError>;
+    readonly inspectExtensions: (path: string) => Effect.Effect<ExtensionListResult, CliError>;
     readonly inspectProviderAuthentication: (
       path: string,
     ) => Effect.Effect<ReadonlyArray<ProviderAuthentication>, CliError>;
@@ -57,6 +79,7 @@ export class ChildHost extends Context.Service<
       Effect.uninterruptible(attempt(() => removeDependency(path, packageName))),
     listExports: (packageName, directory) =>
       Effect.uninterruptible(attempt(() => listExports(packageName, directory))),
+    inspectExtensions: (path) => Effect.uninterruptible(attempt(() => inspectExtensions(path))),
     inspectProviderAuthentication: (path) =>
       Effect.uninterruptible(attempt(() => inspectProviderAuthentication(path))),
     runOAuthAuth: (path, providerId, command) =>
@@ -105,25 +128,64 @@ const exportProbeSource = [
   "process.exit(0);",
 ].join("\n");
 
+interface JsonHostOptions {
+  readonly stderr: "ignore" | "inherit";
+  readonly timeout?: number;
+}
+
+const runJsonHost = async (
+  prefix: string,
+  command: ReadonlyArray<string>,
+  options: JsonHostOptions,
+): Promise<{ readonly exitCode: ExitCode; readonly output: string }> => {
+  const directory = await mkdtemp(join(tmpdir(), prefix));
+  const output = join(directory, "output.json");
+  try {
+    const child = Bun.spawn([...command, output], {
+      env: childEnv,
+      stdout: "ignore",
+      stderr: options.stderr,
+      ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
+    });
+    const exitCode = await child.exited;
+    return {
+      exitCode,
+      output: exitCode === 0 ? await readFile(output, "utf8") : "",
+    };
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+};
+
 const listExports = async (
   packageName: string,
   directory: string,
 ): Promise<ReadonlyArray<string>> => {
   const moduleUrl = pathToFileURL(Bun.resolveSync(packageName, directory)).href;
-  const outputDirectory = await mkdtemp(join(tmpdir(), "mitome-exports-"));
   // The names travel via file rather than stdout: importing the package may print.
-  const output = join(outputDirectory, "exports.json");
-  try {
-    const child = Bun.spawn(
-      [process.execPath, "--no-env-file", "--eval", exportProbeSource, moduleUrl, output],
-      { env: childEnv, stdout: "ignore", stderr: "ignore", timeout: 5000 },
-    );
-    if ((await child.exited) !== 0) throw new Error(`Could not inspect ${packageName} exports.`);
-    // The probe script two lines up is our own code; its output needs no schema validation.
-    return JSON.parse(await readFile(output, "utf8")) as ReadonlyArray<string>;
-  } finally {
-    await rm(outputDirectory, { recursive: true, force: true });
-  }
+  const result = await runJsonHost(
+    "mitome-exports-",
+    [process.execPath, "--no-env-file", "--eval", exportProbeSource, moduleUrl],
+    { stderr: "ignore", timeout: 5000 },
+  );
+  if (result.exitCode !== 0) throw new Error(`Could not inspect ${packageName} exports.`);
+  // The probe script above is our own code; its output needs no schema validation.
+  return JSON.parse(result.output) as ReadonlyArray<string>;
+};
+
+const inspectExtensions = async (path: string): Promise<ExtensionListResult> => {
+  const result = await runJsonHost(
+    "mitome-extensions-",
+    [process.execPath, configEnvFlag(), "--eval", extensionsHostSource, path],
+    // Importing and compiling an Agent Definition may take substantially longer than an export probe.
+    { stderr: "inherit", timeout: 30_000 },
+  );
+  if (result.exitCode !== 0) return { exitCode: result.exitCode, extensions: [] };
+  return {
+    exitCode: result.exitCode,
+    // The embedded host writes this private file; no untrusted input crosses the boundary.
+    extensions: JSON.parse(result.output) as ReadonlyArray<ExtensionListItem>,
+  };
 };
 
 const runHost = (path: string, prompt: string): Promise<ExitCode> =>
@@ -135,14 +197,11 @@ export const runEmbeddedHost = async (
   prompt: string,
   preload?: string,
 ): Promise<ExitCode> => {
-  const directory = configDirectory();
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.
-  const envFlag =
-    directory === undefined ? "--no-env-file" : `--env-file=${join(directory, ".env")}`;
   const preloadArgs = preload === undefined ? [] : ["--preload", preload];
   const child = Bun.spawn(
-    [process.execPath, envFlag, ...preloadArgs, "--eval", source, path, prompt],
+    [process.execPath, configEnvFlag(), ...preloadArgs, "--eval", source, path, prompt],
     {
       // Bare preload specifiers (e.g. @opentui/solid/preload) resolve from the
       // child's cwd, and compiled binaries cannot resolve subpath exports
@@ -166,31 +225,21 @@ export const runEmbeddedHost = async (
 const inspectProviderAuthentication = async (
   path: string,
 ): Promise<ReadonlyArray<ProviderAuthentication>> => {
-  const directory = await mkdtemp(join(tmpdir(), "mitome-auth-"));
   // The descriptor travels via file rather than stdout: importing the Agent Definition
   // may print, and stdout stays ignored so nothing leaks into the prompt flow.
-  const output = join(directory, "credential.json");
-  try {
-    const child = Bun.spawn(
-      [process.execPath, "--no-env-file", "--eval", authHostSource, path, output],
-      {
-        env: childEnv,
-        stdout: "ignore",
-        stderr: "inherit",
-      },
-    );
-    if ((await child.exited) !== 0)
-      throw new Error("Could not inspect Agent Definition authentication.");
-    const authentication = Schema.decodeResult(ProviderAuthenticationsFromJson, {
-      onExcessProperty: "error",
-    })(await readFile(output, "utf8"));
-    if (Result.isFailure(authentication)) {
-      throw new Error("Agent Definition returned invalid Provider authentication metadata.");
-    }
-    return authentication.success;
-  } finally {
-    await rm(directory, { recursive: true, force: true });
+  const result = await runJsonHost(
+    "mitome-auth-",
+    [process.execPath, "--no-env-file", "--eval", authHostSource, path],
+    { stderr: "inherit" },
+  );
+  if (result.exitCode !== 0) throw new Error("Could not inspect Agent Definition authentication.");
+  const authentication = Schema.decodeResult(ProviderAuthenticationsFromJson, {
+    onExcessProperty: "error",
+  })(result.output);
+  if (Result.isFailure(authentication)) {
+    throw new Error("Agent Definition returned invalid Provider authentication metadata.");
   }
+  return authentication.success;
 };
 
 const runOAuthAuth = async (

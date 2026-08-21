@@ -87,6 +87,38 @@ const provider = makeProvider("test", [], undefined, () => Layer.succeed(Languag
 export default { providers: [provider], model: "test/default", extensions: [] };
 `;
 
+const extensionListDefinitionSource = (invalid = false): string => `
+import { Layer } from "effect";
+import { LanguageModel } from "effect/unstable/ai";
+import { makeProvider } from "@mitome/core";
+
+const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {}));
+const shared = { name: "fixture-shared" };
+const first = { name: "fixture-first", dependencies: [shared] };
+const second = { name: "fixture-second", dependencies: [shared] };
+const root = { name: "fixture-root", dependencies: [second] };
+${invalid ? 'const cycle = { name: "fixture-cycle", instructions: 42 }; cycle.dependencies = [cycle];' : ""}
+export default {
+  providers: [provider],
+  model: "test/default",
+  extensions: ${invalid ? "[first, cycle]" : "[first, second, root]"},
+};
+`;
+
+const persistentExtensionListDefinitionSource = (): string => `
+import { Layer } from "effect";
+import { LanguageModel } from "effect/unstable/ai";
+import { makeProvider } from "@mitome/core";
+
+setInterval(() => {}, 60_000);
+const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {}));
+export default {
+  providers: [provider],
+  model: "test/default",
+  extensions: [{ name: process.env.MITOME_EXTENSION_NAME ?? "missing-env" }],
+};
+`;
+
 type Fixture = {
   readonly root: string;
   readonly definition: string;
@@ -123,6 +155,16 @@ const fixture = async (source = definitionSource("first")): Promise<Fixture> => 
   await cp(join(coreDir, "package.json"), join(core, "package.json"));
   await symlink(effectDir, join(nodeModules, "effect"), "dir");
   return current;
+};
+
+const writePackageVersion = async (
+  current: Fixture,
+  name: string,
+  version: string,
+): Promise<void> => {
+  const directory = join(dirname(current.definition), "node_modules", name);
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, "package.json"), JSON.stringify({ name, version }));
 };
 
 const installFixture = async (): Promise<Fixture> => {
@@ -563,6 +605,49 @@ describe("compiled mitome", () => {
     expect(result.stderr).toContain("Agent Definition Providers must be an array");
     expect(result.stderr).toContain("Agent Definition Model must be a string");
     expect(result.stderr).toContain("Agent Definition Extensions must be an array");
+  });
+
+  test("lists Extensions in compiled order with direct and dependency provenance", async () => {
+    const current = await fixture(extensionListDefinitionSource());
+    await writePackageVersion(current, "fixture-shared", "1.2.3");
+    await writePackageVersion(current, "fixture-first", "2.0.0");
+    await writePackageVersion(current, "fixture-second", "3.1.0");
+
+    expect(await output(spawn("", ["ext", "list", "--use", current.definition], current))).toEqual({
+      exitCode: 0,
+      stdout: [
+        "fixture-shared\t1.2.3\tdependency of fixture-first, fixture-second",
+        "fixture-first\t2.0.0\tdirect",
+        "fixture-second\t3.1.0\tdirect",
+        "fixture-root\tunknown\tdirect",
+        "",
+      ].join("\n"),
+      stderr: "",
+    });
+  });
+
+  test("reports compile issues instead of a partial Extension list", async () => {
+    const current = await fixture(extensionListDefinitionSource(true));
+
+    const result = await output(spawn("", ["ext", "list", "--use", current.definition], current));
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("Extension dependency cycle: fixture-cycle -> fixture-cycle");
+    expect(result.stderr).toContain("Extension fixture-cycle Instructions must be a string");
+  });
+
+  test("loads config env while inspecting and exits despite active handles", async () => {
+    const current = await fixture(persistentExtensionListDefinitionSource());
+    const config = join(current.env.XDG_CONFIG_HOME, "mitome");
+    await mkdir(config, { recursive: true });
+    await writeFile(join(config, ".env"), "MITOME_EXTENSION_NAME=config-extension\n");
+
+    expect(await output(spawn("", ["ext", "list", "--use", current.definition], current))).toEqual({
+      exitCode: 0,
+      stdout: "config-extension\tunknown\tdirect\n",
+      stderr: "",
+    });
   });
 
   test("runs one Turn end to end", async () => {

@@ -9,6 +9,7 @@ import cliPackage from "../package.json" with { type: "json" };
 // Vitest cannot parse Bun's `with { type: "text" }` imports in child-host.ts.
 vi.mock("../src/hosts/host.ts", () => ({ default: "" }));
 vi.mock("../src/hosts/auth-host.ts", () => ({ default: "" }));
+vi.mock("../src/hosts/extensions-host.ts", () => ({ default: "" }));
 
 import { ChildHost } from "../src/child-host.ts";
 import { runCli } from "../src/index.ts";
@@ -24,6 +25,7 @@ const services = Layer.mergeAll(
     install: () => unused,
     removeDependency: () => unused,
     listExports: () => unused,
+    inspectExtensions: () => unused,
     inspectProviderAuthentication: () => unused,
     runOAuthAuth: () => unused,
   }),
