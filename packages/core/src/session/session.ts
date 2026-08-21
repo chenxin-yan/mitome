@@ -138,6 +138,10 @@ const createSessionImpl: (
                         hookTurnError("Turn end Hook failed"),
                         Effect.flatMap(() => {
                           const { type: _type, history: nextHistory, ...finish } = event;
+                          // Commit the turn in-memory before persisting: a failed save surfaces
+                          // StoreError without un-committing the turn, so a retry never reruns the
+                          // model or turn-end hook side effects against stale history.
+                          history = nextHistory;
                           const persist =
                             sessionOptions.store === undefined
                               ? Effect.void
@@ -149,10 +153,7 @@ const createSessionImpl: (
                                   }),
                                 );
                           return persist.pipe(
-                            Effect.map(() => {
-                              history = nextHistory;
-                              return { type: "response-complete", ...finish } as const;
-                            }),
+                            Effect.map(() => ({ type: "response-complete", ...finish }) as const),
                           );
                         }),
                       );

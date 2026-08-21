@@ -4,6 +4,7 @@ import { Response } from "effect/unstable/ai";
 import {
   defineAgent,
   makeMemoryTranscriptStore,
+  StoreError,
   TranscriptSchemaVersion,
   TurnError,
   withSession,
@@ -115,6 +116,34 @@ test("a hand-constructed Transcript seeds a Session", async () => {
 
   expect(roles).toEqual(["user", "user"]);
   expect(transcript.parentTranscriptId).toBe("synthetic");
+});
+
+test("a failed save surfaces StoreError but keeps the completed turn committed", async () => {
+  const store = makeMemoryTranscriptStore();
+  const failing = {
+    ...store,
+    save: () => Effect.fail(new StoreError({ message: "disk full" })),
+  };
+  const roles: Array<ReadonlyArray<string>> = [];
+  const definition = definitionWith(({ prompt }) => {
+    roles.push(prompt.content.map((message) => message.role));
+    return textResponse("done");
+  });
+
+  await withSession(
+    definition,
+    async (session) => {
+      await expect(Array.fromAsync(session.prompt("first"))).rejects.toBeInstanceOf(StoreError);
+      expect(session.transcript().messages.map((message) => message.role)).toEqual([
+        "user",
+        "assistant",
+      ]);
+      await expect(Array.fromAsync(session.prompt("second"))).rejects.toBeInstanceOf(StoreError);
+    },
+    { store: failing },
+  );
+
+  expect(roles).toEqual([["user"], ["user", "assistant", "user"]]);
 });
 
 test("failed and interrupted Turns leave stored Transcripts unchanged", async () => {
