@@ -2,6 +2,7 @@ import { Layer } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
 import { makeProvider } from "@mitome/core";
 import { defineAgent, withSession } from "../src/index.js";
+import type { TranscriptStore } from "../src/index.js";
 
 const layer = Layer.succeed(LanguageModel.LanguageModel, {} as LanguageModel.Service);
 const first = makeProvider("first", ["known"] as const, undefined, () => layer);
@@ -18,3 +19,12 @@ void withSession(definition, async (session) => {
   // @ts-expect-error Promise SDK selections must use a registered Provider prefix.
   session.prompt("invalid", { model: "missing/model" });
 });
+
+declare const store: TranscriptStore;
+const transcript = { schemaVersion: 1 as const, id: "seed", messages: [] };
+void withSession(definition, async () => undefined, { store, resume: "seed" });
+void withSession(definition, async () => undefined, { transcript });
+// @ts-expect-error resume needs a TranscriptStore from which to load the seed.
+void withSession(definition, async () => undefined, { resume: "seed" });
+// @ts-expect-error direct Transcript seeds and stored resume identities are mutually exclusive.
+void withSession(definition, async () => undefined, { store, resume: "seed", transcript });

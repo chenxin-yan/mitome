@@ -1,6 +1,8 @@
 import { Encoding, Result, Schema } from "effect";
 import { Prompt } from "effect/unstable/ai";
 
+export type TranscriptId = string;
+
 export const TranscriptSchemaVersion = 1 as const;
 
 const options = Schema.optional(Prompt.ProviderOptions);
@@ -109,8 +111,8 @@ export type TranscriptMessage = typeof TranscriptMessageSchema.Type;
 export type Transcript = typeof TranscriptSchema.Type;
 
 export interface MakeTranscriptOptions {
-  readonly id: string;
-  readonly parentTranscriptId?: string | undefined;
+  readonly id: TranscriptId;
+  readonly parentTranscriptId?: TranscriptId | undefined;
   readonly messages: ReadonlyArray<Prompt.Message>;
 }
 

@@ -5,6 +5,9 @@ import type {
   AnyProvider,
   PromptOptions,
   Session as CoreSession,
+  Transcript,
+  TranscriptId,
+  TranscriptStore,
   TurnEvent as CoreTurnEvent,
 } from "@mitome/core";
 
@@ -22,7 +25,20 @@ export interface Session<
   /** Treat the returned iterable as single-use; requesting another iterator re-runs the Turn. */
   readonly prompt: (text: string, options?: PromptOptions<Providers>) => AsyncIterable<TurnEvent>;
   readonly history: CoreSession<Providers>["history"];
+  readonly transcript: CoreSession<Providers>["transcript"];
 }
+
+export type SessionOptions =
+  | {
+      readonly store?: TranscriptStore | undefined;
+      readonly transcript?: Transcript | undefined;
+      readonly resume?: never;
+    }
+  | {
+      readonly store: TranscriptStore;
+      readonly resume: TranscriptId;
+      readonly transcript?: never;
+    };
 
 class CallbackFailure {
   constructor(readonly cause: unknown) {}
@@ -84,17 +100,24 @@ const toAsyncIterable = (
 export const withSession = <const Definition extends AgentDefinition, A>(
   definition: Definition,
   use: (session: Session<Definition["providers"]>) => Promise<A>,
+  options: SessionOptions = {},
 ): Promise<A> =>
   Effect.runPromiseExit(
     Effect.scoped(
       Effect.gen(function* () {
-        const session = yield* createSession(definition);
+        const transcript =
+          options.resume === undefined
+            ? options.transcript
+            : yield* options.store.load(options.resume);
+        const session = yield* createSession(definition, { store: options.store, transcript });
         const scope = yield* Effect.scope;
         return yield* Effect.tryPromise({
           try: () =>
             use({
-              prompt: (text, options) => toAsyncIterable(session.prompt(text, options), scope),
+              prompt: (text, promptOptions) =>
+                toAsyncIterable(session.prompt(text, promptOptions), scope),
               history: session.history,
+              transcript: session.transcript,
             }),
           catch: (error) => new CallbackFailure(error),
         });

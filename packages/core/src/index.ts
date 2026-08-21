@@ -25,7 +25,7 @@ export {
 } from "./session/errors.js";
 export type { ToolExecutionDenied, TurnEvent } from "./session/events.js";
 export { createSession } from "./session/session.js";
-export type { PromptOptions, Session } from "./session/session.js";
+export type { CreateSessionOptions, PromptOptions, Session } from "./session/session.js";
 export {
   makeTranscript,
   promptFromTranscript,
@@ -33,4 +33,22 @@ export {
   TranscriptSchema,
   TranscriptSchemaVersion,
 } from "./transcript.js";
-export type { MakeTranscriptOptions, Transcript, TranscriptMessage } from "./transcript.js";
+export type {
+  MakeTranscriptOptions,
+  Transcript,
+  TranscriptId,
+  TranscriptMessage,
+} from "./transcript.js";
+export {
+  makeMemoryTranscriptStore,
+  StoreError,
+  TranscriptEventRecordSchema,
+  TranscriptEventRecordVersion,
+  TranscriptNotFound,
+  TranscriptSummarySchema,
+} from "./transcript-store.js";
+export type {
+  TranscriptEventRecord,
+  TranscriptStore,
+  TranscriptSummary,
+} from "./transcript-store.js";

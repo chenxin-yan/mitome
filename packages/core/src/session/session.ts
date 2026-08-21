@@ -11,6 +11,9 @@ import { beginHookPhase } from "./hooks.js";
 import { makeModelResolver } from "./model-resolver.js";
 import { makeStepRunner } from "./step-runner.js";
 import { makeToolExecution } from "./tool-execution.js";
+import { makeTranscript, promptFromTranscript } from "../transcript.js";
+import type { Transcript } from "../transcript.js";
+import type { StoreError, TranscriptStore } from "../transcript-store.js";
 
 type ProvidersOf<Definition extends AgentDefinition> =
   Definition extends AgentDefinition<infer Providers, any, any> ? Providers : never;
@@ -19,21 +22,32 @@ export interface PromptOptions<Providers extends ReadonlyArray<AnyProvider>> {
   readonly model: QualifiedModelId<Providers[number]>;
 }
 
+export interface CreateSessionOptions {
+  /**
+   * Seeds the Session's committed history. If it has no system message, the Agent's compiled
+   * instructions are intentionally not injected.
+   */
+  readonly transcript?: Transcript | undefined;
+  readonly store?: TranscriptStore | undefined;
+}
+
 export interface Session<
   Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
 > {
   readonly prompt: (
     text: string,
     options?: PromptOptions<Providers>,
-  ) => Stream.Stream<TurnEvent, SessionBusyError | SessionReleasedError | TurnError>;
+  ) => Stream.Stream<TurnEvent, SessionBusyError | SessionReleasedError | StoreError | TurnError>;
   readonly history: () => ReadonlyArray<Prompt.Message>;
+  readonly transcript: () => Transcript;
 }
 
 const createSessionImpl: (
   definition: AgentDefinition,
+  options?: CreateSessionOptions,
 ) => Effect.Effect<Session, AgentDefinitionError | TurnError, Scope.Scope> = Effect.fn(
   "@mitome/core/createSession",
-)(function* (definition) {
+)(function* (definition, sessionOptions = {}) {
   const compiled = yield* compileAgentDefinition(definition);
 
   const sessionScope = yield* Effect.scope;
@@ -74,9 +88,14 @@ const createSessionImpl: (
   const toolExecution = yield* makeToolExecution(compiled, extensionContexts);
   const modelResolver = makeModelResolver(compiled.providers, sessionScope);
   const stepRunner = makeStepRunner(compiled, extensionContexts, toolExecution);
-  let history = Prompt.make(
-    compiled.instructions === "" ? [] : [{ role: "system", content: compiled.instructions }],
-  );
+  const transcriptId = crypto.randomUUID();
+  const parentTranscriptId = sessionOptions.transcript?.id;
+  let history =
+    sessionOptions.transcript === undefined
+      ? Prompt.make(
+          compiled.instructions === "" ? [] : [{ role: "system", content: compiled.instructions }],
+        )
+      : promptFromTranscript(sessionOptions.transcript);
   let isReleased = false;
   let isTurnActive = false;
 
@@ -99,15 +118,19 @@ const createSessionImpl: (
   yield* Effect.addFinalizer(() => sessionHooks.cleanup);
 
   return {
-    prompt: (text, options) =>
-      Stream.suspend<TurnEvent, SessionBusyError | SessionReleasedError | TurnError, never>(() => {
+    prompt: (text, promptOptions) =>
+      Stream.suspend<
+        TurnEvent,
+        SessionBusyError | SessionReleasedError | StoreError | TurnError,
+        never
+      >(() => {
         if (isReleased) {
           return Stream.fail(new SessionReleasedError({}));
         }
         if (isTurnActive) {
           return Stream.fail(new SessionBusyError({}));
         }
-        const qualifiedModelId = options?.model ?? definition.model;
+        const qualifiedModelId = promptOptions?.model ?? definition.model;
         isTurnActive = true;
         return Stream.unwrap(
           modelResolver.resolve(qualifiedModelId).pipe(
@@ -135,10 +158,26 @@ const createSessionImpl: (
                       if (event.type !== "turn-complete") return Effect.succeed(event);
                       return turnHooks.end.pipe(
                         hookTurnError("Turn end Hook failed"),
-                        Effect.map(() => {
+                        Effect.flatMap(() => {
                           const { type: _type, history: nextHistory, ...finish } = event;
+                          // Commit the turn in-memory before persisting: a failed save surfaces
+                          // StoreError without un-committing the turn, so a retry never reruns the
+                          // model or turn-end hook side effects against stale history. The stored
+                          // snapshot is then stale until the caller re-saves session.transcript().
                           history = nextHistory;
-                          return { type: "response-complete", ...finish } as const;
+                          const persist =
+                            sessionOptions.store === undefined
+                              ? Effect.void
+                              : sessionOptions.store.save(
+                                  makeTranscript({
+                                    id: transcriptId,
+                                    parentTranscriptId,
+                                    messages: nextHistory.content,
+                                  }),
+                                );
+                          return persist.pipe(
+                            Effect.map(() => ({ type: "response-complete", ...finish }) as const),
+                          );
                         }),
                       );
                     }),
@@ -158,9 +197,12 @@ const createSessionImpl: (
         );
       }),
     history: () => history.content,
+    transcript: () =>
+      makeTranscript({ id: transcriptId, parentTranscriptId, messages: history.content }),
   };
 });
 
 export const createSession = createSessionImpl as <const Definition extends AgentDefinition>(
   definition: Definition,
+  options?: CreateSessionOptions,
 ) => Effect.Effect<Session<ProvidersOf<Definition>>, AgentDefinitionError | TurnError, Scope.Scope>;
