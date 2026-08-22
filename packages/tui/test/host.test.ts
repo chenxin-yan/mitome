@@ -18,7 +18,8 @@ describe("TUI Host", () => {
       process.env.TERM_PROGRAM = "xterm";
       expect(tui().unsupported?.()).toBe("@mitome/tui currently supports Ghostty on Linux");
     } finally {
-      process.env.TERM_PROGRAM = original;
+      if (original === undefined) delete process.env.TERM_PROGRAM;
+      else process.env.TERM_PROGRAM = original;
     }
   });
 

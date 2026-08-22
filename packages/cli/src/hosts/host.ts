@@ -29,7 +29,9 @@ const isMitomeDefinition = (value: unknown): value is MitomeDefinition =>
       "mode" in host &&
       host.mode === "interactive" &&
       "run" in host &&
-      typeof host.run === "function",
+      typeof host.run === "function" &&
+      ((host as { unsupported?: unknown }).unsupported === undefined ||
+        typeof (host as { unsupported?: unknown }).unsupported === "function"),
   );
 
 if (!isMitomeDefinition(loaded)) {
