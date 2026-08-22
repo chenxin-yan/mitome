@@ -207,8 +207,18 @@ export const runEmbeddedHost = async (
 ): Promise<ExitCode> => {
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.
+  // The prompt argument is omitted entirely when absent so the child can tell
+  // "no prompt given" apart from an explicitly empty prompt.
   const child = Bun.spawn(
-    [process.execPath, configEnvFlag(), "--eval", source, path, prompt ?? "", mode],
+    [
+      process.execPath,
+      configEnvFlag(),
+      "--eval",
+      source,
+      path,
+      mode,
+      ...(prompt === undefined ? [] : [prompt]),
+    ],
     {
       env: childEnv,
       stdin: "inherit",

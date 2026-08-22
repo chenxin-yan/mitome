@@ -812,6 +812,13 @@ describe("compiled mitome", () => {
       stdout: "first second\n",
       stderr: "",
     });
+
+    // An explicitly empty prompt is valid Session input, unlike an omitted one.
+    expect(await output(spawn("", ["", "--use", current.definition], current))).toMatchObject({
+      exitCode: 0,
+      stdout: "first second\n",
+      stderr: "",
+    });
   });
 
   test("uses Core directly without SDK runtime support", () => {

@@ -6,8 +6,9 @@ import { pathToFileURL } from "node:url";
 import type { MitomeDefinition, TurnEvent } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
-const prompt = process.argv[2]!;
-const mode = process.argv[3] as "auto" | "print";
+const mode = process.argv[2] as "auto" | "print";
+// Absent when no prompt was given; an explicitly empty prompt arrives as "".
+const prompt: string | undefined = process.argv[3];
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
@@ -39,14 +40,15 @@ const interactiveHost = loaded.hosts[0];
 if (mode === "auto" && interactiveHost !== undefined) {
   const reason = interactiveHost.unsupported?.();
   if (reason === undefined) {
-    await interactiveHost.run({ agent: loaded.agent, prompt });
+    await interactiveHost.run({ agent: loaded.agent, prompt: prompt ?? "" });
     process.exit(0);
   }
   process.stderr.write(`${reason}; falling back to one-shot output.\n`);
 }
 
-// An empty prompt means none was given; one-shot has nothing to run.
-if (prompt === "") {
+// One-shot has nothing to run without a prompt; an explicitly empty prompt is
+// still a valid Session input.
+if (prompt === undefined) {
   process.stderr.write("Missing argument prompt\n");
   process.exit(1);
 }
