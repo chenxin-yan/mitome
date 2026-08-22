@@ -8,7 +8,6 @@ import type { MitomeDefinition, TurnEvent } from "@mitome/core";
 const definitionPath = process.argv[1]!;
 const prompt = process.argv[2]!;
 const mode = process.argv[3] as "auto" | "print";
-const hasPrompt = process.argv[4] === "1";
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
@@ -26,8 +25,6 @@ const isMitomeDefinition = (value: unknown): value is MitomeDefinition =>
     (host) =>
       typeof host === "object" &&
       host !== null &&
-      "name" in host &&
-      typeof host.name === "string" &&
       "mode" in host &&
       host.mode === "interactive" &&
       "run" in host &&
@@ -50,7 +47,8 @@ if (mode === "auto" && interactiveHost !== undefined) {
   );
 }
 
-if (!hasPrompt) {
+// An empty prompt means none was given; one-shot has nothing to run.
+if (prompt === "") {
   process.stderr.write("Missing argument prompt\n");
   process.exit(1);
 }

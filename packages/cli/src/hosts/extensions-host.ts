@@ -13,16 +13,10 @@ const effect: typeof import("effect") = await import(pathToFileURL(effectPath).h
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
-if (
-  typeof loaded !== "object" ||
-  loaded === null ||
-  !("agent" in loaded) ||
-  !("hosts" in loaded) ||
-  !Array.isArray(loaded.hosts)
-) {
+const definition = loaded as Partial<MitomeDefinition> | undefined;
+if (definition?.agent === undefined) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
-const definition = loaded as MitomeDefinition;
 
 const errorMessage = (error: unknown): string => {
   const head =

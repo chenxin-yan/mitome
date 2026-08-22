@@ -208,16 +208,7 @@ export const runEmbeddedHost = async (
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.
   const child = Bun.spawn(
-    [
-      process.execPath,
-      configEnvFlag(),
-      "--eval",
-      source,
-      path,
-      prompt ?? "",
-      mode,
-      prompt === undefined ? "0" : "1",
-    ],
+    [process.execPath, configEnvFlag(), "--eval", source, path, prompt ?? "", mode],
     {
       env: childEnv,
       stdin: "inherit",
