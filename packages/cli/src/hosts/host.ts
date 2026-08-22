@@ -1,20 +1,59 @@
-// Runs inside the embedded Bun runtime with the Agent Definition path as argv[1].
-// child-host.ts embeds this file as text and never bundles it: Core and Effect are
-// resolved beside the selected Agent Definition at runtime so the host shares the
-// exact module instances the Agent Definition was installed against. The static
-// imports below are type-only or node builtins, so nothing else is pulled in.
+// Runs inside the embedded Bun runtime with the composition-root path as argv[1].
+// child-host.ts embeds this file as text and never bundles it: dependencies are
+// resolved beside the selected root so it shares the author's module instances.
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentDefinition, TurnEvent } from "@mitome/core";
+import type { MitomeDefinition, TurnEvent } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
 const prompt = process.argv[2]!;
-const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
-const effectPath = Bun.resolveSync("effect", dirname(corePath));
-const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath).href);
-const effect: typeof import("effect") = await import(pathToFileURL(effectPath).href);
-const loaded = ((await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown })
-  .default as AgentDefinition;
+const mode = process.argv[3] as "auto" | "print";
+const hasPrompt = process.argv[4] === "1";
+const loaded: unknown = (
+  (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
+).default;
+
+const isMitomeDefinition = (value: unknown): value is MitomeDefinition =>
+  typeof value === "object" &&
+  value !== null &&
+  "agent" in value &&
+  typeof value.agent === "object" &&
+  value.agent !== null &&
+  "hosts" in value &&
+  Array.isArray(value.hosts) &&
+  value.hosts.length <= 1 &&
+  value.hosts.every(
+    (host) =>
+      typeof host === "object" &&
+      host !== null &&
+      "name" in host &&
+      typeof host.name === "string" &&
+      "mode" in host &&
+      host.mode === "interactive" &&
+      "run" in host &&
+      typeof host.run === "function",
+  );
+
+if (!isMitomeDefinition(loaded)) {
+  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
+}
+
+const interactiveHost = loaded.hosts[0];
+if (mode === "auto" && interactiveHost !== undefined) {
+  // ADR-0038's MVP terminal matrix; widen only after validating another terminal.
+  if (process.platform === "linux" && process.env.TERM_PROGRAM?.toLowerCase() === "ghostty") {
+    await interactiveHost.run({ agent: loaded.agent, prompt });
+    process.exit(0);
+  }
+  process.stderr.write(
+    "@mitome/tui currently supports Ghostty on Linux; falling back to one-shot output.\n",
+  );
+}
+
+if (!hasPrompt) {
+  process.stderr.write("Missing argument prompt\n");
+  process.exit(1);
+}
 
 const render = (event: TurnEvent): void => {
   switch (event.type) {
@@ -22,7 +61,6 @@ const render = (event: TurnEvent): void => {
       process.stdout.write(event.text);
       break;
     case "reasoning":
-      // The reference Host keeps reasoning and model metadata off stdout.
       break;
     case "tool-call":
       process.stdout.write(`\n[tool ${event.name}]\n`);
@@ -41,7 +79,6 @@ const render = (event: TurnEvent): void => {
   }
 };
 
-// This source is embedded standalone; support.ts keeps the sibling CLI renderer.
 const errorMessage = (error: unknown): string => {
   const head =
     typeof error === "object" && error !== null && "_tag" in error && "message" in error
@@ -54,11 +91,14 @@ const errorMessage = (error: unknown): string => {
   return cause === undefined ? head : `${head}\n  cause: ${errorMessage(cause)}`;
 };
 
+const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
+const effectPath = Bun.resolveSync("effect", dirname(corePath));
+const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath).href);
+const effect: typeof import("effect") = await import(pathToFileURL(effectPath).href);
 const { Cause, Effect, Exit, Fiber, Stream } = effect;
-
 const program = Effect.scoped(
   Effect.gen(function* () {
-    const session = yield* core.createSession(loaded);
+    const session = yield* core.createSession(loaded.agent);
     yield* Stream.runForEach(session.prompt(prompt), (event) =>
       Effect.gen(function* () {
         render(event);
@@ -71,7 +111,6 @@ const program = Effect.scoped(
 const root = Effect.runFork(program);
 let forceExit: ReturnType<typeof setTimeout> | undefined;
 const interrupt = (): void => {
-  // Backstop so a hung Session finalizer cannot hang Ctrl-C: cleanup gets 1s, then exit 124.
   forceExit ??= setTimeout(() => process.exit(124), 1_000);
   Effect.runFork(Fiber.interrupt(root));
 };

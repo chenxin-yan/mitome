@@ -1,5 +1,5 @@
-import type { TextareaRenderable } from "@opentui/core";
 import { render } from "@opentui/solid";
+import type { TextareaRenderable } from "@opentui/core";
 
 export const Shell = (props: { readonly prompt: string }) => (
   <box flexDirection="column" width="100%" height="100%" padding={1} gap={1}>

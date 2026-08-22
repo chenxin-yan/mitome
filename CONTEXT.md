@@ -32,13 +32,17 @@ _Avoid_: Turn, iteration
 A user-authored declaration of exactly one Agent, its Providers, Default Model, and Extensions.
 _Avoid_: Definition (bare), configuration, setup script, registry
 
-**Agent Definition module**:
-A TypeScript module whose default export is one Agent Definition.
-_Avoid_: Agent Definition, entry file, setup script
+**Mitome Definition**:
+A composition root created by `defineMitome({ agent, hosts })` that pairs one Agent Definition with its Hosts.
+_Avoid_: Agent Definition, configuration, registry
 
-**Agent Definition directory**:
-A directory selected as a load target whose Agent Definition module is `index.ts`.
-_Avoid_: Agent Definition, folder
+**Mitome Definition module**:
+A TypeScript module whose default export is one Mitome Definition.
+_Avoid_: Agent Definition module, entry file, setup script
+
+**Mitome Definition directory**:
+A directory selected as a load target whose Mitome Definition module is `index.ts`.
+_Avoid_: Agent Definition directory, folder
 
 **Extension**:
 A named, reusable unit included by an Agent Definition to add Tools, contribute Instructions, or participate in the Agent lifecycle.
@@ -101,8 +105,8 @@ A user decision allowing one pending Tool call to execute; the Turn stays paused
 _Avoid_: Permission, confirmation
 
 **Host**:
-A program that drives Sessions on a user's behalf: starting Turns, presenting events, and resolving Approvals.
-_Avoid_: Frontend, client, harness
+A public SDK interface for a program that drives Sessions on a user's behalf: starting Turns, presenting events, and resolving Approvals. A Host declares its mode; the only current mode is `interactive`.
+_Avoid_: Extension, Frontend, client, harness
 
 **Child Host**:
 The CLI's capability for delegating Host work — running a Turn, installing Agent Definition dependencies, or Provider authentication — to a separate Host process.

@@ -19,14 +19,10 @@ import authHost from "./hosts/auth-host.ts" with { type: "text" };
 // @ts-expect-error Bun text import (see above).
 // oxlint-disable-next-line import/default
 import extensionsHost from "./hosts/extensions-host.ts" with { type: "text" };
-// @ts-expect-error Bun text import (see above).
-// oxlint-disable-next-line import/default
-import tuiHost from "./hosts/tui-host.ts" with { type: "text" };
 
 const hostSource: string = definitionHost;
 const authHostSource: string = authHost;
 const extensionsHostSource: string = extensionsHost;
-const tuiHostSource: string = tuiHost;
 // process.execPath is the compiled mitome binary; BUN_BE_BUN re-executes it as plain Bun.
 const childEnv = { ...process.env, BUN_BE_BUN: "1" };
 
@@ -55,8 +51,11 @@ export interface ExtensionListResult {
 export class ChildHost extends Context.Service<
   ChildHost,
   {
-    readonly runHost: (path: string, prompt: string) => Effect.Effect<ExitCode, CliError>;
-    readonly runTui: (path: string, prompt: string) => Effect.Effect<ExitCode, CliError>;
+    readonly runHost: (
+      path: string,
+      prompt: string | undefined,
+      mode: "auto" | "print",
+    ) => Effect.Effect<ExitCode, CliError>;
     readonly install: (path: string) => Effect.Effect<ExitCode, CliError>;
     readonly removeDependency: (
       path: string,
@@ -78,8 +77,8 @@ export class ChildHost extends Context.Service<
   }
 >()("@mitome/cli/ChildHost") {
   static readonly layer = Layer.succeed(ChildHost, {
-    runHost: (path, prompt) => Effect.uninterruptible(attempt(() => runHost(path, prompt))),
-    runTui: (path, prompt) => Effect.uninterruptible(attempt(() => runTui(path, prompt))),
+    runHost: (path, prompt, mode) =>
+      Effect.uninterruptible(attempt(() => runHost(path, prompt, mode))),
     install: (path) => Effect.uninterruptible(attempt(() => install(path))),
     removeDependency: (path, packageName) =>
       Effect.uninterruptible(attempt(() => removeDependency(path, packageName))),
@@ -194,28 +193,32 @@ const inspectExtensions = async (path: string): Promise<ExtensionListResult> => 
   };
 };
 
-const runHost = (path: string, prompt: string): Promise<ExitCode> =>
-  runEmbeddedHost(hostSource, path, prompt);
-
-const runTui = (path: string, prompt: string): Promise<ExitCode> =>
-  runEmbeddedHost(tuiHostSource, path, prompt, "@opentui/solid/preload");
+const runHost = (
+  path: string,
+  prompt: string | undefined,
+  mode: "auto" | "print",
+): Promise<ExitCode> => runEmbeddedHost(hostSource, path, prompt, mode);
 
 export const runEmbeddedHost = async (
   source: string,
   path: string,
-  prompt: string,
-  preload?: string,
+  prompt: string | undefined,
+  mode: "auto" | "print",
 ): Promise<ExitCode> => {
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.
-  const preloadArgs = preload === undefined ? [] : ["--preload", preload];
   const child = Bun.spawn(
-    [process.execPath, configEnvFlag(), ...preloadArgs, "--eval", source, path, prompt],
+    [
+      process.execPath,
+      configEnvFlag(),
+      "--eval",
+      source,
+      path,
+      prompt ?? "",
+      mode,
+      prompt === undefined ? "0" : "1",
+    ],
     {
-      // Bare preload specifiers (e.g. @opentui/solid/preload) resolve from the
-      // child's cwd, and compiled binaries cannot resolve subpath exports
-      // parent-side (ADR-0038) — so run the child beside the Agent Definition.
-      ...(preload === undefined ? {} : { cwd: dirname(path) }),
       env: childEnv,
       stdin: "inherit",
       stdout: "inherit",

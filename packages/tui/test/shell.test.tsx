@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/solid";
-import { Shell } from "../src/index.js";
+import { Shell } from "../src/shell.js";
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined;
 

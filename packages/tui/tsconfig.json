@@ -7,5 +7,5 @@
     "rootDir": ".",
     "types": ["bun"]
   },
-  "include": ["src/**/*.tsx", "test/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"]
 }

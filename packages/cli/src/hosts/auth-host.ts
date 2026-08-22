@@ -16,14 +16,18 @@ const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath)
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
-
-const providers =
-  typeof loaded === "object" &&
-  loaded !== null &&
-  "providers" in loaded &&
-  Array.isArray(loaded.providers)
-    ? (loaded.providers as ReadonlyArray<AnyProvider>)
-    : [];
+if (
+  typeof loaded !== "object" ||
+  loaded === null ||
+  !("agent" in loaded) ||
+  typeof loaded.agent !== "object" ||
+  loaded.agent === null ||
+  !("providers" in loaded.agent) ||
+  !Array.isArray(loaded.agent.providers)
+) {
+  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
+}
+const providers = loaded.agent.providers as ReadonlyArray<AnyProvider>;
 const authentication = providers.flatMap((provider) => {
   const credential = core.credentialDescriptor(provider);
   return credential === undefined ? [] : [{ id: provider.id, credential }];

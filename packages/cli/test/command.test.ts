@@ -10,7 +10,6 @@ import cliPackage from "../package.json" with { type: "json" };
 vi.mock("../src/hosts/host.ts", () => ({ default: "" }));
 vi.mock("../src/hosts/auth-host.ts", () => ({ default: "" }));
 vi.mock("../src/hosts/extensions-host.ts", () => ({ default: "" }));
-vi.mock("../src/hosts/tui-host.ts", () => ({ default: "" }));
 
 import { ChildHost } from "../src/child-host.ts";
 import { runCli } from "../src/index.ts";
@@ -23,7 +22,6 @@ const services = Layer.mergeAll(
   CliOutput.layer(CliOutput.defaultFormatter({ colors: false })),
   Layer.succeed(ChildHost, {
     runHost: () => unused,
-    runTui: () => unused,
     install: () => unused,
     removeDependency: () => unused,
     listExports: () => unused,

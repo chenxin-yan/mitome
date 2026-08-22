@@ -12,7 +12,6 @@ import corePackage from "@mitome/core/package.json" with { type: "json" };
 vi.mock("../src/hosts/host.ts", () => ({ default: "" }));
 vi.mock("../src/hosts/auth-host.ts", () => ({ default: "" }));
 vi.mock("../src/hosts/extensions-host.ts", () => ({ default: "" }));
-vi.mock("../src/hosts/tui-host.ts", () => ({ default: "" }));
 
 import { ChildHost, type ProviderAuthentication } from "../src/child-host.ts";
 import { runAuth } from "../src/commands/auth.ts";
@@ -28,8 +27,11 @@ type PromptAnswer =
   | { readonly type: "abort" };
 
 type ChildHostCalls = {
-  readonly runHost: Array<{ readonly path: string; readonly prompt: string }>;
-  readonly runTui: Array<{ readonly path: string; readonly prompt: string }>;
+  readonly runHost: Array<{
+    readonly path: string;
+    readonly prompt: string | undefined;
+    readonly mode: "auto" | "print";
+  }>;
   readonly install: Array<string>;
   readonly removeDependency: Array<{ readonly path: string; readonly packageName: string }>;
   readonly inspect: Array<string>;
@@ -77,7 +79,6 @@ const fakeChildHost = (
 ) => {
   const calls: ChildHostCalls = {
     runHost: [],
-    runTui: [],
     install: [],
     removeDependency: [],
     inspect: [],
@@ -86,14 +87,9 @@ const fakeChildHost = (
   return {
     calls,
     layer: Layer.succeed(ChildHost, {
-      runHost: (path, prompt) =>
+      runHost: (path, prompt, mode) =>
         Effect.sync(() => {
-          calls.runHost.push({ path, prompt });
-          return options.runExitCode ?? 0;
-        }),
-      runTui: (path, prompt) =>
-        Effect.sync(() => {
-          calls.runTui.push({ path, prompt });
+          calls.runHost.push({ path, prompt, mode });
           return options.runExitCode ?? 0;
         }),
       install: (path) =>
@@ -204,7 +200,7 @@ describe("CLI handlers", () => {
 
       expect(exit).toEqual(Exit.succeed(23));
       expect(childHost.calls.install).toEqual([]);
-      expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello" }]);
+      expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello", mode: "print" }]);
     }),
   );
 
@@ -221,7 +217,7 @@ describe("CLI handlers", () => {
 
       expect(exit).toEqual(Exit.succeed(0));
       expect(childHost.calls.install).toEqual([path]);
-      expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello" }]);
+      expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello", mode: "print" }]);
       expect(yield* TestConsole.logLines).toContain("Installing Agent Definition dependencies...");
     }),
   );

@@ -4,6 +4,7 @@
   "license": "MIT",
   "repository": "https://github.com/chenxin-yan/mitome",
   "files": [
+    "dist/**/*.js",
     "dist/**/*.jsx",
     "dist/**/*.d.ts",
     "LICENSE"
@@ -13,7 +14,7 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "default": "./dist/index.jsx"
+      "default": "./dist/index.js"
     }
   },
   "publishConfig": {
@@ -24,7 +25,7 @@
     "check:types": "tsc",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "test": "bun test --preload @opentui/solid/preload"
+    "test": "bun test test/host.test.ts && bun test --preload @opentui/solid/preload test/shell.test.tsx"
   },
   "dependencies": {
     "@opentui/core": "0.5.3",
@@ -33,8 +34,12 @@
   },
   "devDependencies": {
     "@mitome/config": "workspace:*",
+    "@mitome/core": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@mitome/core": "workspace:*"
   },
   "engines": {
     "bun": ">=1.3.14"

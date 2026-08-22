@@ -34,7 +34,9 @@ describe("scaffold plans", () => {
 
     expect([...plan.keys()]).toEqual(["index.ts", "AGENTS.md", "package.json"]);
     expect([...plan.keys()]).toEqual([...defaultAgentPlanFiles]);
-    expect(plan.get("index.ts")).toContain('import { defineAgent } from "@mitome/sdk";');
+    expect(plan.get("index.ts")).toContain(
+      'import { defineAgent, defineMitome } from "@mitome/sdk";',
+    );
     expect(plan.get("index.ts")).toContain('model: "openai-codex/gpt-5.6"');
     expect(plan.get("index.ts")).toContain(
       'instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })',
@@ -57,7 +59,9 @@ describe("scaffold plans", () => {
       "tsconfig.json",
       "README.md",
     ]);
-    expect(plan.get("index.ts")).toContain('import { defineAgent } from "@mitome/sdk/effect";');
+    expect(plan.get("index.ts")).toContain(
+      'import { defineAgent, defineMitome } from "@mitome/sdk/effect";',
+    );
     expect(plan.get("index.ts")).toContain('instructionFiles({ paths: ["./instructions.md"] })');
     expect(plan.get("instructions.md")).toBe("You are a helpful Agent.\n");
     expect(JSON.parse(plan.get("package.json")!)).toMatchObject({
@@ -143,7 +147,7 @@ describe("create-mitome scaffold", () => {
       },
     });
     const agent = await contents(path, "index.ts");
-    expect(agent).toContain(`import { defineAgent } from "${sdk}`);
+    expect(agent).toContain(`import { defineAgent, defineMitome } from "${sdk}`);
     expect(agent).toContain(`providers: [${factory}]`);
     expect(agent).toContain(`model: "${id}/gpt-5.6"`);
     expect(agent).not.toContain("env(");
@@ -160,7 +164,7 @@ describe("create-mitome scaffold", () => {
     await scaffold(path, { flavor: "effect", provider: "openai-codex", model: "gpt-5.6" });
 
     expect(await contents(path, "index.ts")).toContain(
-      'import { defineAgent } from "@mitome/sdk/effect";',
+      'import { defineAgent, defineMitome } from "@mitome/sdk/effect";',
     );
     expect(await contents(path, "index.ts")).toContain(
       'import { codex } from "@mitome/providers/openai-codex";',

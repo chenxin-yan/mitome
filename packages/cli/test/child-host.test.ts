@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { text } from "node:stream/consumers";
@@ -17,32 +17,20 @@ afterEach(async () => {
   );
 });
 
-// child-host.ts uses Bun-only APIs (Bun.spawn, text imports), so the module is
-// exercised inside a real Bun child rather than imported into the vitest runtime.
-test("runEmbeddedHost resolves a bare preload specifier beside the Agent Definition", async () => {
-  const root = await mkdtemp(join(tmpdir(), "mitome-preload-"));
+// child-host.ts uses Bun-only APIs, so exercise it inside a real Bun child.
+test("runEmbeddedHost forwards dispatch inputs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "mitome-host-"));
   temporaryDirectories.push(root);
   const definition = join(root, "agent", "definition.ts");
-  const probe = join(dirname(definition), "node_modules", "preload-probe");
-  await mkdir(probe, { recursive: true });
-  await writeFile(
-    join(probe, "package.json"),
-    JSON.stringify({ name: "preload-probe", version: "0.0.0", main: "index.js" }),
-  );
-  await writeFile(join(probe, "index.js"), "globalThis.__mitomePreloadProbe = true;\n");
-  await writeFile(definition, "export default {};\n");
-  // Run from an unrelated cwd so the specifier can only resolve beside the definition.
-  const elsewhere = join(root, "elsewhere");
-  await mkdir(elsewhere);
+  await mkdir(dirname(definition), { recursive: true });
 
   const source =
-    "console.log(JSON.stringify({ preloaded: globalThis.__mitomePreloadProbe === true, path: process.argv[1], prompt: process.argv[2] }));";
+    "console.log(JSON.stringify({ path: process.argv[1], prompt: process.argv[2], mode: process.argv[3], hasPrompt: process.argv[4] }));";
   const driver = [
     `import { runEmbeddedHost } from ${JSON.stringify(childHostModule)};`,
-    `process.exitCode = await runEmbeddedHost(${JSON.stringify(source)}, ${JSON.stringify(definition)}, "probe prompt", "preload-probe");`,
+    `process.exitCode = await runEmbeddedHost(${JSON.stringify(source)}, ${JSON.stringify(definition)}, undefined, "auto");`,
   ].join("\n");
   const child = spawn("bun", ["--no-env-file", "--eval", driver], {
-    cwd: elsewhere,
     env: { ...process.env, HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "xdg") },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -52,8 +40,9 @@ test("runEmbeddedHost resolves a bare preload specifier beside the Agent Definit
   expect(stderr).toBe("");
   expect(exitCode).toBe(0);
   expect(JSON.parse(stdout)).toStrictEqual({
-    preloaded: true,
     path: definition,
-    prompt: "probe prompt",
+    prompt: "",
+    mode: "auto",
+    hasPrompt: "0",
   });
 });

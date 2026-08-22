@@ -25,6 +25,7 @@ const definitionSource = (
   output: string,
   options: {
     readonly block?: boolean;
+    readonly tui?: boolean;
     readonly signalProbe?: {
       readonly pid: string;
       readonly cleanupStarted: string;
@@ -35,7 +36,8 @@ const definitionSource = (
 import { writeFileSync } from "node:fs";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { defineMitome, makeProvider } from "@mitome/core";
+${options.tui ? 'import { tui } from "@mitome/tui";' : ""}
 
 ${options.signalProbe ? `writeFileSync(${JSON.stringify(options.signalProbe.pid)}, String(process.pid));` : ""}
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
@@ -44,7 +46,7 @@ const provider = makeProvider("test", [], undefined, () => Layer.succeed(Languag
     ${options.block ? 'Stream.fromEffect(Effect.sleep(10_000).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))' : 'Stream.fromEffect(Effect.sleep(100).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))'},
   ),
 }));
-export default { providers: [provider], model: "test/default", extensions: ${
+const agent = { providers: [provider], model: "test/default", extensions: ${
   options.signalProbe
     ? `[{ name: "cleanup", hooks: { sessionEnd: Effect.sync(() => {
       writeFileSync(${JSON.stringify(options.signalProbe.cleanupStarted)}, "");
@@ -54,12 +56,13 @@ export default { providers: [provider], model: "test/default", extensions: ${
     }) } }]`
     : "[]"
 } };
+export default defineMitome({ agent, hosts: ${options.tui ? "[tui()]" : "[]"} });
 `;
 
 const envDefinitionSource = (): string => `
 import { Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { defineMitome, makeProvider } from "@mitome/core";
 
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.succeed(Response.makePart("text-delta", {
@@ -71,26 +74,26 @@ const provider = makeProvider("test", [], undefined, () => Layer.succeed(Languag
     ].join(":"),
   })),
 }));
-export default { providers: [provider], model: "test/default", extensions: [] };
+export default defineMitome({ agent: { providers: [provider], model: "test/default", extensions: [] }, hosts: [] });
 `;
 
 const reexecDefinitionSource = (): string => `
 import { Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { defineMitome, makeProvider } from "@mitome/core";
 
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.succeed(Response.makePart("text-delta", {
     id: "reexec", delta: process.env.BUN_BE_BUN ?? "missing",
   })),
 }));
-export default { providers: [provider], model: "test/default", extensions: [] };
+export default defineMitome({ agent: { providers: [provider], model: "test/default", extensions: [] }, hosts: [] });
 `;
 
 const extensionListDefinitionSource = (invalid = false): string => `
 import { Layer } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { defineMitome, makeProvider } from "@mitome/core";
 
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {}));
 const shared = { name: "fixture-shared" };
@@ -98,25 +101,31 @@ const first = { name: "fixture-first", dependencies: [shared] };
 const second = { name: "fixture-second", dependencies: [shared] };
 const root = { name: "fixture-root", dependencies: [second] };
 ${invalid ? 'const cycle = { name: "fixture-cycle", instructions: 42 }; cycle.dependencies = [cycle];' : ""}
-export default {
-  providers: [provider],
-  model: "test/default",
-  extensions: ${invalid ? "[first, cycle]" : "[first, second, root]"},
-};
+export default defineMitome({
+  agent: {
+    providers: [provider],
+    model: "test/default",
+    extensions: ${invalid ? "[first, cycle]" : "[first, second, root]"},
+  },
+  hosts: [],
+});
 `;
 
 const persistentExtensionListDefinitionSource = (): string => `
 import { Layer } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { defineMitome, makeProvider } from "@mitome/core";
 
 setInterval(() => {}, 60_000);
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {}));
-export default {
-  providers: [provider],
-  model: "test/default",
-  extensions: [{ name: process.env.MITOME_EXTENSION_NAME ?? "missing-env" }],
-};
+export default defineMitome({
+  agent: {
+    providers: [provider],
+    model: "test/default",
+    extensions: [{ name: process.env.MITOME_EXTENSION_NAME ?? "missing-env" }],
+  },
+  hosts: [],
+});
 `;
 
 type Fixture = {
@@ -170,26 +179,15 @@ const writePackageVersion = async (
 const installTui = async (current: Fixture): Promise<void> => {
   const nodeModules = join(dirname(current.definition), "node_modules");
   const tui = join(nodeModules, "@mitome", "tui");
-  const solid = join(nodeModules, "@opentui", "solid");
   await mkdir(tui, { recursive: true });
-  await mkdir(solid, { recursive: true });
   await writeFile(
     join(tui, "package.json"),
     JSON.stringify({ name: "@mitome/tui", type: "module", exports: "./index.js" }),
   );
   await writeFile(
     join(tui, "index.js"),
-    "export const runShell = (prompt) => process.stdout.write(`TUI_PROMPT ${JSON.stringify(prompt)}\\n`);\n",
+    'export const tui = () => ({ name: "tui", mode: "interactive", run: ({ prompt }) => process.stdout.write(`TUI_PROMPT ${JSON.stringify(prompt)}\\n`) });\n',
   );
-  await writeFile(
-    join(solid, "package.json"),
-    JSON.stringify({
-      name: "@opentui/solid",
-      type: "module",
-      exports: { "./preload": "./preload.js" },
-    }),
-  );
-  await writeFile(join(solid, "preload.js"), "");
 };
 
 const installFixture = async (): Promise<Fixture> => {
@@ -354,7 +352,7 @@ describe("compiled mitome", () => {
     });
   });
 
-  test("keeps bare invocation unavailable without the TUI package", async () => {
+  test("keeps bare invocation unavailable without an interactive Host", async () => {
     const current = await fixture();
 
     const result = await output(spawn("", ["--use", current.definition], current));
@@ -362,9 +360,28 @@ describe("compiled mitome", () => {
     expect(result.stderr).toContain("Missing argument prompt");
   });
 
-  test("opens a present TUI in a supported terminal with optional prompt staging", async () => {
+  test("does not activate an installed but unconfigured TUI package", async () => {
     const current = await fixture();
     await installTui(current);
+
+    const result = await ptyOutput(["hello", "--use", current.definition], current);
+    expect(result).toMatchObject({ exitCode: 0 });
+    expect(result.stdout).toContain("first second");
+    expect(result.stdout).not.toContain("TUI_PROMPT");
+  });
+
+  test("rejects a selected module that does not export defineMitome", async () => {
+    const current = await fixture("export default {};\n");
+
+    const result = await output(spawn("", ["hello", "--use", current.definition], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("must default-export defineMitome({ agent, hosts })");
+  });
+
+  test("opens a configured TUI in a supported terminal with optional prompt staging", async () => {
+    const current = await fixture();
+    await installTui(current);
+    await writeFile(current.definition, definitionSource("first", { tui: true }));
 
     const prompted = await ptyOutput(["hello", "--use", current.definition], current);
     expect(prompted).toMatchObject({ exitCode: 0 });
@@ -376,9 +393,10 @@ describe("compiled mitome", () => {
     expect(bare.stdout).toContain('TUI_PROMPT ""');
   });
 
-  test("forces one-shot output for --print and non-TTY stdout when the TUI is present", async () => {
+  test("forces one-shot output for --print and non-TTY stdout when the TUI is configured", async () => {
     const current = await fixture();
     await installTui(current);
+    await writeFile(current.definition, definitionSource("first", { tui: true }));
 
     for (const flag of ["-p", "--print"]) {
       const printed = await ptyOutput([flag, "hello", "--use", current.definition], current);
@@ -404,6 +422,7 @@ describe("compiled mitome", () => {
   test("reports an unsupported terminal and falls back to one-shot output", async () => {
     const current = await fixture();
     await installTui(current);
+    await writeFile(current.definition, definitionSource("first", { tui: true }));
 
     const result = await ptyOutput(["hello", "--use", current.definition], current, "xterm");
     expect(result).toMatchObject({ exitCode: 0 });
@@ -704,7 +723,7 @@ describe("compiled mitome", () => {
   });
 
   test("prints aggregated Agent Definition errors", async () => {
-    const current = await fixture("export default {};\n");
+    const current = await fixture("export default { agent: {}, hosts: [] };\n");
     const result = await output(spawn("", ["hello", "--use", current.definition], current));
 
     expect(result.exitCode).not.toBe(0);

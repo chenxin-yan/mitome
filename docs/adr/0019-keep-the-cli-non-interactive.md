@@ -1,5 +1,7 @@
 # Keep the CLI non-interactive
 
+> Activation is superseded by explicit Host composition in [ADR-0039](0039-compose-hosts-explicitly-in-the-composition-root.md); the one-shot behavior remains.
+
 Running an Agent through the CLI is fully non-interactive: `mitome "prompt"` starts one Session, runs one Turn, streams events to stdout, and exits. There is no prompt loop and no cross-invocation continuation. Pending Approvals auto-approve with a visible log line, because no user is present mid-Turn to decide; a real Approval surface is a Host concern deferred past the MVP. This scopes only Agent runs — credential bootstrap (`mitome auth`, `mitome init`, ADR-0013) stays interactive because those are setup flows, not Sessions.
 
 Interactivity belongs to a Host, not the CLI core: a post-MVP `@mitome/tui` package supplies the interactive Host. It activates by presence — when installed beside the selected Agent Definition (resolved the same way the CLI resolves `@mitome/core`), `mitome` and `mitome "prompt"` open the TUI with the prompt pre-submitted as the first Turn. `-p`/`--print` forces one-shot, and a non-TTY stdout always falls back to one-shot so scripts never hang. This keeps one CLI entry point, keeps Agent Definitions Host-agnostic (no UI choice lives in a Definition, and the TUI is not a Plugin), and keeps every non-CLI consumer free of interactivity code. A Definition-declared TUI field and a separate settings file were rejected: the first puts a UI choice inside the Agent Definition, the second invents a config surface for one boolean.

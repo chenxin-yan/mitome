@@ -1,11 +1,6 @@
 import { Console, Effect, Option } from "effect";
 import { ChildHost } from "../child-host.js";
-import {
-  checkRuntime,
-  definitionNeedsReconcile,
-  definitionPath,
-  tuiInstalled,
-} from "../definition.js";
+import { checkRuntime, definitionNeedsReconcile, definitionPath } from "../definition.js";
 import { attempt, fail, type ExitCode } from "../support.js";
 
 export const reconcileDefinition = Effect.fn("@mitome/cli/reconcileDefinition")(function* (
@@ -33,24 +28,10 @@ export const runPrompt = Effect.fn("@mitome/cli/runPrompt")(function* ({
   const installExitCode = yield* reconcileDefinition(path);
   if (installExitCode !== 0) return installExitCode;
 
-  const hasTui = yield* attempt(() => tuiInstalled(path));
   const promptValue = Option.getOrUndefined(prompt);
-  if (
-    hasTui &&
-    !print &&
-    process.stdout.isTTY === true &&
-    process.platform === "linux" &&
-    process.env.TERM_PROGRAM?.toLowerCase() === "ghostty"
-  ) {
-    return yield* childHost.runTui(path, promptValue ?? "");
-  }
-  if (hasTui && !print && process.stdout.isTTY === true) {
-    yield* Console.error(
-      "@mitome/tui currently supports Ghostty on Linux; falling back to one-shot output.",
-    );
-  }
-  if (promptValue === undefined) return yield* fail("Missing argument prompt");
-  return yield* childHost.runHost(path, promptValue);
+  const forcePrint = print || process.stdout.isTTY !== true;
+  if (forcePrint && promptValue === undefined) return yield* fail("Missing argument prompt");
+  return yield* childHost.runHost(path, promptValue, forcePrint ? "print" : "auto");
 });
 
 export const runInstall = Effect.fn("@mitome/cli/runInstall")(function* ({
