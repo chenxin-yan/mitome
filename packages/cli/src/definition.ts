@@ -18,8 +18,8 @@ export const definitionPath = async (use: Option.Option<string>): Promise<string
     if (!isEnoent(error)) throw error;
     throw new Error(
       selected === undefined
-        ? "No Agent Definition found; run mitome init first or use --use <path>."
-        : `Agent Definition not found at ${path}; check the --use path.`,
+        ? "No Mitome Definition found; run mitome init first or use --use <path>."
+        : `Mitome Definition not found at ${path}; check the --use path.`,
     );
   }
   if (file.isDirectory()) {
@@ -28,11 +28,11 @@ export const definitionPath = async (use: Option.Option<string>): Promise<string
       await stat(path);
     } catch (error) {
       if (!isEnoent(error)) throw error;
-      throw new Error(`No Agent Definition module found at ${path}.`);
+      throw new Error(`No Mitome Definition module found at ${path}.`);
     }
   }
   if (extname(path) !== ".ts") {
-    throw new Error(`Agent Definition path ${path} must be a TypeScript module.`);
+    throw new Error(`Mitome Definition path ${path} must be a TypeScript module.`);
   }
   return path;
 };
@@ -115,12 +115,12 @@ export const checkRuntime = async (path: string): Promise<void> => {
   const core = await installedCore(dirname(path));
   if (core === undefined) {
     throw new Error(
-      `No @mitome/core is installed beside ${path} after installing Agent Definition dependencies. Add @mitome/core@${corePackage.version} to its package.json.`,
+      `No @mitome/core is installed beside ${path} after installing Mitome Definition dependencies. Add @mitome/core@${corePackage.version} to its package.json.`,
     );
   }
   if (core.version !== corePackage.version) {
     throw new Error(
-      `@mitome/core beside ${path} is ${String(core.version)} after installing Agent Definition dependencies; its package.json must select @mitome/core@${corePackage.version}.`,
+      `@mitome/core beside ${path} is ${String(core.version)} after installing Mitome Definition dependencies; its package.json must select @mitome/core@${corePackage.version}.`,
     );
   }
 };

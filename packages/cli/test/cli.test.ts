@@ -25,6 +25,8 @@ const definitionSource = (
   output: string,
   options: {
     readonly block?: boolean;
+    readonly tui?: boolean;
+    readonly customHost?: boolean;
     readonly signalProbe?: {
       readonly pid: string;
       readonly cleanupStarted: string;
@@ -35,7 +37,8 @@ const definitionSource = (
 import { writeFileSync } from "node:fs";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { defineMitome, makeProvider } from "@mitome/core";
+${options.tui ? 'import { tui } from "@mitome/tui";' : ""}
 
 ${options.signalProbe ? `writeFileSync(${JSON.stringify(options.signalProbe.pid)}, String(process.pid));` : ""}
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
@@ -44,7 +47,7 @@ const provider = makeProvider("test", [], undefined, () => Layer.succeed(Languag
     ${options.block ? 'Stream.fromEffect(Effect.sleep(10_000).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))' : 'Stream.fromEffect(Effect.sleep(100).pipe(Effect.as(Response.makePart("text-delta", { id: "second", delta: " second" }))))'},
   ),
 }));
-export default { providers: [provider], model: "test/default", extensions: ${
+const agent = { providers: [provider], model: "test/default", extensions: ${
   options.signalProbe
     ? `[{ name: "cleanup", hooks: { sessionEnd: Effect.sync(() => {
       writeFileSync(${JSON.stringify(options.signalProbe.cleanupStarted)}, "");
@@ -54,12 +57,13 @@ export default { providers: [provider], model: "test/default", extensions: ${
     }) } }]`
     : "[]"
 } };
+export default defineMitome({ agent, hosts: ${options.tui ? "[tui()]" : options.customHost ? '[{ name: "custom", mode: "interactive", run: async ({ prompt }) => console.log(`CUSTOM_HOST ${prompt}`) }]' : "[]"} });
 `;
 
 const envDefinitionSource = (): string => `
 import { Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { defineMitome, makeProvider } from "@mitome/core";
 
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.succeed(Response.makePart("text-delta", {
@@ -71,26 +75,26 @@ const provider = makeProvider("test", [], undefined, () => Layer.succeed(Languag
     ].join(":"),
   })),
 }));
-export default { providers: [provider], model: "test/default", extensions: [] };
+export default defineMitome({ agent: { providers: [provider], model: "test/default", extensions: [] }, hosts: [] });
 `;
 
 const reexecDefinitionSource = (): string => `
 import { Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { defineMitome, makeProvider } from "@mitome/core";
 
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
   streamText: () => Stream.succeed(Response.makePart("text-delta", {
     id: "reexec", delta: process.env.BUN_BE_BUN ?? "missing",
   })),
 }));
-export default { providers: [provider], model: "test/default", extensions: [] };
+export default defineMitome({ agent: { providers: [provider], model: "test/default", extensions: [] }, hosts: [] });
 `;
 
 const extensionListDefinitionSource = (invalid = false): string => `
 import { Layer } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { defineMitome, makeProvider } from "@mitome/core";
 
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {}));
 const shared = { name: "fixture-shared" };
@@ -98,25 +102,31 @@ const first = { name: "fixture-first", dependencies: [shared] };
 const second = { name: "fixture-second", dependencies: [shared] };
 const root = { name: "fixture-root", dependencies: [second] };
 ${invalid ? 'const cycle = { name: "fixture-cycle", instructions: 42 }; cycle.dependencies = [cycle];' : ""}
-export default {
-  providers: [provider],
-  model: "test/default",
-  extensions: ${invalid ? "[first, cycle]" : "[first, second, root]"},
-};
+export default defineMitome({
+  agent: {
+    providers: [provider],
+    model: "test/default",
+    extensions: ${invalid ? "[first, cycle]" : "[first, second, root]"},
+  },
+  hosts: [],
+});
 `;
 
 const persistentExtensionListDefinitionSource = (): string => `
 import { Layer } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { defineMitome, makeProvider } from "@mitome/core";
 
 setInterval(() => {}, 60_000);
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {}));
-export default {
-  providers: [provider],
-  model: "test/default",
-  extensions: [{ name: process.env.MITOME_EXTENSION_NAME ?? "missing-env" }],
-};
+export default defineMitome({
+  agent: {
+    providers: [provider],
+    model: "test/default",
+    extensions: [{ name: process.env.MITOME_EXTENSION_NAME ?? "missing-env" }],
+  },
+  hosts: [],
+});
 `;
 
 type Fixture = {
@@ -165,6 +175,20 @@ const writePackageVersion = async (
   const directory = join(dirname(current.definition), "node_modules", name);
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, "package.json"), JSON.stringify({ name, version }));
+};
+
+const installTui = async (current: Fixture): Promise<void> => {
+  const nodeModules = join(dirname(current.definition), "node_modules");
+  const tui = join(nodeModules, "@mitome", "tui");
+  await mkdir(tui, { recursive: true });
+  await writeFile(
+    join(tui, "package.json"),
+    JSON.stringify({ name: "@mitome/tui", type: "module", exports: "./index.js" }),
+  );
+  await writeFile(
+    join(tui, "index.js"),
+    'export const tui = () => ({ name: "tui", mode: "interactive", unsupported: () => process.env.TERM_PROGRAM === "ghostty" ? undefined : "@mitome/tui currently supports Ghostty on Linux", run: ({ prompt }) => process.stdout.write(`TUI_PROMPT ${JSON.stringify(prompt)}\\n`) });\n',
+  );
 };
 
 const installFixture = async (): Promise<Fixture> => {
@@ -264,6 +288,25 @@ const output = async (child: ReturnType<typeof spawn>) => {
   return { stdout, stderr, exitCode };
 };
 
+const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
+
+const ptyOutput = (
+  args: ReadonlyArray<string>,
+  current: Fixture,
+  terminal = "ghostty",
+): Promise<Awaited<ReturnType<typeof output>>> => {
+  const command = [binary, ...args].map(shellQuote).join(" ");
+  const child = spawnChild("/usr/bin/script", ["-qec", command, "/dev/null"], {
+    cwd: current.root,
+    env: { ...current.env, TERM_PROGRAM: terminal },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdin.end();
+  return output(child);
+};
+
+const ptyUnavailable = process.platform !== "linux" || !exists("/usr/bin/script");
+
 type StdoutReader = AsyncIterator<string>;
 
 const rest = async (reader: StdoutReader) => {
@@ -310,6 +353,115 @@ describe("compiled mitome", () => {
       stdout: "1\n",
       stderr: "",
     });
+  });
+
+  test("keeps bare invocation unavailable without an interactive Host", async ({ skip }) => {
+    if (ptyUnavailable) skip();
+    const current = await fixture();
+
+    const result = await output(spawn("", ["--use", current.definition], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Missing argument prompt");
+
+    // A TTY without a declared interactive Host exercises the child's missing-prompt branch.
+    const tty = await ptyOutput(["--use", current.definition], current);
+    expect(tty.exitCode).not.toBe(0);
+    expect(tty.stdout + tty.stderr).toContain("Missing argument prompt");
+  });
+
+  test("does not activate an installed but unconfigured TUI package", async ({ skip }) => {
+    if (ptyUnavailable) skip();
+    const current = await fixture();
+    await installTui(current);
+
+    const result = await ptyOutput(["hello", "--use", current.definition], current);
+    expect(result).toMatchObject({ exitCode: 0 });
+    expect(result.stdout).toContain("first second");
+    expect(result.stdout).not.toContain("TUI_PROMPT");
+  });
+
+  test("rejects a selected module that does not export defineMitome", async () => {
+    const current = await fixture("export default {};\n");
+
+    const result = await output(spawn("", ["hello", "--use", current.definition], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("must default-export defineMitome({ agent, hosts })");
+  });
+
+  test("opens a configured TUI in a supported terminal with optional prompt staging", async ({
+    skip,
+  }) => {
+    if (ptyUnavailable) skip();
+    const current = await fixture();
+    await installTui(current);
+    await writeFile(current.definition, definitionSource("first", { tui: true }));
+
+    const prompted = await ptyOutput(["hello", "--use", current.definition], current);
+    expect(prompted).toMatchObject({ exitCode: 0 });
+    expect(prompted.stdout).toContain('TUI_PROMPT "hello"');
+    expect(prompted.stdout).not.toContain("first second");
+
+    const bare = await ptyOutput(["--use", current.definition], current);
+    expect(bare).toMatchObject({ exitCode: 0 });
+    expect(bare.stdout).toContain('TUI_PROMPT ""');
+  });
+
+  test("runs a custom interactive Host outside the TUI terminal matrix", async ({ skip }) => {
+    if (ptyUnavailable) skip();
+    const current = await fixture(definitionSource("first", { customHost: true }));
+
+    const result = await ptyOutput(["hello", "--use", current.definition], current, "xterm");
+    expect(result).toMatchObject({ exitCode: 0 });
+    expect(result.stdout).toContain("CUSTOM_HOST hello");
+    expect(result.stdout).not.toContain("falling back to one-shot output");
+  });
+
+  test("forces one-shot output for --print and non-TTY stdout when the TUI is configured", async ({
+    skip,
+  }) => {
+    if (ptyUnavailable) skip();
+    const current = await fixture();
+    await installTui(current);
+    await writeFile(current.definition, definitionSource("first", { tui: true }));
+
+    for (const flag of ["-p", "--print"]) {
+      const printed = await ptyOutput([flag, "hello", "--use", current.definition], current);
+      expect(printed).toMatchObject({ exitCode: 0 });
+      expect(printed.stdout).toContain("first second");
+      expect(printed.stdout).not.toContain("TUI_PROMPT");
+
+      const missing = await ptyOutput([flag, "--use", current.definition], current);
+      expect(missing.exitCode).not.toBe(0);
+      expect(missing.stdout + missing.stderr).toContain("Missing argument prompt");
+    }
+
+    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
+      exitCode: 0,
+      stdout: "first second\n",
+      stderr: "",
+    });
+    const missing = await output(spawn("", ["--use", current.definition], current));
+    expect(missing.exitCode).not.toBe(0);
+    expect(missing.stderr).toContain("Missing argument prompt");
+  });
+
+  test("reports an unsupported terminal and falls back to one-shot output", async ({ skip }) => {
+    if (ptyUnavailable) skip();
+    const current = await fixture();
+    await installTui(current);
+    await writeFile(current.definition, definitionSource("first", { tui: true }));
+
+    const result = await ptyOutput(["hello", "--use", current.definition], current, "xterm");
+    expect(result).toMatchObject({ exitCode: 0 });
+    expect(result.stdout).toContain("currently supports Ghostty on Linux");
+    expect(result.stdout).toContain("falling back to one-shot output");
+    expect(result.stdout).toContain("first second");
+    expect(result.stdout).not.toContain("TUI_PROMPT");
+
+    const missing = await ptyOutput(["--use", current.definition], current, "xterm");
+    expect(missing.exitCode).not.toBe(0);
+    expect(missing.stdout + missing.stderr).toContain("Missing argument prompt");
+    expect(missing.stdout).not.toContain("TUI_PROMPT");
   });
 
   test("loads the config env file in the Child Host without cwd leakage", async () => {
@@ -383,7 +535,7 @@ describe("compiled mitome", () => {
       exitCode: 0,
       stderr: expect.not.stringContaining("Cannot find package"),
     });
-    expect(result.stdout).toContain("Installing Agent Definition dependencies...");
+    expect(result.stdout).toContain("Installing Mitome Definition dependencies...");
     expect(result.stdout).toContain("reconciled second\n");
     expect(exists(join(dirname(current.definition), "node_modules", "@mitome", "core"))).toBe(true);
     expect(exists(join(dirname(current.definition), "bun.lock"))).toBe(true);
@@ -397,7 +549,7 @@ describe("compiled mitome", () => {
 
     const result = await output(spawn("", ["hello"], current));
     expect(result).toMatchObject({ exitCode: 0 });
-    expect(result.stdout).toContain("Installing Agent Definition dependencies...");
+    expect(result.stdout).toContain("Installing Mitome Definition dependencies...");
     expect(result.stdout).toContain("reconciled second\n");
     expect(exists(join(config, "node_modules", "@mitome", "core"))).toBe(true);
   });
@@ -457,7 +609,7 @@ describe("compiled mitome", () => {
     await writeFile(join(definitionDirectory, "package.json"), JSON.stringify(manifest));
     const stale = await output(spawn("", ["hello", "--use", current.definition], current));
     expect(stale).toMatchObject({ exitCode: 0 });
-    expect(stale.stdout).toContain("Installing Agent Definition dependencies...");
+    expect(stale.stdout).toContain("Installing Mitome Definition dependencies...");
     expect(exists(join(definitionDirectory, "node_modules", "declared-fixture-extension"))).toBe(
       true,
     );
@@ -468,7 +620,7 @@ describe("compiled mitome", () => {
     );
     const missing = await output(spawn("", ["hello", "--use", current.definition], current));
     expect(missing.exitCode).not.toBe(0);
-    expect(missing.stdout).not.toContain("Installing Agent Definition dependencies");
+    expect(missing.stdout).not.toContain("Installing Mitome Definition dependencies");
     expect(missing.stderr).toContain("missing-fixture-extension");
   });
 
@@ -598,7 +750,7 @@ describe("compiled mitome", () => {
   });
 
   test("prints aggregated Agent Definition errors", async () => {
-    const current = await fixture("export default {};\n");
+    const current = await fixture("export default { agent: {}, hosts: [] };\n");
     const result = await output(spawn("", ["hello", "--use", current.definition], current));
 
     expect(result.exitCode).not.toBe(0);
@@ -656,6 +808,13 @@ describe("compiled mitome", () => {
     expect(
       await output(spawn("ignored\n", ["hello", "--use", current.definition], current)),
     ).toMatchObject({
+      exitCode: 0,
+      stdout: "first second\n",
+      stderr: "",
+    });
+
+    // An explicitly empty prompt is valid Session input, unlike an omitted one.
+    expect(await output(spawn("", ["", "--use", current.definition], current))).toMatchObject({
       exitCode: 0,
       stdout: "first second\n",
       stderr: "",

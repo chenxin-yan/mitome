@@ -15,6 +15,8 @@ export type {
   ToolResultHookContext,
   ToolResultValidator,
 } from "./extension.js";
+export { defineMitome } from "./host.js";
+export type { Host, HostContext, MitomeDefinition } from "./host.js";
 export { credentialDescriptor, makeProvider } from "./provider.js";
 export type { AnyProvider, Provider, QualifiedModelId, ValidProviderId } from "./provider.js";
 export {

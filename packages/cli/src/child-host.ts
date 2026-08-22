@@ -51,7 +51,11 @@ export interface ExtensionListResult {
 export class ChildHost extends Context.Service<
   ChildHost,
   {
-    readonly runHost: (path: string, prompt: string) => Effect.Effect<ExitCode, CliError>;
+    readonly runHost: (
+      path: string,
+      prompt: string | undefined,
+      mode: "auto" | "print",
+    ) => Effect.Effect<ExitCode, CliError>;
     readonly install: (path: string) => Effect.Effect<ExitCode, CliError>;
     readonly removeDependency: (
       path: string,
@@ -73,7 +77,8 @@ export class ChildHost extends Context.Service<
   }
 >()("@mitome/cli/ChildHost") {
   static readonly layer = Layer.succeed(ChildHost, {
-    runHost: (path, prompt) => Effect.uninterruptible(attempt(() => runHost(path, prompt))),
+    runHost: (path, prompt, mode) =>
+      Effect.uninterruptible(attempt(() => runHost(path, prompt, mode))),
     install: (path) => Effect.uninterruptible(attempt(() => install(path))),
     removeDependency: (path, packageName) =>
       Effect.uninterruptible(attempt(() => removeDependency(path, packageName))),
@@ -188,25 +193,33 @@ const inspectExtensions = async (path: string): Promise<ExtensionListResult> => 
   };
 };
 
-const runHost = (path: string, prompt: string): Promise<ExitCode> =>
-  runEmbeddedHost(hostSource, path, prompt);
+const runHost = (
+  path: string,
+  prompt: string | undefined,
+  mode: "auto" | "print",
+): Promise<ExitCode> => runEmbeddedHost(hostSource, path, prompt, mode);
 
 export const runEmbeddedHost = async (
   source: string,
   path: string,
-  prompt: string,
-  preload?: string,
+  prompt: string | undefined,
+  mode: "auto" | "print",
 ): Promise<ExitCode> => {
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.
-  const preloadArgs = preload === undefined ? [] : ["--preload", preload];
+  // The prompt argument is omitted entirely when absent so the child can tell
+  // "no prompt given" apart from an explicitly empty prompt.
   const child = Bun.spawn(
-    [process.execPath, configEnvFlag(), ...preloadArgs, "--eval", source, path, prompt],
+    [
+      process.execPath,
+      configEnvFlag(),
+      "--eval",
+      source,
+      path,
+      mode,
+      ...(prompt === undefined ? [] : [prompt]),
+    ],
     {
-      // Bare preload specifiers (e.g. @opentui/solid/preload) resolve from the
-      // child's cwd, and compiled binaries cannot resolve subpath exports
-      // parent-side (ADR-0038) — so run the child beside the Agent Definition.
-      ...(preload === undefined ? {} : { cwd: dirname(path) }),
       env: childEnv,
       stdin: "inherit",
       stdout: "inherit",

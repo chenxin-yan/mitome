@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentDefinition, AnyExtension } from "@mitome/core";
+import type { AnyExtension, MitomeDefinition } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
 const outputPath = process.argv[2]!;
@@ -10,8 +10,13 @@ const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
 const effectPath = Bun.resolveSync("effect", dirname(corePath));
 const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath).href);
 const effect: typeof import("effect") = await import(pathToFileURL(effectPath).href);
-const loaded = ((await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown })
-  .default as AgentDefinition;
+const loaded: unknown = (
+  (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
+).default;
+const definition = loaded as Partial<MitomeDefinition> | undefined;
+if (definition?.agent === undefined) {
+  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
+}
 
 const errorMessage = (error: unknown): string => {
   const head =
@@ -47,8 +52,8 @@ const packageVersion = async (name: string): Promise<string> => {
 };
 
 try {
-  const compiled = await effect.Effect.runPromise(core.compileAgentDefinition(loaded));
-  const directNames = new Set(loaded.extensions.map(({ name }) => name));
+  const compiled = await effect.Effect.runPromise(core.compileAgentDefinition(definition.agent));
+  const directNames = new Set(definition.agent.extensions.map(({ name }) => name));
   const extensions = await Promise.all(
     compiled.extensions.map(async (extension) => ({
       name: extension.name,

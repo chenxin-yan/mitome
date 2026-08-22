@@ -4,7 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
-import type { AuthCapability, AnyProvider } from "@mitome/core";
+import type { AuthCapability, MitomeDefinition } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
 const outputPath = process.argv[2]!;
@@ -16,14 +16,10 @@ const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath)
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
-
-const providers =
-  typeof loaded === "object" &&
-  loaded !== null &&
-  "providers" in loaded &&
-  Array.isArray(loaded.providers)
-    ? (loaded.providers as ReadonlyArray<AnyProvider>)
-    : [];
+const providers = (loaded as Partial<MitomeDefinition> | undefined)?.agent?.providers;
+if (!Array.isArray(providers)) {
+  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
+}
 const authentication = providers.flatMap((provider) => {
   const credential = core.credentialDescriptor(provider);
   return credential === undefined ? [] : [{ id: provider.id, credential }];

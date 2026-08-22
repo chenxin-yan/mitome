@@ -27,7 +27,11 @@ type PromptAnswer =
   | { readonly type: "abort" };
 
 type ChildHostCalls = {
-  readonly runHost: Array<{ readonly path: string; readonly prompt: string }>;
+  readonly runHost: Array<{
+    readonly path: string;
+    readonly prompt: string | undefined;
+    readonly mode: "auto" | "print";
+  }>;
   readonly install: Array<string>;
   readonly removeDependency: Array<{ readonly path: string; readonly packageName: string }>;
   readonly inspect: Array<string>;
@@ -83,9 +87,9 @@ const fakeChildHost = (
   return {
     calls,
     layer: Layer.succeed(ChildHost, {
-      runHost: (path, prompt) =>
+      runHost: (path, prompt, mode) =>
         Effect.sync(() => {
-          calls.runHost.push({ path, prompt });
+          calls.runHost.push({ path, prompt, mode });
           return options.runExitCode ?? 0;
         }),
       install: (path) =>
@@ -189,14 +193,31 @@ describe("CLI handlers", () => {
       );
       const childHost = fakeChildHost({ runExitCode: 23 });
       const exit = yield* Effect.exit(
-        runPrompt({ prompt: "hello", use: Option.none() }).pipe(
+        runPrompt({ print: false, prompt: Option.some("hello"), use: Option.none() }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
 
       expect(exit).toEqual(Exit.succeed(23));
       expect(childHost.calls.install).toEqual([]);
-      expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello" }]);
+      expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello", mode: "print" }]);
+    }),
+  );
+
+  it.effect("rejects a missing forced-print prompt before selecting an Agent Definition", () =>
+    Effect.gen(function* () {
+      const childHost = fakeChildHost();
+      const missing = join(yield* Effect.promise(temporaryDirectory), "missing.ts");
+      const exit = yield* Effect.exit(
+        runPrompt({ print: true, prompt: Option.none(), use: Option.some(missing) }).pipe(
+          Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
+        ),
+      );
+
+      expect(exitCode(exit)).toBe(1);
+      expect((yield* TestConsole.errorLines).join("\n")).toContain("Missing argument prompt");
+      expect(childHost.calls.install).toEqual([]);
+      expect(childHost.calls.runHost).toEqual([]);
     }),
   );
 
@@ -206,15 +227,15 @@ describe("CLI handlers", () => {
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
       const childHost = fakeChildHost({ installRuntime: true });
       const exit = yield* Effect.exit(
-        runPrompt({ prompt: "hello", use: Option.some(path) }).pipe(
+        runPrompt({ print: false, prompt: Option.some("hello"), use: Option.some(path) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
 
       expect(exit).toEqual(Exit.succeed(0));
       expect(childHost.calls.install).toEqual([path]);
-      expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello" }]);
-      expect(yield* TestConsole.logLines).toContain("Installing Agent Definition dependencies...");
+      expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello", mode: "print" }]);
+      expect(yield* TestConsole.logLines).toContain("Installing Mitome Definition dependencies...");
     }),
   );
 
@@ -224,7 +245,7 @@ describe("CLI handlers", () => {
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
       const childHost = fakeChildHost({ installExitCode: 17 });
       const exit = yield* Effect.exit(
-        runPrompt({ prompt: "hello", use: Option.some(path) }).pipe(
+        runPrompt({ print: false, prompt: Option.some("hello"), use: Option.some(path) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
@@ -263,7 +284,7 @@ describe("CLI handlers", () => {
         yield* Effect.promise(() => writeFile(packagePath, contents));
         const beforeErrors = (yield* TestConsole.errorLines).length;
         const exit = yield* Effect.exit(
-          runPrompt({ prompt: "hello", use: Option.some(path) }).pipe(
+          runPrompt({ print: false, prompt: Option.some("hello"), use: Option.some(path) }).pipe(
             Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
           ),
         );
@@ -289,7 +310,7 @@ describe("CLI handlers", () => {
       expect(exitCode(missingDefault)).toBe(1);
       expect((yield* TestConsole.errorLines).join("\n")).toContain("run mitome init first");
       expect((yield* TestConsole.errorLines).join("\n")).not.toContain(
-        "Agent Definition not found",
+        "Mitome Definition not found",
       );
 
       const missingDirectory = yield* Effect.promise(temporaryDirectory);
@@ -299,7 +320,7 @@ describe("CLI handlers", () => {
       );
       expect(exitCode(missing)).toBe(1);
       expect((yield* TestConsole.errorLines).join("\n")).toContain(
-        `Agent Definition not found at ${missingPath}`,
+        `Mitome Definition not found at ${missingPath}`,
       );
 
       const emptyDirectory = yield* Effect.promise(temporaryDirectory);
@@ -308,7 +329,7 @@ describe("CLI handlers", () => {
       );
       expect(exitCode(directory)).toBe(1);
       expect((yield* TestConsole.errorLines).join("\n")).toContain(
-        `No Agent Definition module found at ${join(emptyDirectory, "index.ts")}`,
+        `No Mitome Definition module found at ${join(emptyDirectory, "index.ts")}`,
       );
 
       const javascriptDirectory = yield* Effect.promise(temporaryDirectory);

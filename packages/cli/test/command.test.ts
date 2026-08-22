@@ -70,7 +70,6 @@ describe("mitome command", () => {
   it.effect("uses native parse errors for malformed syntax", () =>
     Effect.gen(function* () {
       for (const args of [
-        [],
         ["auth", "bogus"],
         ["init", "extra"],
         ["install", "--use"],
