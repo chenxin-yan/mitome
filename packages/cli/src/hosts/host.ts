@@ -37,14 +37,12 @@ if (!isMitomeDefinition(loaded)) {
 
 const interactiveHost = loaded.hosts[0];
 if (mode === "auto" && interactiveHost !== undefined) {
-  // ADR-0038's MVP terminal matrix; widen only after validating another terminal.
-  if (process.platform === "linux" && process.env.TERM_PROGRAM?.toLowerCase() === "ghostty") {
+  const reason = interactiveHost.unsupported?.();
+  if (reason === undefined) {
     await interactiveHost.run({ agent: loaded.agent, prompt });
     process.exit(0);
   }
-  process.stderr.write(
-    "@mitome/tui currently supports Ghostty on Linux; falling back to one-shot output.\n",
-  );
+  process.stderr.write(`${reason}; falling back to one-shot output.\n`);
 }
 
 // An empty prompt means none was given; one-shot has nothing to run.

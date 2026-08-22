@@ -204,6 +204,23 @@ describe("CLI handlers", () => {
     }),
   );
 
+  it.effect("rejects a missing forced-print prompt before selecting an Agent Definition", () =>
+    Effect.gen(function* () {
+      const childHost = fakeChildHost();
+      const missing = join(yield* Effect.promise(temporaryDirectory), "missing.ts");
+      const exit = yield* Effect.exit(
+        runPrompt({ print: true, prompt: Option.none(), use: Option.some(missing) }).pipe(
+          Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
+        ),
+      );
+
+      expect(exitCode(exit)).toBe(1);
+      expect((yield* TestConsole.errorLines).join("\n")).toContain("Missing argument prompt");
+      expect(childHost.calls.install).toEqual([]);
+      expect(childHost.calls.runHost).toEqual([]);
+    }),
+  );
+
   it.effect("reconciles a missing runtime before importing the selected Agent Definition", () =>
     Effect.gen(function* () {
       const directory = yield* Effect.promise(temporaryDirectory);

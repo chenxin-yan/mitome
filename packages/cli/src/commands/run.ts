@@ -23,14 +23,14 @@ export const runPrompt = Effect.fn("@mitome/cli/runPrompt")(function* ({
   readonly prompt: Option.Option<string>;
   readonly use: Option.Option<string>;
 }) {
+  const promptValue = Option.getOrUndefined(prompt);
+  const forcePrint = print || process.stdout.isTTY !== true;
+  if (forcePrint && promptValue === undefined) return yield* fail("Missing argument prompt");
+
   const childHost = yield* ChildHost;
   const path = yield* attempt(() => definitionPath(use));
   const installExitCode = yield* reconcileDefinition(path);
   if (installExitCode !== 0) return installExitCode;
-
-  const promptValue = Option.getOrUndefined(prompt);
-  const forcePrint = print || process.stdout.isTTY !== true;
-  if (forcePrint && promptValue === undefined) return yield* fail("Missing argument prompt");
   return yield* childHost.runHost(path, promptValue, forcePrint ? "print" : "auto");
 });
 

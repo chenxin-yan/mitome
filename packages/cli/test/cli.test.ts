@@ -26,6 +26,7 @@ const definitionSource = (
   options: {
     readonly block?: boolean;
     readonly tui?: boolean;
+    readonly customHost?: boolean;
     readonly signalProbe?: {
       readonly pid: string;
       readonly cleanupStarted: string;
@@ -56,7 +57,7 @@ const agent = { providers: [provider], model: "test/default", extensions: ${
     }) } }]`
     : "[]"
 } };
-export default defineMitome({ agent, hosts: ${options.tui ? "[tui()]" : "[]"} });
+export default defineMitome({ agent, hosts: ${options.tui ? "[tui()]" : options.customHost ? '[{ name: "custom", mode: "interactive", run: async ({ prompt }) => console.log(`CUSTOM_HOST ${prompt}`) }]' : "[]"} });
 `;
 
 const envDefinitionSource = (): string => `
@@ -186,7 +187,7 @@ const installTui = async (current: Fixture): Promise<void> => {
   );
   await writeFile(
     join(tui, "index.js"),
-    'export const tui = () => ({ name: "tui", mode: "interactive", run: ({ prompt }) => process.stdout.write(`TUI_PROMPT ${JSON.stringify(prompt)}\\n`) });\n',
+    'export const tui = () => ({ name: "tui", mode: "interactive", unsupported: () => process.env.TERM_PROGRAM === "ghostty" ? undefined : "@mitome/tui currently supports Ghostty on Linux", run: ({ prompt }) => process.stdout.write(`TUI_PROMPT ${JSON.stringify(prompt)}\\n`) });\n',
   );
 };
 
@@ -304,6 +305,8 @@ const ptyOutput = (
   return output(child);
 };
 
+const ptyUnavailable = process.platform !== "linux" || !exists("/usr/bin/script");
+
 type StdoutReader = AsyncIterator<string>;
 
 const rest = async (reader: StdoutReader) => {
@@ -352,7 +355,8 @@ describe("compiled mitome", () => {
     });
   });
 
-  test("keeps bare invocation unavailable without an interactive Host", async () => {
+  test("keeps bare invocation unavailable without an interactive Host", async ({ skip }) => {
+    if (ptyUnavailable) skip();
     const current = await fixture();
 
     const result = await output(spawn("", ["--use", current.definition], current));
@@ -365,7 +369,8 @@ describe("compiled mitome", () => {
     expect(tty.stdout + tty.stderr).toContain("Missing argument prompt");
   });
 
-  test("does not activate an installed but unconfigured TUI package", async () => {
+  test("does not activate an installed but unconfigured TUI package", async ({ skip }) => {
+    if (ptyUnavailable) skip();
     const current = await fixture();
     await installTui(current);
 
@@ -383,7 +388,10 @@ describe("compiled mitome", () => {
     expect(result.stderr).toContain("must default-export defineMitome({ agent, hosts })");
   });
 
-  test("opens a configured TUI in a supported terminal with optional prompt staging", async () => {
+  test("opens a configured TUI in a supported terminal with optional prompt staging", async ({
+    skip,
+  }) => {
+    if (ptyUnavailable) skip();
     const current = await fixture();
     await installTui(current);
     await writeFile(current.definition, definitionSource("first", { tui: true }));
@@ -398,7 +406,20 @@ describe("compiled mitome", () => {
     expect(bare.stdout).toContain('TUI_PROMPT ""');
   });
 
-  test("forces one-shot output for --print and non-TTY stdout when the TUI is configured", async () => {
+  test("runs a custom interactive Host outside the TUI terminal matrix", async ({ skip }) => {
+    if (ptyUnavailable) skip();
+    const current = await fixture(definitionSource("first", { customHost: true }));
+
+    const result = await ptyOutput(["hello", "--use", current.definition], current, "xterm");
+    expect(result).toMatchObject({ exitCode: 0 });
+    expect(result.stdout).toContain("CUSTOM_HOST hello");
+    expect(result.stdout).not.toContain("falling back to one-shot output");
+  });
+
+  test("forces one-shot output for --print and non-TTY stdout when the TUI is configured", async ({
+    skip,
+  }) => {
+    if (ptyUnavailable) skip();
     const current = await fixture();
     await installTui(current);
     await writeFile(current.definition, definitionSource("first", { tui: true }));
@@ -424,7 +445,8 @@ describe("compiled mitome", () => {
     expect(missing.stderr).toContain("Missing argument prompt");
   });
 
-  test("reports an unsupported terminal and falls back to one-shot output", async () => {
+  test("reports an unsupported terminal and falls back to one-shot output", async ({ skip }) => {
+    if (ptyUnavailable) skip();
     const current = await fixture();
     await installTui(current);
     await writeFile(current.definition, definitionSource("first", { tui: true }));

@@ -6,6 +6,22 @@ describe("TUI Host", () => {
     expect(tui()).toMatchObject({ name: "tui", mode: "interactive" });
   });
 
+  test("declares its supported terminal matrix", () => {
+    const original = process.env.TERM_PROGRAM;
+    try {
+      process.env.TERM_PROGRAM = "Ghostty";
+      expect(tui().unsupported?.()).toBe(
+        process.platform === "linux"
+          ? undefined
+          : "@mitome/tui currently supports Ghostty on Linux",
+      );
+      process.env.TERM_PROGRAM = "xterm";
+      expect(tui().unsupported?.()).toBe("@mitome/tui currently supports Ghostty on Linux");
+    } finally {
+      process.env.TERM_PROGRAM = original;
+    }
+  });
+
   test("loads its Solid preload before rendering", async () => {
     const entry = new URL("../src/index.ts", import.meta.url).href;
     const source = `
@@ -18,22 +34,20 @@ describe("TUI Host", () => {
       stderr: "pipe",
     });
 
-    // A wall-clock SIGINT raced renderer startup on cold CI runners (the signal
-    // landed mid-import and was lost, leaving the renderer alive forever). Signal
-    // only once the first rendered frame proves the renderer is live, and repeat
-    // in case that frame beat OpenTUI's signal handler installation.
+    let interrupt: ReturnType<typeof setTimeout> | undefined;
+    const hardKill = setTimeout(() => child.kill("SIGKILL"), 20_000);
+    const exited = child.exited.finally(() => {
+      clearTimeout(hardKill);
+      if (interrupt !== undefined) clearTimeout(interrupt);
+    });
     let stdout = "";
-    let interrupt: ReturnType<typeof setInterval> | undefined;
     const decoder = new TextDecoder();
-    try {
-      for await (const chunk of child.stdout) {
-        stdout += decoder.decode(chunk, { stream: true });
-        interrupt ??= setInterval(() => child.kill("SIGINT"), 500);
-      }
-    } finally {
-      if (interrupt !== undefined) clearInterval(interrupt);
+    for await (const chunk of child.stdout) {
+      stdout += decoder.decode(chunk, { stream: true });
+      // First output proves renderer startup; repeating SIGINT can race terminal teardown.
+      interrupt ??= setTimeout(() => child.kill("SIGINT"), 500);
     }
-    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    const [exitCode, stderr] = await Promise.all([exited, new Response(child.stderr).text()]);
 
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
