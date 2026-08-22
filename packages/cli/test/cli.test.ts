@@ -358,6 +358,11 @@ describe("compiled mitome", () => {
     const result = await output(spawn("", ["--use", current.definition], current));
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("Missing argument prompt");
+
+    // A TTY without a declared interactive Host exercises the child's missing-prompt branch.
+    const tty = await ptyOutput(["--use", current.definition], current);
+    expect(tty.exitCode).not.toBe(0);
+    expect(tty.stdout + tty.stderr).toContain("Missing argument prompt");
   });
 
   test("does not activate an installed but unconfigured TUI package", async () => {
@@ -508,7 +513,7 @@ describe("compiled mitome", () => {
       exitCode: 0,
       stderr: expect.not.stringContaining("Cannot find package"),
     });
-    expect(result.stdout).toContain("Installing Agent Definition dependencies...");
+    expect(result.stdout).toContain("Installing Mitome Definition dependencies...");
     expect(result.stdout).toContain("reconciled second\n");
     expect(exists(join(dirname(current.definition), "node_modules", "@mitome", "core"))).toBe(true);
     expect(exists(join(dirname(current.definition), "bun.lock"))).toBe(true);
@@ -522,7 +527,7 @@ describe("compiled mitome", () => {
 
     const result = await output(spawn("", ["hello"], current));
     expect(result).toMatchObject({ exitCode: 0 });
-    expect(result.stdout).toContain("Installing Agent Definition dependencies...");
+    expect(result.stdout).toContain("Installing Mitome Definition dependencies...");
     expect(result.stdout).toContain("reconciled second\n");
     expect(exists(join(config, "node_modules", "@mitome", "core"))).toBe(true);
   });
@@ -582,7 +587,7 @@ describe("compiled mitome", () => {
     await writeFile(join(definitionDirectory, "package.json"), JSON.stringify(manifest));
     const stale = await output(spawn("", ["hello", "--use", current.definition], current));
     expect(stale).toMatchObject({ exitCode: 0 });
-    expect(stale.stdout).toContain("Installing Agent Definition dependencies...");
+    expect(stale.stdout).toContain("Installing Mitome Definition dependencies...");
     expect(exists(join(definitionDirectory, "node_modules", "declared-fixture-extension"))).toBe(
       true,
     );
@@ -593,7 +598,7 @@ describe("compiled mitome", () => {
     );
     const missing = await output(spawn("", ["hello", "--use", current.definition], current));
     expect(missing.exitCode).not.toBe(0);
-    expect(missing.stdout).not.toContain("Installing Agent Definition dependencies");
+    expect(missing.stdout).not.toContain("Installing Mitome Definition dependencies");
     expect(missing.stderr).toContain("missing-fixture-extension");
   });
 

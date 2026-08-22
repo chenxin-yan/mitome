@@ -218,7 +218,7 @@ describe("CLI handlers", () => {
       expect(exit).toEqual(Exit.succeed(0));
       expect(childHost.calls.install).toEqual([path]);
       expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello", mode: "print" }]);
-      expect(yield* TestConsole.logLines).toContain("Installing Agent Definition dependencies...");
+      expect(yield* TestConsole.logLines).toContain("Installing Mitome Definition dependencies...");
     }),
   );
 
@@ -293,7 +293,7 @@ describe("CLI handlers", () => {
       expect(exitCode(missingDefault)).toBe(1);
       expect((yield* TestConsole.errorLines).join("\n")).toContain("run mitome init first");
       expect((yield* TestConsole.errorLines).join("\n")).not.toContain(
-        "Agent Definition not found",
+        "Mitome Definition not found",
       );
 
       const missingDirectory = yield* Effect.promise(temporaryDirectory);
@@ -303,7 +303,7 @@ describe("CLI handlers", () => {
       );
       expect(exitCode(missing)).toBe(1);
       expect((yield* TestConsole.errorLines).join("\n")).toContain(
-        `Agent Definition not found at ${missingPath}`,
+        `Mitome Definition not found at ${missingPath}`,
       );
 
       const emptyDirectory = yield* Effect.promise(temporaryDirectory);
@@ -312,7 +312,7 @@ describe("CLI handlers", () => {
       );
       expect(exitCode(directory)).toBe(1);
       expect((yield* TestConsole.errorLines).join("\n")).toContain(
-        `No Agent Definition module found at ${join(emptyDirectory, "index.ts")}`,
+        `No Mitome Definition module found at ${join(emptyDirectory, "index.ts")}`,
       );
 
       const javascriptDirectory = yield* Effect.promise(temporaryDirectory);

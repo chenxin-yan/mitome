@@ -8,7 +8,7 @@ export const reconcileDefinition = Effect.fn("@mitome/cli/reconcileDefinition")(
 ) {
   const childHost = yield* ChildHost;
   if (!(yield* attempt(() => definitionNeedsReconcile(path)))) return 0 satisfies ExitCode;
-  yield* Console.log("Installing Agent Definition dependencies...");
+  yield* Console.log("Installing Mitome Definition dependencies...");
   const exitCode = yield* childHost.install(path);
   if (exitCode === 0) yield* attempt(() => checkRuntime(path));
   return exitCode;

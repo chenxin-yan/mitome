@@ -78,7 +78,7 @@ describe("scaffold plans", () => {
       include: ["index.ts"],
     });
     expect(plan.get("README.md")).not.toContain("npm install effect");
-    expect(plan.get("README.md")).toContain("createSession");
+    expect(plan.get("README.md")).toContain("createSession(mitome.agent)");
   });
 
   test.each([
@@ -156,6 +156,12 @@ describe("create-mitome scaffold", () => {
     expect(agent).not.toContain('instructions: "You are a helpful Agent."');
     expect(await contents(path, "instructions.md")).toBe("You are a helpful Agent.\n");
     expect(JSON.parse(await contents(path, "tsconfig.json")).include).toEqual(["index.ts"]);
+    // The embed sample must unwrap the composition root, not pass it to a session.
+    const readme = await contents(path, "README.md");
+    expect(readme).toContain('import mitome from "./index.js";');
+    expect(readme).toContain(
+      flavor === "promise" ? "withSession(mitome.agent" : "createSession(mitome.agent)",
+    );
   });
 
   test("creates an Effect-native Codex project without overwriting files", async () => {
@@ -171,7 +177,7 @@ describe("create-mitome scaffold", () => {
     );
     const readme = await contents(path, "README.md");
     expect(readme).not.toContain("npm install effect");
-    expect(readme).toContain("createSession");
+    expect(readme).toContain("createSession(mitome.agent)");
     expect(readme).toContain("mitome auth login --use .\n");
     expect(readme).toContain('mitome "hi" --use .\n');
 
