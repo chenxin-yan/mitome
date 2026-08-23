@@ -2,7 +2,11 @@
   "name": "@mitome/cli",
   "version": "0.0.0",
   "license": "MIT",
-  "repository": "https://github.com/chenxin-yan/mitome",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chenxin-yan/mitome.git",
+    "directory": "packages/cli"
+  },
   "bin": {
     "mitome": "./scripts/mitome.mjs"
   },

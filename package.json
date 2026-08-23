@@ -44,12 +44,17 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@babel/cli": "7.29.7",
+    "@babel/core": "7.29.7",
     "@changesets/cli": "3.0.0",
     "@effect/tsgo": "0.36.4",
     "@types/bun": "catalog:",
+    "babel-plugin-annotate-pure-calls": "0.5.0",
     "oxfmt": "^0.63.0",
     "oxlint": "^1.78.0",
     "oxlint-tsgolint": "^7.0.2001",
+    "publint": "0.3.24",
     "turbo": "^2.10.9",
     "typescript": "catalog:"
   },

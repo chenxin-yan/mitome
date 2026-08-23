@@ -14,6 +14,7 @@
     },
     "build": {
       "dependsOn": ["^build", "//#hints:generate"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/scripts/build-lib.ts"],
       "outputs": ["dist/**"]
     },
     "dev": {
