@@ -2,6 +2,7 @@ import { mkdtemp, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 const packageDirectory = process.cwd();
+const babelExecutable = Bun.resolveSync("@babel/cli/bin/babel.js", import.meta.dir);
 const distDirectory = join(packageDirectory, "dist");
 const temporaryDirectory = await mkdtemp(join(packageDirectory, ".mitome-dist-"));
 
@@ -21,8 +22,7 @@ try {
   // Only parse JS: the pure-call plugin has no JSX syntax support, and TUI's JSX has no eligible calls.
   await run([
     process.execPath,
-    "x",
-    "babel",
+    babelExecutable,
     "dist",
     "--out-dir",
     temporaryDirectory,
