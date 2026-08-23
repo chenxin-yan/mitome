@@ -2,7 +2,11 @@
   "name": "@mitome/tui",
   "version": "0.0.0",
   "license": "MIT",
-  "repository": "https://github.com/chenxin-yan/mitome",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chenxin-yan/mitome.git",
+    "directory": "packages/tui"
+  },
   "files": [
     "dist/**/*.js",
     "dist/**/*.jsx",
@@ -21,7 +25,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "bun ../../scripts/build-lib.ts",
     "check:types": "tsc",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",

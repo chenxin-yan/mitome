@@ -3,7 +3,11 @@
   "version": "0.0.0",
   "description": "The mitome CLI binary for linux-arm64-musl",
   "license": "MIT",
-  "repository": "https://github.com/chenxin-yan/mitome",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chenxin-yan/mitome.git",
+    "directory": "packages/cli/npm/cli-linux-arm64-musl"
+  },
   "files": [
     "bin"
   ],

@@ -50,6 +50,23 @@ try {
       join(rootDirectory, "packages", name),
     );
   }
+  for (const name of publicPackages) {
+    const archive = await archiveFor(name);
+    await run([process.execPath, "x", "publint", "--strict", archive]);
+    if (name !== "cli") {
+      await run([
+        process.execPath,
+        "x",
+        "attw",
+        "--profile",
+        "esm-only",
+        "--format",
+        "table",
+        "--no-color",
+        archive,
+      ]);
+    }
+  }
 
   const storeDirectory = join(rootDirectory, "node_modules", ".bun");
   const effectVersion: string = (await Bun.file(join(rootDirectory, "package.json")).json())
