@@ -1,4 +1,4 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": [".agents/", "skills-lock.json"]
+  "ignorePatterns": [".agents/", "skills-lock.json", "tools/oxlint/anti-slop/"]
 }

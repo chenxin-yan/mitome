@@ -1,6 +1,10 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "unicorn", "oxc", "eslint", "promise", "import", "jsdoc"],
+  "jsPlugins": [
+    { "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" },
+    { "name": "anti-slop-effect", "specifier": "./tools/oxlint/anti-slop/effect/index.ts" }
+  ],
   "categories": {
     "correctness": "error"
   },
@@ -13,7 +17,23 @@
       "error",
       { "allowConstantLoopConditions": "only-allowed-literals" }
     ],
-    "typescript/restrict-plus-operands": "error"
+    "typescript/restrict-plus-operands": "error",
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-runtime-typeof": "error",
+    "anti-slop/no-shape-in-symbol-names": "error",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
+    "anti-slop-effect/no-service-constructor-imports": "error"
   },
   "env": {
     "builtin": true
@@ -21,5 +41,15 @@
   "options": {
     "typeAware": true
   },
-  "ignorePatterns": ["**/node_modules/", "**/dist/", "**/.turbo/", ".agents/"]
+  "ignorePatterns": [
+    "**/node_modules/",
+    "**/dist/",
+    "**/.turbo/",
+    ".agents/",
+    ".pi/**",
+    ".claude/**",
+    ".pi-subagents/**",
+    ".agent-sources/**",
+    "tools/oxlint/anti-slop/**"
+  ]
 }

@@ -26,7 +26,7 @@
     },
     "lint": {
       "dependsOn": ["^build", "//#hints:generate"],
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.oxlintrc.json"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.oxlintrc.json", "$TURBO_ROOT$/tools/oxlint/**"],
       "outputs": []
     },
     "lint:fix": {
