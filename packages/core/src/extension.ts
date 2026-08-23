@@ -1,14 +1,17 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import { Prompt, Tool, Toolkit } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
 
+export type ToolInput = Tool.Parameters<Tool.Any>;
+export type ToolOutput = Tool.HandlerResult<Tool.Any>["result"];
+
 export interface ToolHookContext {
   readonly name: string;
-  readonly params: unknown;
+  readonly params: ToolInput;
 }
 
 export interface ToolResultHookContext extends ToolHookContext {
-  readonly result: unknown;
+  readonly result: ToolOutput;
   readonly isFailure: boolean;
 }
 
@@ -28,13 +31,15 @@ export interface ExtensionHooks<Resource = never> {
     context: ToolHookContext,
   ) => Effect.Effect<void | { readonly reason: string }, unknown, Resource>;
   /** Observes and may transform successful or failed Tool handler results. */
-  readonly postTool?: (context: ToolResultHookContext) => Effect.Effect<unknown, unknown, Resource>;
+  readonly postTool?: (
+    context: ToolResultHookContext,
+  ) => Effect.Effect<ToolOutput, unknown, Resource>;
 }
 
-export type ToolInputValidator = (input: unknown) => Effect.Effect<unknown, unknown>;
-export type ToolResultValidator = (result: unknown) => Effect.Effect<unknown, unknown>;
+export type ToolInputValidator = (input: ToolInput) => Effect.Effect<ToolInput, unknown>;
+export type ToolResultValidator = (result: ToolOutput) => Effect.Effect<ToolOutput, unknown>;
 
-export interface ToolContribution<Input = unknown, Output = unknown> {
+export interface ToolContribution<Input = ToolInput, Output = ToolOutput> {
   readonly input: Input;
   readonly output: Output;
 }
@@ -67,7 +72,7 @@ export interface Extension<
   readonly toolkit?: Toolkit.Any;
   readonly handlers?: Record<
     string,
-    (params: unknown) => Effect.Effect<unknown, unknown, Resource>
+    (params: ToolInput) => Effect.Effect<ToolOutput, unknown, Resource>
   >;
   /** Decodes Tool input for Hooks, approval predicates, and approval events. */
   readonly toolInputValidators?: Readonly<Record<string, ToolInputValidator>>;
@@ -265,7 +270,8 @@ export function defineExtension<
   Provides
 >;
 // The impl return must be assignable to every overload return; only never is.
-export function defineExtension(extension: unknown): never {
+export function defineExtension(extension: typeof Schema.Unknown.Type): never {
+  // SAFETY: overload resolution validates every public call; this erased implementation is unreachable.
   return extension as never;
 }
 
@@ -277,6 +283,7 @@ export const provideExtension = <A, E>(
   effect: Effect.Effect<A, E, any>,
 ): Effect.Effect<A, E> => {
   const context = contexts.get(extension);
+  // SAFETY: providing the extension's compiled context removes its erased service requirement.
   return (context === undefined ? effect : Effect.provide(effect, context)) as Effect.Effect<A, E>;
 };
 

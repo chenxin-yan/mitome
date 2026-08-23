@@ -248,7 +248,11 @@ describe("@mitome/sdk Extension Hooks", () => {
         defineExtension({
           name: "sdk",
           tools: [],
-          hooks: { preStep: async () => undefined as never },
+          hooks: {
+            // SAFETY: This test deliberately violates the Hook's runtime output contract to verify
+            // that SDK boundary validation rejects an invalid Promise Hook result.
+            preStep: async () => undefined as never,
+          },
         }),
       ],
     });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import { LanguageModel, Prompt } from "effect/unstable/ai";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http";
 import {
@@ -54,10 +54,19 @@ const failingCredentialStoreLayer = (error: CredentialError): Layer.Layer<Creden
     refreshCredential: () => Effect.fail(error),
   });
 
-const providerOptions = {
-  prompt: Prompt.make("Hi"),
+type JsonObject = { readonly [key: string]: typeof Schema.Json.Type };
+
+const optionsFor = (prompt: Prompt.Prompt): LanguageModel.ProviderOptions => ({
+  prompt,
   tools: [],
-} as unknown as LanguageModel.ProviderOptions;
+  responseFormat: { type: "text" },
+  toolChoice: "auto",
+  span: Effect.runSync(Effect.makeSpan("provider-test")),
+  previousResponseId: undefined,
+  incrementalPrompt: undefined,
+});
+
+const providerOptions = optionsFor(Prompt.make("Hi"));
 
 const completed = () =>
   new Response(sse({ type: "response.completed" }), {
@@ -121,14 +130,16 @@ describe("Codex transport", () => {
           readonly method: string;
           readonly url: string;
           readonly headers: Record<string, string>;
-          readonly body: Record<string, unknown>;
+          readonly body: JsonObject;
         }
       | undefined;
 
     await run(credential(), (outgoing, url) => {
       const body =
         outgoing.body._tag === "Uint8Array"
-          ? (JSON.parse(new TextDecoder().decode(outgoing.body.body)) as Record<string, unknown>)
+          ? Schema.decodeUnknownSync(
+              Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)),
+            )(new TextDecoder().decode(outgoing.body.body))
           : {};
       request = { method: outgoing.method, url: url.toString(), headers: outgoing.headers, body };
       return completed();
@@ -184,13 +195,7 @@ describe("Codex transport", () => {
       }),
     ]);
 
-    expect(
-      requestFor(
-        "gpt-5.4",
-        { prompt, tools: [] } as unknown as LanguageModel.ProviderOptions,
-        "session-1",
-      ),
-    ).toMatchObject({
+    expect(requestFor("gpt-5.4", optionsFor(prompt), "session-1")).toMatchObject({
       include: ["reasoning.encrypted_content"],
       input: [
         {
@@ -227,13 +232,7 @@ describe("Codex transport", () => {
       }),
     ]);
 
-    expect(
-      requestFor(
-        "gpt-5.4",
-        { prompt, tools: [] } as unknown as LanguageModel.ProviderOptions,
-        "session-1",
-      ).input,
-    ).toEqual([
+    expect(requestFor("gpt-5.4", optionsFor(prompt), "session-1").input).toEqual([
       {
         type: "reasoning",
         id: "reasoning-1",

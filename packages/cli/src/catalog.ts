@@ -36,7 +36,7 @@ const ModelsDevModel = Schema.Struct({ id: NonEmptyString, tool_call: Schema.Boo
 // models.dev describes the OpenAI API only; Codex suggestions come from the
 // hand-maintained list in @mitome/providers/openai-codex (ADR-0028). This is
 // the one tool-capable filter; scripts/generate-model-hints.ts imports it.
-export const toolCapableOpenAiIds = (payload: unknown): Array<string> => {
+export const toolCapableOpenAiIds = <Payload>(payload: Payload): Array<string> => {
   const envelope = Schema.decodeUnknownResult(ModelsDevEnvelope)(payload);
   if (Result.isFailure(envelope)) return [];
   return Object.values(envelope.success.openai.models).flatMap((model) => {

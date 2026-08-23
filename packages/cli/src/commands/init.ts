@@ -1,7 +1,6 @@
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import {
-  customModel,
   defaultAgentPlan,
   defaultAgentPlanFiles,
   ensureEmpty,
@@ -13,7 +12,7 @@ import {
 import { knownModelIds as codexModelIds } from "@mitome/providers/openai-codex";
 import { knownModelIds as openAiModelIds } from "@mitome/providers/openai";
 import { modelCatalog } from "../catalog.js";
-import { ChildHost } from "../child-host.js";
+import { ChildHost } from "../child-host-service.js";
 import { requireConfigDirectory } from "../config.js";
 import { Prompter } from "../prompter.js";
 import { attempt, fail, type ExitCode } from "../support.js";
@@ -37,15 +36,15 @@ export const runInit = Effect.fn("@mitome/cli/runInit")(function* () {
     provider === "openai-codex"
       ? codexModelIds
       : yield* attempt(() => modelCatalog({ directory, fallback: openAiModelIds }));
-  const modelChoice = yield* prompter.select<string | typeof customModel>({
+  const modelChoice = yield* prompter.select({
     message: "Model",
     choices: modelChoices(knownModels).map(({ label, value }) => ({ title: label, value })),
   });
   let model: string | undefined;
-  if (modelChoice === customModel) {
-    model = validateModelId(yield* prompter.text("Model ID"));
-  } else {
+  if (Schema.is(Schema.String)(modelChoice)) {
     model = modelChoice;
+  } else {
+    model = validateModelId(yield* prompter.text("Model ID"));
   }
   if (model === undefined) return yield* fail("Model ID is required.");
   yield* attempt(() => writeScaffold(directory, defaultAgentPlan({ provider, model })));

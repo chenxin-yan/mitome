@@ -4,6 +4,8 @@ import { makeProvider } from "@mitome/core";
 import { defineAgent, withSession } from "../src/index.js";
 import type { TranscriptStore } from "../src/index.js";
 
+// SAFETY: This compile-only fixture is never executed; it only supplies the nominal service
+// required to exercise Session's provider/model type constraints.
 const layer = Layer.succeed(LanguageModel.LanguageModel, {} as LanguageModel.Service);
 const first = makeProvider("first", ["known"] as const, undefined, () => layer);
 const second = makeProvider("second", [] as const, undefined, () => layer);

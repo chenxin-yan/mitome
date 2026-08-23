@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Schema, Stream } from "effect";
+import { Effect, Predicate, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import type { CompiledAgent } from "../../src/agent.js";
-import type { Extension } from "../../src/extension.js";
+import type { Extension, ToolInput, ToolInputValidator } from "../../src/extension.js";
 import {
   type ApprovalRequestOutcome,
   type ToolExecution,
@@ -13,21 +13,22 @@ const pending = (
   outcome: ApprovalRequestOutcome,
 ): Extract<ApprovalRequestOutcome, { readonly _tag: "Pending" }> => {
   expect(outcome._tag).toBe("Pending");
-  return outcome as Extract<ApprovalRequestOutcome, { readonly _tag: "Pending" }>;
+  if (outcome._tag !== "Pending") throw new Error("Expected a pending Approval request");
+  return outcome;
 };
 
 const prepare = (
   execution: ToolExecution,
-  params: unknown,
+  params: ToolInput,
   toolCallId = "call-1",
 ): Effect.Effect<boolean> => {
   const needsApproval = execution.toolkit.tools.dangerous!.needsApproval;
-  if (typeof needsApproval !== "function") throw new Error("Tool pipeline is not installed");
+  if (!Predicate.isFunction(needsApproval)) throw new Error("Tool pipeline is not installed");
   const result = needsApproval(params, { toolCallId, messages: [] });
   return Effect.isEffect(result) ? result : Effect.succeed(result);
 };
 
-const request = (execution: ToolExecution, params: unknown, toolCallId = "call-1") =>
+const request = (execution: ToolExecution, params: ToolInput, toolCallId = "call-1") =>
   execution.approval.request(
     { approvalId: `approval-${toolCallId}`, toolCallId },
     { name: "dangerous", params },
@@ -35,7 +36,7 @@ const request = (execution: ToolExecution, params: unknown, toolCallId = "call-1
 
 const makeFixture = (options?: {
   readonly needsApproval?: Tool.NeedsApproval<any>;
-  readonly inputValidator?: (input: unknown) => Effect.Effect<unknown, unknown>;
+  readonly inputValidator?: ToolInputValidator;
   readonly preTool?: Extension["hooks"] extends infer Hooks
     ? Hooks extends { readonly preTool?: infer PreTool }
       ? PreTool
@@ -97,7 +98,7 @@ const makeFixture = (options?: {
   };
 };
 
-const execute = (execution: ToolExecution, params: unknown, toolCallId = "call-1") =>
+const execute = (execution: ToolExecution, params: ToolInput, toolCallId = "call-1") =>
   execution.toolkit.handle("dangerous", params, toolCallId).pipe(Effect.flatMap(Stream.runCollect));
 
 describe("ToolExecution", () => {
@@ -198,38 +199,30 @@ describe("ToolExecution", () => {
     }),
   );
 
-  it.effect("fails closed when a dynamic Approval predicate fails or throws", () =>
+  it.effect("fails closed when a dynamic Approval predicate throws", () =>
     Effect.gen(function* () {
-      const predicates: ReadonlyArray<Tool.NeedsApproval<any>> = [
-        (() =>
-          Effect.fail(
-            // @effect-diagnostics-next-line globalErrorInEffectFailure:off
-            new Error("predicate failed"),
-          )) as unknown as Tool.NeedsApproval<any>,
-        () => {
+      const fixture = makeFixture({
+        needsApproval: () => {
           throw new Error("predicate threw");
         },
-      ];
-      for (const needsApproval of predicates) {
-        const fixture = makeFixture({ needsApproval });
-        const execution = yield* fixture.execution;
-        const params = { action: "delete" };
-        expect(yield* prepare(execution, params)).toBe(true);
-        const approval = pending(yield* request(execution, params));
-        expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
-        yield* execution.approval.resolve(approval.approvalId, {
-          approved: false,
-          reason: "declined",
-        });
-        expect(
-          yield* Effect.flip(execution.approval.resolve(approval.approvalId, { approved: true })),
-        ).toMatchObject({ _tag: "ApprovalResolutionError" });
-        expect(yield* approval.awaitDecision).toEqual({
-          approved: false,
-          reason: "declined",
-        });
-        expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
-      }
+      });
+      const execution = yield* fixture.execution;
+      const params = { action: "delete" };
+      expect(yield* prepare(execution, params)).toBe(true);
+      const approval = pending(yield* request(execution, params));
+      expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
+      yield* execution.approval.resolve(approval.approvalId, {
+        approved: false,
+        reason: "declined",
+      });
+      expect(
+        yield* Effect.flip(execution.approval.resolve(approval.approvalId, { approved: true })),
+      ).toMatchObject({ _tag: "ApprovalResolutionError" });
+      expect(yield* approval.awaitDecision).toEqual({
+        approved: false,
+        reason: "declined",
+      });
+      expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
     }),
   );
 

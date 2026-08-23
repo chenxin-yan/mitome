@@ -6,34 +6,41 @@ import { pathToFileURL } from "node:url";
 import type { MitomeDefinition, TurnEvent } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
-const mode = process.argv[2] as "auto" | "print";
+const mode = process.argv[2];
+if (mode !== "auto" && mode !== "print") throw new Error("Invalid Child Host mode.");
 // Absent when no prompt was given; an explicitly empty prompt arrives as "".
 const prompt: string | undefined = process.argv[3];
+// SAFETY: Dynamic import namespaces expose their module's default export at `.default`.
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
 
-const isMitomeDefinition = (value: unknown): value is MitomeDefinition =>
-  typeof value === "object" &&
-  value !== null &&
+interface DefinitionCandidate {
+  readonly agent?: object;
+  readonly hosts?: ReadonlyArray<object>;
+}
+
+const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefinition =>
   "agent" in value &&
-  typeof value.agent === "object" &&
-  value.agent !== null &&
+  value.agent instanceof Object &&
   "hosts" in value &&
   Array.isArray(value.hosts) &&
   value.hosts.length <= 1 &&
   value.hosts.every(
     (host) =>
-      typeof host === "object" &&
-      host !== null &&
+      host instanceof Object &&
       "mode" in host &&
       host.mode === "interactive" &&
       "run" in host &&
-      typeof host.run === "function" &&
-      ((host as { unsupported?: unknown }).unsupported === undefined ||
-        typeof (host as { unsupported?: unknown }).unsupported === "function"),
+      host.run instanceof Function &&
+      (!("unsupported" in host) ||
+        host.unsupported === undefined ||
+        host.unsupported instanceof Function),
   );
 
+if (!(loaded instanceof Object)) {
+  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
+}
 if (!isMitomeDefinition(loaded)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
@@ -79,16 +86,22 @@ const render = (event: TurnEvent): void => {
   }
 };
 
-const errorMessage = (error: unknown): string => {
+interface ErrorDetails {
+  readonly _tag?: string;
+  readonly message?: string;
+  readonly cause?: Error | ErrorDetails;
+}
+
+const errorMessage = (error: Error | ErrorDetails): string => {
   const head =
-    typeof error === "object" && error !== null && "_tag" in error && "message" in error
+    "_tag" in error && "message" in error
       ? `${String(error._tag)}: ${String(error.message)}`
       : error instanceof Error
         ? error.message
-        : String(error);
-  const cause =
-    typeof error === "object" && error !== null && "cause" in error ? error.cause : undefined;
-  return cause === undefined ? head : `${head}\n  cause: ${errorMessage(cause)}`;
+        : JSON.stringify(error);
+  const cause = error.cause;
+  if (cause === undefined) return head;
+  return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause) : JSON.stringify(cause)}`;
 };
 
 const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
@@ -122,6 +135,11 @@ if (forceExit !== undefined) {
   process.exit(130);
 }
 if (Exit.isFailure(exit)) {
-  process.stderr.write(`${errorMessage(Cause.squash(exit.cause))}\n`);
+  const squashed = Cause.squash(exit.cause);
+  if (!(squashed instanceof Object)) {
+    process.stderr.write(`${String(squashed)}\n`);
+  } else {
+    process.stderr.write(`${errorMessage(squashed)}\n`);
+  }
   process.exitCode = 1;
 }

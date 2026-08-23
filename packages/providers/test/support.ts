@@ -3,9 +3,14 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import { type AddressInfo } from "node:net";
 import { Readable } from "node:stream";
 import type { AgentDefinition, AnyExtension, AnyProvider } from "@mitome/core";
+import { Result, Schema } from "effect";
 
-export const sse = (data: unknown) =>
-  `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
+type SseData = string | typeof Schema.Json.Type;
+
+export const sse = (data: SseData) => {
+  const string = Schema.decodeUnknownResult(Schema.String)(data);
+  return `data: ${Result.isSuccess(string) ? string.success : JSON.stringify(data)}\n\n`;
+};
 
 export const agent = (
   provider: AnyProvider,
@@ -38,11 +43,11 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
         const chunks: Array<Uint8Array> = [];
         for await (const chunk of incoming) chunks.push(chunk);
         const body = Buffer.concat(chunks);
-        const request = new Request(`http://${incoming.headers.host}${incoming.url}`, {
-          method: incoming.method ?? "GET",
-          headers: headers(incoming.headers),
-          ...(body.length === 0 ? {} : { body }),
-        });
+        const init =
+          body.length === 0
+            ? { method: incoming.method ?? "GET", headers: headers(incoming.headers) }
+            : { method: incoming.method ?? "GET", headers: headers(incoming.headers), body };
+        const request = new Request(`http://${incoming.headers.host}${incoming.url}`, init);
         const response = await fetch(request);
         outgoing.writeHead(response.status, Object.fromEntries(response.headers));
         if (response.body === null) {
@@ -66,6 +71,7 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
     server.listen(0, "127.0.0.1", resolve);
   });
   return {
+    // SAFETY: a successfully listening TCP server returns AddressInfo rather than null or a pipe name.
     port: (server.address() as AddressInfo).port,
     stop: (closeActiveConnections = false) => {
       if (closeActiveConnections) server.closeAllConnections();

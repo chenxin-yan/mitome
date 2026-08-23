@@ -2,14 +2,15 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Context, Effect, Layer, Result, Schema } from "effect";
+import { Effect, Layer, Result, Schema } from "effect";
+import { configDirectory, CredentialDescriptorSchema } from "@mitome/core";
 import {
-  configDirectory,
-  CredentialDescriptorSchema,
-  type CredentialDescriptor,
-} from "@mitome/core";
+  ChildHost,
+  type ExtensionListResult,
+  type ProviderAuthentication,
+} from "./child-host-service.js";
 import { requireConfigDirectory } from "./config.js";
-import { attempt, type CliError, type ExitCode } from "./support.js";
+import { attempt, type ExitCode } from "./support.js";
 // @ts-expect-error Bun embeds this as source text at compile time; TS sees a module without a default export.
 // oxlint-disable-next-line import/default
 import definitionHost from "./hosts/host.ts" with { type: "text" };
@@ -31,66 +32,20 @@ const configEnvFlag = (): string => {
   return directory === undefined ? "--no-env-file" : `--env-file=${join(directory, ".env")}`;
 };
 
-export interface ProviderAuthentication {
-  readonly id: string;
-  readonly credential: CredentialDescriptor;
-}
-
-export interface ExtensionListItem {
-  readonly name: string;
-  readonly version: string;
-  readonly direct: boolean;
-  readonly dependents: ReadonlyArray<string>;
-}
-
-export interface ExtensionListResult {
-  readonly exitCode: ExitCode;
-  readonly extensions: ReadonlyArray<ExtensionListItem>;
-}
-
-export class ChildHost extends Context.Service<
-  ChildHost,
-  {
-    readonly runHost: (
-      path: string,
-      prompt: string | undefined,
-      mode: "auto" | "print",
-    ) => Effect.Effect<ExitCode, CliError>;
-    readonly install: (path: string) => Effect.Effect<ExitCode, CliError>;
-    readonly removeDependency: (
-      path: string,
-      packageName: string,
-    ) => Effect.Effect<ExitCode, CliError>;
-    readonly listExports: (
-      packageName: string,
-      directory: string,
-    ) => Effect.Effect<ReadonlyArray<string>, CliError>;
-    readonly inspectExtensions: (path: string) => Effect.Effect<ExtensionListResult, CliError>;
-    readonly inspectProviderAuthentication: (
-      path: string,
-    ) => Effect.Effect<ReadonlyArray<ProviderAuthentication>, CliError>;
-    readonly runOAuthAuth: (
-      path: string,
-      providerId: string,
-      command: "login" | "logout",
-    ) => Effect.Effect<void, CliError>;
-  }
->()("@mitome/cli/ChildHost") {
-  static readonly layer = Layer.succeed(ChildHost, {
-    runHost: (path, prompt, mode) =>
-      Effect.uninterruptible(attempt(() => runHost(path, prompt, mode))),
-    install: (path) => Effect.uninterruptible(attempt(() => install(path))),
-    removeDependency: (path, packageName) =>
-      Effect.uninterruptible(attempt(() => removeDependency(path, packageName))),
-    listExports: (packageName, directory) =>
-      Effect.uninterruptible(attempt(() => listExports(packageName, directory))),
-    inspectExtensions: (path) => Effect.uninterruptible(attempt(() => inspectExtensions(path))),
-    inspectProviderAuthentication: (path) =>
-      Effect.uninterruptible(attempt(() => inspectProviderAuthentication(path))),
-    runOAuthAuth: (path, providerId, command) =>
-      Effect.uninterruptible(attempt(() => runOAuthAuth(path, providerId, command))),
-  });
-}
+export const childHostLayer = Layer.succeed(ChildHost, {
+  runHost: (path, prompt, mode) =>
+    Effect.uninterruptible(attempt(() => runHost(path, prompt, mode))),
+  install: (path) => Effect.uninterruptible(attempt(() => install(path))),
+  removeDependency: (path, packageName) =>
+    Effect.uninterruptible(attempt(() => removeDependency(path, packageName))),
+  listExports: (packageName, directory) =>
+    Effect.uninterruptible(attempt(() => listExports(packageName, directory))),
+  inspectExtensions: (path) => Effect.uninterruptible(attempt(() => inspectExtensions(path))),
+  inspectProviderAuthentication: (path) =>
+    Effect.uninterruptible(attempt(() => inspectProviderAuthentication(path))),
+  runOAuthAuth: (path, providerId, command) =>
+    Effect.uninterruptible(attempt(() => runOAuthAuth(path, providerId, command))),
+});
 
 const ProviderAuthenticationSchema = Schema.Struct({
   id: Schema.String.check(Schema.isNonEmpty()),
@@ -98,6 +53,17 @@ const ProviderAuthenticationSchema = Schema.Struct({
 });
 const ProviderAuthenticationsFromJson = Schema.fromJsonString(
   Schema.Array(ProviderAuthenticationSchema),
+);
+const ExportNamesFromJson = Schema.fromJsonString(Schema.Array(Schema.String));
+const ExtensionListFromJson = Schema.fromJsonString(
+  Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      version: Schema.String,
+      direct: Schema.Boolean,
+      dependents: Schema.Array(Schema.String),
+    }),
+  ),
 );
 
 // No SIGINT forwarding (unlike runHost): the installer is short-lived and
@@ -146,12 +112,15 @@ const runJsonHost = async (
   const directory = await mkdtemp(join(tmpdir(), prefix));
   const output = join(directory, "output.json");
   try {
-    const child = Bun.spawn([...command, output], {
+    const spawnOptions = {
       env: childEnv,
-      stdout: "ignore",
+      stdout: "ignore" as const,
       stderr: options.stderr,
-      ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
-    });
+    };
+    const child =
+      options.timeout === undefined
+        ? Bun.spawn([...command, output], spawnOptions)
+        : Bun.spawn([...command, output], { ...spawnOptions, timeout: options.timeout });
     const exitCode = await child.exited;
     return {
       exitCode,
@@ -174,8 +143,7 @@ const listExports = async (
     { stderr: "ignore", timeout: 5000 },
   );
   if (result.exitCode !== 0) throw new Error(`Could not inspect ${packageName} exports.`);
-  // The probe script above is our own code; its output needs no schema validation.
-  return JSON.parse(result.output) as ReadonlyArray<string>;
+  return Schema.decodeSync(ExportNamesFromJson)(result.output);
 };
 
 const inspectExtensions = async (path: string): Promise<ExtensionListResult> => {
@@ -188,8 +156,7 @@ const inspectExtensions = async (path: string): Promise<ExtensionListResult> => 
   if (result.exitCode !== 0) return { exitCode: result.exitCode, extensions: [] };
   return {
     exitCode: result.exitCode,
-    // The embedded host writes this private file; no untrusted input crosses the boundary.
-    extensions: JSON.parse(result.output) as ReadonlyArray<ExtensionListItem>,
+    extensions: Schema.decodeSync(ExtensionListFromJson)(result.output),
   };
 };
 
@@ -209,23 +176,14 @@ export const runEmbeddedHost = async (
   // config .env is loaded explicitly when a config directory exists.
   // The prompt argument is omitted entirely when absent so the child can tell
   // "no prompt given" apart from an explicitly empty prompt.
-  const child = Bun.spawn(
-    [
-      process.execPath,
-      configEnvFlag(),
-      "--eval",
-      source,
-      path,
-      mode,
-      ...(prompt === undefined ? [] : [prompt]),
-    ],
-    {
-      env: childEnv,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    },
-  );
+  const arguments_ = [process.execPath, configEnvFlag(), "--eval", source, path, mode];
+  if (prompt !== undefined) arguments_.push(prompt);
+  const child = Bun.spawn(arguments_, {
+    env: childEnv,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
   const forwardSigint = () => child.kill("SIGINT");
   process.once("SIGINT", forwardSigint);
   try {

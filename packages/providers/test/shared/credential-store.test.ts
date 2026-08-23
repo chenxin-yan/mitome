@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "vitest";
 import { it } from "@effect/vitest";
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { setTimeout } from "node:timers/promises";
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
@@ -8,6 +8,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnRuntime } from "../support.js";
 import { modifyCredential, readCredential } from "../../src/shared/credential-store.js";
+
+type StoredCredential = typeof Schema.Json.Type;
 
 const temporaryDirectories: Array<string> = [];
 const marker = "synthetic-secret-marker";
@@ -26,10 +28,10 @@ const directory = async () => {
   return value;
 };
 
-const writeEffect = (configDirectory: string, providerKey: string, value: unknown) =>
+const writeEffect = (configDirectory: string, providerKey: string, value: StoredCredential) =>
   modifyCredential(configDirectory, providerKey, () => Effect.succeed([value, undefined]));
 
-const write = (configDirectory: string, providerKey: string, value: unknown) =>
+const write = (configDirectory: string, providerKey: string, value: StoredCredential) =>
   Effect.runPromise(writeEffect(configDirectory, providerKey, value));
 
 const remove = (configDirectory: string, providerKey: string) =>
@@ -37,8 +39,10 @@ const remove = (configDirectory: string, providerKey: string) =>
     modifyCredential(configDirectory, providerKey, () => Effect.succeed([undefined, undefined])),
   );
 
-const contents = async (configDirectory: string): Promise<unknown> =>
-  JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"));
+const contents = async (configDirectory: string): Promise<StoredCredential> =>
+  Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(
+    await readFile(join(configDirectory, "auth.json"), "utf8"),
+  );
 
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((path) => rm(path, { recursive: true, force: true })));

@@ -6,6 +6,17 @@ import { createSession, credentialDescriptor } from "@mitome/core";
 import { agent, sse } from "../support.js";
 import { openaiCompatible } from "../../src/openai-compatible/index.js";
 
+type Json = typeof Schema.Json.Type;
+type JsonObject = { readonly [key: string]: Json };
+interface ToolMessage {
+  readonly role: string;
+  readonly tool_call_id?: string;
+  readonly content?: Json;
+}
+interface FollowUpRequest {
+  readonly messages?: ReadonlyArray<ToolMessage>;
+}
+
 const key = "MITOME_OPENAI_COMPATIBLE_TEST_KEY";
 const fakeFetch =
   (handle: (request: Request) => Response | Promise<Response>): typeof globalThis.fetch =>
@@ -22,7 +33,7 @@ const run = <A, E>(
       Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config)),
     ),
   );
-const chunk = (delta: Record<string, unknown>, finishReason: string | null = null) => ({
+const chunk = (delta: JsonObject, finishReason: string | null = null) => ({
   id: "chatcmpl-test",
   model: "gpt-4o-mini",
   created: 1,
@@ -57,6 +68,7 @@ describe("openaiCompatible", () => {
     const firstChunkSent = new Promise<void>((resolve) => (firstChunk = resolve));
     const fetch = fakeFetch(async (request) => {
       expect(new URL(request.url).pathname).toBe("/v1/chat/completions");
+      // SAFETY: this controlled client request is emitted from the compatible request schema.
       const body = (await request.json()) as { model: string; stream: boolean };
       requests.push({
         model: body.model,
@@ -180,21 +192,12 @@ describe("openaiCompatible", () => {
 
   it("maps tool calls through the Core Tool loop", async () => {
     let calls = 0;
-    let followUp: {
-      readonly messages?: ReadonlyArray<{
-        readonly role: string;
-        readonly tool_call_id?: string;
-        readonly content?: unknown;
-      }>;
-    } = {};
+    let followUp: FollowUpRequest = {};
     const fetch = fakeFetch(async (request) => {
+      // SAFETY: this controlled client request is emitted from the compatible request schema.
       const body = (await request.json()) as {
-        readonly tools?: ReadonlyArray<unknown>;
-        readonly messages?: ReadonlyArray<{
-          readonly role: string;
-          readonly tool_call_id?: string;
-          readonly content?: unknown;
-        }>;
+        readonly tools?: ReadonlyArray<Json>;
+        readonly messages?: ReadonlyArray<ToolMessage>;
       };
       calls += 1;
       if (calls === 1) {
@@ -240,7 +243,10 @@ describe("openaiCompatible", () => {
       {
         name: "echo",
         toolkit: Toolkit.make(echo),
-        handlers: { echo: (params) => Effect.succeed((params as { text: string }).text) },
+        handlers: {
+          // SAFETY: Toolkit validates handler parameters with the echo schema.
+          echo: (params) => Effect.succeed((params as { text: string }).text),
+        },
       },
     ]);
     const events = await run(

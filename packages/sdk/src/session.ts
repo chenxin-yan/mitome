@@ -88,10 +88,10 @@ const toAsyncIterable = (
         await cancel();
         return { done: true, value: undefined };
       },
-      async throw(error: unknown): Promise<IteratorResult<TurnEvent>> {
+      async throw(cause: unknown): Promise<IteratorResult<TurnEvent>> {
         done = true;
         await cancel();
-        throw error;
+        throw cause;
       },
     };
   },
@@ -119,7 +119,7 @@ export const withSession = <const Definition extends AgentDefinition, A>(
               history: session.history,
               transcript: session.transcript,
             }),
-          catch: (error) => new CallbackFailure(error),
+          catch: (cause) => new CallbackFailure(cause),
         });
       }),
     ),

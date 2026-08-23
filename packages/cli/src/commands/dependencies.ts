@@ -1,17 +1,22 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { Console, Effect, Option } from "effect";
-import { ChildHost } from "../child-host.js";
+import { Console, Effect, Option, Result, Schema } from "effect";
+import { ChildHost } from "../child-host-service.js";
 import { definitionPath } from "../definition.js";
 import { attempt, type ExitCode } from "../support.js";
 
-type Manifest = Record<string, unknown> & { readonly dependencies?: Record<string, string> };
+interface Manifest extends Schema.JsonObject {
+  readonly dependencies?: Readonly<Record<string, string>>;
+}
+
+const JsonObject = Schema.Record(Schema.String, Schema.Json);
+const Dependencies = Schema.Record(Schema.String, Schema.String);
 
 // npm package-name grammar; rejects path-like names such as ".." that would otherwise
 // escape node_modules when the failed-install rollback removes the package directory.
 const packageNamePattern = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
 
-const packageSpec = (input: string): { readonly name: string; readonly version: string } => {
+const packageSpec = (input: string) => {
   const versionSeparator = input.startsWith("@")
     ? input.indexOf("@", input.indexOf("/") + 1)
     : input.indexOf("@");
@@ -25,23 +30,23 @@ const packageSpec = (input: string): { readonly name: string; readonly version: 
 
 const manifestAt = async (path: string): Promise<{ path: string; manifest: Manifest }> => {
   const manifestPath = join(dirname(path), "package.json");
-  const value: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`${manifestPath} must contain a JSON object.`);
-  }
+  const value = Schema.decodeUnknownResult(JsonObject)(
+    JSON.parse(await readFile(manifestPath, "utf8")),
+  );
+  if (Result.isFailure(value)) throw new Error(`${manifestPath} must contain a JSON object.`);
   // writeDependencies spreads this field before bun can validate it, which would silently
   // transform a malformed value (array, string) and break the failed-install rollback.
-  const dependencies = (value as Record<string, unknown>).dependencies;
-  if (
-    dependencies !== undefined &&
-    (typeof dependencies !== "object" ||
-      dependencies === null ||
-      Array.isArray(dependencies) ||
-      Object.values(dependencies).some((version) => typeof version !== "string"))
-  ) {
+  const dependencies = Schema.decodeUnknownResult(Schema.UndefinedOr(Dependencies))(
+    value.success.dependencies,
+  );
+  if (Result.isFailure(dependencies)) {
     throw new Error(`${manifestPath} dependencies must be an object of package versions.`);
   }
-  return { path: manifestPath, manifest: value as Manifest };
+  const manifest: Manifest =
+    dependencies.success === undefined
+      ? value.success
+      : { ...value.success, dependencies: dependencies.success };
+  return { path: manifestPath, manifest };
 };
 
 const writeDependencies = async (

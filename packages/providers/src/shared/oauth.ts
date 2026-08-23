@@ -1,12 +1,14 @@
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { Cause, Clock, Data, Effect, Schema } from "effect";
+import { Cause, Clock, Data, Effect, Result, Schema } from "effect";
 import {
   FetchHttpClient,
   HttpClient,
   HttpClientRequest,
   type HttpClientError,
 } from "effect/unstable/http";
+
+const ErrorCode = Schema.Struct({ code: Schema.optional(Schema.String) });
 
 /** The per-Provider half of an OAuth2 PKCE flow: who we are and where we talk. */
 export interface OAuthConfig {
@@ -151,14 +153,21 @@ const challenge = async (value: string): Promise<string> =>
     "base64url",
   );
 
-const defaultBrowser = (url: string): void => {
-  const command =
-    process.platform === "darwin" ? "open" : process.platform === "win32" ? "rundll32" : "xdg-open";
-  const args = process.platform === "win32" ? ["url.dll,FileProtocolHandler", url] : [url];
+const nativeBrowserLauncher = (command: string, args: ReadonlyArray<string>): void => {
   const child = spawn(command, args, { stdio: "ignore", detached: true });
   // spawn ENOENT (no browser); the printed URL/paste flow remains.
   child.on("error", () => {});
   child.unref();
+};
+
+export const launchDefaultBrowser = (
+  url: string,
+  launch: (command: string, args: ReadonlyArray<string>) => void = nativeBrowserLauncher,
+): void => {
+  const command =
+    process.platform === "darwin" ? "open" : process.platform === "win32" ? "rundll32" : "xdg-open";
+  const args = process.platform === "win32" ? ["url.dll,FileProtocolHandler", url] : [url];
+  launch(command, args);
 };
 
 /** Runs browser PKCE authorization, falling back to a pasted redirect URL when needed. */
@@ -210,24 +219,19 @@ export const authorize = async (
       });
     } catch (error) {
       // EADDRINUSE: another process holds the port; the pasted redirect flow still works.
-      if (
-        typeof error !== "object" ||
-        error === null ||
-        !("code" in error) ||
-        error.code !== "EADDRINUSE"
-      ) {
-        throw error;
-      }
+      const decodedError = Schema.decodeUnknownResult(ErrorCode)(error);
+      if (Result.isFailure(decodedError) || decodedError.success.code !== "EADDRINUSE") throw error;
       options.output(`Callback port ${port} is busy; paste the redirect URL instead.\n`);
     }
 
     options.output(
       `Open this URL to authenticate:\n${authorization.toString()}\nPaste the redirect URL: `,
     );
-    const openBrowser = options.openBrowser === undefined ? defaultBrowser : options.openBrowser;
+    const openBrowser =
+      options.openBrowser === undefined ? launchDefaultBrowser : options.openBrowser;
     if (openBrowser !== false) {
       try {
-        await openBrowser(authorization.toString());
+        await Promise.resolve(openBrowser(authorization.toString()));
       } catch {
         // No browser opener (headless host): the printed URL and paste flow remain.
       }

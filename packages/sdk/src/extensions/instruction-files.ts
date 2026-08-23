@@ -16,10 +16,14 @@ const callingModule = (): string => {
   // oxlint-disable-next-line @typescript-eslint/unbound-method
   const previous = Error.prepareStackTrace;
   try {
-    Error.prepareStackTrace = (_, stack) => stack;
+    let stack: ReadonlyArray<NodeJS.CallSite> = [];
+    Error.prepareStackTrace = (_, callsites) => {
+      stack = callsites;
+      return callsites;
+    };
     const error = new Error();
     Error.captureStackTrace(error, instructionFiles);
-    const stack = error.stack as unknown as ReadonlyArray<NodeJS.CallSite>;
+    void error.stack;
     for (const callsite of stack) {
       const fileName = callsite.getFileName() ?? callsite.getScriptNameOrSourceURL();
       if (fileName === null) continue;

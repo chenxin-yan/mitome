@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { compileAgentDefinition } from "../src/agent.js";
+import type { ToolInput, ToolOutput } from "../src/extension.js";
 import {
   AgentDefinitionError,
   defineAgent,
@@ -11,7 +12,7 @@ import {
 import { makeTestProvider } from "./support/provider.js";
 
 const model = makeTestProvider(() => Stream.empty);
-const getAgentDefinitionError = (definition: unknown) =>
+const getAgentDefinitionError = (definition: typeof Schema.Unknown.Type) =>
   Effect.flip(compileAgentDefinition(definition));
 
 type AgentDefinitionKeysAreExact = keyof AgentDefinition extends
@@ -35,8 +36,8 @@ describe("Agent Definition compilation", () => {
       const count = Tool.make("count", { success: Schema.Finite });
       const echoHandler = () => Effect.succeed("echo");
       const countHandler = () => Effect.succeed(1);
-      const echoInput = (input: unknown) => Effect.succeed(input);
-      const countResult = (result: unknown) => Effect.succeed(result);
+      const echoInput = (input: ToolInput) => Effect.succeed(input);
+      const countResult = (result: ToolOutput) => Effect.succeed(result);
       const first = {
         name: "first",
         instructions: "First",
@@ -108,14 +109,18 @@ describe("Agent Definition compilation", () => {
       const conflictA = { name: "conflict" };
       const conflictB = { name: "conflict" };
       const conflictC = { name: "conflict" };
-      const alpha: { name: string; dependencies?: Array<unknown> } = { name: "alpha" };
-      const beta: { name: string; dependencies?: Array<unknown> } = { name: "beta" };
+      interface DependencyNode {
+        readonly name: string;
+        dependencies?: Array<DependencyNode>;
+      }
+      const alpha: DependencyNode = { name: "alpha" };
+      const beta: DependencyNode = { name: "beta" };
       alpha.dependencies = [beta];
       beta.dependencies = [alpha];
-      const self: { name: string; dependencies?: Array<unknown> } = { name: "self" };
+      const self: DependencyNode = { name: "self" };
       self.dependencies = [self];
-      const a: { name: string; dependencies?: Array<unknown> } = { name: "a" };
-      const b: { name: string; dependencies?: Array<unknown> } = { name: "b" };
+      const a: DependencyNode = { name: "a" };
+      const b: DependencyNode = { name: "b" };
       a.dependencies = [b];
       b.dependencies = [a];
 
@@ -327,7 +332,7 @@ describe("Agent Definition compilation", () => {
 
   it.effect("reports malformed and unregistered Default Models", () =>
     Effect.gen(function* () {
-      const invalidDefinition = (selected: unknown) => ({
+      const invalidDefinition = (selected: typeof Schema.Unknown.Type) => ({
         providers: [model],
         model: selected,
         extensions: [],

@@ -2,7 +2,7 @@ import { Config, ConfigProvider, Effect, Layer, Redacted } from "effect";
 import { FetchHttpClient, type HttpClient } from "effect/unstable/http";
 
 /** Builds a Provider client Layer from an optional environment Credential and API root. */
-export const makeApiKeyClient = <Id, E>(
+export const apiKeyClientLayer = <Id, E>(
   apiKeyEnv: string | undefined,
   baseUrl: string,
   layer: (options: {

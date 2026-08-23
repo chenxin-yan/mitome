@@ -11,7 +11,7 @@ export interface RuntimeModel {
 }
 
 export interface ModelResolver {
-  readonly resolve: (qualifiedModelId: unknown) => Effect.Effect<RuntimeModel, TurnError>;
+  readonly resolve: (qualifiedModelId: string) => Effect.Effect<RuntimeModel, TurnError>;
 }
 
 const modelSetupTurnError = (cause: unknown) =>
@@ -43,11 +43,11 @@ export const makeModelResolver = (
         });
       }
 
-      // parseQualifiedModelId only succeeds for strings.
-      const cacheKey = qualifiedModelId as string;
+      const cacheKey = qualifiedModelId;
       const cached = models.get(cacheKey);
       if (cached !== undefined) return cached;
 
+      // SAFETY: compileAgentDefinition rejects providers without Core metadata before creating a Session.
       const metadata = getProviderMetadata(provider)!;
       return yield* Effect.try({
         try: () => metadata.provision(parsed.modelId),

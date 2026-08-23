@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defineMitome, type AgentDefinition, type Host } from "../src/index.js";
 
+// SAFETY: defineMitome only stores the Agent Definition; this unit test never compiles it.
 const agent = {} as AgentDefinition;
 const host: Host = {
   name: "test",

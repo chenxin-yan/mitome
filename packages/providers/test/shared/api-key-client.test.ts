@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Config, Effect, Layer, Redacted } from "effect";
 import * as Context from "effect/Context";
-import { makeApiKeyClient } from "../../src/shared/api-key-client.js";
+import { apiKeyClientLayer } from "../../src/shared/api-key-client.js";
 
 class TestClient extends Context.Service<TestClient, {}>()("test/TestClient") {}
 
@@ -16,7 +16,7 @@ describe("API-key client", () => {
         // Populate Effect's process-wide default provider before the key exists.
         await Effect.runPromise(Effect.result(Config.string(key)));
         let observed: string | undefined;
-        const layer = makeApiKeyClient(key, "https://test.invalid", ({ apiKey }) => {
+        const layer = apiKeyClientLayer(key, "https://test.invalid", ({ apiKey }) => {
           observed = apiKey === undefined ? undefined : Redacted.value(apiKey);
           return Layer.succeed(TestClient, {});
         });

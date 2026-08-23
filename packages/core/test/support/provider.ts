@@ -1,6 +1,6 @@
-import { Effect, Layer, Ref, Stream } from "effect";
+import { Effect, Layer, Ref, Schema, Stream } from "effect";
 import { LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
-import { makeProvider } from "../../src/index.js";
+import * as Provider from "../../src/provider.js";
 
 interface TestModelOptions {
   readonly prompt: Prompt.Prompt;
@@ -9,12 +9,26 @@ interface TestModelOptions {
 
 // Deliberately raw Service fake; use makeStreamingTestProvider below for the real
 // LanguageModel.make pipeline. Sibling copy: packages/sdk/test/provider.ts.
-export const testLanguageModel = (
-  streamText: (options: TestModelOptions) => unknown,
-): LanguageModel.Service => ({ streamText }) as unknown as LanguageModel.Service;
+type TestModelStream = Stream.Stream<Response.AnyPart, typeof Schema.Unknown.Type, any>;
 
-export const makeTestProvider = (streamText: (options: TestModelOptions) => unknown) =>
-  makeProvider("test", [] as const, undefined, () =>
+export const testLanguageModel = (
+  streamText: (options: TestModelOptions) => TestModelStream,
+): LanguageModel.Service => {
+  const unsupported = () => Effect.die("Only streamText is supported by this test model");
+  const missingStreamText = (): never => {
+    throw new Error("streamText was not installed");
+  };
+  const service: LanguageModel.Service = {
+    generateText: unsupported,
+    generateObject: unsupported,
+    streamText: missingStreamText,
+  };
+  Object.defineProperty(service, "streamText", { value: streamText });
+  return service;
+};
+
+export const makeTestProvider = (streamText: (options: TestModelOptions) => TestModelStream) =>
+  Provider.makeProvider("test", [] as const, undefined, () =>
     Layer.succeed(LanguageModel.LanguageModel, testLanguageModel(streamText)),
   );
 
@@ -28,7 +42,7 @@ export const makeStreamingTestProvider = (
     options: LanguageModel.ProviderOptions,
   ) => Stream.Stream<Response.StreamPartEncoded, never>,
 ) =>
-  makeProvider("test", [] as const, undefined, () =>
+  Provider.makeProvider("test", [] as const, undefined, () =>
     Layer.effect(
       LanguageModel.LanguageModel,
       LanguageModel.make({

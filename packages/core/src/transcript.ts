@@ -1,4 +1,4 @@
-import { Encoding, Result, Schema } from "effect";
+import { Encoding, Predicate, Result, Schema } from "effect";
 import { Prompt } from "effect/unstable/ai";
 
 export type TranscriptId = string;
@@ -122,7 +122,7 @@ const encodeAssistantMessageParts = Schema.encodeSync(Schema.Array(Prompt.Assist
 const encodeToolMessageParts = Schema.encodeSync(Schema.Array(Prompt.ToolMessagePart));
 
 const fileDataFromPrompt = (data: string | Uint8Array | URL) => {
-  if (typeof data === "string") return { encoding: "string", value: data } as const;
+  if (Predicate.isString(data)) return { encoding: "string", value: data } as const;
   if (data instanceof URL) return { encoding: "url", value: data.href } as const;
   return {
     encoding: "base64",
@@ -130,7 +130,7 @@ const fileDataFromPrompt = (data: string | Uint8Array | URL) => {
   } as const;
 };
 
-const messageFromPrompt = (message: Prompt.Message): unknown => {
+const messageFromPrompt = (message: Prompt.Message) => {
   const encoded = encodeMessage(message);
   if (message.role === "system") return encoded;
   const content =
@@ -166,7 +166,7 @@ const fileDataToPrompt = (data: typeof fileData.Type): string | Uint8Array | URL
   }
 };
 
-const messageToPrompt = (message: TranscriptMessage): unknown => {
+const messageToPrompt = (message: TranscriptMessage) => {
   if (message.role === "system") return message;
   return {
     ...message,

@@ -12,7 +12,14 @@ type StreamState = {
   sawToolCall: boolean;
 };
 
-const Event = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
+type Json = typeof Schema.Json.Type;
+type JsonInput = Json | undefined;
+const Event = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json));
+const EventKey = Schema.Struct({
+  output_index: Schema.optional(Schema.Finite),
+  item_id: Schema.optional(Schema.String),
+});
+const EventType = Schema.Struct({ type: Schema.optional(Schema.String) });
 const ErrorEvent = Schema.Struct({
   error: Schema.optional(Schema.Struct({ message: Schema.optional(Schema.String) })),
   message: Schema.optional(Schema.String),
@@ -71,8 +78,8 @@ const TerminalEvent = Schema.Struct({
 
 const decode = <S extends Schema.ConstraintDecoder<unknown>>(
   schema: S,
-  input: unknown,
-  onFailure: () => unknown,
+  input: JsonInput | string,
+  onFailure: () => AiError.AiError,
 ) => {
   const result = Schema.decodeUnknownResult(schema)(input);
   if (Result.isFailure(result)) throw onFailure();
@@ -82,22 +89,22 @@ const decode = <S extends Schema.ConstraintDecoder<unknown>>(
 // The backend keys some events by item_id ("msg_…") and omits it on others
 // (output_item.added carries only output_index), so output_index is the one
 // key present on every per-item event — matching Pi's reference transport.
-const itemKey = (event: Record<string, unknown>) =>
-  typeof event.output_index === "number"
-    ? String(event.output_index)
-    : typeof event.item_id === "string"
-      ? event.item_id
-      : "output";
+const itemKey = (event: Json) => {
+  const decoded = decode(EventKey, event, () => invalidOutput("Codex sent malformed item keys"));
+  return decoded.output_index === undefined
+    ? (decoded.item_id ?? "output")
+    : String(decoded.output_index);
+};
 
 // Item type drives dispatch only; unknown/malformed items are ignored.
-const outputItemType = (item: unknown): string | undefined => {
+const outputItemType = (item: JsonInput): string | undefined => {
   const result = Schema.decodeUnknownResult(ItemType)(item);
   return Result.isFailure(result) ? undefined : result.success.type;
 };
 
 const decodeOutputItemAdded = (
   state: StreamState,
-  item: unknown,
+  item: JsonInput,
   key: string,
 ): Array<Response.StreamPartEncoded> => {
   const itemType = outputItemType(item);
@@ -124,7 +131,7 @@ const decodeOutputItemAdded = (
 
 const decodeOutputItemDone = (
   state: StreamState,
-  item: unknown,
+  item: JsonInput,
   key: string,
 ): Array<Response.StreamPartEncoded> => {
   const itemType = outputItemType(item);
@@ -137,14 +144,11 @@ const decodeOutputItemDone = (
     );
     const id = `${reasoning.id}:0`;
     const text = reasoning.summary.map(({ text }) => text).join("\n");
-    const metadata = {
-      openai: {
-        itemId: reasoning.id,
-        ...(reasoning.encrypted_content == null
-          ? {}
-          : { encryptedContent: reasoning.encrypted_content }),
-      },
-    };
+    const openai =
+      reasoning.encrypted_content == null
+        ? { itemId: reasoning.id }
+        : { itemId: reasoning.id, encryptedContent: reasoning.encrypted_content };
+    const metadata = { openai };
     return [
       Response.makePart("reasoning-start", { id, metadata }),
       ...(text === "" ? [] : [Response.makePart("reasoning-delta", { id, delta: text })]),
@@ -158,9 +162,11 @@ const decodeOutputItemDone = (
     const call = state.calls.get(key) ?? state.calls.get(done.id ?? "");
     if (call === undefined) throw invalidOutput("Codex completed an unknown Tool call");
     const arguments_ = done.arguments ?? call.arguments;
-    let params: unknown;
+    let params: Json;
     try {
-      params = Tool.unsafeSecureJsonParse(arguments_ || "{}");
+      params = Schema.decodeUnknownSync(Schema.Json)(
+        Tool.unsafeSecureJsonParse(arguments_ || "{}"),
+      );
     } catch {
       throw invalidOutput(`Invalid JSON arguments for Tool ${call.name}`);
     }
@@ -181,7 +187,12 @@ const decodeOutputItemDone = (
 
 // Terminal events carry completion status and usage; without a finish part the
 // Session's finishReason/usage metadata would be silently absent for Codex.
-const finishPart = (state: StreamState, event: unknown): Response.StreamPartEncoded => {
+const tokenUsage = (total: number | undefined, detail?: number) => {
+  if (total === undefined) return detail === undefined ? {} : { cacheRead: detail };
+  return detail === undefined ? { total } : { total, uncached: total - detail, cacheRead: detail };
+};
+
+const finishPart = (state: StreamState, event: Json): Response.StreamPartEncoded => {
   const decoded = decode(TerminalEvent, event, () =>
     invalidOutput("Codex sent a malformed terminal event"),
   );
@@ -201,16 +212,11 @@ const finishPart = (state: StreamState, event: unknown): Response.StreamPartEnco
             ? "content-filter"
             : "unknown",
     usage: {
-      inputTokens: {
-        ...(usage?.input_tokens === undefined
-          ? {}
-          : { total: usage.input_tokens, uncached: usage.input_tokens - (cached ?? 0) }),
-        ...(cached === undefined ? {} : { cacheRead: cached }),
-      },
-      outputTokens: {
-        ...(usage?.output_tokens === undefined ? {} : { total: usage.output_tokens }),
-        ...(reasoning === undefined ? {} : { reasoning }),
-      },
+      inputTokens: tokenUsage(usage?.input_tokens, cached),
+      outputTokens:
+        reasoning === undefined
+          ? tokenUsage(usage?.output_tokens)
+          : { ...tokenUsage(usage?.output_tokens), reasoning },
     },
   });
 };
@@ -218,7 +224,9 @@ const finishPart = (state: StreamState, event: unknown): Response.StreamPartEnco
 const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPartEncoded> => {
   if (data === "[DONE]") return [];
   const event = decode(Event, data, () => invalidOutput("Codex sent malformed SSE JSON"));
-  const type = typeof event.type === "string" ? event.type : undefined;
+  const type = decode(EventType, event, () =>
+    invalidOutput("Codex sent malformed event type"),
+  ).type;
   if (type === "error") {
     const decoded = decode(ErrorEvent, event, () => providerError("Codex provider error"));
     throw providerError(decoded.error?.message ?? decoded.message ?? "Codex provider error");
@@ -277,7 +285,7 @@ export const decodeStream = <R>(
   Stream.suspend(() => {
     const events: Array<string> = [];
     const state: StreamState = {
-      parser: Sse.makeParser((event) => {
+      parser: Sse.makeParser((event: Sse.AnyEvent) => {
         if (event._tag === "Event") events.push(event.data);
       }),
       calls: new Map(),

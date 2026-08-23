@@ -1,36 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Result, Schema, Stream } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
 import { makeProvider } from "@mitome/core";
-import {
-  defineAgent,
-  defineExtension,
-  tool,
-  withSession,
-  type InputSchema,
-  type StandardSchema,
-} from "../src/index.js";
+import { defineAgent, defineExtension, tool, withSession, type InputSchema } from "../src/index.js";
 
-const outputSchema: StandardSchema<unknown, { readonly action: string }> = {
-  "~standard": {
-    version: 1,
-    vendor: "test",
-    validate: (value) =>
-      typeof value === "object" && value !== null && "action" in value
-        ? { value: value as { readonly action: string }, issues: undefined }
-        : { issues: [{ message: "expected action" }] },
-  },
-};
+const Action = Schema.Struct({ action: Schema.String });
 
-const schema: InputSchema<{ readonly action: string }> = {
-  "~standard": {
-    ...outputSchema["~standard"],
-    jsonSchema: {
-      input: () => ({ type: "object" }),
-      output: () => ({ type: "object" }),
-    },
-  },
-};
+const schema: InputSchema<{ readonly action: string }> = Action;
 
 const defaultingSchema: InputSchema<{
   readonly action: string;
@@ -39,18 +15,14 @@ const defaultingSchema: InputSchema<{
   "~standard": {
     version: 1,
     vendor: "test",
-    validate: (value) => {
-      if (typeof value !== "object" || value === null || !("action" in value)) {
-        return { issues: [{ message: "expected action" }] };
-      }
-      return {
-        value: {
-          action: String(value.action),
-          destructive: true,
-        },
-        issues: undefined,
-      };
-    },
+    validate: (value) =>
+      Result.match(Schema.decodeUnknownResult(Action)(value), {
+        onFailure: () => ({ issues: [{ message: "expected action" }] }),
+        onSuccess: ({ action }) => ({
+          value: { action, destructive: true },
+          issues: undefined,
+        }),
+      }),
     jsonSchema: {
       input: () => ({ type: "object" }),
       output: () => ({ type: "object" }),

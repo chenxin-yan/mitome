@@ -9,6 +9,12 @@ import { createSession, credentialDescriptor } from "@mitome/core";
 import { agent, sse } from "../support.js";
 import { openai } from "../../src/openai/index.js";
 
+type Json = typeof Schema.Json.Type;
+type JsonObject = { readonly [key: string]: Json };
+interface FollowUpRequest {
+  readonly input?: ReadonlyArray<JsonObject>;
+}
+
 const key = "MITOME_OPENAI_TEST_KEY";
 const fakeFetch =
   (handle: (request: Request) => Response | Promise<Response>): typeof globalThis.fetch =>
@@ -25,7 +31,7 @@ const run = <A, E>(
       Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config)),
     ),
   );
-const response = (id: string, output: ReadonlyArray<unknown> = []) => ({
+const response = (id: string, output: ReadonlyArray<Json> = []) => ({
   id,
   object: "response",
   model: "gpt-5.6",
@@ -39,17 +45,17 @@ const message = (id: string, text: string, status: "in_progress" | "completed") 
   status,
   content: text === "" ? [] : [{ type: "output_text", text, annotations: [] }],
 });
-const event = (type: string, data: Record<string, unknown> = {}) => ({
+const event = (type: string, data: JsonObject = {}) => ({
   type,
   ...data,
 });
 /** SSE frames for one output item: created → added → deltas → done → completed. */
 const itemStream = (
   respId: string,
-  inProgress: { readonly id: string } & Record<string, unknown>,
+  inProgress: { readonly id: string } & JsonObject,
   deltaType: string,
   deltas: ReadonlyArray<string>,
-  done: Record<string, unknown>,
+  done: JsonObject,
 ): ReadonlyArray<string> => {
   let seq = 0;
   return [
@@ -110,6 +116,7 @@ describe("openai", () => {
     const firstChunkSent = new Promise<void>((resolve) => (firstChunk = resolve));
     const fetch = fakeFetch(async (request) => {
       expect(new URL(request.url).pathname).toBe("/v1/responses");
+      // SAFETY: this controlled client request is emitted from the OpenAI request schema.
       const body = (await request.json()) as {
         model: string;
         stream: boolean;
@@ -250,11 +257,13 @@ describe("openai", () => {
     let upgrades = 0;
     let httpRequests = 0;
     const authorizations: Array<string | null> = [];
-    const frames: Array<Record<string, unknown>> = [];
-    const streamEvents = (
-      ...stream: ReadonlyArray<string>
-    ): ReadonlyArray<Record<string, unknown>> =>
-      stream.map((frame) => JSON.parse(frame.slice("data: ".length)) as Record<string, unknown>);
+    const frames: Array<JsonObject> = [];
+    const streamEvents = (...stream: ReadonlyArray<string>): ReadonlyArray<JsonObject> =>
+      stream.map((frame) =>
+        Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)))(
+          frame.slice("data: ".length),
+        ),
+      );
     const server = createServer((_request, response) => {
       httpRequests += 1;
       response.writeHead(500).end("WebSocket upgrade required");
@@ -264,7 +273,11 @@ describe("openai", () => {
       upgrades += 1;
       authorizations.push(request.headers.authorization ?? null);
       socket.on("message", (raw) => {
-        const frame = JSON.parse((raw as Buffer).toString()) as Record<string, unknown>;
+        // SAFETY: ws message payloads are binary-compatible with ArrayBuffer when not a Buffer.
+        const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+        const frame = Schema.decodeUnknownSync(
+          Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)),
+        )(bytes.toString());
         frames.push(frame);
         if (frames.length === 1) {
           const functionCall = {
@@ -305,6 +318,7 @@ describe("openai", () => {
           Effect.gen(function* () {
             const provider = openai({
               apiKeyEnv: key,
+              // SAFETY: the successfully listening TCP server has an AddressInfo address.
               baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
             });
             const session = yield* createSession(
@@ -313,6 +327,7 @@ describe("openai", () => {
                   name: "echo",
                   toolkit: Toolkit.make(echo),
                   handlers: {
+                    // SAFETY: Toolkit validates handler parameters with the echo schema.
                     echo: (params) => Effect.succeed((params as { text: string }).text),
                   },
                 },
@@ -358,11 +373,12 @@ describe("openai", () => {
 
   it("maps Responses function calls through the Core Tool loop", async () => {
     let calls = 0;
-    let followUp: { readonly input?: ReadonlyArray<Record<string, unknown>> } = {};
+    let followUp: FollowUpRequest = {};
     const fetch = fakeFetch(async (request) => {
+      // SAFETY: this controlled client request is emitted from the OpenAI request schema.
       const body = (await request.json()) as {
-        readonly tools?: ReadonlyArray<unknown>;
-        readonly input?: ReadonlyArray<Record<string, unknown>>;
+        readonly tools?: ReadonlyArray<Json>;
+        readonly input?: ReadonlyArray<JsonObject>;
       };
       calls += 1;
       if (calls === 1) {
@@ -405,6 +421,7 @@ describe("openai", () => {
         name: "echo",
         toolkit: Toolkit.make(echo),
         handlers: {
+          // SAFETY: Toolkit validates handler parameters with the echo schema.
           echo: (params) => Effect.succeed((params as { text: string }).text),
         },
       },

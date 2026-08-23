@@ -1,7 +1,7 @@
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat";
 import { Layer } from "effect";
 import { makeProvider, type ValidProviderId } from "@mitome/core";
-import { makeApiKeyClient } from "../shared/api-key-client.js";
+import { apiKeyClientLayer } from "../shared/api-key-client.js";
 
 export interface OpenAiCompatibleOptions<Id extends string = string> {
   /** Stable Provider id used in Qualified Model ids. */
@@ -21,7 +21,7 @@ export const openaiCompatible = <const Id extends string>(
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
   return makeProvider(options.id, [] as const, options.apiKeyEnv, (model) =>
     OpenAiLanguageModel.layer({ model }).pipe(
-      Layer.provide(makeApiKeyClient(options.apiKeyEnv, baseUrl, OpenAiClient.layer)),
+      Layer.provide(apiKeyClientLayer(options.apiKeyEnv, baseUrl, OpenAiClient.layer)),
     ),
   );
 };

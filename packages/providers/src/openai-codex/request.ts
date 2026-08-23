@@ -65,12 +65,12 @@ const ReasoningOptions = Schema.Struct({
 const contentFor = (
   content: string | ReadonlyArray<{ readonly type: string; readonly text?: string }>,
 ) =>
-  typeof content === "string"
+  Array.isArray(content)
     ? content
-    : content
         .filter((part) => part.type === "text")
         .map((part) => part.text ?? "")
-        .join("");
+        .join("")
+    : content;
 
 export const requestFor = (
   model: string,
@@ -78,7 +78,7 @@ export const requestFor = (
   sessionId: string,
 ) => {
   const system = options.prompt.content.find((message) => message.role === "system");
-  const input: Array<Record<string, unknown>> = [];
+  const input: Array<typeof Schema.Json.Type> = [];
   for (const message of options.prompt.content) {
     if (message.role === "system") continue;
     if (message.role === "tool") {
@@ -125,7 +125,7 @@ export const requestFor = (
     }
     input.push({ role: "user", content });
   }
-  return {
+  const request = {
     model,
     store: false,
     stream: true,
@@ -136,16 +136,16 @@ export const requestFor = (
     prompt_cache_key: sessionId,
     tool_choice: "auto",
     parallel_tool_calls: true,
-    ...(options.tools.length === 0
-      ? {}
-      : {
-          tools: options.tools.map((tool) => ({
-            type: "function",
-            name: tool.name,
-            description: Tool.getDescription(tool),
-            parameters: Tool.getJsonSchema(tool),
-            strict: null,
-          })),
-        }),
+  };
+  if (options.tools.length === 0) return request;
+  return {
+    ...request,
+    tools: options.tools.map((tool) => ({
+      type: "function",
+      name: tool.name,
+      description: Tool.getDescription(tool),
+      parameters: Tool.getJsonSchema(tool),
+      strict: null,
+    })),
   };
 };

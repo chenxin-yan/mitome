@@ -9,16 +9,23 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Schema } from "effect";
+
+const ManifestFromJson = Schema.fromJsonString(
+  Schema.Struct({
+    dependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  }),
+);
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const home = join(root, ".dev-home");
 const manifestPath = join(home, "package.json");
 
 if (existsSync(manifestPath)) {
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-    dependencies?: Record<string, string>;
-  };
-  const dependencies = manifest.dependencies ?? {};
+  const manifest = Schema.decodeSync(ManifestFromJson, {
+    onExcessProperty: "preserve",
+  })(await readFile(manifestPath, "utf8"));
+  const dependencies = { ...manifest.dependencies };
   // core is no direct dependency, but the run host resolves it beside the definition.
   const names = new Set([...Object.keys(dependencies), "@mitome/core"]);
   const workspace = [...names].filter(
@@ -36,7 +43,9 @@ if (existsSync(manifestPath)) {
     (name) => dependencies[name] !== undefined && dependencies[name] !== "workspace:*",
   );
   for (const name of patched) dependencies[name] = "workspace:*";
-  if (patched.length > 0) await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  if (patched.length > 0) {
+    await writeFile(manifestPath, `${JSON.stringify({ ...manifest, dependencies }, null, 2)}\n`);
+  }
 }
 
 // The definition side needs sdk/extensions dist too; `@mitome/cli^...` alone only

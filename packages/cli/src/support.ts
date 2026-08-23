@@ -6,23 +6,32 @@ export class CliError extends Error {
 
 export type ExitCode = number;
 
+interface ErrorDetails {
+  readonly _tag?: string;
+  readonly message?: string;
+  readonly cause?: Error | ErrorDetails;
+}
+
 // The embedded Child Host cannot import this module, so hosts/host.ts keeps the sibling renderer.
-const errorMessage = (error: unknown): string => {
+const errorMessage = (error: Error | ErrorDetails): string => {
   const head =
-    typeof error === "object" && error !== null && "_tag" in error && "message" in error
+    "_tag" in error && "message" in error
       ? `${String(error._tag)}: ${String(error.message)}`
       : error instanceof Error
         ? error.message
-        : String(error);
-  const cause =
-    typeof error === "object" && error !== null && "cause" in error ? error.cause : undefined;
-  return cause === undefined ? head : `${head}\n  cause: ${errorMessage(cause)}`;
+        : JSON.stringify(error);
+  const cause = error.cause;
+  if (cause === undefined) return head;
+  return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause) : JSON.stringify(cause)}`;
 };
 
 export const attempt = <A>(promise: () => Promise<A>) =>
   Effect.tryPromise({
     try: promise,
-    catch: (error) => new CliError(errorMessage(error)),
+    catch: (error) => {
+      if (!(error instanceof Object)) return new CliError(String(error));
+      return new CliError(errorMessage(error));
+    },
   }).pipe(Effect.tapError((error) => Console.error(error.message)));
 
 export const fail = (message: string) =>

@@ -10,24 +10,43 @@ const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
 const effectPath = Bun.resolveSync("effect", dirname(corePath));
 const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath).href);
 const effect: typeof import("effect") = await import(pathToFileURL(effectPath).href);
+// SAFETY: Dynamic import namespaces expose their module's default export at `.default`.
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
-const definition = loaded as Partial<MitomeDefinition> | undefined;
-if (definition?.agent === undefined) {
-  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
+interface DefinitionCandidate {
+  readonly agent?: { readonly extensions?: ReadonlyArray<object> };
 }
 
-const errorMessage = (error: unknown): string => {
+const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefinition =>
+  "agent" in value &&
+  value.agent instanceof Object &&
+  "extensions" in value.agent &&
+  Array.isArray(value.agent.extensions);
+if (!(loaded instanceof Object)) {
+  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
+}
+if (!isMitomeDefinition(loaded)) {
+  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
+}
+const definition = loaded;
+
+interface ErrorDetails {
+  readonly _tag?: string;
+  readonly message?: string;
+  readonly cause?: Error | ErrorDetails;
+}
+
+const errorMessage = (error: Error | ErrorDetails): string => {
   const head =
-    typeof error === "object" && error !== null && "_tag" in error && "message" in error
+    "_tag" in error && "message" in error
       ? `${String(error._tag)}: ${String(error.message)}`
       : error instanceof Error
         ? error.message
-        : String(error);
-  const cause =
-    typeof error === "object" && error !== null && "cause" in error ? error.cause : undefined;
-  return cause === undefined ? head : `${head}\n  cause: ${errorMessage(cause)}`;
+        : JSON.stringify(error);
+  const cause = error.cause;
+  if (cause === undefined) return head;
+  return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause) : JSON.stringify(cause)}`;
 };
 
 const packageVersion = async (name: string): Promise<string> => {
@@ -35,15 +54,13 @@ const packageVersion = async (name: string): Promise<string> => {
   while (true) {
     const packagePath = join(current, "node_modules", name, "package.json");
     try {
-      const value: unknown = JSON.parse(await readFile(packagePath, "utf8"));
-      return typeof value === "object" &&
-        value !== null &&
-        "version" in value &&
-        typeof value.version === "string"
-        ? value.version
-        : "unknown";
+      const decoded = effect.Schema.decodeUnknownResult(
+        effect.Schema.Struct({ version: effect.Schema.String }),
+      )(JSON.parse(await readFile(packagePath, "utf8")));
+      return effect.Result.isSuccess(decoded) ? decoded.success.version : "unknown";
     } catch (error) {
-      if ((error as { readonly code?: string }).code !== "ENOENT") return "unknown";
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT")
+        return "unknown";
     }
     const parent = dirname(current);
     if (parent === current) return "unknown";
@@ -71,6 +88,10 @@ try {
   await Bun.write(outputPath, JSON.stringify(extensions));
   process.exit(0);
 } catch (error) {
-  process.stderr.write(`${errorMessage(error)}\n`);
+  if (!(error instanceof Object)) {
+    process.stderr.write(`${String(error)}\n`);
+  } else {
+    process.stderr.write(`${errorMessage(error)}\n`);
+  }
   process.exit(1);
 }

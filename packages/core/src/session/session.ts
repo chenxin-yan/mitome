@@ -8,11 +8,11 @@ import type { AnyExtension } from "../extension.js";
 import { SessionBusyError, SessionReleasedError, TurnError, hookTurnError } from "./errors.js";
 import type { TurnEvent } from "./events.js";
 import { beginHookPhase } from "./hooks.js";
-import { makeModelResolver } from "./model-resolver.js";
-import { makeStepRunner } from "./step-runner.js";
-import { makeToolExecution } from "./tool-execution.js";
-import { makeTranscript, promptFromTranscript } from "../transcript.js";
-import type { Transcript } from "../transcript.js";
+import * as ModelResolver from "./model-resolver.js";
+import * as StepRunner from "./step-runner.js";
+import * as ToolExecution from "./tool-execution.js";
+import * as Transcript from "../transcript.js";
+import type { Transcript as TranscriptValue } from "../transcript.js";
 import type { StoreError, TranscriptStore } from "../transcript-store.js";
 
 type ProvidersOf<Definition extends AgentDefinition> =
@@ -27,7 +27,7 @@ export interface CreateSessionOptions {
    * Seeds the Session's committed history. If it has no system message, the Agent's compiled
    * instructions are intentionally not injected.
    */
-  readonly transcript?: Transcript | undefined;
+  readonly transcript?: TranscriptValue | undefined;
   readonly store?: TranscriptStore | undefined;
 }
 
@@ -39,7 +39,7 @@ export interface Session<
     options?: PromptOptions<Providers>,
   ) => Stream.Stream<TurnEvent, SessionBusyError | SessionReleasedError | StoreError | TurnError>;
   readonly history: () => ReadonlyArray<Prompt.Message>;
-  readonly transcript: () => Transcript;
+  readonly transcript: () => TranscriptValue;
 }
 
 const createSessionImpl: (
@@ -53,19 +53,23 @@ const createSessionImpl: (
   const sessionScope = yield* Effect.scope;
   const extensionContexts = new Map<AnyExtension, Context.Context<any>>();
   for (const extension of compiled.extensions) {
+    // SAFETY: contexts are intentionally heterogeneous and indexed by their owning Extension.
     let context = Context.empty() as Context.Context<any>;
     for (const dependency of extension.dependencies ?? []) {
       if (dependency.provides !== undefined) {
+        // SAFETY: topological compilation ensures every dependency context was built first.
         context = Context.merge(
           context,
           Context.pick(...dependency.provides)(extensionContexts.get(dependency)!),
         );
       }
     }
+    // SAFETY: contexts are intentionally heterogeneous and narrowed by the Extension's provides keys.
     let ownContext = Context.empty() as Context.Context<any>;
     if (extension.resource !== undefined) {
       // AnyExtension erases Layer input/output types; the compiled graph restores
       // the declared dependency context before hooks and handlers run.
+      // SAFETY: the compiled dependency graph supplies the erased Layer requirements.
       ownContext = (yield* Layer.build(extension.resource).pipe(
         Effect.provide(context),
         hookTurnError("Extension setup failed"),
@@ -75,19 +79,21 @@ const createSessionImpl: (
     const missingProvidedServices = (extension.provides ?? []).filter(
       (service) => !ownContext.mapUnsafe.has(service.key),
     );
-    if (missingProvidedServices.length > 0) {
+    const missingServiceIssues = missingProvidedServices.map(
+      (service) =>
+        `Extension ${extension.name} Provided Service ${service.key} is missing from its resource Layer`,
+    );
+    const firstMissingServiceIssue = missingServiceIssues[0];
+    if (firstMissingServiceIssue !== undefined) {
       return yield* new AgentDefinitionError({
-        issues: missingProvidedServices.map(
-          (service) =>
-            `Extension ${extension.name} Provided Service ${service.key} is missing from its resource Layer`,
-        ) as [string, ...Array<string>],
+        issues: [firstMissingServiceIssue, ...missingServiceIssues.slice(1)],
       });
     }
     extensionContexts.set(extension, context);
   }
-  const toolExecution = yield* makeToolExecution(compiled, extensionContexts);
-  const modelResolver = makeModelResolver(compiled.providers, sessionScope);
-  const stepRunner = makeStepRunner(compiled, extensionContexts, toolExecution);
+  const toolExecution = yield* ToolExecution.makeToolExecution(compiled, extensionContexts);
+  const modelResolver = ModelResolver.makeModelResolver(compiled.providers, sessionScope);
+  const stepRunner = StepRunner.makeStepRunner(compiled, extensionContexts, toolExecution);
   const transcriptId = crypto.randomUUID();
   const parentTranscriptId = sessionOptions.transcript?.id;
   let history =
@@ -95,7 +101,7 @@ const createSessionImpl: (
       ? Prompt.make(
           compiled.instructions === "" ? [] : [{ role: "system", content: compiled.instructions }],
         )
-      : promptFromTranscript(sessionOptions.transcript);
+      : Transcript.promptFromTranscript(sessionOptions.transcript);
   let isReleased = false;
   let isTurnActive = false;
 
@@ -169,7 +175,7 @@ const createSessionImpl: (
                             sessionOptions.store === undefined
                               ? Effect.void
                               : sessionOptions.store.save(
-                                  makeTranscript({
+                                  Transcript.makeTranscript({
                                     id: transcriptId,
                                     parentTranscriptId,
                                     messages: nextHistory.content,
@@ -198,11 +204,16 @@ const createSessionImpl: (
       }),
     history: () => history.content,
     transcript: () =>
-      makeTranscript({ id: transcriptId, parentTranscriptId, messages: history.content }),
+      Transcript.makeTranscript({
+        id: transcriptId,
+        parentTranscriptId,
+        messages: history.content,
+      }),
   };
 });
 
-export const createSession = createSessionImpl as <const Definition extends AgentDefinition>(
+export const createSession = <const Definition extends AgentDefinition>(
   definition: Definition,
   options?: CreateSessionOptions,
-) => Effect.Effect<Session<ProvidersOf<Definition>>, AgentDefinitionError | TurnError, Scope.Scope>;
+): Effect.Effect<Session<ProvidersOf<Definition>>, AgentDefinitionError | TurnError, Scope.Scope> =>
+  createSessionImpl(definition, options);

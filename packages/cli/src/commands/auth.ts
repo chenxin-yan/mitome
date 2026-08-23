@@ -1,5 +1,5 @@
-import { Effect, Option } from "effect";
-import { ChildHost, type ProviderAuthentication } from "../child-host.js";
+import { Effect, Option, Schema } from "effect";
+import { ChildHost, type ProviderAuthentication } from "../child-host-service.js";
 import { removeConfigEnv, updateConfigEnv } from "../config.js";
 import { definitionPath } from "../definition.js";
 import { Prompter } from "../prompter.js";
@@ -31,7 +31,7 @@ export const authenticateDefinition = Effect.fn("@mitome/cli/authenticateDefinit
   const providers = yield* childHost.inspectProviderAuthentication(path);
   const selected = yield* selectProvider(providers);
   const credential = selected.credential;
-  if (typeof credential !== "string") {
+  if (!Schema.is(Schema.String)(credential)) {
     yield* childHost.runOAuthAuth(path, selected.id, command);
     return;
   }
