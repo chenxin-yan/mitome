@@ -16,6 +16,7 @@ export {
   defineAgent,
   defineMitome,
   makeTranscript,
+  makeFileTranscriptStore,
   makeMemoryTranscriptStore,
   promptFromTranscript,
 } from "@mitome/core";

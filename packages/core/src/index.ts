@@ -1,4 +1,5 @@
 export { configDirectory, configDirectoryMessage } from "./config.js";
+export { makeFileTranscriptStore } from "./file-transcript-store.js";
 export { CredentialDescriptorSchema } from "./credential.js";
 export type { AuthCapability, AuthenticateOptions, CredentialDescriptor } from "./credential.js";
 export { AgentDefinitionError, compileAgentDefinition, defineAgent } from "./agent.js";

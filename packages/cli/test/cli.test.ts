@@ -1,14 +1,15 @@
 import { spawn as spawnChild } from "node:child_process";
 import { once } from "node:events";
 import { existsSync as exists } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { text } from "node:stream/consumers";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import type { Schema } from "effect";
+import { makeFileTranscriptStore } from "@mitome/core";
+import { Effect, type Schema } from "effect";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -826,6 +827,30 @@ describe("compiled mitome", () => {
       stdout: "first second\n",
       stderr: "",
     });
+  });
+
+  test("persists one-shot Transcripts under MITOME_HOME by default", async () => {
+    const current = await fixture();
+    const mitomeHome = join(current.root, "override-home");
+    const env = { ...current.env, MITOME_HOME: mitomeHome };
+
+    expect(await output(spawn("", ["hello", "--use", current.definition], current, env))).toEqual({
+      exitCode: 0,
+      stdout: "first second\n",
+      stderr: "",
+    });
+
+    const storeDirectory = join(mitomeHome, "transcripts");
+    const files = await readdir(storeDirectory);
+    expect(files.filter((name) => name.endsWith(".transcript.json"))).toHaveLength(1);
+    expect(files.filter((name) => name.endsWith(".events.jsonl"))).toHaveLength(1);
+    const store = makeFileTranscriptStore(storeDirectory);
+    const transcripts = await Effect.runPromise(store.list());
+    expect(transcripts).toHaveLength(1);
+    expect((await Effect.runPromise(store.load(transcripts[0]!.id))).messages).toEqual([
+      expect.objectContaining({ role: "user" }),
+    ]);
+    expect(exists(join(current.env.XDG_CONFIG_HOME, "mitome", "transcripts"))).toBe(false);
   });
 
   test("uses Core directly without SDK runtime support", () => {
