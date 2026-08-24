@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
 import { Prompt, Tool } from "effect/unstable/ai";
 import type { Response } from "effect/unstable/ai";
 import type { CompiledAgent } from "../agent.js";
@@ -11,8 +11,7 @@ import type { RuntimeModel } from "./model-resolver.js";
 import type { ToolExecution } from "./tool-execution.js";
 
 export type StepEvent =
-  | TurnEvent
-  | ApprovalResolvedEvent
+  | PersistedTurnEvent
   | {
       readonly type: "turn-complete";
       readonly history: Prompt.Prompt;
@@ -138,6 +137,11 @@ export const makeStepRunner = (
                 ).pipe(
                   Stream.provideContext(selected.context),
                   Stream.mapError(modelTurnError),
+                  Stream.map((part) =>
+                    part.type === "tool-result" && !Schema.is(Schema.Json)(part.encodedResult)
+                      ? { ...part, encodedResult: null }
+                      : part,
+                  ),
                   Stream.tap((part) => Effect.sync(() => parts.push(part))),
                   Stream.flatMap((part): Stream.Stream<StepEvent, TurnError> => {
                     if (part.type === "error") return Stream.fail(modelTurnError(part.error));
@@ -162,6 +166,7 @@ export const makeStepRunner = (
                         id: part.id,
                         name: part.name,
                         result: part.result,
+                        encodedResult: part.encodedResult,
                         isFailure: part.isFailure,
                       });
                     }

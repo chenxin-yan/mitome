@@ -46,7 +46,12 @@ export interface ApprovalResolvedEvent {
   readonly reason?: string | undefined;
 }
 
-export type PersistedTurnEvent = TurnEvent | ApprovalResolvedEvent;
+type ToolResultEvent = Extract<TurnEvent, { readonly type: "tool-result" }>;
+
+export type PersistedTurnEvent =
+  | Exclude<TurnEvent, ToolResultEvent>
+  | (ToolResultEvent & { readonly encodedResult: unknown })
+  | ApprovalResolvedEvent;
 
 const modelOutputEventDto = Schema.Struct({
   type: Schema.Literal("model-output"),
@@ -100,15 +105,27 @@ export const TurnEventDtoSchema = Schema.Union([
 ]);
 export type TurnEventDto = typeof TurnEventDtoSchema.Type;
 
-const decodeTurnEventDto = Schema.decodeUnknownSync(TurnEventDtoSchema);
-
-export const turnEventToDto = (event: PersistedTurnEvent): TurnEventDto =>
-  event.type === "approval-required"
-    ? decodeTurnEventDto({
-        type: event.type,
-        approvalId: event.approvalId,
-        toolCallId: event.toolCallId,
-        name: event.name,
-        params: event.params,
-      })
-    : decodeTurnEventDto(event);
+export const turnEventToDto = (event: PersistedTurnEvent): TurnEventDto => {
+  if (event.type === "tool-call") {
+    return { ...event, params: Schema.is(Schema.Json)(event.params) ? event.params : null };
+  }
+  if (event.type === "tool-result") {
+    return {
+      type: event.type,
+      id: event.id,
+      name: event.name,
+      result: Schema.is(Schema.Json)(event.encodedResult) ? event.encodedResult : null,
+      isFailure: event.isFailure,
+    };
+  }
+  if (event.type === "approval-required") {
+    return {
+      type: event.type,
+      approvalId: event.approvalId,
+      toolCallId: event.toolCallId,
+      name: event.name,
+      params: Schema.is(Schema.Json)(event.params) ? event.params : null,
+    };
+  }
+  return event;
+};

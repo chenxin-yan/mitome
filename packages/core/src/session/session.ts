@@ -205,6 +205,11 @@ const createSessionImpl: (
                       );
                     }),
                     Stream.mapEffect((event) => appendTurnEvent(event).pipe(Effect.as(event))),
+                    Stream.map((event) => {
+                      if (event.type !== "tool-result") return event;
+                      const { encodedResult: _encodedResult, ...turnEvent } = event;
+                      return turnEvent;
+                    }),
                     Stream.filter(
                       (event): event is TurnEvent => event.type !== "approval-resolved",
                     ),

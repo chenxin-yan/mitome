@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
+import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
 import {
   type AgentDefinition,
   createSession,
@@ -10,7 +10,7 @@ import {
   TranscriptNotFound,
   type TranscriptStore,
 } from "../../src/index.js";
-import { makeDeterministicProvider } from "../support/provider.js";
+import { makeDeterministicProvider, makeTestProvider } from "../support/provider.js";
 
 const makeRecordingStore = (
   records: Array<TranscriptEventRecord>,
@@ -93,6 +93,106 @@ describe("Session event log", () => {
     }),
   );
 
+  it.effect("records encoded Tool results and maps Void to JSON null", () =>
+    Effect.gen(function* () {
+      const timestamp = new Date("2026-08-24T00:00:00.000Z");
+      let calls = 0;
+      const provider = makeTestProvider((options) => {
+        calls += 1;
+        if (calls === 3) {
+          return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+        }
+        const call = Response.makePart("tool-call", {
+          id: `call-${calls}`,
+          name: calls === 1 ? "notify" : "timestamp",
+          params: {},
+          providerExecuted: false,
+        });
+        return Stream.concat(
+          Stream.succeed(call),
+          Stream.unwrap(
+            options.toolkit!.handle(call.name, {}).pipe(
+              Effect.map((results) =>
+                Stream.map(results, (result) =>
+                  Response.makePart("tool-result", {
+                    id: call.id,
+                    name: call.name,
+                    providerExecuted: false,
+                    ...result,
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+      });
+      const notify = Tool.make("notify", {
+        parameters: Schema.Struct({}),
+        success: Schema.Void,
+      });
+      const getTimestamp = Tool.make("timestamp", {
+        parameters: Schema.Struct({}),
+        success: Schema.DateFromString,
+      });
+      const records: Array<TranscriptEventRecord> = [];
+      const session = yield* createSession(
+        {
+          providers: [provider],
+          model: "test/default",
+          extensions: [
+            {
+              name: "tools",
+              toolkit: Toolkit.make(notify, getTimestamp),
+              handlers: {
+                notify: () => Effect.void,
+                timestamp: () => Effect.succeed(timestamp),
+              },
+            },
+          ],
+        },
+        { store: makeRecordingStore(records) },
+      );
+
+      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const decoded = yield* Schema.decodeUnknownEffect(Schema.Array(TranscriptEventRecordSchema))(
+        JSON.parse(JSON.stringify(records)),
+      );
+
+      expect([...events]).toContainEqual({
+        type: "tool-result",
+        id: "call-1",
+        name: "notify",
+        result: undefined,
+        isFailure: false,
+      });
+      expect([...events]).toContainEqual({
+        type: "tool-result",
+        id: "call-2",
+        name: "timestamp",
+        result: timestamp,
+        isFailure: false,
+      });
+      expect(
+        decoded.filter(({ event }) => event.type === "tool-result").map(({ event }) => event),
+      ).toEqual([
+        {
+          type: "tool-result",
+          id: "call-1",
+          name: "notify",
+          result: null,
+          isFailure: false,
+        },
+        {
+          type: "tool-result",
+          id: "call-2",
+          name: "timestamp",
+          result: timestamp.toISOString(),
+          isFailure: false,
+        },
+      ]);
+    }),
+  );
+
   it.effect("records Approval requests and outcomes without resolution closures", () =>
     Effect.gen(function* () {
       let calls = 0;
@@ -164,7 +264,6 @@ describe("Session event log", () => {
         params: { action: "delete" },
       });
       const approvalRequest = decoded[1]!.event;
-      expect(approvalRequest.type).toBe("approval-required");
       if (approvalRequest.type !== "approval-required") return;
       expect(decoded[2]!.event).toEqual({
         type: "approval-resolved",
