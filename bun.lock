@@ -192,17 +192,18 @@
       "dependencies": {
         "@opentui/core": "0.5.3",
         "@opentui/solid": "0.5.3",
-        "effect": "catalog:",
         "solid-js": "1.9.12",
       },
       "devDependencies": {
         "@mitome/config": "workspace:*",
         "@mitome/core": "workspace:*",
         "@types/bun": "catalog:",
+        "effect": "catalog:",
         "typescript": "catalog:",
       },
       "peerDependencies": {
         "@mitome/core": "workspace:*",
+        "effect": "4.0.0-rc.108",
       },
     },
   },
