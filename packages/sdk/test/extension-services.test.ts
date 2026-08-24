@@ -11,7 +11,7 @@ const textModel = () =>
   );
 
 describe("@mitome/sdk Extension Provided Services", () => {
-  test("consumes an Effect Extension's Provided Service from an SDK Tool handler", async () => {
+  test("consumes an Effect Extension's Provided Service from an SDK Tool handler and Hook", async () => {
     class Counter extends Context.Service<Counter, { count: number }>()("test/Counter") {}
     const counterLayer = Layer.succeed(Counter, { count: 0 });
     const provider = defineEffectExtension<
@@ -23,9 +23,13 @@ describe("@mitome/sdk Extension Provided Services", () => {
       resource: counterLayer,
       provides: [Counter],
     });
+    const observed: Array<number> = [];
     const dependent = defineExtension({
       name: "sdk-dependent",
       dependencies: [provider],
+      hooks: {
+        sessionStart: async ({ getService }) => void observed.push(getService(Counter).count),
+      },
       tools: [
         tool({
           name: "increment",
@@ -58,6 +62,7 @@ describe("@mitome/sdk Extension Provided Services", () => {
       result: "1",
       isFailure: false,
     });
+    expect(observed).toEqual([0]);
   });
 
   test("publishes an SDK service to an Effect Extension", async () => {
