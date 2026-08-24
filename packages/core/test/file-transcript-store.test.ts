@@ -63,6 +63,42 @@ describe("makeFileTranscriptStore", () => {
     ),
   );
 
+  it.effect("ignores an event log record truncated by process death", () =>
+    withDirectory((directory) =>
+      Effect.gen(function* () {
+        const store = makeFileTranscriptStore(directory);
+        const transcript = makeTranscript({ id: "transcript-1", messages: [] });
+        yield* store.save(transcript);
+        yield* store.appendEvent({
+          transcriptId: transcript.id,
+          sessionId: "session-1",
+          seq: 0,
+          version: TranscriptEventRecordVersion,
+          event: { type: "model-output", text: "hello" },
+        });
+        yield* Effect.promise(() =>
+          writeFile(join(directory, "transcript-1.events.jsonl"), '{"truncated"', { flag: "a" }),
+        );
+
+        expect(yield* store.list()).toHaveLength(1);
+      }),
+    ),
+  );
+
+  it.effect("ignores an atomic-save temporary file", () =>
+    withDirectory((directory) =>
+      Effect.gen(function* () {
+        const store = makeFileTranscriptStore(directory);
+        yield* store.save(makeTranscript({ id: "transcript-1", messages: [] }));
+        yield* Effect.promise(() =>
+          writeFile(join(directory, ".transcript-123-leftover"), "partial"),
+        );
+
+        expect(yield* store.list()).toHaveLength(1);
+      }),
+    ),
+  );
+
   it.effect("retains creation metadata when a later adapter replaces a Transcript", () =>
     withDirectory((directory) =>
       Effect.gen(function* () {

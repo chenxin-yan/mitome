@@ -21,6 +21,7 @@ type StoredTranscriptFile = typeof StoredTranscriptFileSchema.Type;
 
 const transcriptSuffix = ".transcript.json";
 const eventsSuffix = ".events.jsonl";
+const temporaryPrefix = ".transcript-";
 
 const fileName = (id: TranscriptId, suffix: string): string => `${encodeURIComponent(id)}${suffix}`;
 
@@ -58,8 +59,7 @@ const decodeEventLog = (
 ): Effect.Effect<ReadonlyArray<TranscriptEventRecord>, StoreError> =>
   Effect.try({
     try: () => {
-      if (contents !== "" && !contents.endsWith("\n")) throw new Error("Incomplete final record");
-      const lines = contents === "" ? [] : contents.slice(0, -1).split("\n");
+      const lines = contents.split("\n").slice(0, -1);
       return lines.map((line) => {
         if (line === "") throw new Error("Empty event record");
         return Schema.decodeUnknownSync(TranscriptEventRecordSchema, {
@@ -136,7 +136,7 @@ export const makeFileTranscriptStore = (directory: string): TranscriptStore => (
         updatedAt: now,
       };
       const encoded = Schema.encodeUnknownSync(StoredTranscriptFileSchema)(stored);
-      const temporary = join(directory, `.transcript-${process.pid}-${crypto.randomUUID()}`);
+      const temporary = join(directory, `${temporaryPrefix}${process.pid}-${crypto.randomUUID()}`);
       yield* attempt("write", temporary, () =>
         writeFile(temporary, `${JSON.stringify(encoded)}\n`, { flag: "wx", mode: 0o600 }),
       );
@@ -167,6 +167,7 @@ export const makeFileTranscriptStore = (directory: string): TranscriptStore => (
         if (!entry.isFile()) {
           return yield* storeError(`Foreign entry in Transcript store: ${path}.`);
         }
+        if (entry.name.startsWith(temporaryPrefix)) continue;
         if (entry.name.endsWith(transcriptSuffix)) {
           const id = yield* idFromFileName(entry.name, transcriptSuffix, path);
           const stored = yield* decodeStoredTranscript(
