@@ -1,9 +1,9 @@
-import { Layer } from "effect";
+import { Layer, Predicate, Schema } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
 import type { CredentialDescriptor } from "./credential.js";
 
-// Type-only so Provider values expose no runtime brand; the WeakMap enforces Core identity.
-declare const ProviderTypeId: unique symbol;
+// Module-private runtime brand complements WeakMap metadata with compile-time Provider identity.
+const ProviderTypeId: unique symbol = Symbol("@mitome/core/Provider");
 
 /** A configured model Provider with non-secret catalog hints. */
 export interface Provider<
@@ -39,7 +39,7 @@ interface ProviderMetadata {
   readonly provision: (modelId: string) => Layer.Layer<LanguageModel.LanguageModel, unknown, never>;
 }
 
-const providerMetadata = new WeakMap<AnyProvider, ProviderMetadata>();
+const providerMetadata = new WeakMap<object, ProviderMetadata>();
 
 /** Creates a configured Provider without exposing credentials or provisioning behavior. */
 export const makeProvider = <const Id extends string, const ModelIds extends ReadonlyArray<string>>(
@@ -52,15 +52,19 @@ export const makeProvider = <const Id extends string, const ModelIds extends Rea
   if (id.length === 0 || id.includes("/")) {
     throw new TypeError("Provider id must be non-empty and contain no '/'");
   }
-  if (typeof credential === "string" && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(credential)) {
+  if (Predicate.isString(credential) && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(credential)) {
     throw new TypeError("Provider credential must be a valid environment variable name");
   }
 
-  // Narrow away the ValidProviderId intersection so the branded cast keeps type overlap.
-  const provider = { id: id as Id, modelIds } as Provider<Id, ModelIds>;
+  const provider: Provider<Id, ModelIds> = { [ProviderTypeId]: ProviderTypeId, id, modelIds };
+  Object.defineProperty(provider, ProviderTypeId, { enumerable: false });
   providerMetadata.set(provider, { credential, provision });
   return provider;
 };
+
+/** Whether a value is a Provider created by this copy of Core. */
+export const isProvider = (value: NonNullable<typeof Schema.Unknown.Type>): value is AnyProvider =>
+  providerMetadata.has(value);
 
 /** Core-internal access to a Provider's hidden metadata; absent for Providers Core did not create. */
 export const getProviderMetadata = (provider: AnyProvider): ProviderMetadata | undefined =>
@@ -75,9 +79,9 @@ export const credentialDescriptor = (provider: AnyProvider): CredentialDescripto
  * Provider-native Model id. Returns undefined for anything that cannot select a Model.
  */
 export const parseQualifiedModelId = (
-  qualifiedModelId: unknown,
+  qualifiedModelId: typeof Schema.Unknown.Type,
 ): { readonly providerId: string; readonly modelId: string } | undefined => {
-  if (typeof qualifiedModelId !== "string") return undefined;
+  if (!Predicate.isString(qualifiedModelId)) return undefined;
   const separator = qualifiedModelId.indexOf("/");
   if (separator <= 0 || separator === qualifiedModelId.length - 1) return undefined;
   return {

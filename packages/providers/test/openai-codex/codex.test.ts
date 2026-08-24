@@ -10,6 +10,9 @@ import { agent as definition, serve, spawnRuntime, sse } from "../support.js";
 import { writeCredential as writeCredentialEffect } from "../../src/openai-codex/credential-store.js";
 import { codex } from "../../src/openai-codex/index.js";
 
+type JsonObject = { readonly [key: string]: typeof Schema.Json.Type };
+const JsonObject = Schema.Record(Schema.String, Schema.Json);
+
 const directories: Array<string> = [];
 const writeCredential = (
   configDirectory: string,
@@ -172,10 +175,10 @@ describe("Codex SSE", () => {
 
   test("replays encrypted reasoning before the paired Tool call on the next Step", async () => {
     const configDirectory = await directory();
-    const requests: Array<Record<string, unknown>> = [];
+    const requests: Array<JsonObject> = [];
     const server = await serve({
       async fetch(request) {
-        requests.push((await request.json()) as Record<string, unknown>);
+        requests.push(Schema.decodeUnknownSync(JsonObject)(await request.json()));
         if (requests.length === 1) {
           return new Response(
             sse({
@@ -249,6 +252,7 @@ describe("Codex SSE", () => {
                     name: "echo",
                     toolkit: Toolkit.make(echo),
                     handlers: {
+                      // SAFETY: Toolkit validates handler parameters with the echo schema.
                       echo: (params) => Effect.succeed((params as { readonly text: string }).text),
                     },
                   },
@@ -372,7 +376,9 @@ describe("Codex SSE", () => {
           await barrier;
           return new Response("go");
         }
-        const refresh = (await request.formData()).get("refresh_token") as string;
+        const refresh = Schema.decodeUnknownSync(Schema.String)(
+          (await request.formData()).get("refresh_token"),
+        );
         refreshes.push(refresh);
         await setTimeout(6_000);
         if (refresh !== "shared-refresh") return new Response("stale refresh", { status: 400 });

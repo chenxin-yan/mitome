@@ -1,7 +1,13 @@
 import { Context, Effect, Predicate, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
-import type { AnyExtension, ToolInputValidator, ToolResultValidator } from "./extension.js";
-import { getProviderMetadata, parseQualifiedModelId } from "./provider.js";
+import type {
+  AnyExtension,
+  ToolInput,
+  ToolInputValidator,
+  ToolOutput,
+  ToolResultValidator,
+} from "./extension.js";
+import { isProvider, parseQualifiedModelId } from "./provider.js";
 import type { AnyProvider, QualifiedModelId } from "./provider.js";
 
 export interface AgentDefinition<
@@ -14,7 +20,7 @@ export interface AgentDefinition<
   readonly extensions: Extensions;
 }
 
-type AnyToolHandler = (params: unknown) => Effect.Effect<unknown, unknown, any>;
+type AnyToolHandler = (params: ToolInput) => Effect.Effect<ToolOutput, unknown, any>;
 
 export interface CompiledTool {
   readonly tool: Tool.Any;
@@ -63,7 +69,10 @@ interface CompiledExtensions {
   readonly requiredHandlerNames: Set<string>;
 }
 
-const compileExtensions = (extensionValues: unknown, issues: Array<string>): CompiledExtensions => {
+const compileExtensions = (
+  extensionValues: typeof Schema.Unknown.Type,
+  issues: Array<string>,
+): CompiledExtensions => {
   const extensions: Array<AnyExtension> = [];
   const tools = new Map<string, Omit<CompiledTool, "handler">>();
   const handlers = new Map<string, AnyToolHandler>();
@@ -80,12 +89,12 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
   const discovered = new WeakSet<object>();
   const extensionsByName = new Map<string, AnyExtension>();
   const conflictingNames = new Set<string>();
-  const hasName = (value: unknown): value is { readonly name: string } =>
-    Predicate.isObject(value) && typeof value.name === "string";
+  const hasName = (value: typeof Schema.Unknown.Type): value is { readonly name: string } =>
+    Predicate.isObject(value) && Predicate.isString(value.name);
 
   // ponytail: recursive discover/visit overflow the call stack on dependency
   // chains thousands deep; switch to an explicit stack if generated graphs need it.
-  const discover = (value: unknown, location: string): void => {
+  const discover = (value: typeof Schema.Unknown.Type, location: string): void => {
     if (!hasName(value)) {
       graphIssues.push(`${location} must be an object with a string name`);
       return;
@@ -93,7 +102,8 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
     if (discovered.has(value)) return;
     discovered.add(value);
 
-    const extension = value as unknown as AnyExtension;
+    // SAFETY: hasName established the runtime identity required for graph validation below.
+    const extension = value as AnyExtension;
     encountered.push(extension);
     const existing = extensionsByName.get(extension.name);
     if (existing === undefined) {
@@ -169,10 +179,10 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
       }
     }
 
-    if (extension.instructions !== undefined && typeof extension.instructions !== "string") {
+    if (extension.instructions !== undefined && !Predicate.isString(extension.instructions)) {
       issues.push(`Extension ${extension.name} Instructions must be a string`);
     }
-    if (typeof extension.instructions === "string" && extension.instructions.length > 0) {
+    if (Predicate.isString(extension.instructions) && extension.instructions.length > 0) {
       instructions.push(extension.instructions);
     }
 
@@ -221,7 +231,7 @@ const compileExtensions = (extensionValues: unknown, issues: Array<string>): Com
 };
 
 export const compileAgentDefinition: (
-  definition: unknown,
+  definition: typeof Schema.Unknown.Type,
 ) => Effect.Effect<CompiledAgent, AgentDefinitionError> = Effect.fn(
   "@mitome/core/compileAgentDefinition",
 )(function* (definition) {
@@ -236,24 +246,23 @@ export const compileAgentDefinition: (
     issues.push("Agent Definition Providers must be an array");
   } else {
     for (const [index, value] of providerValues.entries()) {
-      if (!Predicate.isObject(value) || typeof value.id !== "string") {
+      if (!Predicate.isObject(value) || !Predicate.isString(value.id)) {
         issues.push(`Provider at index ${index} must be an object with a string id`);
         continue;
       }
-      const provider = value as unknown as AnyProvider;
-      if (providers.has(provider.id)) {
-        issues.push(`Duplicate Provider id: ${provider.id}`);
-      }
-      providers.set(provider.id, provider);
-      if (getProviderMetadata(provider) === undefined) {
+      if (!isProvider(value)) {
         return yield* Effect.die(new Error("Provider was not created by @mitome/core"));
       }
+      if (providers.has(value.id)) {
+        issues.push(`Duplicate Provider id: ${value.id}`);
+      }
+      providers.set(value.id, value);
     }
   }
 
   let defaultModel: ReturnType<typeof parseQualifiedModelId>;
   const model = definition.model;
-  if (typeof model !== "string") {
+  if (!Predicate.isString(model)) {
     issues.push("Agent Definition Model must be a string");
   } else {
     defaultModel = parseQualifiedModelId(model);
@@ -282,6 +291,7 @@ export const compileAgentDefinition: (
 
   if (issues.length > 0) {
     return yield* new AgentDefinitionError({
+      // SAFETY: guarded by issues.length > 0, so the array satisfies Schema.NonEmptyArray.
       issues: issues as [string, ...Array<string>],
     });
   }

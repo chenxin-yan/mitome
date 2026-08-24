@@ -2,7 +2,9 @@ import { chmod, mkdir, open, readFile, rename, rm, unlink } from "node:fs/promis
 import { join } from "node:path";
 import { Data, Effect, Result, Schedule, Schema } from "effect";
 
-const AuthFile = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
+const StoredCredential = Schema.Json;
+type StoredCredential = typeof StoredCredential.Type;
+const AuthFile = Schema.fromJsonString(Schema.Record(Schema.String, StoredCredential));
 type AuthFile = typeof AuthFile.Type;
 
 export class CredentialStoreError extends Data.TaggedError("CredentialStoreError")<{
@@ -19,6 +21,7 @@ const attempt = <A>(operation: () => Promise<A>): Effect.Effect<A, CredentialSto
   Effect.tryPromise({
     try: operation,
     catch: (cause) => {
+      // SAFETY: Node filesystem promises reject with Error objects whose optional code is the errno.
       const error = cause as NodeJS.ErrnoException;
       return new CredentialStoreError({
         message: error.message,
@@ -95,7 +98,7 @@ const writeAuth = (
 export const readCredential = (
   configDirectory: string,
   providerKey: string,
-): Effect.Effect<unknown, CredentialStoreError> =>
+): Effect.Effect<StoredCredential | undefined, CredentialStoreError> =>
   Effect.map(readAuth(configDirectory), (auth) => auth[providerKey]);
 
 /**
@@ -107,7 +110,9 @@ export const readCredential = (
 export const modifyCredential = <A, E, R>(
   configDirectory: string,
   providerKey: string,
-  update: (current: unknown) => Effect.Effect<readonly [unknown, A], E, R>,
+  update: (
+    current: StoredCredential | undefined,
+  ) => Effect.Effect<readonly [StoredCredential | undefined, A], E, R>,
 ): Effect.Effect<A, CredentialStoreError | E, R> =>
   Effect.gen(function* () {
     yield* ensureDirectory(configDirectory);

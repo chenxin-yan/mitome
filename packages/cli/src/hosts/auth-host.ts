@@ -13,14 +13,26 @@ const authConfigDirectory = process.argv[4];
 const selectedProviderId = process.argv[5];
 const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
 const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath).href);
+// SAFETY: Dynamic import namespaces expose their module's default export at `.default`.
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
-const providers = (loaded as Partial<MitomeDefinition> | undefined)?.agent?.providers;
-if (!Array.isArray(providers)) {
+interface DefinitionCandidate {
+  readonly agent?: { readonly providers?: ReadonlyArray<object> };
+}
+
+const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefinition =>
+  "agent" in value &&
+  value.agent instanceof Object &&
+  "providers" in value.agent &&
+  Array.isArray(value.agent.providers);
+if (!(loaded instanceof Object)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
-const authentication = providers.flatMap((provider) => {
+if (!isMitomeDefinition(loaded)) {
+  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
+}
+const authentication = loaded.agent.providers.flatMap((provider) => {
   const credential = core.credentialDescriptor(provider);
   return credential === undefined ? [] : [{ id: provider.id, credential }];
 });
@@ -36,15 +48,14 @@ if (operation === undefined) {
     throw new Error("Invalid Provider authentication host operation or configuration.");
   }
   const selected = authentication.find(({ id }) => id === selectedProviderId);
-  if (selected === undefined || typeof selected.credential === "string") {
+  if (selected === undefined || !(selected.credential instanceof Object)) {
     throw new Error(
       `Provider \`${selectedProviderId}\` was not found or does not declare OAuth authentication.`,
     );
   }
-  const capability = (await import(
-    selected.credential.capability.module
-  )) as Partial<AuthCapability>;
-  if (typeof capability.authenticate !== "function") {
+  const credential = selected.credential;
+  const capability: Partial<AuthCapability> = await import(credential.capability.module);
+  if (!(capability.authenticate instanceof Function)) {
     throw new Error(
       `OAuth capability for Provider \`${selectedProviderId}\` does not export \`authenticate\`.`,
     );

@@ -387,7 +387,8 @@ describe("@mitome/sdk Tool", () => {
 
     const failure = await withSession(definition, async () => undefined).catch((error) => error);
     expect(failure).toBeInstanceOf(AgentDefinitionError);
-    expect((failure as AgentDefinitionError).issues).toContain("Duplicate Tool name: echo");
+    if (!(failure instanceof AgentDefinitionError)) throw failure;
+    expect(failure.issues).toContain("Duplicate Tool name: echo");
   });
 
   test("returns a generic failure result when a Promise handler rejects", async () => {

@@ -61,21 +61,23 @@ const defaultAgentDefinitionSource = (options: Omit<ScaffoldOptions, "flavor">):
 
 const instructionsSource = "You are a helpful Agent.\n";
 
-const agentPackageSource = (flavor: Flavor = "promise"): string =>
-  `${JSON.stringify(
+const agentPackageSource = (flavor: Flavor = "promise"): string => {
+  const dependencies = {
+    "@mitome/providers": packageJson.version,
+    "@mitome/sdk": packageJson.version,
+  };
+  if (flavor === "effect") Object.assign(dependencies, { effect: "4.0.0-rc.108" });
+  return `${JSON.stringify(
     {
       name: "mitome-agent",
       private: true,
       type: "module",
-      dependencies: {
-        "@mitome/providers": packageJson.version,
-        "@mitome/sdk": packageJson.version,
-        ...(flavor === "effect" ? { effect: "4.0.0-rc.108" } : {}),
-      },
+      dependencies,
     },
     null,
     2,
   )}\n`;
+};
 
 const tsconfigSource = `${JSON.stringify(
   {
@@ -123,20 +125,14 @@ export const projectPlan = (options: ScaffoldOptions): FileMap =>
 export const ensureEmpty = async (directory: string, files: Iterable<string>): Promise<void> => {
   for (const file of files) {
     const path = join(directory, file);
-    try {
-      await stat(path);
-    } catch (error) {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "ENOENT"
-      ) {
-        continue;
-      }
-      throw error;
-    }
-    throw new Error(`${path} already exists`);
+    const exists = await stat(path).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      },
+    );
+    if (exists) throw new Error(`${path} already exists`);
   }
 };
 

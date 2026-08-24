@@ -4,7 +4,7 @@ const packageDirectory = resolve(import.meta.dir, "..");
 
 // Every supported OS/arch/libc family; x64 ships baseline-only. Each Bun
 // compile target maps onto the platform package that publishes its binary.
-const targets: Record<string, string> = {
+const targets = {
   "bun-darwin-arm64": "cli-darwin-arm64",
   "bun-darwin-x64-baseline": "cli-darwin-x64",
   "bun-linux-arm64": "cli-linux-arm64",

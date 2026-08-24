@@ -20,7 +20,7 @@ export type CredentialError =
   | OAuthCredentialFailure;
 
 const credentialFrom = (
-  value: unknown,
+  value: typeof Schema.Json.Type | undefined,
 ): Effect.Effect<OAuthCredential, CredentialUnavailableError> =>
   Schema.decodeUnknownEffect(OAuthCredential)(value).pipe(
     Effect.mapError(

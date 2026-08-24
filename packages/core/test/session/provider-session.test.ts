@@ -66,6 +66,7 @@ describe("Provider-backed Sessions", () => {
         }),
       );
 
+      // SAFETY: this test deliberately bypasses the compile-time Provider-id constraint.
       const error = yield* Effect.flip(
         Stream.runDrain(session.prompt("bad", { model: "missing/model" } as never)),
       );

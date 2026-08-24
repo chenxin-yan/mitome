@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Schema, Stream } from "effect";
+import { Effect, Layer, Predicate, Schema, Stream } from "effect";
 import { AiError, LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import {
   type AgentDefinition,
@@ -326,7 +326,7 @@ describe("createSession Tool Turn", () => {
           Stream.unwrap(
             Effect.gen(function* () {
               const needsApproval = options.toolkit!.tools.echo!.needsApproval;
-              if (typeof needsApproval !== "function") {
+              if (!Predicate.isFunction(needsApproval)) {
                 return yield* Effect.die("Wrapped Tool has no Approval predicate");
               }
               const decision = needsApproval(call.params, {

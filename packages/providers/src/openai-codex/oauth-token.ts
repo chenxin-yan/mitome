@@ -4,6 +4,13 @@ import { exchangeToken, type OAuthToken, type OAuthTokenFailure } from "../share
 import { type OAuthCredential } from "./types.js";
 
 const AccountClaim = Schema.Struct({ chatgpt_account_id: Schema.String });
+const Claims = Schema.fromJsonString(
+  Schema.Struct({
+    chatgpt_account_id: Schema.optional(Schema.String),
+    // Tokens may carry an explicit null for this claim; fall back to the top level then.
+    "https://api.openai.com/auth": Schema.optional(Schema.NullOr(AccountClaim)),
+  }),
+);
 const missingAccount = () => new Error("OAuth access token did not contain an account.");
 
 export class OAuthCredentialError extends Data.TaggedError("OAuthCredentialError")<{
@@ -16,15 +23,12 @@ export const accountId = (access: string): string => {
   const payload = access.split(".")[1];
   if (payload === undefined) throw missingAccount();
   try {
-    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<
-      string,
-      unknown
-    >;
+    const claims = Schema.decodeUnknownSync(Claims)(
+      Buffer.from(payload, "base64url").toString("utf8"),
+    );
     // A present nested object is authoritative, even when it lacks the account id.
-    const auth = claims["https://api.openai.com/auth"];
-    const source = typeof auth === "object" && auth !== null ? auth : claims;
-    const { chatgpt_account_id } = Schema.decodeUnknownSync(AccountClaim)(source);
-    if (chatgpt_account_id === "") throw missingAccount();
+    const { chatgpt_account_id } = claims["https://api.openai.com/auth"] ?? claims;
+    if (chatgpt_account_id === undefined || chatgpt_account_id === "") throw missingAccount();
     return chatgpt_account_id;
   } catch {
     throw missingAccount();

@@ -1,5 +1,5 @@
 import { Console, Effect, Option } from "effect";
-import { ChildHost } from "../child-host.js";
+import { ChildHost } from "../child-host-service.js";
 import { checkRuntime, definitionNeedsReconcile, definitionPath } from "../definition.js";
 import { attempt, fail, type ExitCode } from "../support.js";
 

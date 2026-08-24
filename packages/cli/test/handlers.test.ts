@@ -8,12 +8,7 @@ import { TestConsole } from "effect/testing";
 import { afterEach, beforeEach, vi } from "vitest";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
 
-// Vitest cannot parse Bun's `with { type: "text" }` imports in child-host.ts.
-vi.mock("../src/hosts/host.ts", () => ({ default: "" }));
-vi.mock("../src/hosts/auth-host.ts", () => ({ default: "" }));
-vi.mock("../src/hosts/extensions-host.ts", () => ({ default: "" }));
-
-import { ChildHost, type ProviderAuthentication } from "../src/child-host.ts";
+import { ChildHost, type ProviderAuthentication } from "../src/child-host-service.ts";
 import { runAuth } from "../src/commands/auth.ts";
 import { updateConfigEnv } from "../src/config.ts";
 import { runInit } from "../src/commands/init.ts";
@@ -127,29 +122,31 @@ const fakeChildHost = (
 
 const fakePrompter = (answers: ReadonlyArray<PromptAnswer> = [], canPrompt = true) => {
   const remaining = [...answers];
-  const next = (type: PromptAnswer["type"]): PromptAnswer => {
+  const next = <Type extends PromptAnswer["type"]>(
+    type: Type,
+  ): Extract<PromptAnswer, { readonly type: Type | "abort" }> => {
     const answer = remaining.shift();
     if (answer === undefined) throw new Error(`Unexpected ${type} prompt`);
     if (answer.type !== type && answer.type !== "abort") {
       throw new Error(`Expected ${answer.type} prompt, received ${type}`);
     }
-    return answer;
+    // SAFETY: The checks above narrow the queued answer to the requested variant or abort.
+    return answer as Extract<PromptAnswer, { readonly type: Type | "abort" }>;
   };
-  const abort = <A>(answer: PromptAnswer, value: () => A): Effect.Effect<A> =>
-    answer.type === "abort" ? Effect.interrupt : Effect.sync(value);
   return Layer.succeed(Prompter, {
     canPrompt: Effect.succeed(canPrompt),
     select: <A>({ choices }: { readonly choices: ReadonlyArray<PromptChoice<A>> }) => {
       const answer = next("select");
-      return abort(answer, () => choices.at((answer as { readonly index: number }).index)!.value);
+      if (answer.type === "abort") return Effect.interrupt;
+      return Effect.sync(() => choices.at(answer.index)!.value);
     },
     text: () => {
       const answer = next("text");
-      return abort(answer, () => (answer as { readonly value: string }).value);
+      return answer.type === "abort" ? Effect.interrupt : Effect.succeed(answer.value);
     },
     password: () => {
       const answer = next("password");
-      return abort(answer, () => (answer as { readonly value: string }).value);
+      return answer.type === "abort" ? Effect.interrupt : Effect.succeed(answer.value);
     },
   });
 };

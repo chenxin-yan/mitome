@@ -1,15 +1,17 @@
 import { Layer } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
-import { defineAgent, makeProvider, type QualifiedModelId, type Session } from "../src/index.js";
+import { defineAgent, type QualifiedModelId, type Session } from "../src/index.js";
+import * as Provider from "../src/provider.js";
 
+// SAFETY: this compile-only fixture never executes the LanguageModel service.
 const layer = Layer.succeed(LanguageModel.LanguageModel, {} as LanguageModel.Service);
-const alpha = makeProvider("alpha", ["known", "other"] as const, undefined, () => layer);
-const beta = makeProvider("beta", [] as const, undefined, () => layer);
+const alpha = Provider.makeProvider("alpha", ["known", "other"] as const, undefined, () => layer);
+const beta = Provider.makeProvider("beta", [] as const, undefined, () => layer);
 
 // @ts-expect-error Provider ids must be non-empty.
-makeProvider("", [], undefined, () => layer);
+Provider.makeProvider("", [], undefined, () => layer);
 // @ts-expect-error Provider ids cannot contain the Model separator.
-makeProvider("invalid/id", [], undefined, () => layer);
+Provider.makeProvider("invalid/id", [], undefined, () => layer);
 
 const definition = defineAgent({
   providers: [alpha, beta] as const,

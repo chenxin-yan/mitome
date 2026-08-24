@@ -3,15 +3,9 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Layer } from "effect";
 import { TestConsole } from "effect/testing";
 import { CliOutput } from "effect/unstable/cli";
-import { vi } from "vitest";
 import cliPackage from "../package.json" with { type: "json" };
 
-// Vitest cannot parse Bun's `with { type: "text" }` imports in child-host.ts.
-vi.mock("../src/hosts/host.ts", () => ({ default: "" }));
-vi.mock("../src/hosts/auth-host.ts", () => ({ default: "" }));
-vi.mock("../src/hosts/extensions-host.ts", () => ({ default: "" }));
-
-import { ChildHost } from "../src/child-host.ts";
+import { ChildHost } from "../src/child-host-service.ts";
 import { runCli } from "../src/index.ts";
 import { Prompter } from "../src/prompter.ts";
 

@@ -1,4 +1,4 @@
-import { Context, Effect, Exit, Layer, Schema } from "effect";
+import { Context, Effect, Exit, Layer, Predicate, Result, Schema } from "effect";
 import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import type { Response as AiResponse } from "effect/unstable/ai";
 import type {
@@ -7,7 +7,9 @@ import type {
   ExtensionHooks,
   ToolContribution,
   ToolHookContext,
+  ToolInputValidator,
   ToolResultHookContext,
+  ToolResultValidator,
 } from "@mitome/core";
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec";
 
@@ -29,6 +31,10 @@ export interface HookContext<Resource = never> {
 }
 
 export type ResponsePart = AiResponse.AnyPart;
+type ToolHookResult = ToolResultHookContext["result"];
+type UnvalidatedToolInput = Parameters<ToolInputValidator>[0];
+type UnvalidatedToolResult = Parameters<ToolResultValidator>[0];
+type StandardInputValue = Parameters<StandardSchemaV1.Props["validate"]>[0];
 
 export interface StepEndContext<Resource = never> extends HookContext<Resource> {
   readonly responseParts: ReadonlyArray<ResponsePart>;
@@ -51,7 +57,9 @@ export interface ExtensionHooksDefinition<Resource = never> {
   readonly preTool?: (
     context: ToolHookContext & HookContext<Resource>,
   ) => Promise<void | { readonly reason: string }>;
-  readonly postTool?: (context: ToolResultHookContext & HookContext<Resource>) => Promise<unknown>;
+  readonly postTool?: (
+    context: ToolResultHookContext & HookContext<Resource>,
+  ) => Promise<ToolHookResult>;
 }
 
 export interface Tool<
@@ -101,17 +109,26 @@ const standardOutput = <Output>(
   return standard;
 };
 
+const PropertyKey = Schema.Union([Schema.String, Schema.Number, Schema.Symbol]);
+const PathSegment = Schema.Struct({ key: PropertyKey });
+const PathPart = Schema.Union([PropertyKey, PathSegment]);
+const isPathSegment = Schema.is(PathSegment);
+
+const formatPathPart = (part: PropertyKey | StandardSchemaV1.PathSegment): string =>
+  Result.match(Schema.decodeResult(PathPart)(part), {
+    onFailure: () => "<invalid path>",
+    onSuccess: (value) => String(isPathSegment(value) ? value.key : value),
+  });
+
 const validate = async <Output>(
   standard: StandardSchemaV1.Props<unknown, Output>,
-  value: unknown,
+  value: StandardInputValue,
 ): Promise<Output> => {
   const result = await standard.validate(value);
   if (result.issues) {
     const details = result.issues
       .map(({ message, path }) => {
-        const location = path
-          ?.map((part) => String(typeof part === "object" ? part.key : part))
-          .join(".");
+        const location = path?.map(formatPathPart).join(".");
         return location ? `${location}: ${message}` : message;
       })
       .join("; ");
@@ -125,6 +142,8 @@ const promiseHook = Effect.fn("@mitome/sdk/promiseHook")(function* <A, Resource>
   callback: (context: HookContext<Resource>) => Promise<A>,
   resource: Context.Service<Resource, Resource> | undefined,
 ) {
+  // SAFETY: The public defineExtension overload only permits a missing Resource service when
+  // neither setup nor any Hook/Tool declares a Resource, so callbacks cannot observe this value.
   const value = resource === undefined ? (undefined as Resource) : yield* Effect.service(resource);
   // @effect-diagnostics-next-line unknownInEffectCatch:off
   return yield* Effect.tryPromise({
@@ -236,26 +255,23 @@ export function defineExtension<
 ): NoInfer<Extension<Resource, unknown, ToolContributions<Tools>>>;
 export function defineExtension<
   Resource = never,
-  Tools extends ReadonlyArray<Tool<any, any, never, string>> = ReadonlyArray<
-    Tool<any, any, never, string>
+  Tools extends ReadonlyArray<Tool<any, any, Resource, string>> = ReadonlyArray<
+    Tool<any, any, Resource, string>
   >,
 >(definition: ExtensionDefinition<Resource, Tools>): Extension<Resource, unknown> {
   if (definition.dispose !== undefined && definition.setup === undefined) {
     throw new Error(`Extension "${definition.name}" declares dispose without setup`);
   }
   const names = new Set<string>();
-  const definitions =
-    // The public overload proved every Tool Resource is satisfied (UnsatisfiedToolResources);
-    // the impl signature erased Resource, so rehydrate it here.
-    (definition.tools as unknown as ReadonlyArray<Tool<any, any, Resource, string>>).map((tool) => {
-      if (names.has(tool.name)) throw new Error(`Duplicate Tool name: ${tool.name}`);
-      names.add(tool.name);
-      return {
-        tool,
-        input: standardInput(tool.inputSchema),
-        output: standardOutput(tool.outputSchema),
-      };
-    });
+  const definitions = definition.tools.map((tool) => {
+    if (names.has(tool.name)) throw new Error(`Duplicate Tool name: ${tool.name}`);
+    names.add(tool.name);
+    return {
+      tool,
+      input: standardInput(tool.inputSchema),
+      output: standardOutput(tool.outputSchema),
+    };
+  });
 
   const service =
     definition.setup === undefined
@@ -268,18 +284,17 @@ export function defineExtension<
       description: tool.description,
       parameters: input.jsonSchema.input({ target: "draft-2020-12" }),
       failureMode: "return",
-      needsApproval:
-        typeof needsApproval === "function"
-          ? (params: unknown, context: ToolApprovalContext) =>
-              // Rejections become defects, matching Core's fail-closed approval handling.
-              Effect.promise(() => Promise.resolve().then(() => needsApproval(params, context)))
-          : needsApproval,
+      needsApproval: Predicate.isFunction(needsApproval)
+        ? (params: ToolHookContext["params"], context: ToolApprovalContext) =>
+            // Rejections become defects, matching Core's fail-closed approval handling.
+            Effect.promise(() => Promise.resolve().then(() => needsApproval(params, context)))
+        : needsApproval,
     });
   });
   const toolInputValidators = Object.fromEntries(
     definitions.map(({ tool, input }) => [
       tool.name,
-      (params: unknown) =>
+      (params: UnvalidatedToolInput) =>
         // @effect-diagnostics-next-line unknownInEffectCatch:off
         Effect.tryPromise({
           try: () => validate(input, params),
@@ -290,7 +305,7 @@ export function defineExtension<
   const toolResultValidators = Object.fromEntries(
     definitions.map(({ tool, output }) => [
       tool.name,
-      (result: unknown) =>
+      (result: UnvalidatedToolResult) =>
         // @effect-diagnostics-next-line unknownInEffectCatch:off
         Effect.tryPromise({
           try: () => validate(output, result),
@@ -338,7 +353,7 @@ export function defineExtension<
     handlers: Object.fromEntries(
       definitions.map(({ tool, input, output }) => [
         tool.name,
-        (params: unknown) =>
+        (params: UnvalidatedToolInput) =>
           promiseHook(
             async ({ resource, signal }) =>
               validate(

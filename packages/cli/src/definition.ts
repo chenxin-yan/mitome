@@ -1,16 +1,20 @@
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
-import { Option } from "effect";
+import { Option, Result, Schema } from "effect";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
 import { configDirectory, configDirectoryMessage } from "@mitome/core";
 import { isEnoent } from "./config.js";
 
 export const definitionPath = async (use: Option.Option<string>): Promise<string> => {
   const selected = Option.getOrUndefined(use);
-  if (selected === undefined && configDirectory() === undefined) {
-    throw new Error(`${configDirectoryMessage} Or use --use <path>.`);
+  const directory = configDirectory();
+  let path: string;
+  if (selected !== undefined) {
+    path = resolve(selected);
+  } else {
+    if (directory === undefined) throw new Error(`${configDirectoryMessage} Or use --use <path>.`);
+    path = resolve(join(directory, "index.ts"));
   }
-  let path = resolve(selected ?? join(configDirectory()!, "index.ts"));
   let file;
   try {
     file = await stat(path);
@@ -66,18 +70,26 @@ const installedPackage = async (directory: string, name: string): Promise<string
   }
 };
 
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+type JsonObject = Schema.JsonObject;
 
-const sameDependencies = (
-  manifest: Record<string, unknown>,
-  lockWorkspace: Record<string, unknown>,
-): boolean =>
+const JsonObject = Schema.Record(Schema.String, Schema.Json);
+const decodeJsonObject = (value: Schema.Json): JsonObject | undefined => {
+  const decoded = Schema.decodeUnknownResult(JsonObject)(value);
+  return Result.isSuccess(decoded) ? decoded.success : undefined;
+};
+
+const dependencyRecord = (
+  value: Schema.Json | undefined,
+): Readonly<Record<string, Schema.Json>> => {
+  if (value === undefined) return {};
+  const decoded = Schema.decodeUnknownResult(JsonObject)(value);
+  return Result.isSuccess(decoded) ? decoded.success : {};
+};
+
+const sameDependencies = (manifest: JsonObject, lockWorkspace: JsonObject): boolean =>
   dependencyFields.every((field) => {
-    const declared = record(manifest[field]) ?? {};
-    const locked = record(lockWorkspace[field]) ?? {};
+    const declared = dependencyRecord(manifest[field]);
+    const locked = dependencyRecord(lockWorkspace[field]);
     const names = Object.keys(declared);
     return (
       names.length === Object.keys(locked).length &&
@@ -85,12 +97,9 @@ const sameDependencies = (
     );
   });
 
-const missingDependency = async (
-  directory: string,
-  manifest: Record<string, unknown>,
-): Promise<boolean> => {
+const missingDependency = async (directory: string, manifest: JsonObject): Promise<boolean> => {
   const names = ["dependencies", "devDependencies"].flatMap((field) =>
-    Object.keys(record(manifest[field]) ?? {}),
+    Object.keys(dependencyRecord(manifest[field])),
   );
   for (const name of names) {
     if ((await installedPackage(directory, name)) === undefined) return true;
@@ -98,12 +107,14 @@ const missingDependency = async (
   return false;
 };
 
-const installedCore = async (directory: string): Promise<{ version: unknown } | undefined> => {
+const installedCore = async (
+  directory: string,
+): Promise<{ readonly version: Schema.Json | undefined } | undefined> => {
   const packagePath = await installedPackage(directory, "@mitome/core");
   if (packagePath === undefined) return undefined;
   // A malformed installed package must fail loud rather than becoming an install loop.
   try {
-    const parsed = record(JSON.parse(await readFile(packagePath, "utf8")));
+    const parsed = decodeJsonObject(JSON.parse(await readFile(packagePath, "utf8")));
     if (parsed === undefined) throw new Error("Not a JSON object.");
     return { version: parsed.version };
   } catch (error) {
@@ -120,7 +131,7 @@ export const checkRuntime = async (path: string): Promise<void> => {
   }
   if (core.version !== corePackage.version) {
     throw new Error(
-      `@mitome/core beside ${path} is ${String(core.version)} after installing Mitome Definition dependencies; its package.json must select @mitome/core@${corePackage.version}.`,
+      `@mitome/core beside ${path} is ${JSON.stringify(core.version)} after installing Mitome Definition dependencies; its package.json must select @mitome/core@${corePackage.version}.`,
     );
   }
 };
@@ -130,9 +141,11 @@ export const definitionNeedsReconcile = async (path: string): Promise<boolean> =
   const core = await installedCore(directory);
   if (core === undefined || core.version !== corePackage.version) return true;
 
-  let manifest: Record<string, unknown>;
+  let manifest: JsonObject;
   try {
-    const parsed = record(JSON.parse(await readFile(join(directory, "package.json"), "utf8")));
+    const parsed = decodeJsonObject(
+      JSON.parse(await readFile(join(directory, "package.json"), "utf8")),
+    );
     if (parsed === undefined) return true;
     manifest = parsed;
   } catch (error) {
@@ -140,15 +153,25 @@ export const definitionNeedsReconcile = async (path: string): Promise<boolean> =
     return true;
   }
 
-  let lockWorkspace: Record<string, unknown> | undefined;
+  let lockWorkspace: JsonObject | undefined;
+  const lockPath = join(directory, "bun.lock");
+  let hasLock = true;
   try {
-    // bun.lock is JSONC; Bun's jsonc import handles trailing commas and comments.
-    const lock = record(
-      (await import(join(directory, "bun.lock"), { with: { type: "jsonc" } })).default,
-    );
-    lockWorkspace = record(record(lock?.workspaces)?.[""]);
+    await stat(lockPath);
   } catch (error) {
-    if ((error as { code?: string }).code !== "ERR_MODULE_NOT_FOUND") return true;
+    if (!isEnoent(error)) return true;
+    hasLock = false;
+  }
+  if (hasLock) {
+    try {
+      // bun.lock is JSONC; Bun's jsonc import handles trailing commas and comments.
+      const lock = decodeJsonObject((await import(lockPath, { with: { type: "jsonc" } })).default);
+      const workspaces =
+        lock?.workspaces === undefined ? undefined : decodeJsonObject(lock.workspaces);
+      lockWorkspace = workspaces?.[""] === undefined ? undefined : decodeJsonObject(workspaces[""]);
+    } catch {
+      return true;
+    }
   }
   if (lockWorkspace !== undefined && !sameDependencies(manifest, lockWorkspace)) return true;
   return missingDependency(directory, manifest);

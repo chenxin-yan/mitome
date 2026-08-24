@@ -1,7 +1,9 @@
 import { OpenAiClient } from "@effect/ai-openai";
-import { Layer } from "effect";
+import { Layer, Result, Schema } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
 import { Socket } from "effect/unstable/socket";
+
+const NodeProcess = Schema.Struct({ versions: Schema.Struct({ node: Schema.String }) });
 
 /**
  * Wires the Responses transport for a provisioned language-model Layer:
@@ -13,7 +15,8 @@ export const transportLayer = (
   client: Layer.Layer<OpenAiClient.OpenAiClient, unknown>,
 ): Layer.Layer<LanguageModel.LanguageModel, unknown> => {
   const supportsWebSocketHeaders =
-    "Bun" in globalThis || (typeof process !== "undefined" && "node" in process.versions);
+    "Bun" in globalThis ||
+    Result.isSuccess(Schema.decodeUnknownResult(NodeProcess)(globalThis.process));
   const selected = transport ?? (supportsWebSocketHeaders ? "websocket" : "http");
   if (selected === "websocket" && !supportsWebSocketHeaders) {
     throw new Error("OpenAI WebSocket transport requires a Bun or Node server runtime");

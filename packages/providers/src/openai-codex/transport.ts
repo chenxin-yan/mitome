@@ -55,10 +55,11 @@ export const streamText = (
               AiError.make({
                 module: "OpenAI Codex",
                 method: "streamText",
-                reason: AiError.reasonFromHttpStatus({
-                  status: response.status,
-                  ...(body === "" ? {} : { description: body.slice(0, 512) }),
-                }),
+                reason: AiError.reasonFromHttpStatus(
+                  body === ""
+                    ? { status: response.status }
+                    : { status: response.status, description: body.slice(0, 512) },
+                ),
               }),
             ),
           ),

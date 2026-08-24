@@ -111,6 +111,7 @@ export const makeStepRunner = (
               Effect.map((transformed) => {
                 endPrompt = transformed;
                 // Tool.Any leaks handler services; context is supplied below and model errors map to TurnError.
+                // SAFETY: ToolExecution provides every handler and the selected context below supplies model services.
                 return (
                   selected.model.streamText({
                     prompt: transformed,

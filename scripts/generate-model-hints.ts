@@ -5,6 +5,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Result, Schema } from "effect";
 import { knownModelIds as codexIds } from "../packages/providers/src/openai-codex/models.ts";
 import { catalogUrl, toolCapableOpenAiIds } from "../packages/cli/src/catalog.ts";
 
@@ -12,6 +13,11 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const snapshotPath = join(root, "scripts", "models-dev.snapshot.json");
 const openAiHintsPath = join(root, "packages", "providers", "src", "openai", "models.ts");
 const createMitomeHintsPath = join(root, "packages", "create-mitome", "src", "model-hints.ts");
+
+const NonEmptyString = Schema.String.check(Schema.isNonEmpty());
+const ModelSnapshotFromJson = Schema.fromJsonString(
+  Schema.Struct({ openai: Schema.NonEmptyArray(NonEmptyString) }),
+);
 
 const fetchOpenAiIds = async (): Promise<Array<string>> => {
   const response = await fetch(catalogUrl, {
@@ -25,12 +31,11 @@ const fetchOpenAiIds = async (): Promise<Array<string>> => {
 };
 
 const snapshotOpenAiIds = async (): Promise<Array<string>> => {
-  const snapshot = JSON.parse(await readFile(snapshotPath, "utf8")) as { openai?: unknown };
-  const ids = Array.isArray(snapshot.openai)
-    ? snapshot.openai.filter((id): id is string => typeof id === "string" && id !== "")
-    : [];
-  if (ids.length === 0) throw new Error(`Snapshot ${snapshotPath} holds no OpenAI ids.`);
-  return ids;
+  const snapshot = Schema.decodeResult(ModelSnapshotFromJson)(await readFile(snapshotPath, "utf8"));
+  if (Result.isFailure(snapshot)) {
+    throw new Error(`Snapshot ${snapshotPath} holds no OpenAI ids: ${snapshot.failure.message}`);
+  }
+  return [...snapshot.success.openai];
 };
 
 const args = process.argv.slice(2);

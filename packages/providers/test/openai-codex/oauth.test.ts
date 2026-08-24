@@ -1,5 +1,5 @@
-import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { Effect } from "effect";
+import { afterAll, describe, expect, test, vi } from "vitest";
+import { Effect, Schema } from "effect";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -11,9 +11,7 @@ import {
 } from "../../src/openai-codex/credential-store.js";
 import { codex, login, logout } from "../../src/openai-codex/index.js";
 import { accountId } from "../../src/openai-codex/oauth-token.js";
-
-const spawn = vi.hoisted(() => vi.fn(() => ({ on: vi.fn(), unref: vi.fn() })));
-vi.mock("node:child_process", () => ({ spawn }));
+import { launchDefaultBrowser } from "../../src/shared/oauth.js";
 
 const temporaryDirectories: Array<string> = [];
 const marker = "synthetic-secret-marker";
@@ -40,7 +38,7 @@ const directory = async () => {
 };
 
 // Real Codex access tokens nest the account under this claim.
-const accessToken = (claims: unknown) =>
+const accessToken = (claims: typeof Schema.Json.Type) =>
   `header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`;
 const jwt = (accountId: string) =>
   accessToken({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } });
@@ -56,7 +54,9 @@ const tokenServer = async () => {
   const requests: Array<Record<string, string>> = [];
   const server = await serve({
     async fetch(request) {
-      const form = Object.fromEntries(await request.formData()) as Record<string, string>;
+      const form = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String))(
+        Object.fromEntries(await request.formData()),
+      );
       requests.push(form);
       return Response.json({
         access_token: jwt("fixture-account"),
@@ -67,10 +67,6 @@ const tokenServer = async () => {
   });
   return { server, requests };
 };
-
-beforeEach(() => {
-  spawn.mockClear();
-});
 
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((path) => rm(path, { recursive: true, force: true })));
@@ -121,6 +117,7 @@ describe("Codex OAuth", () => {
           redirect_uri: `http://localhost:${port}/auth/callback`,
         }),
       ]);
+      // SAFETY: the preceding equality asserts that the token server received exactly one request.
       expect(requests[0]!.code_verifier).toBeTruthy();
       expect(url.searchParams.get("code_challenge")).toBe(
         Buffer.from(
@@ -144,11 +141,16 @@ describe("Codex OAuth", () => {
     const { server } = await tokenServer();
     const platform = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
     let authorization = "";
+    let opened = "";
+    const launch = vi.fn<(command: string, args: ReadonlyArray<string>) => void>();
     try {
       await login({
         configDirectory,
         callbackPort: 0,
         tokenUrl: `http://127.0.0.1:${server.port}/oauth/token`,
+        openBrowser: (url) => {
+          opened = url;
+        },
         input: async () => {
           const state = new URL(authorization).searchParams.get("state")!;
           return `http://localhost:0/auth/callback?code=${marker}-code&state=${state}`;
@@ -159,11 +161,13 @@ describe("Codex OAuth", () => {
       });
 
       expect(authorization).toContain("&");
-      expect(spawn).toHaveBeenCalledWith(
-        "rundll32",
-        ["url.dll,FileProtocolHandler", authorization],
-        { stdio: "ignore", detached: true },
-      );
+      // login must hand the same URL it printed to the injected browser opener.
+      expect(opened).toBe(authorization);
+      launchDefaultBrowser(authorization, launch);
+      expect(launch).toHaveBeenCalledWith("rundll32", [
+        "url.dll,FileProtocolHandler",
+        authorization,
+      ]);
     } finally {
       platform.mockRestore();
       void server.stop(true);

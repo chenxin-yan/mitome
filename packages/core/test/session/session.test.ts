@@ -409,6 +409,7 @@ describe("createSession", () => {
   it.effect("maps an Approval request without its Tool Call to TurnError", () =>
     Effect.gen(function* () {
       const model = makeProvider("test", [] as const, undefined, () =>
+        // SAFETY: this malformed model fake exists only to emit an orphan Approval request.
         Layer.succeed(LanguageModel.LanguageModel, {
           streamText: () =>
             Stream.succeed(

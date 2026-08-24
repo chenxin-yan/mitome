@@ -1,7 +1,12 @@
-import { Cause, Deferred, Effect, Schema, Stream } from "effect";
+import { Cause, Deferred, Effect, Predicate, Schema, Stream } from "effect";
 import { Tool, Toolkit, type AiError } from "effect/unstable/ai";
 import type { CompiledAgent, CompiledTool } from "../agent.js";
-import type { ExtensionContexts, ToolResultValidator } from "../extension.js";
+import type {
+  ExtensionContexts,
+  ToolInput,
+  ToolOutput,
+  ToolResultValidator,
+} from "../extension.js";
 import { provideExtension } from "../extension.js";
 import { ApprovalResolutionError, hookAiError, toolAiError } from "./errors.js";
 import type { ToolExecutionDenied } from "./events.js";
@@ -16,14 +21,14 @@ export type ApprovalRequestOutcome =
       readonly approvalId: string;
       readonly toolCallId: string;
       readonly name: string;
-      readonly params: unknown;
+      readonly params: ToolInput;
       readonly awaitDecision: Effect.Effect<ApprovalDecision>;
     };
 
 export interface ApprovalGate {
   readonly request: (
     part: { readonly approvalId: string; readonly toolCallId: string },
-    call: { readonly name: string; readonly params: unknown },
+    call: { readonly name: string; readonly params: ToolInput },
   ) => Effect.Effect<ApprovalRequestOutcome>;
   readonly resolve: (
     id: string,
@@ -42,19 +47,19 @@ type PreparedCall =
   | {
       readonly _tag: "Ready";
       readonly pipeline: ToolPipeline;
-      readonly params: unknown;
+      readonly params: ToolInput;
       readonly veto: string | undefined;
     }
   | {
       readonly _tag: "InputFailure";
       readonly pipeline: ToolPipeline;
-      readonly params: unknown;
+      readonly params: ToolInput;
       readonly reason: string;
     }
   | {
       readonly _tag: "TurnFailure";
       readonly pipeline: ToolPipeline;
-      readonly params: unknown;
+      readonly params: ToolInput;
       readonly method: string;
       readonly message: string;
       readonly cause: unknown;
@@ -63,7 +68,7 @@ type PreparedCall =
 type ToolPipeline = {
   readonly compiled: CompiledTool;
   readonly execute: (
-    params: unknown,
+    params: ToolInput,
   ) => Effect.Effect<Stream.Stream<Tool.HandlerResult<Tool.Any>>, AiError.AiError>;
 };
 
@@ -80,10 +85,11 @@ const failureResult = (reason: string): Tool.HandlerResult<Tool.Any> => {
 const validateResult = (
   tool: Tool.Any,
   handlerResult: Tool.HandlerResult<Tool.Any>,
-  result: unknown,
+  result: ToolOutput,
   validator: ToolResultValidator | undefined,
-): Effect.Effect<Tool.HandlerResult<Tool.Any>, unknown> =>
-  Effect.gen(function* () {
+): Effect.Effect<Tool.HandlerResult<Tool.Any>, unknown> => {
+  // SAFETY: the owning Extension context is supplied by the caller around this schema encoding.
+  return Effect.gen(function* () {
     // Result validators describe successful SDK outputs; failures use their Tool failure schema instead.
     const validated =
       handlerResult.isFailure || validator === undefined ? result : yield* validator(result);
@@ -105,6 +111,10 @@ const validateResult = (
       preliminary: handlerResult.preliminary,
     };
   }) as Effect.Effect<Tool.HandlerResult<Tool.Any>, unknown>;
+};
+
+const widenStreamError = <A, E, R>(stream: Stream.Stream<A, E, R>): Stream.Stream<A, unknown, R> =>
+  stream;
 
 /**
  * Builds the complete Tool Call pipeline. The Session keeps `concurrency: 1`,
@@ -123,16 +133,18 @@ export const makeToolExecution = (
   );
 
   // Definitions already type-check handlers; erase their heterogeneous merged internal record here.
+  // SAFETY: compileAgentDefinition pairs each handler with the Tool that owns its parameter schema.
   return toolkit.toHandlers(toolHandlers as never).pipe(
     Effect.flatMap((handlers) => Effect.provide(toolkit, handlers)),
     Effect.map((handlers): ToolExecution => {
+      // SAFETY: the toolkit was built from the same compiled Tools used to construct these handlers.
       const baseHandle = handlers.handle as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
       const preparedCalls = new Map<string, PreparedCall>();
       const pendingApprovals = new Map<string, Deferred.Deferred<ApprovalDecision>>();
 
       const runPreTool = (
         name: string,
-        params: unknown,
+        params: ToolInput,
       ): Effect.Effect<string | undefined, unknown> =>
         Effect.gen(function* () {
           for (const extension of compiled.extensions) {
@@ -163,7 +175,7 @@ export const makeToolExecution = (
                       // streamText's per-call concurrency slot (ADR-0005).
                       // handle's typed error is `never` only because handlers were erased via
                       // `as never`; `unknown` is the honest runtime channel that toolAiError maps.
-                      stream as unknown as Stream.Stream<Tool.HandlerResult<Tool.Any>, unknown>,
+                      widenStreamError(stream),
                     ),
                   ),
                 ),
@@ -203,9 +215,9 @@ export const makeToolExecution = (
           );
           return [tool.name, { compiled: compiledTool, execute } satisfies ToolPipeline] as const;
         }),
-      ) as Record<string, ToolPipeline>;
+      );
 
-      const prepare: (pipeline: ToolPipeline, params: unknown) => Effect.Effect<PreparedCall> =
+      const prepare: (pipeline: ToolPipeline, params: ToolInput) => Effect.Effect<PreparedCall> =
         Effect.fn("@mitome/core/ToolExecution.prepare")(function* (pipeline, params) {
           const { inputValidator, tool } = pipeline.compiled;
           const input =
@@ -269,17 +281,18 @@ export const makeToolExecution = (
 
       const tools = Object.fromEntries(
         compiledTools.map((compiledTool) => {
-          const pipeline = pipelines[compiledTool.tool.name] as ToolPipeline;
+          // SAFETY: pipelines is constructed from every compiled Tool immediately above.
+          const pipeline = pipelines[compiledTool.tool.name]!;
           const needsApproval = compiledTool.tool.needsApproval;
           const wrapped = compiledTool.tool.setNeedsApproval(
-            (params: unknown, context: Tool.NeedsApprovalContext) =>
+            (params: ToolInput, context: Tool.NeedsApprovalContext) =>
               Effect.gen(function* () {
                 const prepared = yield* prepare(pipeline, params);
                 preparedCalls.set(context.toolCallId, prepared);
                 if (prepared._tag === "InputFailure") return false;
                 if (prepared._tag === "TurnFailure") return true;
                 if (prepared.veto !== undefined) return true;
-                if (needsApproval === undefined || typeof needsApproval === "boolean") {
+                if (needsApproval === undefined || Predicate.isBoolean(needsApproval)) {
                   return needsApproval ?? false;
                 }
                 // Sync throws become defects; the Cause-level handlers below treat
@@ -299,14 +312,16 @@ export const makeToolExecution = (
                   ),
                 );
               }),
-          ) as Tool.Any;
+          );
           return [compiledTool.tool.name, wrapped] as const;
         }),
-      ) as Record<string, Tool.Any>;
+      );
 
-      const handle = ((name: string, params: unknown, toolCallId?: string) =>
+      // SAFETY: toolAiError maps all erased handler errors to AiError before this function returns.
+      const handle = ((name: string, params: ToolInput, toolCallId?: string) =>
         Effect.gen(function* () {
           const prepared = toolCallId === undefined ? undefined : preparedCalls.get(toolCallId);
+          // SAFETY: handle is only invoked for names exposed by this toolkit.
           const pipeline = prepared?.pipeline ?? pipelines[name]!;
           if (toolCallId !== undefined) preparedCalls.delete(toolCallId);
           if (prepared?._tag === "InputFailure") {

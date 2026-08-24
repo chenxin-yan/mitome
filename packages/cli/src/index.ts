@@ -3,7 +3,6 @@ import * as BunServices from "@effect/platform-bun/BunServices";
 import { Effect, Layer } from "effect";
 import { Argument, CliOutput, Command, Flag } from "effect/unstable/cli";
 import cliPackage from "../package.json" with { type: "json" };
-import { ChildHost } from "./child-host.js";
 import { runAuth } from "./commands/auth.js";
 import { runAdd, runRemove } from "./commands/dependencies.js";
 import { runExtensionList } from "./commands/extensions.js";
@@ -96,7 +95,8 @@ const command = Command.make(
 export const runCli = Command.runWith(command, { version: cliPackage.version });
 
 if (import.meta.main) {
+  const { childHostLayer } = await import("./child-host.js");
   const platform = Layer.merge(BunServices.layer, CliOutput.layer(CliOutput.defaultFormatter()));
-  const services = Layer.merge(ChildHost.layer, Prompter.layer).pipe(Layer.provideMerge(platform));
+  const services = Layer.merge(childHostLayer, Prompter.layer).pipe(Layer.provideMerge(platform));
   BunRuntime.runMain(runCli(process.argv.slice(2)).pipe(Effect.provide(services)));
 }

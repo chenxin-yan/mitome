@@ -1,4 +1,4 @@
-import { Effect, Layer, Ref, Stream } from "effect";
+import { Effect, Layer, Ref, Schema, Stream } from "effect";
 import { LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { makeProvider } from "@mitome/core";
 import type { InputSchema, StandardSchema } from "../src/index.js";
@@ -8,36 +8,26 @@ interface TestModelOptions {
   readonly toolkit?: Toolkit.WithHandler<Record<string, Tool.Any>>;
 }
 
-export const stringSchema: StandardSchema<unknown, string> = {
-  "~standard": {
-    version: 1,
-    vendor: "test",
-    validate: (value) =>
-      typeof value === "string"
-        ? { value, issues: undefined }
-        : { issues: [{ message: "expected string" }] },
-  },
-};
+type TestModelStream = Stream.Stream<Response.AnyPart, object, object>;
 
-export const jsonStringSchema: InputSchema<string> = {
-  "~standard": {
-    ...stringSchema["~standard"],
-    jsonSchema: {
-      input: () => ({ type: "string" }),
-      output: () => ({ type: "string" }),
-    },
-  },
-};
+export const stringSchema: StandardSchema<unknown, string> = Schema.toStandardSchemaV1(
+  Schema.String,
+);
+export const jsonStringSchema: InputSchema<string> = Schema.String;
 
 // Deliberately raw Service fake (bypasses LanguageModel.make's tool-call pipeline)
 // so tests can reach the Service-level toolkit directly. Sibling copy:
 // packages/core/test/support/provider.ts.
 export const testLanguageModel = (
-  streamText: (options: TestModelOptions) => unknown,
-): LanguageModel.Service => ({ streamText }) as unknown as LanguageModel.Service;
+  streamText: (options: TestModelOptions) => TestModelStream,
+): LanguageModel.Service => {
+  // SAFETY: The raw fake is only exercised through streamText; the tests never call the
+  // other LanguageModel service methods, and this preserves direct toolkit access.
+  return { streamText } as LanguageModel.Service;
+};
 
 export const makeTestProvider = (
-  streamText: (options: TestModelOptions) => unknown,
+  streamText: (options: TestModelOptions) => TestModelStream,
   name = "test",
 ) =>
   makeProvider(name, [] as const, undefined, () =>

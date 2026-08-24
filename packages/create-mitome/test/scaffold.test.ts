@@ -136,15 +136,16 @@ describe("create-mitome scaffold", () => {
     const path = await directory();
     await scaffold(path, { flavor, provider, model: "gpt-5.6" });
 
+    const dependencies = {
+      "@mitome/providers": "0.0.0",
+      "@mitome/sdk": "0.0.0",
+    };
+    if (flavor === "effect") Object.assign(dependencies, { effect: "4.0.0-rc.108" });
     expect(JSON.parse(await contents(path, "package.json"))).toEqual({
       name: "mitome-agent",
       private: true,
       type: "module",
-      dependencies: {
-        "@mitome/providers": "0.0.0",
-        "@mitome/sdk": "0.0.0",
-        ...(flavor === "effect" ? { effect: "4.0.0-rc.108" } : {}),
-      },
+      dependencies,
     });
     const agent = await contents(path, "index.ts");
     expect(agent).toContain(`import { defineAgent, defineMitome } from "${sdk}`);

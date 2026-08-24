@@ -1,9 +1,14 @@
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Result, Schema } from "effect";
 import { configDirectory, configDirectoryMessage } from "@mitome/core";
 
-export const isEnoent = (error: unknown): boolean =>
-  typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+const ErrorCode = Schema.Struct({ code: Schema.String });
+export const errorCode = <Input>(error: Input): string | undefined => {
+  const decoded = Schema.decodeUnknownResult(ErrorCode)(error);
+  return Result.isSuccess(decoded) ? decoded.success.code : undefined;
+};
+export const isEnoent = <Input>(error: Input): boolean => errorCode(error) === "ENOENT";
 
 const configEnvName = (line: string): string | undefined =>
   /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=/.exec(line)?.[1];

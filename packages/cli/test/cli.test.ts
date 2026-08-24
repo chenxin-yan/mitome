@@ -8,12 +8,14 @@ import { dirname, join, resolve } from "node:path";
 import { text } from "node:stream/consumers";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import type { Schema } from "effect";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const binary = join(packageDir, "dist/local/mitome");
 const coreDir = resolve(packageDir, "../core");
 const effectDir = dirname(createRequire(import.meta.url).resolve("effect/package.json"));
+// SAFETY: This reads the repository-owned package manifest whose fields are required by the test setup.
 const cliPackage = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as {
   version: string;
   dependencies?: Record<string, string>;
@@ -602,6 +604,7 @@ describe("compiled mitome", () => {
       join(declaredExtension, "package.json"),
       JSON.stringify({ name: "declared-fixture-extension", version: "1.0.0" }),
     );
+    // SAFETY: installFixture writes this manifest with a string-valued dependencies object.
     const manifest = JSON.parse(
       await readFile(join(definitionDirectory, "package.json"), "utf8"),
     ) as { dependencies: Record<string, string> };
@@ -645,6 +648,7 @@ describe("compiled mitome", () => {
     const current = await installFixture();
     const definitionDirectory = dirname(current.definition);
     const packagePath = join(definitionDirectory, "package.json");
+    // SAFETY: installFixture writes this manifest with a string-valued dependencies object.
     const manifest = JSON.parse(await readFile(packagePath, "utf8")) as {
       dependencies: Record<string, string>;
     };
@@ -691,7 +695,9 @@ describe("compiled mitome", () => {
     const packagePath = join(definitionDirectory, "package.json");
     // A failing lifecycle script makes bun save the lockfile and node_modules before exiting
     // nonzero, which is the state the rollback must undo.
-    const manifest = JSON.parse(await readFile(packagePath, "utf8")) as Record<string, unknown>;
+    // SAFETY: installFixture writes a JSON object, and this test only adds JSON-compatible fields.
+    const manifest = JSON.parse(await readFile(packagePath, "utf8")) as Record<string, Schema.Json>;
+    // SAFETY: installFixture writes the dependencies field as a string-valued object.
     delete (manifest.dependencies as Record<string, string>)["local-dep"];
     manifest.scripts = { postinstall: "exit 1" };
     await writeFile(packagePath, JSON.stringify(manifest));
@@ -729,6 +735,7 @@ describe("compiled mitome", () => {
     );
 
     expect(result).toMatchObject({ exitCode: 0 });
+    // SAFETY: runRemove preserves the fixture manifest and its optional string dependency map.
     const updatedManifest = JSON.parse(await readFile(packagePath, "utf8")) as {
       dependencies?: Record<string, string>;
     };
