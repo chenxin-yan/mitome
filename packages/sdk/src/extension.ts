@@ -364,7 +364,7 @@ export function defineExtension<
   const service =
     definition.setup === undefined
       ? undefined
-      : Context.Service<Resource>(`@mitome/sdk/${definition.name}`);
+      : Context.Service<Resource>(`@mitome/sdk/resource/${crypto.randomUUID()}`);
   const hooks = adaptHooks(definition.hooks, service);
   const tools = definitions.map(({ tool, input }) => {
     const needsApproval = tool.needsApproval;

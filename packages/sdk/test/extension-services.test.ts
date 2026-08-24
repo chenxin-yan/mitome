@@ -65,6 +65,39 @@ describe("@mitome/sdk Extension Provided Services", () => {
     expect(observed).toEqual([0]);
   });
 
+  test("does not shadow dependency services with its setup resource", async () => {
+    const Dependency = Context.Service<{ readonly value: string }>("@mitome/sdk/collision");
+    const dependencyLayer = Layer.succeed(Dependency, { value: "dependency" });
+    const provider = defineEffectExtension<
+      typeof dependencyLayer,
+      readonly [],
+      readonly [typeof Dependency]
+    >({
+      name: "provider",
+      resource: dependencyLayer,
+      provides: [Dependency],
+    });
+    let observed: string | undefined;
+    const dependent = defineExtension({
+      name: "collision",
+      dependencies: [provider],
+      hooks: {
+        sessionStart: async ({ getService }) => {
+          observed = getService(Dependency).value;
+        },
+      },
+      tools: [],
+      setup: async () => ({ resource: true }),
+    });
+
+    await withSession(
+      defineAgent({ providers: [textModel()], model: "test/default", extensions: [dependent] }),
+      async () => undefined,
+    );
+
+    expect(observed).toBe("dependency");
+  });
+
   test("publishes an SDK service to an Effect Extension", async () => {
     class Greeting extends Context.Service<Greeting, { readonly text: string }>()(
       "test/Greeting",
