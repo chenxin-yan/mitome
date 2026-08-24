@@ -3,11 +3,10 @@ import type { Host } from "@mitome/core";
 export const tui = (): Host => ({
   name: "tui",
   mode: "interactive",
-  // ADR-0038's validated MVP terminal matrix; widen after validating another terminal.
   unsupported: () =>
-    process.platform === "linux" && process.env.TERM_PROGRAM?.toLowerCase() === "ghostty"
+    process.stdin.isTTY === true && process.stdout.isTTY === true
       ? undefined
-      : "@mitome/tui currently supports Ghostty on Linux",
+      : "@mitome/tui requires an interactive terminal",
   run: async ({ prompt }) => {
     await import("@opentui/solid/preload");
     const { runShell } = await import("./shell.jsx");

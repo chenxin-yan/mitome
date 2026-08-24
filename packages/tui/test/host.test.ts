@@ -6,20 +6,18 @@ describe("TUI Host", () => {
     expect(tui()).toMatchObject({ name: "tui", mode: "interactive" });
   });
 
-  test("declares its supported terminal matrix", () => {
-    const original = process.env.TERM_PROGRAM;
+  test("requires an interactive terminal", () => {
+    const originalIn = process.stdin.isTTY;
+    const originalOut = process.stdout.isTTY;
     try {
-      process.env.TERM_PROGRAM = "Ghostty";
-      expect(tui().unsupported?.()).toBe(
-        process.platform === "linux"
-          ? undefined
-          : "@mitome/tui currently supports Ghostty on Linux",
-      );
-      process.env.TERM_PROGRAM = "xterm";
-      expect(tui().unsupported?.()).toBe("@mitome/tui currently supports Ghostty on Linux");
+      process.stdin.isTTY = true;
+      process.stdout.isTTY = true;
+      expect(tui().unsupported?.()).toBeUndefined();
+      process.stdout.isTTY = false;
+      expect(tui().unsupported?.()).toBe("@mitome/tui requires an interactive terminal");
     } finally {
-      if (original === undefined) delete process.env.TERM_PROGRAM;
-      else process.env.TERM_PROGRAM = original;
+      process.stdin.isTTY = originalIn;
+      process.stdout.isTTY = originalOut;
     }
   });
 
