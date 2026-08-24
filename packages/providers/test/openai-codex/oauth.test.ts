@@ -141,13 +141,16 @@ describe("Codex OAuth", () => {
     const { server } = await tokenServer();
     const platform = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
     let authorization = "";
+    let opened = "";
     const launch = vi.fn<(command: string, args: ReadonlyArray<string>) => void>();
     try {
       await login({
         configDirectory,
         callbackPort: 0,
         tokenUrl: `http://127.0.0.1:${server.port}/oauth/token`,
-        openBrowser: false,
+        openBrowser: (url) => {
+          opened = url;
+        },
         input: async () => {
           const state = new URL(authorization).searchParams.get("state")!;
           return `http://localhost:0/auth/callback?code=${marker}-code&state=${state}`;
@@ -158,6 +161,8 @@ describe("Codex OAuth", () => {
       });
 
       expect(authorization).toContain("&");
+      // login must hand the same URL it printed to the injected browser opener.
+      expect(opened).toBe(authorization);
       launchDefaultBrowser(authorization, launch);
       expect(launch).toHaveBeenCalledWith("rundll32", [
         "url.dll,FileProtocolHandler",
