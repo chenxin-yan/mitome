@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createSession, makeProvider } from "@mitome/core";
-import type { TurnEvent } from "@mitome/core";
+import { createSession, makeProvider, StoreError } from "@mitome/core";
+import type { TranscriptStore, TurnEvent } from "@mitome/core";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { makeConversationViewModel } from "../src/view-model.js";
@@ -20,6 +20,7 @@ const scriptedSession = (
   let next = 0;
   return {
     prompt: () => scripts[next++] ?? Stream.empty,
+    history: () => [],
   };
 };
 
@@ -73,6 +74,35 @@ describe("conversation view model", () => {
     await viewModel.dispose();
   });
 
+  test("rejects interruption after completion and commits the Turn", async () => {
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const events: [TurnEvent, TurnEvent] = [
+      { type: "model-output", text: "done" },
+      { type: "response-complete" },
+    ];
+    const session = scriptedSession([
+      Stream.concat(
+        Stream.fromIterable(events),
+        Stream.fromEffectDrain(Effect.promise(() => finished)),
+      ),
+    ]);
+    const viewModel = makeConversationViewModel(session);
+
+    expect(viewModel.submit("cancel me")).toBe(true);
+    await waitFor(() => viewModel.getState().activeTurn?.response === "done");
+    expect(viewModel.interrupt()).toBe(false);
+    finish();
+    await waitFor(() => viewModel.getState().phase === "idle");
+
+    expect(viewModel.getState().turns).toEqual([
+      { prompt: "cancel me", response: "done", activities: [] },
+    ]);
+    await viewModel.dispose();
+  });
+
   test("interrupts without retaining the active Turn and remains usable", async () => {
     const session = scriptedSession([
       Stream.concat(
@@ -99,6 +129,47 @@ describe("conversation view model", () => {
       { prompt: "next", response: "recovered", activities: [] },
     ]);
     await viewModel.dispose();
+  });
+
+  test("keeps a committed Turn visible when transcript persistence fails", async () => {
+    const unsupported = () => Effect.die("not used");
+    const provider = makeProvider("test", [] as const, undefined, () =>
+      Layer.succeed(LanguageModel.LanguageModel, {
+        generateText: unsupported,
+        generateObject: unsupported,
+        streamText: () =>
+          Stream.succeed(Response.makePart("text-delta", { id: "saved", delta: "kept" })),
+      }),
+    );
+    const store: TranscriptStore = {
+      save: () => Effect.fail(new StoreError({ message: "save failed" })),
+      appendEvent: () => Effect.void,
+      load: () => Effect.die("not used"),
+      list: () => Effect.die("not used"),
+    };
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession(
+            { providers: [provider], model: "test/default", extensions: [] },
+            { store },
+          );
+          const viewModel = makeConversationViewModel(session);
+          yield* Effect.promise(async () => {
+            viewModel.submit("persist me");
+            await waitFor(() => viewModel.getState().phase === "idle");
+
+            expect(session.history()).toHaveLength(1);
+            expect(viewModel.getState().turns).toEqual([
+              { prompt: "persist me", response: "kept", activities: [] },
+            ]);
+            expect(viewModel.getState().notice).toContain("save failed");
+            await viewModel.dispose();
+          });
+        }),
+      ),
+    );
   });
 
   test("drives a real Session across interruption and later Turns", async () => {
@@ -150,4 +221,15 @@ describe("conversation view model", () => {
       ),
     );
   });
+
+  test("bounds disposal of an uninterruptible Turn", async () => {
+    const session = scriptedSession([Stream.fromEffect(Effect.uninterruptible(Effect.never))]);
+    const viewModel = makeConversationViewModel(session);
+
+    viewModel.submit("stuck");
+    const started = performance.now();
+    await viewModel.dispose();
+
+    expect(performance.now() - started).toBeLessThan(1_500);
+  }, 2_000);
 });

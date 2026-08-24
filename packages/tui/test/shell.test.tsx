@@ -21,6 +21,7 @@ const renderShell = async (
   let next = 0;
   viewModel = makeConversationViewModel({
     prompt: () => streams[next++] ?? Stream.empty,
+    history: () => [],
   });
   setup = await testRender(() => <Shell prompt={prompt} viewModel={viewModel!} />, {
     width: 70,

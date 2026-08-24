@@ -16,6 +16,7 @@ export interface ConversationState {
 
 export interface ConversationSession {
   readonly prompt: (text: string) => Stream.Stream<TurnEvent, unknown>;
+  readonly history: () => ReadonlyArray<unknown>;
 }
 
 export interface ConversationViewModel {
@@ -28,6 +29,8 @@ export interface ConversationViewModel {
 
 interface ActiveRun {
   readonly fiber: Fiber.Fiber<void, unknown>;
+  readonly historyLength: number;
+  readonly completed: () => boolean;
   interrupted: boolean;
 }
 
@@ -42,6 +45,9 @@ const activity = (event: TurnEvent): string | undefined => {
     case "model-output":
     case "reasoning":
     case "response-complete":
+      return undefined;
+    default:
+      event satisfies never;
       return undefined;
   }
 };
@@ -90,6 +96,7 @@ export const makeConversationViewModel = (session: ConversationSession): Convers
       notice: undefined,
     });
     let completed = false;
+    const historyLength = session.history().length;
     const fiber = Effect.runFork(
       Stream.runForEach(session.prompt(text), (event) =>
         handleEvent(event, () => {
@@ -97,18 +104,31 @@ export const makeConversationViewModel = (session: ConversationSession): Convers
         }),
       ),
     );
-    const run: ActiveRun = { fiber, interrupted: false };
+    const run: ActiveRun = {
+      fiber,
+      historyLength,
+      completed: () => completed,
+      interrupted: false,
+    };
     active = run;
     void Effect.runPromise(Fiber.await(fiber)).then((exit) => {
       if (disposed || active !== run) return;
       active = undefined;
       const turn = state.activeTurn;
-      if (Exit.isSuccess(exit) && completed && turn !== undefined) {
-        publish({ phase: "idle", turns: [...state.turns, turn] });
-        return;
-      }
       const interrupted =
         run.interrupted || (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause));
+      const committed = session.history().length > run.historyLength;
+      if (
+        turn !== undefined &&
+        (committed || (!interrupted && Exit.isSuccess(exit) && completed))
+      ) {
+        publish({
+          phase: "idle",
+          turns: [...state.turns, turn],
+          notice: Exit.isFailure(exit) ? Cause.pretty(exit.cause) : undefined,
+        });
+        return;
+      }
       publish({
         phase: "idle",
         turns: state.turns,
@@ -123,7 +143,7 @@ export const makeConversationViewModel = (session: ConversationSession): Convers
   };
 
   const interrupt = (): boolean => {
-    if (active === undefined || state.phase !== "running") return false;
+    if (active === undefined || state.phase !== "running" || active.completed()) return false;
     active.interrupted = true;
     publish({ ...state, phase: "interrupting" });
     Effect.runFork(Fiber.interrupt(active.fiber));
@@ -144,7 +164,19 @@ export const makeConversationViewModel = (session: ConversationSession): Convers
       const running = active;
       active = undefined;
       listeners.clear();
-      if (running !== undefined) await Effect.runPromise(Fiber.interrupt(running.fiber));
+      if (running !== undefined) {
+        let timeout!: ReturnType<typeof setTimeout>;
+        try {
+          await Promise.race([
+            Effect.runPromise(Fiber.interrupt(running.fiber)),
+            new Promise<void>((resolve) => {
+              timeout = setTimeout(resolve, 1_000);
+            }),
+          ]);
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
     },
   };
 };
