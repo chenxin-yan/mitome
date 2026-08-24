@@ -10,6 +10,7 @@ export {
   TranscriptEventRecordVersion,
   TranscriptNotFound,
   TranscriptSummarySchema,
+  TurnEventDtoSchema,
   StoreError,
   TurnError,
   defineAgent,
@@ -41,6 +42,7 @@ export type {
   TranscriptMessage,
   TranscriptStore,
   TranscriptSummary,
+  TurnEventDto,
 } from "@mitome/core";
 export { defineExtension, tool } from "./extension.js";
 export type {
