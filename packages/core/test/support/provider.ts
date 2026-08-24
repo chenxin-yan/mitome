@@ -15,16 +15,13 @@ export const testLanguageModel = (
   streamText: (options: TestModelOptions) => TestModelStream,
 ): LanguageModel.Service => {
   const unsupported = () => Effect.die("Only streamText is supported by this test model");
-  const missingStreamText = (): never => {
-    throw new Error("streamText was not installed");
-  };
-  const service: LanguageModel.Service = {
+  return {
     generateText: unsupported,
     generateObject: unsupported,
-    streamText: missingStreamText,
+    // SAFETY: The raw fake erases TestModelStream's error/context channels; tests only
+    // consume the parts streamText emits and never observe the erased typing.
+    streamText: streamText as LanguageModel.Service["streamText"],
   };
-  Object.defineProperty(service, "streamText", { value: streamText });
-  return service;
 };
 
 export const makeTestProvider = (streamText: (options: TestModelOptions) => TestModelStream) =>

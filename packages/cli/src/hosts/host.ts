@@ -92,16 +92,26 @@ interface ErrorDetails {
   readonly cause?: Error | ErrorDetails;
 }
 
+// JSON.stringify throws on BigInt values and circular structures; a throwing
+// formatter would mask the error being reported, so fall back to Bun's renderer.
+const safeJson = (value: Error | ErrorDetails | null): string => {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return Bun.inspect(value);
+  }
+};
+
 const errorMessage = (error: Error | ErrorDetails): string => {
   const head =
     "_tag" in error && "message" in error
       ? `${String(error._tag)}: ${String(error.message)}`
       : error instanceof Error
         ? error.message
-        : JSON.stringify(error);
+        : safeJson(error);
   const cause = error.cause;
   if (cause === undefined) return head;
-  return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause) : JSON.stringify(cause)}`;
+  return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause) : safeJson(cause)}`;
 };
 
 const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));

@@ -33,7 +33,7 @@ const fetchOpenAiIds = async (): Promise<Array<string>> => {
 const snapshotOpenAiIds = async (): Promise<Array<string>> => {
   const snapshot = Schema.decodeResult(ModelSnapshotFromJson)(await readFile(snapshotPath, "utf8"));
   if (Result.isFailure(snapshot)) {
-    throw new Error(`Snapshot ${snapshotPath} holds no OpenAI ids.`);
+    throw new Error(`Snapshot ${snapshotPath} holds no OpenAI ids: ${snapshot.failure.message}`);
   }
   return [...snapshot.success.openai];
 };

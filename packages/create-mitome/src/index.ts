@@ -66,8 +66,8 @@ const main = async (): Promise<void> => {
 
 // import.meta.main is why engines declares node >=24.2 (added in 24.2.0).
 if (import.meta.main) {
-  await main().catch((error: Error) => {
-    console.error(error.message);
+  await main().catch((cause: unknown) => {
+    console.error(cause instanceof Error ? cause.message : String(cause));
     process.exitCode = 1;
   });
 }

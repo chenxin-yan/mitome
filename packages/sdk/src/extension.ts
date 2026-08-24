@@ -109,7 +109,7 @@ const standardOutput = <Output>(
   return standard;
 };
 
-const PropertyKey = Schema.Union([Schema.String, Schema.Finite, Schema.Symbol]);
+const PropertyKey = Schema.Union([Schema.String, Schema.Number, Schema.Symbol]);
 const PathSegment = Schema.Struct({ key: PropertyKey });
 const PathPart = Schema.Union([PropertyKey, PathSegment]);
 const isPathSegment = Schema.is(PathSegment);

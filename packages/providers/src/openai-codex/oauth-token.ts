@@ -7,7 +7,8 @@ const AccountClaim = Schema.Struct({ chatgpt_account_id: Schema.String });
 const Claims = Schema.fromJsonString(
   Schema.Struct({
     chatgpt_account_id: Schema.optional(Schema.String),
-    "https://api.openai.com/auth": Schema.optional(AccountClaim),
+    // Tokens may carry an explicit null for this claim; fall back to the top level then.
+    "https://api.openai.com/auth": Schema.optional(Schema.NullOr(AccountClaim)),
   }),
 );
 const missingAccount = () => new Error("OAuth access token did not contain an account.");

@@ -1,4 +1,4 @@
-import { Effect, Result, Schema, Stream } from "effect";
+import { Effect, Predicate, Result, Schema, Stream } from "effect";
 import { AiError, Response, Tool } from "effect/unstable/ai";
 import { Sse } from "effect/unstable/encoding";
 import { invalidOutput, providerError } from "./request.js";
@@ -19,7 +19,6 @@ const EventKey = Schema.Struct({
   output_index: Schema.optional(Schema.Finite),
   item_id: Schema.optional(Schema.String),
 });
-const EventType = Schema.Struct({ type: Schema.optional(Schema.String) });
 const ErrorEvent = Schema.Struct({
   error: Schema.optional(Schema.Struct({ message: Schema.optional(Schema.String) })),
   message: Schema.optional(Schema.String),
@@ -187,9 +186,15 @@ const decodeOutputItemDone = (
 
 // Terminal events carry completion status and usage; without a finish part the
 // Session's finishReason/usage metadata would be silently absent for Codex.
-const tokenUsage = (total: number | undefined, detail?: number) => {
-  if (total === undefined) return detail === undefined ? {} : { cacheRead: detail };
-  return detail === undefined ? { total } : { total, uncached: total - detail, cacheRead: detail };
+const inputUsage = (total: number | undefined, cached: number | undefined) => {
+  if (total === undefined) return cached === undefined ? {} : { cacheRead: cached };
+  const base = { total, uncached: total - (cached ?? 0) };
+  return cached === undefined ? base : { ...base, cacheRead: cached };
+};
+
+const outputUsage = (total: number | undefined, reasoning: number | undefined) => {
+  if (total === undefined) return reasoning === undefined ? {} : { reasoning };
+  return reasoning === undefined ? { total } : { total, reasoning };
 };
 
 const finishPart = (state: StreamState, event: Json): Response.StreamPartEncoded => {
@@ -212,11 +217,8 @@ const finishPart = (state: StreamState, event: Json): Response.StreamPartEncoded
             ? "content-filter"
             : "unknown",
     usage: {
-      inputTokens: tokenUsage(usage?.input_tokens, cached),
-      outputTokens:
-        reasoning === undefined
-          ? tokenUsage(usage?.output_tokens)
-          : { ...tokenUsage(usage?.output_tokens), reasoning },
+      inputTokens: inputUsage(usage?.input_tokens, cached),
+      outputTokens: outputUsage(usage?.output_tokens, reasoning),
     },
   });
 };
@@ -224,9 +226,9 @@ const finishPart = (state: StreamState, event: Json): Response.StreamPartEncoded
 const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPartEncoded> => {
   if (data === "[DONE]") return [];
   const event = decode(Event, data, () => invalidOutput("Codex sent malformed SSE JSON"));
-  const type = decode(EventType, event, () =>
-    invalidOutput("Codex sent malformed event type"),
-  ).type;
+  // A non-string type is an unknown event: skipped below, like every malformed item.
+  const rawType = event.type;
+  const type = Predicate.isString(rawType) ? rawType : undefined;
   if (type === "error") {
     const decoded = decode(ErrorEvent, event, () => providerError("Codex provider error"));
     throw providerError(decoded.error?.message ?? decoded.message ?? "Codex provider error");
