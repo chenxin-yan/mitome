@@ -54,6 +54,73 @@ describe("Session event log", () => {
     }),
   );
 
+  it.effect("does not reuse a sequence reserved by an interrupted append", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDeterministicProvider("hello");
+      const appended = yield* Deferred.make<void>();
+      const records: Array<TranscriptEventRecord> = [];
+      let blockNextAppend = true;
+      const store: TranscriptStore = {
+        ...makeRecordingStore(records),
+        appendEvent: (record) => {
+          const block = blockNextAppend;
+          blockNextAppend = false;
+          return Effect.sync(() => void records.push(record)).pipe(
+            Effect.andThen(
+              block
+                ? Deferred.succeed(appended, undefined).pipe(
+                    Effect.andThen(Effect.never),
+                    Effect.asVoid,
+                  )
+                : Effect.void,
+            ),
+          );
+        },
+      };
+      const session = yield* createSession(
+        {
+          providers: [fixture.provider],
+          model: "test/default",
+          extensions: [],
+        },
+        { store },
+      );
+      const interruptedTurn = yield* Effect.forkChild(Stream.runDrain(session.prompt("first")));
+
+      yield* Deferred.await(appended);
+      yield* Fiber.interrupt(interruptedTurn);
+      yield* Stream.runDrain(session.prompt("second"));
+
+      expect(records.map(({ seq }) => seq)).toEqual([0, 1, 2]);
+    }),
+  );
+
+  it.effect("preserves the TranscriptStore method receiver when appending", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDeterministicProvider("hello");
+      const records: Array<TranscriptEventRecord> = [];
+      const store: TranscriptStore & { readonly records: Array<TranscriptEventRecord> } = {
+        ...makeRecordingStore(records),
+        records,
+        appendEvent(record) {
+          return Effect.sync(() => void this.records.push(record));
+        },
+      };
+      const session = yield* createSession(
+        {
+          providers: [fixture.provider],
+          model: "test/default",
+          extensions: [],
+        },
+        { store },
+      );
+
+      yield* Stream.runDrain(session.prompt("Hi"));
+
+      expect(records).toHaveLength(2);
+    }),
+  );
+
   it.effect("decodes an interrupted Turn as an expected incomplete tail", () =>
     Effect.gen(function* () {
       const appended = yield* Deferred.make<void>();

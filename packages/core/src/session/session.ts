@@ -100,19 +100,18 @@ const createSessionImpl: (
   const sessionId = crypto.randomUUID();
   const parentTranscriptId = sessionOptions.transcript?.id;
   let eventSeq = 0;
-  const appendTurnEvent = (event: PersistedTurnEvent): Effect.Effect<void, StoreError> =>
-    sessionOptions.store === undefined
+  const appendTurnEvent = (event: PersistedTurnEvent): Effect.Effect<void, StoreError> => {
+    const store = sessionOptions.store;
+    return store === undefined
       ? Effect.void
       : Effect.sync(() => ({
           transcriptId,
           sessionId,
-          seq: eventSeq,
+          seq: eventSeq++,
           version: TranscriptEventRecordVersion,
           event: turnEventToDto(event),
-        })).pipe(
-          Effect.flatMap(sessionOptions.store.appendEvent),
-          Effect.tap(() => Effect.sync(() => void eventSeq++)),
-        );
+        })).pipe(Effect.flatMap((record) => store.appendEvent(record)));
+  };
   let history =
     sessionOptions.transcript === undefined
       ? Prompt.make(

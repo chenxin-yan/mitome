@@ -1,6 +1,6 @@
 import { Effect, Schema, Stream } from "effect";
-import { Prompt, Tool } from "effect/unstable/ai";
-import type { Response } from "effect/unstable/ai";
+import { Prompt } from "effect/unstable/ai";
+import type { Response, Tool } from "effect/unstable/ai";
 import type { CompiledAgent } from "../agent.js";
 import type { ExtensionContexts } from "../extension.js";
 import { provideExtensionHook } from "../extension.js";
