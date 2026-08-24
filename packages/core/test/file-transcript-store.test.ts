@@ -76,8 +76,11 @@ describe("makeFileTranscriptStore", () => {
           version: TranscriptEventRecordVersion,
           event: { type: "model-output", text: "hello" },
         });
+        const eventFile = (yield* Effect.promise(() => readdir(directory))).find((name) =>
+          name.endsWith(".events.jsonl"),
+        );
         yield* Effect.promise(() =>
-          writeFile(join(directory, "transcript-1.events.jsonl"), '{"truncated"', { flag: "a" }),
+          writeFile(join(directory, eventFile!), '{"truncated"', { flag: "a" }),
         );
 
         expect(yield* store.list()).toHaveLength(1);
@@ -95,6 +98,48 @@ describe("makeFileTranscriptStore", () => {
         );
 
         expect(yield* store.list()).toHaveLength(1);
+      }),
+    ),
+  );
+
+  it.effect("lists Transcript ids that share the temporary-file prefix", () =>
+    withDirectory((directory) =>
+      Effect.gen(function* () {
+        const store = makeFileTranscriptStore(directory);
+        const transcript = makeTranscript({ id: ".transcript-valid", messages: [] });
+        yield* store.save(transcript);
+        yield* store.appendEvent({
+          transcriptId: transcript.id,
+          sessionId: "session-1",
+          seq: 0,
+          version: TranscriptEventRecordVersion,
+          event: { type: "model-output", text: "hello" },
+        });
+
+        expect(yield* store.list()).toEqual([expect.objectContaining({ id: transcript.id })]);
+      }),
+    ),
+  );
+
+  it.effect("round-trips unpaired-surrogate ids without filename collisions", () =>
+    withDirectory((directory) =>
+      Effect.gen(function* () {
+        const store = makeFileTranscriptStore(directory);
+        const ids = ["\ud800", "�"];
+        for (const id of ids) {
+          const transcript = makeTranscript({ id, messages: [] });
+          yield* store.save(transcript);
+          yield* store.appendEvent({
+            transcriptId: id,
+            sessionId: "session-1",
+            seq: 0,
+            version: TranscriptEventRecordVersion,
+            event: { type: "model-output", text: "hello" },
+          });
+          expect(yield* store.load(id)).toEqual(transcript);
+        }
+
+        expect((yield* store.list()).map(({ id }) => id)).toEqual(ids);
       }),
     ),
   );

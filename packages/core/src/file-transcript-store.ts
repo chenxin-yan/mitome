@@ -23,7 +23,9 @@ const transcriptSuffix = ".transcript.json";
 const eventsSuffix = ".events.jsonl";
 const temporaryPrefix = ".transcript-";
 
-const fileName = (id: TranscriptId, suffix: string): string => `${encodeURIComponent(id)}${suffix}`;
+const encodeId = (id: TranscriptId): string => Buffer.from(id, "utf16le").toString("base64url");
+
+const fileName = (id: TranscriptId, suffix: string): string => `${encodeId(id)}${suffix}`;
 
 const storeError = (message: string, cause?: unknown): StoreError =>
   new StoreError({ message, cause });
@@ -77,7 +79,7 @@ const idFromFileName = (
 ): Effect.Effect<TranscriptId, StoreError> =>
   Effect.try({
     try: () => {
-      const id = decodeURIComponent(name.slice(0, -suffix.length));
+      const id = Buffer.from(name.slice(0, -suffix.length), "base64url").toString("utf16le");
       if (fileName(id, suffix) !== name) throw new Error("Non-canonical file name");
       return id;
     },

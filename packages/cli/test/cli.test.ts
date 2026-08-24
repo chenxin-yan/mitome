@@ -829,6 +829,16 @@ describe("compiled mitome", () => {
     });
   });
 
+  test("runs an explicit Agent Definition without a config root", async () => {
+    const current = await fixture();
+
+    expect(
+      await output(
+        spawn("", ["hello", "--use", current.definition], current, { PATH: current.env.PATH }),
+      ),
+    ).toEqual({ exitCode: 0, stdout: "first second\n", stderr: "" });
+  });
+
   test("persists one-shot Transcripts under MITOME_HOME by default", async () => {
     const current = await fixture();
     const mitomeHome = join(current.root, "override-home");

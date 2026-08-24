@@ -122,10 +122,8 @@ const { Cause, Effect, Exit, Fiber, Stream } = effect;
 const program = Effect.scoped(
   Effect.gen(function* () {
     const home = core.configDirectory();
-    if (home === undefined) {
-      return yield* Effect.die(new Error(core.configDirectoryMessage));
-    }
-    const store = core.makeFileTranscriptStore(join(home, "transcripts"));
+    const store =
+      home === undefined ? undefined : core.makeFileTranscriptStore(join(home, "transcripts"));
     const session = yield* core.createSession(loaded.agent, { store });
     yield* Stream.runForEach(session.prompt(prompt), (event) =>
       Effect.gen(function* () {
