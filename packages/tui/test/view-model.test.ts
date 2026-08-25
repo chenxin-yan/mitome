@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { createSession, makeProvider, StoreError } from "@mitome/core";
-import type { TranscriptStore, TurnEvent } from "@mitome/core";
+import { createSession, makeProvider, memoryTranscripts, StoreError } from "@mitome/core";
+import type { TranscriptStore, TranscriptSummary, TurnEvent } from "@mitome/core";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
+import { makeSessionManager } from "../src/session-manager.js";
+import type { SessionManager, SessionResource } from "../src/session-manager.js";
 import { makeSessionViewModel } from "../src/view-model.js";
-import type { SessionHandle, SessionState } from "../src/view-model.js";
+import type { SessionState } from "../src/view-model.js";
 
-const waitFor = async (predicate: () => boolean): Promise<void> => {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+const waitFor = async (predicate: () => boolean, attempts = 100): Promise<void> => {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (predicate()) return;
     await Bun.sleep(1);
   }
@@ -16,12 +18,18 @@ const waitFor = async (predicate: () => boolean): Promise<void> => {
 
 const scriptedSession = (
   scripts: ReadonlyArray<Stream.Stream<TurnEvent, never>>,
-): SessionHandle => {
+): SessionResource => {
   let next = 0;
   return {
     prompt: () => scripts[next++] ?? Stream.empty,
     history: () => [],
+    close: Effect.void,
   };
+};
+
+const stubManager: SessionManager = {
+  transcripts: undefined,
+  open: () => Effect.die("not used"),
 };
 
 describe("session view model", () => {
@@ -53,7 +61,7 @@ describe("session view model", () => {
       ),
       Stream.make({ type: "model-output", text: "again" }, { type: "response-complete" }),
     ]);
-    const viewModel = makeSessionViewModel(session);
+    const viewModel = makeSessionViewModel(session, stubManager);
     const observed: Array<SessionState> = [];
     viewModel.subscribe((state) => observed.push(state));
 
@@ -89,7 +97,7 @@ describe("session view model", () => {
         Stream.fromEffectDrain(Effect.promise(() => finished)),
       ),
     ]);
-    const viewModel = makeSessionViewModel(session);
+    const viewModel = makeSessionViewModel(session, stubManager);
 
     expect(viewModel.submit("cancel me")).toBe(true);
     await waitFor(() => viewModel.getState().activeTurn?.response === "done");
@@ -111,7 +119,7 @@ describe("session view model", () => {
       ),
       Stream.make({ type: "model-output", text: "recovered" }, { type: "response-complete" }),
     ]);
-    const viewModel = makeSessionViewModel(session);
+    const viewModel = makeSessionViewModel(session, stubManager);
 
     expect(viewModel.submit("cancel me")).toBe(true);
     await waitFor(() => viewModel.getState().activeTurn?.response === "partial");
@@ -155,7 +163,7 @@ describe("session view model", () => {
             { providers: [provider], model: "test/default", extensions: [] },
             { transcripts: store },
           );
-          const viewModel = makeSessionViewModel(session);
+          const viewModel = makeSessionViewModel({ ...session, close: Effect.void }, stubManager);
           yield* Effect.promise(async () => {
             viewModel.submit("persist me");
             await waitFor(() => viewModel.getState().phase === "idle");
@@ -198,7 +206,7 @@ describe("session view model", () => {
             model: "test/default",
             extensions: [],
           });
-          const viewModel = makeSessionViewModel(session);
+          const viewModel = makeSessionViewModel({ ...session, close: Effect.void }, stubManager);
           yield* Effect.promise(async () => {
             viewModel.submit("discarded");
             await waitFor(() => viewModel.getState().activeTurn?.response === "partial");
@@ -222,9 +230,259 @@ describe("session view model", () => {
     );
   });
 
+  test("lists, resumes, and starts new Sessions without changing prior Transcripts", async () => {
+    const seenPrompts: Array<string> = [];
+    const unsupported = () => Effect.die("not used");
+    const provider = makeProvider("test", [] as const, undefined, () =>
+      Layer.succeed(LanguageModel.LanguageModel, {
+        generateText: unsupported,
+        generateObject: unsupported,
+        streamText: (options: { readonly prompt: unknown }) => {
+          seenPrompts.push(JSON.stringify(options.prompt));
+          return Stream.succeed(
+            Response.makePart("text-delta", {
+              id: String(seenPrompts.length),
+              delta: `answer ${seenPrompts.length}`,
+            }),
+          );
+        },
+      }),
+    );
+    const transcripts = memoryTranscripts();
+    const manager = makeSessionManager({
+      agent: { providers: [provider], model: "test/default", extensions: [] },
+      prompt: "",
+      transcripts,
+    });
+    const initial = await Effect.runPromise(manager.open());
+    const viewModel = makeSessionViewModel(initial, manager);
+
+    viewModel.submit("first topic");
+    await waitFor(() => viewModel.getState().phase === "idle");
+    const [firstSummary] = await Effect.runPromise(transcripts.list());
+    expect(firstSummary?.preview).toBe("first topic");
+
+    expect(viewModel.newSession()).toBe(true);
+    await waitFor(() => viewModel.getState().notice === "Started a new Session.");
+    expect(viewModel.getState().turns).toEqual([]);
+    expect((await Effect.runPromise(transcripts.list())).map(({ id }) => id)).toContain(
+      firstSummary!.id,
+    );
+
+    viewModel.submit("second topic");
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(await Effect.runPromise(transcripts.list())).toHaveLength(2);
+
+    expect(viewModel.openTranscriptPicker()).toBe(true);
+    await waitFor(() => viewModel.getState().picker?.loading === false);
+    const picker = viewModel.getState().picker!;
+    expect(picker.summaries.map(({ preview }) => preview)).toContain("first topic");
+    expect(picker.summaries[0]?.preview).toBe("second topic");
+    const firstIndex = picker.summaries.findIndex(({ id }) => id === firstSummary!.id);
+    viewModel.moveTranscriptSelection(firstIndex);
+    expect(viewModel.resumeTranscript()).toBe(true);
+    await waitFor(() => viewModel.getState().notice === "Transcript resumed in a new Session.");
+
+    viewModel.submit("continued topic");
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(seenPrompts[2]).toContain("first topic");
+    expect(seenPrompts[2]).not.toContain("second topic");
+    await viewModel.dispose();
+    const persisted = await Effect.runPromise(transcripts.list());
+    expect(
+      persisted.some(({ parentTranscriptId }) => parentTranscriptId === firstSummary!.id),
+    ).toBe(true);
+  });
+
+  test("remains usable when closing the previous Session defects", async () => {
+    let nextCloses = 0;
+    const initial = {
+      ...scriptedSession([]),
+      close: Effect.die(new Error("release failed")),
+    };
+    const next = {
+      ...scriptedSession([
+        Stream.make({ type: "model-output", text: "ready" }, { type: "response-complete" }),
+      ]),
+      close: Effect.sync(() => {
+        nextCloses += 1;
+      }),
+    };
+    const viewModel = makeSessionViewModel(initial, {
+      transcripts: undefined,
+      open: () => Effect.succeed(next),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(viewModel.getState().notice).toContain("Could not close previous Session");
+    expect(viewModel.submit("still usable")).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(viewModel.getState().turns[0]?.response).toBe("ready");
+
+    await viewModel.dispose();
+    expect(nextCloses).toBe(1);
+  });
+
+  test("does not touch Transcript storage when none is configured", async () => {
+    const session = scriptedSession([]);
+    const viewModel = makeSessionViewModel(session, {
+      transcripts: undefined,
+      open: () => Effect.die("not used"),
+    });
+
+    expect(viewModel.openTranscriptPicker()).toBe(true);
+    expect(viewModel.getState().picker).toBeUndefined();
+    expect(viewModel.getState().notice).toBe("Transcript persistence is not configured.");
+    await viewModel.dispose();
+  });
+
+  test("surfaces Transcript list failures and clears the picker", async () => {
+    const unused = () => Effect.die("not used");
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: {
+        list: () => Effect.fail(new StoreError({ message: "list failed" })),
+        load: unused,
+        save: unused,
+        appendEvent: unused,
+      },
+      open: unused,
+    });
+
+    expect(viewModel.openTranscriptPicker()).toBe(true);
+    await waitFor(() => viewModel.getState().notice !== undefined);
+    expect(viewModel.getState().picker).toBeUndefined();
+    expect(viewModel.getState().notice).toContain("Could not list Transcripts");
+    await viewModel.dispose();
+  });
+
+  test("surfaces Session open failures and returns to idle", async () => {
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: undefined,
+      open: () => Effect.fail(new StoreError({ message: "open failed" })),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(viewModel.getState().notice).toContain("Could not start Session");
+    await viewModel.dispose();
+  });
+
+  test("drops a stale Transcript list response after the picker closes", async () => {
+    let resolveList!: (summaries: ReadonlyArray<TranscriptSummary>) => void;
+    const pending = new Promise<ReadonlyArray<TranscriptSummary>>((resolve) => {
+      resolveList = resolve;
+    });
+    const unused = () => Effect.die("not used");
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: {
+        list: () => Effect.promise(() => pending),
+        load: unused,
+        save: unused,
+        appendEvent: unused,
+      },
+      open: unused,
+    });
+
+    expect(viewModel.openTranscriptPicker()).toBe(true);
+    expect(viewModel.closeTranscriptPicker()).toBe(true);
+    resolveList([
+      {
+        id: "late",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        messageCount: 1,
+        preview: "late",
+      },
+    ]);
+    await Bun.sleep(10);
+    expect(viewModel.getState().picker).toBeUndefined();
+    await viewModel.dispose();
+  });
+
+  test("returns to idle when the previous Session close hangs", async () => {
+    const initial = { ...scriptedSession([]), close: Effect.never };
+    const viewModel = makeSessionViewModel(initial, {
+      transcripts: undefined,
+      open: () => Effect.succeed(scriptedSession([])),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle", 2_000);
+    expect(viewModel.getState().notice).toBe("Previous Session did not close in time.");
+    await viewModel.dispose();
+  }, 5_000);
+
+  test("interrupt cancels a stuck Session open and returns to idle", async () => {
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: undefined,
+      open: () => Effect.promise(() => new Promise<SessionResource>(() => {})),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    expect(viewModel.getState().phase).toBe("switching");
+    expect(viewModel.interrupt()).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(viewModel.getState().notice).toBe("Session start cancelled.");
+    await viewModel.dispose();
+  });
+
+  test("abandons an uninterruptible Session open after interrupt", async () => {
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: undefined,
+      open: () => Effect.uninterruptible(Effect.never),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    expect(viewModel.interrupt()).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle", 2_000);
+    expect(viewModel.getState().notice).toBe("Session start did not cancel in time.");
+    await viewModel.dispose();
+  }, 5_000);
+
+  test("bounds disposal while a Session switch is stuck", async () => {
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: undefined,
+      open: () => Effect.promise(() => new Promise<SessionResource>(() => {})),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    const started = performance.now();
+    await viewModel.dispose();
+    expect(performance.now() - started).toBeLessThan(2_500);
+  }, 5_000);
+
+  test("closes a Session opened mid-switch when disposed first", async () => {
+    let releaseOpen!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    let nextCloses = 0;
+    const next: SessionResource = {
+      ...scriptedSession([]),
+      close: Effect.sync(() => {
+        nextCloses += 1;
+      }),
+    };
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: undefined,
+      open: () =>
+        Effect.promise(async () => {
+          await gate;
+          return next;
+        }),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    const disposing = viewModel.dispose();
+    releaseOpen();
+    await disposing;
+    expect(nextCloses).toBe(1);
+  });
+
   test("bounds disposal of an uninterruptible Turn", async () => {
     const session = scriptedSession([Stream.fromEffect(Effect.uninterruptible(Effect.never))]);
-    const viewModel = makeSessionViewModel(session);
+    const viewModel = makeSessionViewModel(session, stubManager);
 
     viewModel.submit("stuck");
     const started = performance.now();

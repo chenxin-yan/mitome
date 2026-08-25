@@ -1,5 +1,6 @@
-import type { TurnEvent } from "@mitome/core";
+import type { TranscriptSummary, TurnEvent } from "@mitome/core";
 import { Cause, Effect, Exit, Fiber, Stream } from "effect";
+import type { SessionManager, SessionResource } from "./session-manager.js";
 
 export interface SessionTurn {
   readonly prompt: string;
@@ -7,16 +8,18 @@ export interface SessionTurn {
   readonly activities: ReadonlyArray<string>;
 }
 
-export interface SessionState {
-  readonly phase: "idle" | "running" | "interrupting";
-  readonly turns: ReadonlyArray<SessionTurn>;
-  readonly activeTurn?: SessionTurn | undefined;
-  readonly notice?: string | undefined;
+export interface TranscriptPickerState {
+  readonly loading: boolean;
+  readonly summaries: ReadonlyArray<TranscriptSummary>;
+  readonly selected: number;
 }
 
-export interface SessionHandle {
-  readonly prompt: (text: string) => Stream.Stream<TurnEvent, unknown>;
-  readonly history: () => ReadonlyArray<unknown>;
+export interface SessionState {
+  readonly phase: "idle" | "running" | "interrupting" | "switching";
+  readonly turns: ReadonlyArray<SessionTurn>;
+  readonly activeTurn?: SessionTurn | undefined;
+  readonly picker?: TranscriptPickerState | undefined;
+  readonly notice?: string | undefined;
 }
 
 export interface SessionViewModel {
@@ -24,6 +27,11 @@ export interface SessionViewModel {
   readonly subscribe: (listener: (state: SessionState) => void) => () => void;
   readonly submit: (text: string) => boolean;
   readonly interrupt: () => boolean;
+  readonly openTranscriptPicker: () => boolean;
+  readonly closeTranscriptPicker: () => boolean;
+  readonly moveTranscriptSelection: (offset: number) => boolean;
+  readonly resumeTranscript: () => boolean;
+  readonly newSession: () => boolean;
   readonly dispose: () => Promise<void>;
 }
 
@@ -33,6 +41,23 @@ interface ActiveRun {
   readonly completed: () => boolean;
   interrupted: boolean;
 }
+
+// Cleanup bound: a stuck Session close or open must not wedge the TUI in the
+// switching phase or keep the process from exiting. Resolves undefined on
+// timeout; the underlying work keeps running and its late rejection is marked
+// handled so it cannot surface as an unhandled rejection.
+// ponytail: fixed 1s bound, make it configurable if real cleanup needs longer.
+const bounded = <T>(work: Promise<T>): Promise<T | undefined> => {
+  let cancel!: () => void;
+  void work.catch(() => undefined);
+  return Promise.race([
+    work,
+    new Promise<undefined>((resolve) => {
+      const timer = setTimeout(resolve, 1_000);
+      cancel = () => clearTimeout(timer);
+    }),
+  ]).finally(() => cancel());
+};
 
 const activity = (event: TurnEvent): string | undefined => {
   switch (event.type) {
@@ -52,10 +77,21 @@ const activity = (event: TurnEvent): string | undefined => {
   }
 };
 
-export const makeSessionViewModel = (session: SessionHandle): SessionViewModel => {
+export const makeSessionViewModel = (
+  initialSession: SessionResource,
+  manager: SessionManager,
+): SessionViewModel => {
+  let session = initialSession;
   let state: SessionState = { phase: "idle", turns: [] };
   let active: ActiveRun | undefined;
+  let switching: Promise<void> | undefined;
+  let switchFiber: Fiber.Fiber<SessionResource, unknown> | undefined;
+  let abandonSwitch: (() => void) | undefined;
+  let pickerRequest = 0;
   let disposed = false;
+  // Reads `disposed` after an await; the wrapper stops TS/oxlint from stale
+  // control-flow narrowing ("always falsy") across the async boundary.
+  const isDisposed = (): boolean => disposed;
   const listeners = new Set<(state: SessionState) => void>();
 
   const publish = (next: SessionState): void => {
@@ -88,7 +124,9 @@ export const makeSessionViewModel = (session: SessionHandle): SessionViewModel =
   };
 
   const submit = (text: string): boolean => {
-    if (disposed || state.phase !== "idle" || text.trim() === "") return false;
+    if (disposed || state.phase !== "idle" || state.picker !== undefined || text.trim() === "") {
+      return false;
+    }
     publish({
       ...state,
       phase: "running",
@@ -125,7 +163,16 @@ export const makeSessionViewModel = (session: SessionHandle): SessionViewModel =
         publish({
           phase: "idle",
           turns: [...state.turns, turn],
-          notice: Exit.isFailure(exit) ? Cause.pretty(exit.cause) : undefined,
+          // The turn is committed to history before the Transcript save runs
+          // and response-complete is only emitted after the save succeeds. An
+          // interrupt before completion may therefore have cut the save short;
+          // only a late interrupt after completion is safe to silence.
+          notice:
+            !completed && interrupted
+              ? "Turn interrupted; the Transcript may not have saved."
+              : Exit.isFailure(exit) && !interrupted
+                ? Cause.pretty(exit.cause)
+                : undefined,
         });
         return;
       }
@@ -143,11 +190,135 @@ export const makeSessionViewModel = (session: SessionHandle): SessionViewModel =
   };
 
   const interrupt = (): boolean => {
+    // A stuck Session open must stay user-recoverable: Esc during switching
+    // interrupts the open Fiber instead of leaving the TUI wedged.
+    if (state.phase === "switching" && switchFiber !== undefined) {
+      Effect.runFork(Fiber.interrupt(switchFiber));
+      // An uninterruptible open ignores the interrupt; give it the same 1s
+      // bound as other cleanup, then abandon the switch so idle is reachable.
+      const abandon = abandonSwitch;
+      setTimeout(() => abandon?.(), 1_000);
+      return true;
+    }
     if (active === undefined || state.phase !== "running" || active.completed()) return false;
     active.interrupted = true;
     publish({ ...state, phase: "interrupting" });
     Effect.runFork(Fiber.interrupt(active.fiber));
     return true;
+  };
+
+  const openTranscriptPicker = (): boolean => {
+    if (disposed || state.phase !== "idle" || state.picker !== undefined) return false;
+    if (manager.transcripts === undefined) {
+      publish({ ...state, notice: "Transcript persistence is not configured." });
+      return true;
+    }
+    const request = ++pickerRequest;
+    publish({
+      ...state,
+      picker: { loading: true, summaries: [], selected: 0 },
+      notice: undefined,
+    });
+    void Effect.runPromiseExit(manager.transcripts.list()).then((exit) => {
+      if (disposed || request !== pickerRequest) return;
+      if (Exit.isFailure(exit)) {
+        publish({
+          ...state,
+          picker: undefined,
+          notice: `Could not list Transcripts: ${Cause.pretty(exit.cause)}`,
+        });
+        return;
+      }
+      publish({
+        ...state,
+        picker: {
+          loading: false,
+          summaries: [...exit.value].sort((left, right) =>
+            right.updatedAt.localeCompare(left.updatedAt),
+          ),
+          selected: 0,
+        },
+      });
+    });
+    return true;
+  };
+
+  const closeTranscriptPicker = (): boolean => {
+    if (state.picker === undefined || state.phase !== "idle") return false;
+    pickerRequest += 1;
+    publish({ ...state, picker: undefined });
+    return true;
+  };
+
+  const moveTranscriptSelection = (offset: number): boolean => {
+    const picker = state.picker;
+    if (picker === undefined || picker.loading || picker.summaries.length === 0) return false;
+    const selected = Math.max(0, Math.min(picker.summaries.length - 1, picker.selected + offset));
+    publish({ ...state, picker: { ...picker, selected } });
+    return true;
+  };
+
+  const replaceSession = (transcriptId: string | undefined, notice: string): boolean => {
+    if (disposed || state.phase !== "idle") return false;
+    pickerRequest += 1;
+    publish({ ...state, phase: "switching", picker: undefined });
+    const previous = session;
+    const fiber = Effect.runFork(manager.open(transcriptId));
+    switchFiber = fiber;
+    const settled = Effect.runPromise(Fiber.await(fiber));
+    const operation = (async () => {
+      const opened = await Promise.race([
+        settled,
+        new Promise<undefined>((resolve) => {
+          abandonSwitch = () => resolve(undefined);
+        }),
+      ]);
+      switchFiber = undefined;
+      abandonSwitch = undefined;
+      if (opened === undefined) {
+        // Abandoned uninterruptible open. No Session can leak: once interrupt
+        // was requested the Fiber's exit is Interrupted, and manager.open
+        // releases anything it acquired via its own onError scope close.
+        publish({ ...state, phase: "idle", notice: "Session start did not cancel in time." });
+        return;
+      }
+      if (Exit.isFailure(opened)) {
+        publish({
+          ...state,
+          phase: "idle",
+          notice: Cause.hasInterruptsOnly(opened.cause)
+            ? "Session start cancelled."
+            : `Could not start Session: ${Cause.pretty(opened.cause)}`,
+        });
+        return;
+      }
+      const next = opened.value;
+      if (isDisposed()) {
+        await Effect.runPromiseExit(next.close);
+        return;
+      }
+      session = next;
+      const closed = await bounded(Effect.runPromiseExit(previous.close));
+      publish({
+        phase: "idle",
+        turns: [],
+        notice:
+          closed === undefined
+            ? "Previous Session did not close in time."
+            : Exit.isFailure(closed)
+              ? `Could not close previous Session: ${Cause.pretty(closed.cause)}`
+              : notice,
+      });
+    })();
+    switching = operation;
+    return true;
+  };
+
+  const resumeTranscript = (): boolean => {
+    const picker = state.picker;
+    const summary = picker?.summaries[picker.selected];
+    if (picker === undefined || picker.loading || summary === undefined) return false;
+    return replaceSession(summary.id, "Transcript resumed in a new Session.");
   };
 
   return {
@@ -159,24 +330,21 @@ export const makeSessionViewModel = (session: SessionHandle): SessionViewModel =
     },
     submit,
     interrupt,
+    openTranscriptPicker,
+    closeTranscriptPicker,
+    moveTranscriptSelection,
+    resumeTranscript,
+    newSession: () => replaceSession(undefined, "Started a new Session."),
     dispose: async () => {
       disposed = true;
       const running = active;
       active = undefined;
       listeners.clear();
       if (running !== undefined) {
-        let timeout!: ReturnType<typeof setTimeout>;
-        try {
-          await Promise.race([
-            Effect.runPromise(Fiber.interrupt(running.fiber)),
-            new Promise<void>((resolve) => {
-              timeout = setTimeout(resolve, 1_000);
-            }),
-          ]);
-        } finally {
-          clearTimeout(timeout);
-        }
+        await bounded(Effect.runPromise(Fiber.interrupt(running.fiber)));
       }
+      if (switching !== undefined) await bounded(switching);
+      await bounded(Effect.runPromise(session.close));
     },
   };
 };
