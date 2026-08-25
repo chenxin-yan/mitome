@@ -6,13 +6,15 @@ import type { AnyProvider, QualifiedModelId } from "../provider.js";
 import { provideExtensionHook } from "../extension.js";
 import type { AnyExtension } from "../extension.js";
 import { SessionBusyError, SessionReleasedError, TurnError, hookTurnError } from "./errors.js";
-import type { TurnEvent } from "./events.js";
+import { turnEventToDto } from "./events.js";
+import type { PersistedTurnEvent, TurnEvent } from "./events.js";
 import { beginHookPhase } from "./hooks.js";
 import * as ModelResolver from "./model-resolver.js";
 import * as StepRunner from "./step-runner.js";
 import * as ToolExecution from "./tool-execution.js";
 import * as Transcript from "../transcript.js";
 import type { Transcript as TranscriptValue } from "../transcript.js";
+import { TranscriptEventRecordVersion } from "../transcript-store.js";
 import type { StoreError, TranscriptStore } from "../transcript-store.js";
 
 type ProvidersOf<Definition extends AgentDefinition> =
@@ -95,7 +97,21 @@ const createSessionImpl: (
   const modelResolver = ModelResolver.makeModelResolver(compiled.providers, sessionScope);
   const stepRunner = StepRunner.makeStepRunner(compiled, extensionContexts, toolExecution);
   const transcriptId = crypto.randomUUID();
+  const sessionId = crypto.randomUUID();
   const parentTranscriptId = sessionOptions.transcript?.id;
+  let eventSeq = 0;
+  const appendTurnEvent = (event: PersistedTurnEvent): Effect.Effect<void, StoreError> => {
+    const store = sessionOptions.store;
+    return store === undefined
+      ? Effect.void
+      : Effect.sync(() => ({
+          transcriptId,
+          sessionId,
+          seq: eventSeq++,
+          version: TranscriptEventRecordVersion,
+          event: turnEventToDto(event),
+        })).pipe(Effect.flatMap((record) => store.appendEvent(record)));
+  };
   let history =
     sessionOptions.transcript === undefined
       ? Prompt.make(
@@ -187,6 +203,15 @@ const createSessionImpl: (
                         }),
                       );
                     }),
+                    Stream.mapEffect((event) => appendTurnEvent(event).pipe(Effect.as(event))),
+                    Stream.map((event) => {
+                      if (event.type !== "tool-result") return event;
+                      const { encodedResult: _encodedResult, ...turnEvent } = event;
+                      return turnEvent;
+                    }),
+                    Stream.filter(
+                      (event): event is TurnEvent => event.type !== "approval-resolved",
+                    ),
                     Stream.onExit(() => turnHooks.cleanup),
                   ),
                 ),

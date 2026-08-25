@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
+import { Response } from "effect/unstable/ai";
 import {
   makeMemoryTranscriptStore,
   makeTranscript,
@@ -7,6 +8,7 @@ import {
   TranscriptEventRecordVersion,
   TranscriptNotFound,
   TranscriptSummarySchema,
+  TurnEventDtoSchema,
 } from "../src/index.js";
 
 describe("makeMemoryTranscriptStore", () => {
@@ -69,6 +71,69 @@ describe("makeMemoryTranscriptStore", () => {
     }),
   );
 
+  it("round-trips every audit-relevant Turn event DTO", () => {
+    const events = [
+      { type: "model-output", text: "hello" },
+      { type: "reasoning", text: "thinking" },
+      { type: "tool-call", id: "call-1", name: "search", params: { query: "mitome" } },
+      {
+        type: "tool-result",
+        id: "call-1",
+        name: "search",
+        result: { hits: ["result"] },
+        isFailure: false,
+      },
+      {
+        type: "approval-required",
+        approvalId: "approval-1",
+        toolCallId: "call-2",
+        name: "delete",
+        params: { path: "/tmp/file" },
+      },
+      {
+        type: "approval-resolved",
+        approvalId: "approval-1",
+        toolCallId: "call-2",
+        approved: false,
+        reason: "not allowed",
+      },
+      {
+        type: "response-complete",
+        finishReason: "stop",
+        usage: new Response.Usage({
+          inputTokens: { total: 4, cacheRead: 2 },
+          outputTokens: { total: 3, reasoning: 1 },
+        }),
+      },
+    ];
+    const schema = Schema.Array(TurnEventDtoSchema);
+    const encoded = Schema.encodeUnknownSync(schema)(events);
+    const decoded = Schema.decodeUnknownSync(schema)(JSON.parse(JSON.stringify(encoded)));
+
+    expect(Schema.encodeSync(schema)(decoded)).toEqual(encoded);
+  });
+
+  it("fails loudly on unknown record versions and event types", () => {
+    for (const invalid of [
+      {
+        transcriptId: "transcript-1",
+        sessionId: "session-1",
+        seq: 0,
+        version: 2,
+        event: { type: "model-output", text: "hello" },
+      },
+      {
+        transcriptId: "transcript-1",
+        sessionId: "session-1",
+        seq: 0,
+        version: TranscriptEventRecordVersion,
+        event: { type: "future-event" },
+      },
+    ]) {
+      expect(() => Schema.decodeUnknownSync(TranscriptEventRecordSchema)(invalid)).toThrow();
+    }
+  });
+
   it("rejects invalid count and sequence metadata", () => {
     expect(() =>
       Schema.decodeSync(TranscriptSummarySchema)({
@@ -86,7 +151,7 @@ describe("makeMemoryTranscriptStore", () => {
           sessionId: "session-1",
           seq,
           version: TranscriptEventRecordVersion,
-          event: null,
+          event: { type: "model-output", text: "hello" },
         }),
       ).toThrow();
     }

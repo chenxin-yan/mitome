@@ -25,7 +25,8 @@ export {
   SessionReleasedError,
   TurnError,
 } from "./session/errors.js";
-export type { ToolExecutionDenied, TurnEvent } from "./session/events.js";
+export { TurnEventDtoSchema } from "./session/events.js";
+export type { ToolExecutionDenied, TurnEvent, TurnEventDto } from "./session/events.js";
 export { createSession } from "./session/session.js";
 export type { CreateSessionOptions, PromptOptions, Session } from "./session/session.js";
 export {

@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect";
+import { TurnEventDtoSchema } from "./session/events.js";
 import type { Transcript, TranscriptId } from "./transcript.js";
 
 export const TranscriptSummarySchema = Schema.Struct({
@@ -11,12 +12,16 @@ export const TranscriptSummarySchema = Schema.Struct({
 export type TranscriptSummary = typeof TranscriptSummarySchema.Type;
 
 export const TranscriptEventRecordVersion = 1 as const;
+/**
+ * Records decode independently. A tail without `response-complete` is an expected interrupted Turn,
+ * not a corrupt log; event records are observability data and have no Session replay contract.
+ */
 export const TranscriptEventRecordSchema = Schema.Struct({
   transcriptId: Schema.String,
   sessionId: Schema.String,
   seq: Schema.Natural,
   version: Schema.Literal(TranscriptEventRecordVersion),
-  event: Schema.Json,
+  event: TurnEventDtoSchema,
 });
 export type TranscriptEventRecord = typeof TranscriptEventRecordSchema.Type;
 

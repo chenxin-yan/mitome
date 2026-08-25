@@ -1,17 +1,17 @@
-import { Effect, Stream } from "effect";
-import { Prompt, Tool } from "effect/unstable/ai";
-import type { Response } from "effect/unstable/ai";
+import { Effect, Schema, Stream } from "effect";
+import { Prompt } from "effect/unstable/ai";
+import type { Response, Tool } from "effect/unstable/ai";
 import type { CompiledAgent } from "../agent.js";
 import type { ExtensionContexts } from "../extension.js";
 import { provideExtensionHook } from "../extension.js";
 import { hookTurnError, modelTurnError, TurnError } from "./errors.js";
-import type { TurnEvent } from "./events.js";
+import type { ApprovalResolvedEvent, PersistedTurnEvent, TurnEvent } from "./events.js";
 import { beginHookPhase, transformPrompt } from "./hooks.js";
 import type { RuntimeModel } from "./model-resolver.js";
 import type { ToolExecution } from "./tool-execution.js";
 
 export type StepEvent =
-  | TurnEvent
+  | PersistedTurnEvent
   | {
       readonly type: "turn-complete";
       readonly history: Prompt.Prompt;
@@ -35,7 +35,7 @@ export const makeStepRunner = (
     part: { readonly approvalId: string; readonly toolCallId: string },
     call: { readonly name: string; readonly params: unknown },
     record: (decision: Prompt.ToolApprovalResponsePart) => void,
-  ): Stream.Stream<TurnEvent, TurnError> =>
+  ): Stream.Stream<PersistedTurnEvent, TurnError> =>
     Stream.unwrap(
       toolExecution.approval.request(part, call).pipe(
         Effect.map((outcome) => {
@@ -50,7 +50,13 @@ export const makeStepRunner = (
                 reason: outcome.reason,
               }),
             );
-            return Stream.empty;
+            return Stream.succeed({
+              type: "approval-resolved",
+              approvalId: part.approvalId,
+              toolCallId: part.toolCallId,
+              approved: false,
+              reason: outcome.reason,
+            } satisfies ApprovalResolvedEvent);
           }
           return Stream.concat(
             Stream.succeed({
@@ -79,8 +85,18 @@ export const makeStepRunner = (
                     );
                   }),
                 ),
+                Effect.map(
+                  (decision) =>
+                    ({
+                      type: "approval-resolved",
+                      approvalId: outcome.approvalId,
+                      toolCallId: outcome.toolCallId,
+                      approved: decision.approved,
+                      reason: decision.reason,
+                    }) satisfies ApprovalResolvedEvent,
+                ),
               ),
-            ).pipe(Stream.drain),
+            ),
           );
         }),
       ),
@@ -121,6 +137,11 @@ export const makeStepRunner = (
                 ).pipe(
                   Stream.provideContext(selected.context),
                   Stream.mapError(modelTurnError),
+                  Stream.map((part) =>
+                    part.type === "tool-result" && !Schema.is(Schema.Json)(part.encodedResult)
+                      ? { ...part, encodedResult: null }
+                      : part,
+                  ),
                   Stream.tap((part) => Effect.sync(() => parts.push(part))),
                   Stream.flatMap((part): Stream.Stream<StepEvent, TurnError> => {
                     if (part.type === "error") return Stream.fail(modelTurnError(part.error));
@@ -145,6 +166,7 @@ export const makeStepRunner = (
                         id: part.id,
                         name: part.name,
                         result: part.result,
+                        encodedResult: part.encodedResult,
                         isFailure: part.isFailure,
                       });
                     }
