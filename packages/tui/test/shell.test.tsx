@@ -18,7 +18,7 @@ afterEach(async () => {
 const renderShell = async (
   prompt: string,
   streams: ReadonlyArray<Stream.Stream<TurnEvent, never>> = [],
-  manager?: SessionManager,
+  manager: SessionManager = { transcripts: undefined, open: () => Effect.die("not used") },
 ) => {
   let next = 0;
   viewModel = makeSessionViewModel(

@@ -4,7 +4,7 @@ import type { TranscriptStore, TranscriptSummary, TurnEvent } from "@mitome/core
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { makeSessionManager } from "../src/session-manager.js";
-import type { SessionResource } from "../src/session-manager.js";
+import type { SessionManager, SessionResource } from "../src/session-manager.js";
 import { makeSessionViewModel } from "../src/view-model.js";
 import type { SessionState } from "../src/view-model.js";
 
@@ -25,6 +25,11 @@ const scriptedSession = (
     history: () => [],
     close: Effect.void,
   };
+};
+
+const stubManager: SessionManager = {
+  transcripts: undefined,
+  open: () => Effect.die("not used"),
 };
 
 describe("session view model", () => {
@@ -56,7 +61,7 @@ describe("session view model", () => {
       ),
       Stream.make({ type: "model-output", text: "again" }, { type: "response-complete" }),
     ]);
-    const viewModel = makeSessionViewModel(session);
+    const viewModel = makeSessionViewModel(session, stubManager);
     const observed: Array<SessionState> = [];
     viewModel.subscribe((state) => observed.push(state));
 
@@ -92,7 +97,7 @@ describe("session view model", () => {
         Stream.fromEffectDrain(Effect.promise(() => finished)),
       ),
     ]);
-    const viewModel = makeSessionViewModel(session);
+    const viewModel = makeSessionViewModel(session, stubManager);
 
     expect(viewModel.submit("cancel me")).toBe(true);
     await waitFor(() => viewModel.getState().activeTurn?.response === "done");
@@ -114,7 +119,7 @@ describe("session view model", () => {
       ),
       Stream.make({ type: "model-output", text: "recovered" }, { type: "response-complete" }),
     ]);
-    const viewModel = makeSessionViewModel(session);
+    const viewModel = makeSessionViewModel(session, stubManager);
 
     expect(viewModel.submit("cancel me")).toBe(true);
     await waitFor(() => viewModel.getState().activeTurn?.response === "partial");
@@ -158,7 +163,7 @@ describe("session view model", () => {
             { providers: [provider], model: "test/default", extensions: [] },
             { transcripts: store },
           );
-          const viewModel = makeSessionViewModel({ ...session, close: Effect.void });
+          const viewModel = makeSessionViewModel({ ...session, close: Effect.void }, stubManager);
           yield* Effect.promise(async () => {
             viewModel.submit("persist me");
             await waitFor(() => viewModel.getState().phase === "idle");
@@ -201,7 +206,7 @@ describe("session view model", () => {
             model: "test/default",
             extensions: [],
           });
-          const viewModel = makeSessionViewModel({ ...session, close: Effect.void });
+          const viewModel = makeSessionViewModel({ ...session, close: Effect.void }, stubManager);
           yield* Effect.promise(async () => {
             viewModel.submit("discarded");
             await waitFor(() => viewModel.getState().activeTurn?.response === "partial");
@@ -477,7 +482,7 @@ describe("session view model", () => {
 
   test("bounds disposal of an uninterruptible Turn", async () => {
     const session = scriptedSession([Stream.fromEffect(Effect.uninterruptible(Effect.never))]);
-    const viewModel = makeSessionViewModel(session);
+    const viewModel = makeSessionViewModel(session, stubManager);
 
     viewModel.submit("stuck");
     const started = performance.now();

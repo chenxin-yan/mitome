@@ -79,7 +79,7 @@ const activity = (event: TurnEvent): string | undefined => {
 
 export const makeSessionViewModel = (
   initialSession: SessionResource,
-  manager?: SessionManager,
+  manager: SessionManager,
 ): SessionViewModel => {
   let session = initialSession;
   let state: SessionState = { phase: "idle", turns: [] };
@@ -209,7 +209,7 @@ export const makeSessionViewModel = (
 
   const openTranscriptPicker = (): boolean => {
     if (disposed || state.phase !== "idle" || state.picker !== undefined) return false;
-    if (manager?.transcripts === undefined) {
+    if (manager.transcripts === undefined) {
       publish({ ...state, notice: "Transcript persistence is not configured." });
       return true;
     }
@@ -234,7 +234,7 @@ export const makeSessionViewModel = (
         picker: {
           loading: false,
           summaries: [...exit.value].sort((left, right) =>
-            left.updatedAt < right.updatedAt ? 1 : left.updatedAt > right.updatedAt ? -1 : 0,
+            right.updatedAt.localeCompare(left.updatedAt),
           ),
           selected: 0,
         },
@@ -259,7 +259,7 @@ export const makeSessionViewModel = (
   };
 
   const replaceSession = (transcriptId: string | undefined, notice: string): boolean => {
-    if (disposed || manager === undefined || state.phase !== "idle") return false;
+    if (disposed || state.phase !== "idle") return false;
     pickerRequest += 1;
     publish({ ...state, phase: "switching", picker: undefined });
     const previous = session;
