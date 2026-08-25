@@ -25,6 +25,7 @@ const renderShell = async (
     {
       prompt: () => streams[next++] ?? Stream.empty,
       history: () => [],
+      close: Effect.void,
     },
     manager,
   );

@@ -65,17 +65,11 @@ const activity = (event: TurnEvent): string | undefined => {
   }
 };
 
-const unmanaged = (session: SessionHandle): SessionResource => ({
-  ...session,
-  close: Effect.void,
-});
-
 export const makeSessionViewModel = (
-  initialSession: SessionHandle | SessionResource,
+  initialSession: SessionResource,
   manager?: SessionManager,
 ): SessionViewModel => {
-  let session: SessionResource =
-    "close" in initialSession ? initialSession : unmanaged(initialSession);
+  let session = initialSession;
   let state: SessionState = { phase: "idle", turns: [] };
   let active: ActiveRun | undefined;
   let switching: Promise<void> | undefined;
@@ -191,7 +185,7 @@ export const makeSessionViewModel = (
       notice: undefined,
     });
     void Effect.runPromiseExit(manager.transcripts.list()).then((exit) => {
-      if (disposed || request !== pickerRequest || state.picker === undefined) return;
+      if (disposed || request !== pickerRequest) return;
       if (Exit.isFailure(exit)) {
         publish({
           ...state,
@@ -236,13 +230,11 @@ export const makeSessionViewModel = (
     const operation = (async () => {
       const opened = await Effect.runPromiseExit(manager.open(transcriptId));
       if (Exit.isFailure(opened)) {
-        if (!isDisposed()) {
-          publish({
-            ...state,
-            phase: "idle",
-            notice: `Could not start Session: ${Cause.pretty(opened.cause)}`,
-          });
-        }
+        publish({
+          ...state,
+          phase: "idle",
+          notice: `Could not start Session: ${Cause.pretty(opened.cause)}`,
+        });
         return;
       }
       const next = opened.value;
@@ -252,21 +244,15 @@ export const makeSessionViewModel = (
       }
       session = next;
       const closed = await Effect.runPromiseExit(previous.close);
-      if (isDisposed()) return;
-      if (Exit.isFailure(closed)) {
-        publish({
-          phase: "idle",
-          turns: [],
-          notice: `Could not close previous Session: ${Cause.pretty(closed.cause)}`,
-        });
-        return;
-      }
-      publish({ phase: "idle", turns: [], notice });
+      publish({
+        phase: "idle",
+        turns: [],
+        notice: Exit.isFailure(closed)
+          ? `Could not close previous Session: ${Cause.pretty(closed.cause)}`
+          : notice,
+      });
     })();
-    const tracked = operation.finally(() => {
-      if (switching === tracked) switching = undefined;
-    });
-    switching = tracked;
+    switching = operation;
     return true;
   };
 

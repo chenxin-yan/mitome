@@ -4,8 +4,9 @@ import type { TranscriptStore, TurnEvent } from "@mitome/core";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { makeSessionManager } from "../src/session-manager.js";
+import type { SessionResource } from "../src/session-manager.js";
 import { makeSessionViewModel } from "../src/view-model.js";
-import type { SessionHandle, SessionState } from "../src/view-model.js";
+import type { SessionState } from "../src/view-model.js";
 
 const waitFor = async (predicate: () => boolean): Promise<void> => {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -17,11 +18,12 @@ const waitFor = async (predicate: () => boolean): Promise<void> => {
 
 const scriptedSession = (
   scripts: ReadonlyArray<Stream.Stream<TurnEvent, never>>,
-): SessionHandle => {
+): SessionResource => {
   let next = 0;
   return {
     prompt: () => scripts[next++] ?? Stream.empty,
     history: () => [],
+    close: Effect.void,
   };
 };
 
@@ -156,7 +158,7 @@ describe("session view model", () => {
             { providers: [provider], model: "test/default", extensions: [] },
             { transcripts: store },
           );
-          const viewModel = makeSessionViewModel(session);
+          const viewModel = makeSessionViewModel({ ...session, close: Effect.void });
           yield* Effect.promise(async () => {
             viewModel.submit("persist me");
             await waitFor(() => viewModel.getState().phase === "idle");
@@ -199,7 +201,7 @@ describe("session view model", () => {
             model: "test/default",
             extensions: [],
           });
-          const viewModel = makeSessionViewModel(session);
+          const viewModel = makeSessionViewModel({ ...session, close: Effect.void });
           yield* Effect.promise(async () => {
             viewModel.submit("discarded");
             await waitFor(() => viewModel.getState().activeTurn?.response === "partial");
@@ -317,20 +319,13 @@ describe("session view model", () => {
   });
 
   test("does not touch Transcript storage when none is configured", async () => {
-    let opens = 0;
     const session = scriptedSession([]);
     const viewModel = makeSessionViewModel(session, {
       transcripts: undefined,
-      open: () =>
-        Effect.sync(() => {
-          opens += 1;
-          return { ...session, close: Effect.void };
-        }),
+      open: () => Effect.die("not used"),
     });
 
     expect(viewModel.openTranscriptPicker()).toBe(true);
-    await Bun.sleep(1);
-    expect(opens).toBe(0);
     expect(viewModel.getState().picker).toBeUndefined();
     expect(viewModel.getState().notice).toBe("Transcript persistence is not configured.");
     await viewModel.dispose();

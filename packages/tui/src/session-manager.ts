@@ -33,12 +33,6 @@ export const makeSessionManager = (context: HostContext): SessionManager => ({
   open: (transcriptId) =>
     Effect.gen(function* () {
       const transcripts = context.transcripts;
-      // Direct manager callers can bypass the picker invariant that resume ids require a store.
-      if (transcriptId !== undefined && transcripts === undefined) {
-        return yield* Effect.die(
-          new Error("Cannot resume a Transcript without a Transcript store."),
-        );
-      }
       const transcript =
         transcriptId === undefined || transcripts === undefined
           ? undefined
