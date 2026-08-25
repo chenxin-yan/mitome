@@ -247,11 +247,20 @@ export const makeSessionViewModel = (
       }
       const next = opened.value;
       if (isDisposed()) {
-        await Effect.runPromise(next.close);
+        await Effect.runPromiseExit(next.close);
         return;
       }
       session = next;
-      await Effect.runPromise(previous.close);
+      const closed = await Effect.runPromiseExit(previous.close);
+      if (isDisposed()) return;
+      if (Exit.isFailure(closed)) {
+        publish({
+          phase: "idle",
+          turns: [],
+          notice: `Could not close previous Session: ${Cause.pretty(closed.cause)}`,
+        });
+        return;
+      }
       publish({ phase: "idle", turns: [], notice });
     })();
     const tracked = operation.finally(() => {

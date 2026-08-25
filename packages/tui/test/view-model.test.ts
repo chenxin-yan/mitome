@@ -286,6 +286,36 @@ describe("session view model", () => {
     ).toBe(true);
   });
 
+  test("remains usable when closing the previous Session defects", async () => {
+    let nextCloses = 0;
+    const initial = {
+      ...scriptedSession([]),
+      close: Effect.die(new Error("release failed")),
+    };
+    const next = {
+      ...scriptedSession([
+        Stream.make({ type: "model-output", text: "ready" }, { type: "response-complete" }),
+      ]),
+      close: Effect.sync(() => {
+        nextCloses += 1;
+      }),
+    };
+    const viewModel = makeSessionViewModel(initial, {
+      transcripts: undefined,
+      open: () => Effect.succeed(next),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(viewModel.getState().notice).toContain("Could not close previous Session");
+    expect(viewModel.submit("still usable")).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(viewModel.getState().turns[0]?.response).toBe("ready");
+
+    await viewModel.dispose();
+    expect(nextCloses).toBe(1);
+  });
+
   test("does not touch Transcript storage when none is configured", async () => {
     let opens = 0;
     const session = scriptedSession([]);

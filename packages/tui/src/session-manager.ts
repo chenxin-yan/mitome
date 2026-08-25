@@ -33,6 +33,7 @@ export const makeSessionManager = (context: HostContext): SessionManager => ({
   open: (transcriptId) =>
     Effect.gen(function* () {
       const transcripts = context.transcripts;
+      // Direct manager callers can bypass the picker invariant that resume ids require a store.
       if (transcriptId !== undefined && transcripts === undefined) {
         return yield* Effect.die(
           new Error("Cannot resume a Transcript without a Transcript store."),
@@ -46,14 +47,9 @@ export const makeSessionManager = (context: HostContext): SessionManager => ({
       const session = yield* Scope.provide(scope)(
         createSession(context.agent, { transcripts, transcript }),
       ).pipe(Effect.tapCause((cause) => Scope.close(scope, Exit.failCause(cause))));
-      let closed = false;
       return {
         ...session,
-        close: Effect.suspend(() => {
-          if (closed) return Effect.void;
-          closed = true;
-          return Scope.close(scope, Exit.void);
-        }),
+        close: Scope.close(scope, Exit.void),
       };
     }),
 });
