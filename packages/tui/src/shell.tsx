@@ -11,10 +11,7 @@ const Turn = (props: { readonly turn: SessionTurn }) => (
   </box>
 );
 
-export const Shell = (props: {
-  readonly prompt: string;
-  readonly viewModel: SessionViewModel;
-}) => {
+export const Shell = (props: { readonly prompt: string; readonly viewModel: SessionViewModel }) => {
   const [state, setState] = createSignal(props.viewModel.getState());
   const [initialPrompt, setInitialPrompt] = createSignal(props.prompt);
   let input: TextareaRenderable | undefined;
