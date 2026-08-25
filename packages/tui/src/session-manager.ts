@@ -2,6 +2,7 @@ import { createSession } from "@mitome/core";
 import type {
   AgentDefinitionError,
   HostContext,
+  Session,
   StoreError,
   TranscriptId,
   TranscriptNotFound,
@@ -9,7 +10,8 @@ import type {
   TurnError,
 } from "@mitome/core";
 import { Effect, Exit, Scope } from "effect";
-import type { SessionHandle } from "./view-model.js";
+
+export type SessionHandle = Pick<Session, "prompt" | "history">;
 
 export interface SessionResource extends SessionHandle {
   readonly close: Effect.Effect<void>;
@@ -40,7 +42,7 @@ export const makeSessionManager = (context: HostContext): SessionManager => ({
       const scope = yield* Scope.make();
       const session = yield* Scope.provide(scope)(
         createSession(context.agent, { transcripts, transcript }),
-      ).pipe(Effect.tapCause((cause) => Scope.close(scope, Exit.failCause(cause))));
+      ).pipe(Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))));
       return {
         ...session,
         close: Scope.close(scope, Exit.void),

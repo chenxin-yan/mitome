@@ -90,6 +90,94 @@ describe("TUI shell", () => {
 
     expect(frame).toContain("Transcripts");
     expect(frame).toContain("Enter resume");
+    expect(frame).toContain("2026");
+  });
+
+  test("navigates the picker and resumes the selected Transcript", async () => {
+    const unused = () => Effect.die("not used");
+    const opened: Array<string | undefined> = [];
+    const transcripts: TranscriptStore = {
+      list: () =>
+        Effect.succeed([
+          {
+            id: "newest",
+            createdAt: "2026-08-25T01:00:00.000Z",
+            updatedAt: "2026-08-25T02:00:00.000Z",
+            messageCount: 2,
+            preview: "newest topic",
+          },
+          {
+            id: "older",
+            createdAt: "2026-08-24T01:00:00.000Z",
+            updatedAt: "2026-08-24T02:00:00.000Z",
+            messageCount: 2,
+            preview: "older topic",
+          },
+        ]),
+      load: unused,
+      save: unused,
+      appendEvent: unused,
+    };
+    await renderShell("", [], {
+      transcripts,
+      open: (transcriptId) => {
+        opened.push(transcriptId);
+        return Effect.succeed({
+          prompt: () => Stream.empty,
+          history: () => [],
+          close: Effect.void,
+        });
+      },
+    });
+
+    setup!.mockInput.pressKey("o", { ctrl: true });
+    await setup!.waitForFrame((candidate) => candidate.includes("older topic"));
+    setup!.mockInput.pressArrow("down");
+    setup!.mockInput.pressEnter();
+    await setup!.waitForFrame((candidate) =>
+      candidate.includes("Transcript resumed in a new Session."),
+    );
+
+    expect(opened).toEqual(["older"]);
+  });
+
+  test("closes the picker with Escape", async () => {
+    const unused = () => Effect.die("not used");
+    const transcripts: TranscriptStore = {
+      list: () => Effect.succeed([]),
+      load: unused,
+      save: unused,
+      appendEvent: unused,
+    };
+    await renderShell("", [], { transcripts, open: unused });
+
+    setup!.mockInput.pressKey("o", { ctrl: true });
+    await setup!.waitForFrame((candidate) => candidate.includes("No Transcripts yet."));
+    setup!.mockInput.pressEscape();
+    // ESC needs the parser's escape-disambiguation window before it is flushed.
+    await Bun.sleep(50);
+    const frame = await setup!.waitForFrame((candidate) => candidate.includes("Ctrl-O list"));
+
+    expect(frame).not.toContain("No Transcripts yet.");
+  });
+
+  test("starts a new Session with Ctrl-N", async () => {
+    await renderShell("", [], {
+      transcripts: undefined,
+      open: () =>
+        Effect.succeed({
+          prompt: () => Stream.empty,
+          history: () => [],
+          close: Effect.void,
+        }),
+    });
+
+    setup!.mockInput.pressKey("n", { ctrl: true });
+    const frame = await setup!.waitForFrame((candidate) =>
+      candidate.includes("Started a new Session."),
+    );
+
+    expect(frame).toContain("Type a prompt");
   });
 
   test("maps Escape to Turn interruption and restores the prompt", async () => {

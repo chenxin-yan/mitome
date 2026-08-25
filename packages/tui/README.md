@@ -1,5 +1,12 @@
 # @mitome/tui
 
+## Tests
+
+The `test` script enumerates test files explicitly: `.tsx` shell tests need the
+`@opentui/solid/preload` flag, while `host.test.ts` must run _without_ it (it
+asserts opentui never loads in non-TTY contexts). New test files must be added
+to the `test` script in `package.json` or they will not run in CI.
+
 ## Manual smoke checklist
 
 Run an Agent in a real interactive terminal with `mitome --use <definition>` (or `mitome` for the default definition) and verify:

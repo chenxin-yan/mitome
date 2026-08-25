@@ -22,11 +22,6 @@ export interface SessionState {
   readonly notice?: string | undefined;
 }
 
-export interface SessionHandle {
-  readonly prompt: (text: string) => Stream.Stream<TurnEvent, unknown>;
-  readonly history: () => ReadonlyArray<unknown>;
-}
-
 export interface SessionViewModel {
   readonly getState: () => SessionState;
   readonly subscribe: (listener: (state: SessionState) => void) => () => void;
@@ -75,6 +70,8 @@ export const makeSessionViewModel = (
   let switching: Promise<void> | undefined;
   let pickerRequest = 0;
   let disposed = false;
+  // Reads `disposed` after an await; the wrapper stops TS/oxlint from stale
+  // control-flow narrowing ("always falsy") across the async boundary.
   const isDisposed = (): boolean => disposed;
   const listeners = new Set<(state: SessionState) => void>();
 
@@ -147,7 +144,9 @@ export const makeSessionViewModel = (
         publish({
           phase: "idle",
           turns: [...state.turns, turn],
-          notice: Exit.isFailure(exit) ? Cause.pretty(exit.cause) : undefined,
+          // A late interrupt can lose the race against a committed turn; don't
+          // surface the interrupt cause for a turn that actually succeeded.
+          notice: Exit.isFailure(exit) && !interrupted ? Cause.pretty(exit.cause) : undefined,
         });
         return;
       }
@@ -199,7 +198,7 @@ export const makeSessionViewModel = (
         picker: {
           loading: false,
           summaries: [...exit.value].sort((left, right) =>
-            right.updatedAt.localeCompare(left.updatedAt),
+            left.updatedAt < right.updatedAt ? 1 : left.updatedAt > right.updatedAt ? -1 : 0,
           ),
           selected: 0,
         },
@@ -225,7 +224,8 @@ export const makeSessionViewModel = (
 
   const replaceSession = (transcriptId: string | undefined, notice: string): boolean => {
     if (disposed || manager === undefined || state.phase !== "idle") return false;
-    publish({ ...state, phase: "switching" });
+    pickerRequest += 1;
+    publish({ ...state, phase: "switching", picker: undefined });
     const previous = session;
     const operation = (async () => {
       const opened = await Effect.runPromiseExit(manager.open(transcriptId));

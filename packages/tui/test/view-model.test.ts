@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createSession, makeProvider, memoryTranscripts, StoreError } from "@mitome/core";
-import type { TranscriptStore, TurnEvent } from "@mitome/core";
+import type { TranscriptStore, TranscriptSummary, TurnEvent } from "@mitome/core";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { makeSessionManager } from "../src/session-manager.js";
@@ -272,6 +272,7 @@ describe("session view model", () => {
     await waitFor(() => viewModel.getState().picker?.loading === false);
     const picker = viewModel.getState().picker!;
     expect(picker.summaries.map(({ preview }) => preview)).toContain("first topic");
+    expect(picker.summaries[0]?.preview).toBe("second topic");
     const firstIndex = picker.summaries.findIndex(({ id }) => id === firstSummary!.id);
     viewModel.moveTranscriptSelection(firstIndex);
     expect(viewModel.resumeTranscript()).toBe(true);
@@ -329,6 +330,97 @@ describe("session view model", () => {
     expect(viewModel.getState().picker).toBeUndefined();
     expect(viewModel.getState().notice).toBe("Transcript persistence is not configured.");
     await viewModel.dispose();
+  });
+
+  test("surfaces Transcript list failures and clears the picker", async () => {
+    const unused = () => Effect.die("not used");
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: {
+        list: () => Effect.fail(new StoreError({ message: "list failed" })),
+        load: unused,
+        save: unused,
+        appendEvent: unused,
+      },
+      open: unused,
+    });
+
+    expect(viewModel.openTranscriptPicker()).toBe(true);
+    await waitFor(() => viewModel.getState().notice !== undefined);
+    expect(viewModel.getState().picker).toBeUndefined();
+    expect(viewModel.getState().notice).toContain("Could not list Transcripts");
+    await viewModel.dispose();
+  });
+
+  test("surfaces Session open failures and returns to idle", async () => {
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: undefined,
+      open: () => Effect.fail(new StoreError({ message: "open failed" })),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(viewModel.getState().notice).toContain("Could not start Session");
+    await viewModel.dispose();
+  });
+
+  test("drops a stale Transcript list response after the picker closes", async () => {
+    let resolveList!: (summaries: ReadonlyArray<TranscriptSummary>) => void;
+    const pending = new Promise<ReadonlyArray<TranscriptSummary>>((resolve) => {
+      resolveList = resolve;
+    });
+    const unused = () => Effect.die("not used");
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: {
+        list: () => Effect.promise(() => pending),
+        load: unused,
+        save: unused,
+        appendEvent: unused,
+      },
+      open: unused,
+    });
+
+    expect(viewModel.openTranscriptPicker()).toBe(true);
+    expect(viewModel.closeTranscriptPicker()).toBe(true);
+    resolveList([
+      {
+        id: "late",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        messageCount: 1,
+        preview: "late",
+      },
+    ]);
+    await Bun.sleep(10);
+    expect(viewModel.getState().picker).toBeUndefined();
+    await viewModel.dispose();
+  });
+
+  test("closes a Session opened mid-switch when disposed first", async () => {
+    let releaseOpen!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    let nextCloses = 0;
+    const next: SessionResource = {
+      ...scriptedSession([]),
+      close: Effect.sync(() => {
+        nextCloses += 1;
+      }),
+    };
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: undefined,
+      open: () =>
+        Effect.promise(async () => {
+          await gate;
+          return next;
+        }),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    const disposing = viewModel.dispose();
+    releaseOpen();
+    await disposing;
+    expect(nextCloses).toBe(1);
   });
 
   test("bounds disposal of an uninterruptible Turn", async () => {
