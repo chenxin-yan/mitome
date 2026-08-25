@@ -11,10 +11,10 @@ export const tui = (): Host => ({
   run: async ({ agent, prompt }) => {
     await import("@opentui/solid/preload");
     const [
-      { configDirectory, configDirectoryMessage, createSession, makeFileTranscriptStore },
+      { configDirectory, createSession, makeFileTranscriptStore },
       { Effect },
       { runShell },
-      { makeConversationViewModel },
+      { makeSessionViewModel },
     ] = await Promise.all([
       import("@mitome/core"),
       import("effect"),
@@ -22,13 +22,13 @@ export const tui = (): Host => ({
       import("./view-model.js"),
     ]);
     const home = configDirectory();
-    if (home === undefined) throw new Error(configDirectoryMessage);
-    const store = makeFileTranscriptStore(join(home, "transcripts"));
+    const store =
+      home === undefined ? undefined : makeFileTranscriptStore(join(home, "transcripts"));
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(agent, { store });
-          const viewModel = makeConversationViewModel(session);
+          const viewModel = makeSessionViewModel(session);
           yield* Effect.promise(() => runShell(viewModel, prompt));
         }),
       ),

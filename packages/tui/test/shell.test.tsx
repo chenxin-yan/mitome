@@ -3,11 +3,11 @@ import type { TurnEvent } from "@mitome/core";
 import { testRender } from "@opentui/solid";
 import { Stream } from "effect";
 import { Shell } from "../src/shell.js";
-import { makeConversationViewModel } from "../src/view-model.js";
-import type { ConversationViewModel } from "../src/view-model.js";
+import { makeSessionViewModel } from "../src/view-model.js";
+import type { SessionViewModel } from "../src/view-model.js";
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined;
-let viewModel: ConversationViewModel | undefined;
+let viewModel: SessionViewModel | undefined;
 
 afterEach(async () => {
   setup?.renderer.destroy();
@@ -19,7 +19,7 @@ const renderShell = async (
   streams: ReadonlyArray<Stream.Stream<TurnEvent, never>> = [],
 ) => {
   let next = 0;
-  viewModel = makeConversationViewModel({
+  viewModel = makeSessionViewModel({
     prompt: () => streams[next++] ?? Stream.empty,
     history: () => [],
   });

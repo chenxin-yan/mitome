@@ -1,9 +1,9 @@
 import { render, useKeyboard } from "@opentui/solid";
 import type { TextareaRenderable } from "@opentui/core";
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
-import type { ConversationTurn, ConversationViewModel } from "./view-model.js";
+import type { SessionTurn, SessionViewModel } from "./view-model.js";
 
-const Turn = (props: { readonly turn: ConversationTurn }) => (
+const Turn = (props: { readonly turn: SessionTurn }) => (
   <box flexDirection="column" gap={1}>
     <text>{`You\n${props.turn.prompt}`}</text>
     <For each={props.turn.activities}>{(item) => <text>{`• ${item}`}</text>}</For>
@@ -13,7 +13,7 @@ const Turn = (props: { readonly turn: ConversationTurn }) => (
 
 export const Shell = (props: {
   readonly prompt: string;
-  readonly viewModel: ConversationViewModel;
+  readonly viewModel: SessionViewModel;
 }) => {
   const [state, setState] = createSignal(props.viewModel.getState());
   const [initialPrompt, setInitialPrompt] = createSignal(props.prompt);
@@ -44,7 +44,7 @@ export const Shell = (props: {
         <box flexDirection="column" gap={1}>
           <For each={state().turns}>{(turn) => <Turn turn={turn} />}</For>
           <Show when={state().activeTurn}>
-            {(turn: () => ConversationTurn) => <Turn turn={turn()} />}
+            {(turn: () => SessionTurn) => <Turn turn={turn()} />}
           </Show>
           <Show when={state().notice}>{(notice: () => string) => <text>{notice()}</text>}</Show>
         </box>
@@ -71,7 +71,7 @@ export const Shell = (props: {
   );
 };
 
-export const runShell = async (viewModel: ConversationViewModel, prompt: string): Promise<void> => {
+export const runShell = async (viewModel: SessionViewModel, prompt: string): Promise<void> => {
   try {
     await new Promise<void>((resolve, reject) => {
       render(() => <Shell prompt={prompt} viewModel={viewModel} />, {

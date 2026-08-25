@@ -1,27 +1,27 @@
 import type { TurnEvent } from "@mitome/core";
 import { Cause, Effect, Exit, Fiber, Stream } from "effect";
 
-export interface ConversationTurn {
+export interface SessionTurn {
   readonly prompt: string;
   readonly response: string;
   readonly activities: ReadonlyArray<string>;
 }
 
-export interface ConversationState {
+export interface SessionState {
   readonly phase: "idle" | "running" | "interrupting";
-  readonly turns: ReadonlyArray<ConversationTurn>;
-  readonly activeTurn?: ConversationTurn | undefined;
+  readonly turns: ReadonlyArray<SessionTurn>;
+  readonly activeTurn?: SessionTurn | undefined;
   readonly notice?: string | undefined;
 }
 
-export interface ConversationSession {
+export interface SessionHandle {
   readonly prompt: (text: string) => Stream.Stream<TurnEvent, unknown>;
   readonly history: () => ReadonlyArray<unknown>;
 }
 
-export interface ConversationViewModel {
-  readonly getState: () => ConversationState;
-  readonly subscribe: (listener: (state: ConversationState) => void) => () => void;
+export interface SessionViewModel {
+  readonly getState: () => SessionState;
+  readonly subscribe: (listener: (state: SessionState) => void) => () => void;
   readonly submit: (text: string) => boolean;
   readonly interrupt: () => boolean;
   readonly dispose: () => Promise<void>;
@@ -52,13 +52,13 @@ const activity = (event: TurnEvent): string | undefined => {
   }
 };
 
-export const makeConversationViewModel = (session: ConversationSession): ConversationViewModel => {
-  let state: ConversationState = { phase: "idle", turns: [] };
+export const makeSessionViewModel = (session: SessionHandle): SessionViewModel => {
+  let state: SessionState = { phase: "idle", turns: [] };
   let active: ActiveRun | undefined;
   let disposed = false;
-  const listeners = new Set<(state: ConversationState) => void>();
+  const listeners = new Set<(state: SessionState) => void>();
 
-  const publish = (next: ConversationState): void => {
+  const publish = (next: SessionState): void => {
     state = next;
     for (const listener of listeners) listener(state);
   };

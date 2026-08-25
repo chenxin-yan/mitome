@@ -3,20 +3,20 @@ import { createSession, makeProvider, StoreError } from "@mitome/core";
 import type { TranscriptStore, TurnEvent } from "@mitome/core";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { makeConversationViewModel } from "../src/view-model.js";
-import type { ConversationSession, ConversationState } from "../src/view-model.js";
+import { makeSessionViewModel } from "../src/view-model.js";
+import type { SessionHandle, SessionState } from "../src/view-model.js";
 
 const waitFor = async (predicate: () => boolean): Promise<void> => {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (predicate()) return;
     await Bun.sleep(1);
   }
-  throw new Error("Timed out waiting for conversation state");
+  throw new Error("Timed out waiting for session state");
 };
 
 const scriptedSession = (
   scripts: ReadonlyArray<Stream.Stream<TurnEvent, never>>,
-): ConversationSession => {
+): SessionHandle => {
   let next = 0;
   return {
     prompt: () => scripts[next++] ?? Stream.empty,
@@ -24,7 +24,7 @@ const scriptedSession = (
   };
 };
 
-describe("conversation view model", () => {
+describe("session view model", () => {
   test("streams output, shows tool activity, auto-approves, and supports multiple Turns", async () => {
     let approvals = 0;
     const approval: TurnEvent = {
@@ -53,8 +53,8 @@ describe("conversation view model", () => {
       ),
       Stream.make({ type: "model-output", text: "again" }, { type: "response-complete" }),
     ]);
-    const viewModel = makeConversationViewModel(session);
-    const observed: Array<ConversationState> = [];
+    const viewModel = makeSessionViewModel(session);
+    const observed: Array<SessionState> = [];
     viewModel.subscribe((state) => observed.push(state));
 
     expect(viewModel.submit("first\nline")).toBe(true);
@@ -89,7 +89,7 @@ describe("conversation view model", () => {
         Stream.fromEffectDrain(Effect.promise(() => finished)),
       ),
     ]);
-    const viewModel = makeConversationViewModel(session);
+    const viewModel = makeSessionViewModel(session);
 
     expect(viewModel.submit("cancel me")).toBe(true);
     await waitFor(() => viewModel.getState().activeTurn?.response === "done");
@@ -111,7 +111,7 @@ describe("conversation view model", () => {
       ),
       Stream.make({ type: "model-output", text: "recovered" }, { type: "response-complete" }),
     ]);
-    const viewModel = makeConversationViewModel(session);
+    const viewModel = makeSessionViewModel(session);
 
     expect(viewModel.submit("cancel me")).toBe(true);
     await waitFor(() => viewModel.getState().activeTurn?.response === "partial");
@@ -155,7 +155,7 @@ describe("conversation view model", () => {
             { providers: [provider], model: "test/default", extensions: [] },
             { store },
           );
-          const viewModel = makeConversationViewModel(session);
+          const viewModel = makeSessionViewModel(session);
           yield* Effect.promise(async () => {
             viewModel.submit("persist me");
             await waitFor(() => viewModel.getState().phase === "idle");
@@ -198,7 +198,7 @@ describe("conversation view model", () => {
             model: "test/default",
             extensions: [],
           });
-          const viewModel = makeConversationViewModel(session);
+          const viewModel = makeSessionViewModel(session);
           yield* Effect.promise(async () => {
             viewModel.submit("discarded");
             await waitFor(() => viewModel.getState().activeTurn?.response === "partial");
@@ -224,7 +224,7 @@ describe("conversation view model", () => {
 
   test("bounds disposal of an uninterruptible Turn", async () => {
     const session = scriptedSession([Stream.fromEffect(Effect.uninterruptible(Effect.never))]);
-    const viewModel = makeConversationViewModel(session);
+    const viewModel = makeSessionViewModel(session);
 
     viewModel.submit("stuck");
     const started = performance.now();
