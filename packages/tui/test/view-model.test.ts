@@ -422,6 +422,19 @@ describe("session view model", () => {
     await viewModel.dispose();
   });
 
+  test("abandons an uninterruptible Session open after interrupt", async () => {
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: undefined,
+      open: () => Effect.uninterruptible(Effect.never),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    expect(viewModel.interrupt()).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle", 2_000);
+    expect(viewModel.getState().notice).toBe("Session start did not cancel in time.");
+    await viewModel.dispose();
+  }, 5_000);
+
   test("bounds disposal while a Session switch is stuck", async () => {
     const viewModel = makeSessionViewModel(scriptedSession([]), {
       transcripts: undefined,

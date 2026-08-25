@@ -86,6 +86,7 @@ export const makeSessionViewModel = (
   let active: ActiveRun | undefined;
   let switching: Promise<void> | undefined;
   let switchFiber: Fiber.Fiber<SessionResource, unknown> | undefined;
+  let abandonSwitch: (() => void) | undefined;
   let pickerRequest = 0;
   let disposed = false;
   // Reads `disposed` after an await; the wrapper stops TS/oxlint from stale
@@ -193,6 +194,10 @@ export const makeSessionViewModel = (
     // interrupts the open Fiber instead of leaving the TUI wedged.
     if (state.phase === "switching" && switchFiber !== undefined) {
       Effect.runFork(Fiber.interrupt(switchFiber));
+      // An uninterruptible open ignores the interrupt; give it the same 1s
+      // bound as other cleanup, then abandon the switch so idle is reachable.
+      const abandon = abandonSwitch;
+      setTimeout(() => abandon?.(), 1_000);
       return true;
     }
     if (active === undefined || state.phase !== "running" || active.completed()) return false;
@@ -260,9 +265,23 @@ export const makeSessionViewModel = (
     const previous = session;
     const fiber = Effect.runFork(manager.open(transcriptId));
     switchFiber = fiber;
+    const settled = Effect.runPromise(Fiber.await(fiber));
     const operation = (async () => {
-      const opened = await Effect.runPromise(Fiber.await(fiber));
+      const opened = await Promise.race([
+        settled,
+        new Promise<undefined>((resolve) => {
+          abandonSwitch = () => resolve(undefined);
+        }),
+      ]);
       switchFiber = undefined;
+      abandonSwitch = undefined;
+      if (opened === undefined) {
+        // Abandoned uninterruptible open. No Session can leak: once interrupt
+        // was requested the Fiber's exit is Interrupted, and manager.open
+        // releases anything it acquired via its own onError scope close.
+        publish({ ...state, phase: "idle", notice: "Session start did not cancel in time." });
+        return;
+      }
       if (Exit.isFailure(opened)) {
         publish({
           ...state,
