@@ -10,11 +10,7 @@ import {
   TranscriptEventRecordSchema,
   TranscriptNotFound,
 } from "./transcript-store.js";
-import type {
-  TranscriptEventRecord,
-  TranscriptStore,
-  TranscriptSummary,
-} from "./transcript-store.js";
+import type { TranscriptStore, TranscriptSummary } from "./transcript-store.js";
 
 const StoredTranscriptFileVersion = 1 as const;
 const StoredTranscriptFileSchema = Schema.Struct({
@@ -59,23 +55,6 @@ const decodeStoredTranscript = (
         JSON.parse(contents),
       ),
     catch: (cause) => storeError(`Invalid Transcript store file: ${path}.`, cause),
-  });
-
-const decodeEventLog = (
-  path: string,
-  contents: string,
-): Effect.Effect<ReadonlyArray<TranscriptEventRecord>, StoreError> =>
-  Effect.try({
-    try: () => {
-      const lines = contents.split("\n").slice(0, -1);
-      return lines.map((line) => {
-        if (line === "") throw new Error("Empty event record");
-        return Schema.decodeUnknownSync(TranscriptEventRecordSchema, {
-          onExcessProperty: "error",
-        })(JSON.parse(line));
-      });
-    },
-    catch: (cause) => storeError(`Invalid Transcript event log: ${path}.`, cause),
   });
 
 const idFromFileName = (
@@ -182,10 +161,7 @@ export const fileTranscripts = (
       const summaries: Array<TranscriptSummary> = [];
       for (const entry of entries) {
         const path = join(directory, entry.name);
-        if (!entry.isFile()) {
-          return yield* storeError(`Foreign entry in Transcript store: ${path}.`);
-        }
-        if (entry.name.startsWith(temporaryPrefix)) continue;
+        if (!entry.isFile() || entry.name.startsWith(temporaryPrefix)) continue;
         if (entry.name.endsWith(transcriptSuffix)) {
           const id = yield* idFromFileName(entry.name, transcriptSuffix, path);
           const stored = yield* decodeStoredTranscript(
@@ -202,18 +178,7 @@ export const fileTranscripts = (
           });
           continue;
         }
-        if (entry.name.endsWith(eventsSuffix)) {
-          const id = yield* idFromFileName(entry.name, eventsSuffix, path);
-          const records = yield* decodeEventLog(
-            path,
-            yield* attempt("read", path, () => readFile(path, "utf8")),
-          );
-          for (const record of records) {
-            yield* validateTranscriptId(path, id, record.transcriptId);
-          }
-          continue;
-        }
-        return yield* storeError(`Foreign file in Transcript store: ${path}.`);
+        if (entry.name.endsWith(eventsSuffix)) continue;
       }
       return summaries.sort((left, right) => left.id.localeCompare(right.id));
     }),

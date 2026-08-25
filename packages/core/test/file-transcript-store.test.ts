@@ -181,7 +181,7 @@ describe("fileTranscripts", () => {
     ),
   );
 
-  it.effect("reports corrupt and foreign files as tagged StoreErrors", () =>
+  it.effect("reports corrupt Transcript files and ignores foreign entries", () =>
     withDirectory((directory) =>
       Effect.gen(function* () {
         yield* Effect.promise(() => writeFile(join(directory, "broken.transcript.json"), "{"));
@@ -191,23 +191,19 @@ describe("fileTranscripts", () => {
 
         yield* Effect.promise(() => rm(join(directory, "broken.transcript.json")));
         yield* Effect.promise(() => writeFile(join(directory, "foreign.txt"), "not mitome"));
-        const foreign = yield* Effect.flip(fileTranscripts(directory).list());
-        expect(foreign).toBeInstanceOf(StoreError);
-        expect(foreign.message).toContain("foreign.txt");
+        expect(yield* fileTranscripts(directory).list()).toEqual([]);
       }),
     ),
   );
 
-  it.effect("reports corrupt event records as tagged StoreErrors", () =>
+  it.effect("does not read write-only event logs when listing Transcripts", () =>
     withDirectory((directory) =>
       Effect.gen(function* () {
         yield* Effect.promise(() =>
           writeFile(join(directory, "transcript-1.events.jsonl"), "{}\n"),
         );
-        const error = yield* Effect.flip(fileTranscripts(directory).list());
 
-        expect(error).toBeInstanceOf(StoreError);
-        expect(error.message).toContain("transcript-1.events.jsonl");
+        expect(yield* fileTranscripts(directory).list()).toEqual([]);
       }),
     ),
   );
