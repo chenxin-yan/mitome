@@ -17,7 +17,7 @@ Options let you change the environment variable, API URL, or Responses transport
 ```ts
 const provider = openai({
   apiKeyEnv: "MY_OPENAI_KEY",
-  transport: "websocket", // default: "http"
+  transport: "websocket", // default: WebSocket on Bun/Node, HTTP elsewhere
 });
 ```
 
