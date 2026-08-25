@@ -1,5 +1,6 @@
-import type { TurnEvent } from "@mitome/core";
+import type { TranscriptSummary, TurnEvent } from "@mitome/core";
 import { Cause, Effect, Exit, Fiber, Stream } from "effect";
+import type { SessionManager, SessionResource } from "./session-manager.js";
 
 export interface SessionTurn {
   readonly prompt: string;
@@ -7,10 +8,17 @@ export interface SessionTurn {
   readonly activities: ReadonlyArray<string>;
 }
 
+export interface TranscriptPickerState {
+  readonly loading: boolean;
+  readonly summaries: ReadonlyArray<TranscriptSummary>;
+  readonly selected: number;
+}
+
 export interface SessionState {
-  readonly phase: "idle" | "running" | "interrupting";
+  readonly phase: "idle" | "running" | "interrupting" | "switching";
   readonly turns: ReadonlyArray<SessionTurn>;
   readonly activeTurn?: SessionTurn | undefined;
+  readonly picker?: TranscriptPickerState | undefined;
   readonly notice?: string | undefined;
 }
 
@@ -24,6 +32,11 @@ export interface SessionViewModel {
   readonly subscribe: (listener: (state: SessionState) => void) => () => void;
   readonly submit: (text: string) => boolean;
   readonly interrupt: () => boolean;
+  readonly openTranscriptPicker: () => boolean;
+  readonly closeTranscriptPicker: () => boolean;
+  readonly moveTranscriptSelection: (offset: number) => boolean;
+  readonly resumeTranscript: () => boolean;
+  readonly newSession: () => boolean;
   readonly dispose: () => Promise<void>;
 }
 
@@ -52,10 +65,23 @@ const activity = (event: TurnEvent): string | undefined => {
   }
 };
 
-export const makeSessionViewModel = (session: SessionHandle): SessionViewModel => {
+const unmanaged = (session: SessionHandle): SessionResource => ({
+  ...session,
+  close: Effect.void,
+});
+
+export const makeSessionViewModel = (
+  initialSession: SessionHandle | SessionResource,
+  manager?: SessionManager,
+): SessionViewModel => {
+  let session: SessionResource =
+    "close" in initialSession ? initialSession : unmanaged(initialSession);
   let state: SessionState = { phase: "idle", turns: [] };
   let active: ActiveRun | undefined;
+  let switching: Promise<void> | undefined;
+  let pickerRequest = 0;
   let disposed = false;
+  const isDisposed = (): boolean => disposed;
   const listeners = new Set<(state: SessionState) => void>();
 
   const publish = (next: SessionState): void => {
@@ -88,7 +114,9 @@ export const makeSessionViewModel = (session: SessionHandle): SessionViewModel =
   };
 
   const submit = (text: string): boolean => {
-    if (disposed || state.phase !== "idle" || text.trim() === "") return false;
+    if (disposed || state.phase !== "idle" || state.picker !== undefined || text.trim() === "") {
+      return false;
+    }
     publish({
       ...state,
       phase: "running",
@@ -150,6 +178,96 @@ export const makeSessionViewModel = (session: SessionHandle): SessionViewModel =
     return true;
   };
 
+  const openTranscriptPicker = (): boolean => {
+    if (disposed || state.phase !== "idle" || state.picker !== undefined) return false;
+    if (manager?.transcripts === undefined) {
+      publish({ ...state, notice: "Transcript persistence is not configured." });
+      return true;
+    }
+    const request = ++pickerRequest;
+    publish({
+      ...state,
+      picker: { loading: true, summaries: [], selected: 0 },
+      notice: undefined,
+    });
+    void Effect.runPromiseExit(manager.transcripts.list()).then((exit) => {
+      if (disposed || request !== pickerRequest || state.picker === undefined) return;
+      if (Exit.isFailure(exit)) {
+        publish({
+          ...state,
+          picker: undefined,
+          notice: `Could not list Transcripts: ${Cause.pretty(exit.cause)}`,
+        });
+        return;
+      }
+      publish({
+        ...state,
+        picker: {
+          loading: false,
+          summaries: [...exit.value].sort((left, right) =>
+            right.updatedAt.localeCompare(left.updatedAt),
+          ),
+          selected: 0,
+        },
+      });
+    });
+    return true;
+  };
+
+  const closeTranscriptPicker = (): boolean => {
+    if (state.picker === undefined || state.phase !== "idle") return false;
+    pickerRequest += 1;
+    publish({ ...state, picker: undefined });
+    return true;
+  };
+
+  const moveTranscriptSelection = (offset: number): boolean => {
+    const picker = state.picker;
+    if (picker === undefined || picker.loading || picker.summaries.length === 0) return false;
+    const selected = Math.max(0, Math.min(picker.summaries.length - 1, picker.selected + offset));
+    publish({ ...state, picker: { ...picker, selected } });
+    return true;
+  };
+
+  const replaceSession = (transcriptId: string | undefined, notice: string): boolean => {
+    if (disposed || manager === undefined || state.phase !== "idle") return false;
+    publish({ ...state, phase: "switching" });
+    const previous = session;
+    const operation = (async () => {
+      const opened = await Effect.runPromiseExit(manager.open(transcriptId));
+      if (Exit.isFailure(opened)) {
+        if (!isDisposed()) {
+          publish({
+            ...state,
+            phase: "idle",
+            notice: `Could not start Session: ${Cause.pretty(opened.cause)}`,
+          });
+        }
+        return;
+      }
+      const next = opened.value;
+      if (isDisposed()) {
+        await Effect.runPromise(next.close);
+        return;
+      }
+      session = next;
+      await Effect.runPromise(previous.close);
+      publish({ phase: "idle", turns: [], notice });
+    })();
+    const tracked = operation.finally(() => {
+      if (switching === tracked) switching = undefined;
+    });
+    switching = tracked;
+    return true;
+  };
+
+  const resumeTranscript = (): boolean => {
+    const picker = state.picker;
+    const summary = picker?.summaries[picker.selected];
+    if (picker === undefined || picker.loading || summary === undefined) return false;
+    return replaceSession(summary.id, "Transcript resumed in a new Session.");
+  };
+
   return {
     getState: () => state,
     subscribe: (listener) => {
@@ -159,6 +277,11 @@ export const makeSessionViewModel = (session: SessionHandle): SessionViewModel =
     },
     submit,
     interrupt,
+    openTranscriptPicker,
+    closeTranscriptPicker,
+    moveTranscriptSelection,
+    resumeTranscript,
+    newSession: () => replaceSession(undefined, "Started a new Session."),
     dispose: async () => {
       disposed = true;
       const running = active;
@@ -177,6 +300,8 @@ export const makeSessionViewModel = (session: SessionHandle): SessionViewModel =
           clearTimeout(timeout);
         }
       }
+      await switching;
+      await Effect.runPromise(session.close);
     },
   };
 };

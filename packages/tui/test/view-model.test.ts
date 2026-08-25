@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { createSession, makeProvider, StoreError } from "@mitome/core";
+import { createSession, makeProvider, memoryTranscripts, StoreError } from "@mitome/core";
 import type { TranscriptStore, TurnEvent } from "@mitome/core";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
+import { makeSessionManager } from "../src/session-manager.js";
 import { makeSessionViewModel } from "../src/view-model.js";
 import type { SessionHandle, SessionState } from "../src/view-model.js";
 
@@ -220,6 +221,89 @@ describe("session view model", () => {
         }),
       ),
     );
+  });
+
+  test("lists, resumes, and starts new Sessions without changing prior Transcripts", async () => {
+    const seenPrompts: Array<string> = [];
+    const unsupported = () => Effect.die("not used");
+    const provider = makeProvider("test", [] as const, undefined, () =>
+      Layer.succeed(LanguageModel.LanguageModel, {
+        generateText: unsupported,
+        generateObject: unsupported,
+        streamText: (options: { readonly prompt: unknown }) => {
+          seenPrompts.push(JSON.stringify(options.prompt));
+          return Stream.succeed(
+            Response.makePart("text-delta", {
+              id: String(seenPrompts.length),
+              delta: `answer ${seenPrompts.length}`,
+            }),
+          );
+        },
+      }),
+    );
+    const transcripts = memoryTranscripts();
+    const manager = makeSessionManager({
+      agent: { providers: [provider], model: "test/default", extensions: [] },
+      prompt: "",
+      transcripts,
+    });
+    const initial = await Effect.runPromise(manager.open());
+    const viewModel = makeSessionViewModel(initial, manager);
+
+    viewModel.submit("first topic");
+    await waitFor(() => viewModel.getState().phase === "idle");
+    const [firstSummary] = await Effect.runPromise(transcripts.list());
+    expect(firstSummary?.preview).toBe("first topic");
+
+    expect(viewModel.newSession()).toBe(true);
+    await waitFor(() => viewModel.getState().notice === "Started a new Session.");
+    expect(viewModel.getState().turns).toEqual([]);
+    expect((await Effect.runPromise(transcripts.list())).map(({ id }) => id)).toContain(
+      firstSummary!.id,
+    );
+
+    viewModel.submit("second topic");
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(await Effect.runPromise(transcripts.list())).toHaveLength(2);
+
+    expect(viewModel.openTranscriptPicker()).toBe(true);
+    await waitFor(() => viewModel.getState().picker?.loading === false);
+    const picker = viewModel.getState().picker!;
+    expect(picker.summaries.map(({ preview }) => preview)).toContain("first topic");
+    const firstIndex = picker.summaries.findIndex(({ id }) => id === firstSummary!.id);
+    viewModel.moveTranscriptSelection(firstIndex);
+    expect(viewModel.resumeTranscript()).toBe(true);
+    await waitFor(() => viewModel.getState().notice === "Transcript resumed in a new Session.");
+
+    viewModel.submit("continued topic");
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(seenPrompts[2]).toContain("first topic");
+    expect(seenPrompts[2]).not.toContain("second topic");
+    await viewModel.dispose();
+    const persisted = await Effect.runPromise(transcripts.list());
+    expect(
+      persisted.some(({ parentTranscriptId }) => parentTranscriptId === firstSummary!.id),
+    ).toBe(true);
+  });
+
+  test("does not touch Transcript storage when none is configured", async () => {
+    let opens = 0;
+    const session = scriptedSession([]);
+    const viewModel = makeSessionViewModel(session, {
+      transcripts: undefined,
+      open: () =>
+        Effect.sync(() => {
+          opens += 1;
+          return { ...session, close: Effect.void };
+        }),
+    });
+
+    expect(viewModel.openTranscriptPicker()).toBe(true);
+    await Bun.sleep(1);
+    expect(opens).toBe(0);
+    expect(viewModel.getState().picker).toBeUndefined();
+    expect(viewModel.getState().notice).toBe("Transcript persistence is not configured.");
+    await viewModel.dispose();
   });
 
   test("bounds disposal of an uninterruptible Turn", async () => {

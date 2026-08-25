@@ -9,21 +9,16 @@ export const tui = (): Host => ({
       : "@mitome/tui requires an interactive terminal",
   run: async (context) => {
     await import("@opentui/solid/preload");
-    const [{ createHostSession }, { Effect }, { runShell }, { makeSessionViewModel }] =
+    const [{ Effect }, { runShell }, { makeSessionManager }, { makeSessionViewModel }] =
       await Promise.all([
-        import("@mitome/core"),
         import("effect"),
         import("./shell.jsx"),
+        import("./session-manager.js"),
         import("./view-model.js"),
       ]);
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* createHostSession(context);
-          const viewModel = makeSessionViewModel(session);
-          yield* Effect.promise(() => runShell(viewModel, context.prompt));
-        }),
-      ),
-    );
+    const manager = makeSessionManager(context);
+    const session = await Effect.runPromise(manager.open());
+    const viewModel = makeSessionViewModel(session, manager);
+    await runShell(viewModel, context.prompt);
   },
 });
