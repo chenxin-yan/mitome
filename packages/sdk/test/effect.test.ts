@@ -31,6 +31,7 @@ test("keeps the complete Effect facade export contract", async () => {
       "defineAgent",
       "defineExtension",
       "defineMitome",
+      "makeFileTranscriptStore",
       "makeMemoryTranscriptStore",
       "makeProvider",
       "makeTranscript",

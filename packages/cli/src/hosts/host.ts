@@ -1,7 +1,7 @@
 // Runs inside the embedded Bun runtime with the composition-root path as argv[1].
 // child-host.ts embeds this file as text and never bundles it: dependencies are
 // resolved beside the selected root so it shares the author's module instances.
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { MitomeDefinition, TurnEvent } from "@mitome/core";
 
@@ -121,7 +121,10 @@ const effect: typeof import("effect") = await import(pathToFileURL(effectPath).h
 const { Cause, Effect, Exit, Fiber, Stream } = effect;
 const program = Effect.scoped(
   Effect.gen(function* () {
-    const session = yield* core.createSession(loaded.agent);
+    const home = core.configDirectory();
+    const store =
+      home === undefined ? undefined : core.makeFileTranscriptStore(join(home, "transcripts"));
+    const session = yield* core.createSession(loaded.agent, { store });
     yield* Stream.runForEach(session.prompt(prompt), (event) =>
       Effect.gen(function* () {
         render(event);
