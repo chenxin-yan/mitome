@@ -1,0 +1,38 @@
+---
+title: Codex subscription
+description: Authenticate a ChatGPT subscription through the best-effort Codex Provider.
+icon: TriangleAlert
+---
+
+> **Warning:** `@mitome/providers/openai-codex` uses OpenAI's unofficial, undocumented `chatgpt.com/backend-api`. Compatibility is best effort; the backend can change without notice. This is not the official OpenAI API and carries a higher maintenance and breakage risk.
+
+Codex uses a ChatGPT subscription Credential and an SSE-only transport. It is not `openai()` with another base URL, and an OpenAI API key does not authenticate it.
+
+```ts
+import { defineAgent } from "@mitome/sdk";
+import { codex } from "@mitome/providers/openai-codex";
+
+const agent = defineAgent({
+  providers: [codex()],
+  model: "openai-codex/gpt-5.4-mini",
+  extensions: [],
+});
+```
+
+## Authenticate
+
+Select Codex during `mitome init`, or authenticate an existing selected Definition:
+
+```sh
+mitome auth login
+```
+
+The Auth capability opens a browser PKCE flow. If browser return cannot complete automatically, paste the redirect URL when prompted. The resulting OAuth Credential is stored under the Codex Provider entry in `<config-dir>/auth.json`; the file is written atomically with mode `0600`. `mitome auth logout` removes only that entry.
+
+Treat `auth.json` as a secret: never commit, copy into Instructions, log, or share it. Access and refresh credentials are not configured through `OPENAI_API_KEY`, so CLI `.env` precedence does not apply to Codex. The config directory must resolve so the Provider can locate its Credential.
+
+## Model-hint maintenance
+
+Codex Model hints are hand-maintained from OpenAI's Codex documentation because models.dev has no ChatGPT-backend Provider record. Maintainers must review and update `packages/providers/src/openai-codex/models.ts` when Codex releases change. A stale list may reduce completion and initialization suggestions but remains a hint rather than a capability or entitlement registry; custom ids are accepted.
+
+This explicit maintenance budget and the transport risk are part of the supported contract, not hidden implementation details. See [ADR-0011](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0011-codex-transport-and-auth-design.md) and [ADR-0028](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0028-generate-model-hints-from-models-dev.md) for rationale.

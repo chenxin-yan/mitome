@@ -1,0 +1,42 @@
+---
+title: OpenAI API key
+description: Configure the official OpenAI Provider and its Credential safely.
+icon: KeyRound
+---
+
+The official OpenAI Provider uses an API-key Credential. It is separate from the [Codex subscription Provider](/docs/providers/codex).
+
+```ts
+import { openai } from "@mitome/providers/openai";
+
+const provider = openai(); // reads OPENAI_API_KEY
+```
+
+Options let you change the environment variable, API URL, or Responses transport:
+
+```ts
+const provider = openai({
+  apiKeyEnv: "MY_OPENAI_KEY",
+  transport: "websocket", // default: "http"
+});
+```
+
+`baseUrl` defaults to `https://api.openai.com/v1`. Use `openaiCompatible()` rather than changing this option when the endpoint represents a distinct Provider identity.
+
+## Authenticate the CLI
+
+```sh
+mitome auth login
+```
+
+The CLI asks for the environment variable named by `apiKeyEnv` using a masked prompt. It writes the plaintext value to `<config-dir>/.env` with mode `0600`; the directory is mode `0700`. `mitome auth logout` removes that variable's entry.
+
+When the CLI starts a Child Host, a value already present in the launching process environment takes precedence over the config `.env`. Embedded SDK applications do not load this file—they read the application process environment directly.
+
+Prefer your deployment platform's secret manager for embedded or production use. Never put the key in `index.ts`, commit `.env`, include it in logs, or expose it to an Agent as Instructions or Tool output. Set unusual values containing `#`, `$`, quotes, edge whitespace, or newlines directly in the process environment because Bun's env-file parser cannot round-trip them safely.
+
+## Model hints
+
+The OpenAI Model catalog is generated from models.dev and cached for offline CLI initialization. It is a set of discovery and TypeScript hints, not an entitlement authority: it may lag a Provider release, include a Model unavailable to your account, or omit a valid endpoint-native id. Mitome still accepts custom Model ids. Repository maintainers refresh the generated fallback with `bun run hints:refresh` when updating releases.
+
+See [ADR-0028](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0028-generate-model-hints-from-models-dev.md) for the catalog policy.

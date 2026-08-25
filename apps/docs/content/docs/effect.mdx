@@ -1,0 +1,52 @@
+---
+title: Effect-native API
+description: Compose Sessions, Streams, Layers, and Extension Resources with Effect.
+icon: Workflow
+---
+
+Use `@mitome/sdk/effect` when your application already owns an Effect runtime or needs Layer-based Extension composition. It is the supported Effect-native facade over Mitome's Core runtime; do not import the runtime package directly.
+
+Install Effect beside the SDK and Providers:
+
+```sh
+npm install @mitome/sdk @mitome/providers effect
+```
+
+## Scoped Session
+
+```ts
+import { Effect, Stream } from "effect";
+import { createSession, defineAgent } from "@mitome/sdk/effect";
+import { openai } from "@mitome/providers/openai";
+
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+  extensions: [],
+});
+
+const program = Effect.scoped(
+  Effect.gen(function* () {
+    const session = yield* createSession(agent);
+    yield* Stream.runForEach(session.prompt("Write a haiku."), (event) =>
+      event.type === "model-output"
+        ? Effect.sync(() => process.stdout.write(event.text))
+        : Effect.void,
+    );
+  }),
+);
+
+await Effect.runPromise(program);
+```
+
+`createSession` requires a `Scope`; closing it runs Session-end Hooks and releases Extension Resources. `session.prompt()` is an Effect `Stream` whose typed failure channel includes busy/released Session errors, `StoreError`, and `TurnError`. Consume or interrupt that Stream exactly once per Turn.
+
+Pass `{ transcripts }` or `{ transcript }` to `createSession` using the same adapters and schemas documented under [Transcript persistence](/docs/persistence).
+
+## Effect-native Extensions
+
+The Effect facade exports `defineExtension` for definitions whose `resource` is a `Layer`, whose Hooks are Effects, and whose Tool handlers use Effect services. Dependency Resources are built dependency-first; only tags named by `provides` are visible to dependents. Use `Layer.scoped` or `Effect.acquireRelease` for external clients so cleanup follows the Session scope.
+
+Choose this surface for Effect-native service graphs, typed error channels, and Stream composition. Choose the [Promise-first SDK](/docs/sdk) for ordinary application code and Promise Tool handlers; both surfaces run the same Session behavior and may contribute Extensions to one Agent Definition.
+
+The package boundary rationale is recorded in [ADR-0022](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0022-publish-the-sdk-as-the-sole-documented-surface.md). Historical ADRs may use superseded Extension terminology; this documentation follows the current public API and glossary.

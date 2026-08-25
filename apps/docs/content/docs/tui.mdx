@@ -1,0 +1,52 @@
+---
+title: Terminal UI
+description: Compose the interactive Host, stream Turns, interrupt work, and resume Transcripts.
+icon: Monitor
+---
+
+`@mitome/tui` is an interactive Host built on OpenTUI and Solid. Activation is explicit: package presence alone does not select it.
+
+```sh
+mitome add @mitome/tui
+```
+
+```ts
+import { defineMitome, fileTranscripts } from "@mitome/sdk";
+import { tui } from "@mitome/tui";
+
+export default defineMitome({
+  agent,
+  hosts: [tui()],
+  transcripts: fileTranscripts(),
+});
+```
+
+Run `mitome` to open an empty Session, or `mitome "first prompt"` to open it with the first Turn pre-submitted.
+
+## Controls
+
+| Keys          | Action                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| `Alt-Enter`   | Submit the multiline prompt. Paste is supported.                                              |
+| `Escape`      | Interrupt the active Turn and keep the Session usable; close the Transcript picker when open. |
+| `Ctrl-O`      | List stored Transcripts with update time and first-user-message preview.                      |
+| `Up` / `Down` | Move through the Transcript picker.                                                           |
+| `Enter`       | Resume the selected Transcript into a new Session.                                            |
+| `Ctrl-N`      | Start a fresh Session without restarting the process.                                         |
+| `Ctrl-C`      | Exit and release the current Session.                                                         |
+
+Transcript list, resume, and new-Session commands are available while idle. Interrupt a running Turn first. Starting a new Session does not modify the prior Transcript. Resuming seeds a new Session with committed messages and records fork lineage after the next completed Turn.
+
+If the Mitome Definition omits `transcripts`, `Ctrl-O` reports that persistence is not configured and performs no store access. Add `transcripts: fileTranscripts()` to share history with one-shot runs.
+
+## Streaming and Tools
+
+Model text and Tool activity appear as the Turn runs. Escape interrupts stream consumption; partial output from that Turn is discarded from committed history and persistence. The current built-in TUI auto-approves Tool calls, matching one-shot CLI behavior. Extension `preTool` Hooks can still veto execution.
+
+## TTY fallback
+
+The TUI requires interactive stdin and stdout. `-p` always selects one-shot output, and non-TTY output falls back to one-shot so pipes and scripts never wait for input. When the declared Host's `unsupported()` check returns a reason, the CLI prints it and falls back; without a prompt, one-shot mode then reports the missing prompt rather than opening a renderer.
+
+Clean exit disposes the view model and closes the Session scope. Completed Turns are already persisted at their commit boundary; idle shutdown does not rewrite or corrupt a Transcript.
+
+Rendering is supported by automated headless view-model tests and focused OpenTUI tests. Maintainers should also run the [real-terminal smoke checklist](https://github.com/chenxin-yan/mitome/blob/main/packages/tui/README.md) before release.
