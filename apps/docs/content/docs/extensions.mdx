@@ -99,6 +99,6 @@ The compile-time coverage rule rejects Tool handlers or Hooks that ask for a ser
 
 ## Approvals and cancellation
 
-A Tool marked `needsApproval` pauses the Turn and emits `approval-required`. The Host must call `approve()` or `deny(reason?)`; pending Approvals are not carried into another process or resumed Session. Interrupting event iteration cancels the Turn and triggers the context `AbortSignal`, allowing Tools and Hooks to stop external work. Failed or interrupted Turns do not commit to the Transcript.
+A Tool marked `needsApproval` pauses the Turn and emits `approval-required`. The Host must call `approve()` or `deny(reason?)`. Interrupting event iteration cancels the Turn and triggers the context `AbortSignal`, allowing Tools and Hooks to stop external work.
 
-See [the SDK event loop](/docs/sdk) for Host-side handling and [ADR-0035](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0035-declare-extension-dependencies-and-provided-services.md) for dependency rationale.
+See [the SDK event loop](/docs/sdk) for Host-side handling, [Transcript persistence](/docs/persistence#commit-boundary) for resume and commit semantics, and [ADR-0035](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0035-declare-extension-dependencies-and-provided-services.md) for dependency rationale.

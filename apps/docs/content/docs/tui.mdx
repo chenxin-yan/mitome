@@ -41,12 +41,10 @@ If the Mitome Definition omits `transcripts`, `Ctrl-O` reports that persistence 
 
 ## Streaming and Tools
 
-Model text and Tool activity appear as the Turn runs. Escape interrupts stream consumption; partial output from that Turn is discarded from committed history and persistence. The current built-in TUI auto-approves Tool calls, matching one-shot CLI behavior. Extension `preTool` Hooks can still veto execution.
+Model text and Tool activity appear as the Turn runs. Escape interrupts stream consumption; partial output from that Turn is discarded from committed history and persistence. See [CLI Host behavior](/docs/cli#trusted-in-process-execution) for Approval policy.
 
 ## TTY fallback
 
-The TUI requires interactive stdin and stdout. `-p` always selects one-shot output, and non-TTY output falls back to one-shot so pipes and scripts never wait for input. When the declared Host's `unsupported()` check returns a reason, the CLI prints it and falls back; without a prompt, one-shot mode then reports the missing prompt rather than opening a renderer.
+When the declared Host's `unsupported()` check returns a reason, the CLI prints it and falls back. See [CLI Host behavior](/docs/cli#trusted-in-process-execution) for one-shot and non-TTY fallback.
 
 Clean exit disposes the view model and closes the Session scope. Completed Turns are already persisted at their commit boundary; idle shutdown does not rewrite or corrupt a Transcript.
-
-Rendering is supported by automated headless view-model tests and focused OpenTUI tests. Maintainers should also run the [real-terminal smoke checklist](https://github.com/chenxin-yan/mitome/blob/main/packages/tui/README.md) before release.

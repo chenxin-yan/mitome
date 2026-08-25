@@ -20,7 +20,7 @@ export default defineMitome({
 
 Use `memoryTranscripts()` in tests or applications that need a shared store without disk writes. It survives across Sessions only while that store value remains alive.
 
-`mitome init` scaffolds `transcripts: fileTranscripts()` so the default is visible and removable. Built-in Hosts never discover or construct a store; the declared store is passed to every Host through `HostContext`, letting one-shot and TUI flows share the same resume source.
+Built-in Hosts never discover or construct a store; the declared store is passed to every Host through `HostContext`, letting one-shot and TUI flows share the same resume source.
 
 ## Embed and resume
 

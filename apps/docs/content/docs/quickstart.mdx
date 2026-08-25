@@ -77,4 +77,4 @@ Use `-p` for one-shot output. Continue with the [TUI controls](/docs/tui), or le
 
 ## API-key safety
 
-The CLI stores the OpenAI key as plaintext in `<config-dir>/.env` with file mode `0600`; the terminal prompt itself is masked. A value already present in the launching process environment wins over the config file. Never commit `.env`, paste a real Credential into the Definition, or log it. See [OpenAI authentication](/docs/providers/openai) for the complete precedence and storage contract.
+Never commit `.env`, paste a real Credential into the Definition, or log it. See [OpenAI authentication](/docs/providers/openai) for the complete precedence and storage contract.
