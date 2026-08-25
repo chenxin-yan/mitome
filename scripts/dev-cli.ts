@@ -21,7 +21,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const home = join(root, ".dev-home");
 const manifestPath = join(home, "package.json");
 
-if (existsSync(manifestPath)) {
+const repoint = async (): Promise<void> => {
   const manifest = Schema.decodeSync(ManifestFromJson, {
     onExcessProperty: "preserve",
   })(await readFile(manifestPath, "utf8"));
@@ -46,7 +46,13 @@ if (existsSync(manifestPath)) {
   if (patched.length > 0) {
     await writeFile(manifestPath, `${JSON.stringify({ ...manifest, dependencies }, null, 2)}\n`);
   }
-}
+  // A lockfile from `init` pins published versions; it can never match the
+  // workspace:* manifest, so reconcile would force a doomed `bun install`.
+  await rm(join(home, "bun.lock"), { force: true });
+};
+
+const hadManifest = existsSync(manifestPath);
+if (hadManifest) await repoint();
 
 // The definition side needs sdk/extensions dist too; `@mitome/cli^...` alone only
 // covers the CLI's own imports (core, providers).
@@ -72,14 +78,24 @@ if (build.exitCode !== 0) {
   process.exit(build.exitCode);
 }
 
-const child = Bun.spawn(
-  ["bun", join(root, "packages", "cli", "src", "index.ts"), ...process.argv.slice(2)],
-  {
+const run = (args: ReadonlyArray<string>) =>
+  Bun.spawn(["bun", join(root, "packages", "cli", "src", "index.ts"), ...args], {
     cwd: join(root, "packages", "cli"),
     env: { ...process.env, MITOME_HOME: home },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
-  },
-);
-process.exitCode = await child.exited;
+  });
+const args = process.argv.slice(2);
+process.exitCode = await run(args).exited;
+
+// A fresh `init` installs the published (stub) packages and then fails to
+// import the definition for auth. Repoint the new sandbox at the workspace
+// and retry the auth step it died on.
+if (args[0] === "init" && !hadManifest && existsSync(manifestPath)) {
+  await repoint();
+  if (process.exitCode !== 0) {
+    console.log("Repointed sandbox at workspace source; retrying auth login...");
+    process.exitCode = await run(["auth", "login"]).exited;
+  }
+}

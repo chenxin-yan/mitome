@@ -24,8 +24,24 @@ describe("TUI Host", () => {
   test("loads its Solid preload before rendering", async () => {
     const entry = new URL("../src/index.ts", import.meta.url).href;
     const source = `
-      const { tui } = await import(${JSON.stringify(entry)});
-      await tui().run({ agent: {}, prompt: "dynamic preload" });
+      const [{ tui }, { makeProvider }, { Effect, Layer, Stream }, { LanguageModel }] = await Promise.all([
+        import(${JSON.stringify(entry)}),
+        import("@mitome/core"),
+        import("effect"),
+        import("effect/unstable/ai"),
+      ]);
+      const unsupported = () => Effect.die("not used");
+      const provider = makeProvider("test", [], undefined, () =>
+        Layer.succeed(LanguageModel.LanguageModel, {
+          generateText: unsupported,
+          generateObject: unsupported,
+          streamText: () => Stream.empty,
+        }),
+      );
+      await tui().run({
+        agent: { providers: [provider], model: "test/default", extensions: [] },
+        prompt: "dynamic preload",
+      });
       console.log("DYNAMIC_PRELOAD_OK");
     `;
     const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", source], {

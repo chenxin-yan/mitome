@@ -29,7 +29,7 @@
     "check:types": "tsc",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "test": "bun test test/host.test.ts && bun test --preload @opentui/solid/preload test/shell.test.tsx"
+    "test": "bun test test/host.test.ts test/view-model.test.ts && bun test --preload @opentui/solid/preload test/shell.test.tsx"
   },
   "dependencies": {
     "@opentui/core": "0.5.3",
@@ -40,10 +40,12 @@
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
     "@types/bun": "catalog:",
+    "effect": "catalog:",
     "typescript": "catalog:"
   },
   "peerDependencies": {
-    "@mitome/core": "workspace:*"
+    "@mitome/core": "workspace:*",
+    "effect": "4.0.0-rc.108"
   },
   "engines": {
     "bun": ">=1.3.14"

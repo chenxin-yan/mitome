@@ -198,10 +198,12 @@
         "@mitome/config": "workspace:*",
         "@mitome/core": "workspace:*",
         "@types/bun": "catalog:",
+        "effect": "catalog:",
         "typescript": "catalog:",
       },
       "peerDependencies": {
         "@mitome/core": "workspace:*",
+        "effect": "4.0.0-rc.108",
       },
     },
   },
