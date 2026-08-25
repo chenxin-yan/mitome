@@ -42,6 +42,23 @@ interface ActiveRun {
   interrupted: boolean;
 }
 
+// Cleanup bound: a stuck Session close or open must not wedge the TUI in the
+// switching phase or keep the process from exiting. Resolves undefined on
+// timeout; the underlying work keeps running and its late rejection is marked
+// handled so it cannot surface as an unhandled rejection.
+// ponytail: fixed 1s bound, make it configurable if real cleanup needs longer.
+const bounded = <T>(work: Promise<T>): Promise<T | undefined> => {
+  let cancel!: () => void;
+  void work.catch(() => undefined);
+  return Promise.race([
+    work,
+    new Promise<undefined>((resolve) => {
+      const timer = setTimeout(resolve, 1_000);
+      cancel = () => clearTimeout(timer);
+    }),
+  ]).finally(() => cancel());
+};
+
 const activity = (event: TurnEvent): string | undefined => {
   switch (event.type) {
     case "tool-call":
@@ -144,9 +161,16 @@ export const makeSessionViewModel = (
         publish({
           phase: "idle",
           turns: [...state.turns, turn],
-          // A late interrupt can lose the race against a committed turn; don't
-          // surface the interrupt cause for a turn that actually succeeded.
-          notice: Exit.isFailure(exit) && !interrupted ? Cause.pretty(exit.cause) : undefined,
+          // The turn is committed to history before the Transcript save runs
+          // and response-complete is only emitted after the save succeeds. An
+          // interrupt before completion may therefore have cut the save short;
+          // only a late interrupt after completion is safe to silence.
+          notice:
+            !completed && interrupted
+              ? "Turn interrupted; the Transcript may not have saved."
+              : Exit.isFailure(exit) && !interrupted
+                ? Cause.pretty(exit.cause)
+                : undefined,
         });
         return;
       }
@@ -243,13 +267,16 @@ export const makeSessionViewModel = (
         return;
       }
       session = next;
-      const closed = await Effect.runPromiseExit(previous.close);
+      const closed = await bounded(Effect.runPromiseExit(previous.close));
       publish({
         phase: "idle",
         turns: [],
-        notice: Exit.isFailure(closed)
-          ? `Could not close previous Session: ${Cause.pretty(closed.cause)}`
-          : notice,
+        notice:
+          closed === undefined
+            ? "Previous Session did not close in time."
+            : Exit.isFailure(closed)
+              ? `Could not close previous Session: ${Cause.pretty(closed.cause)}`
+              : notice,
       });
     })();
     switching = operation;
@@ -283,20 +310,10 @@ export const makeSessionViewModel = (
       active = undefined;
       listeners.clear();
       if (running !== undefined) {
-        let timeout!: ReturnType<typeof setTimeout>;
-        try {
-          await Promise.race([
-            Effect.runPromise(Fiber.interrupt(running.fiber)),
-            new Promise<void>((resolve) => {
-              timeout = setTimeout(resolve, 1_000);
-            }),
-          ]);
-        } finally {
-          clearTimeout(timeout);
-        }
+        await bounded(Effect.runPromise(Fiber.interrupt(running.fiber)));
       }
-      await switching;
-      await Effect.runPromise(session.close);
+      if (switching !== undefined) await bounded(switching);
+      await bounded(Effect.runPromise(session.close));
     },
   };
 };

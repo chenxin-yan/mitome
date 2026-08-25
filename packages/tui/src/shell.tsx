@@ -1,4 +1,4 @@
-import type { TextareaRenderable } from "@opentui/core";
+import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { render, useKeyboard } from "@opentui/solid";
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import type { SessionTurn, SessionViewModel, TranscriptPickerState } from "./view-model.js";
@@ -11,20 +11,36 @@ const Turn = (props: { readonly turn: SessionTurn }) => (
   </box>
 );
 
-const TranscriptPicker = (props: { readonly picker: TranscriptPickerState }) => (
-  <box flexDirection="column" gap={1}>
-    <text>Transcripts</text>
-    <Show when={!props.picker.loading} fallback={<text>Loading…</text>}>
-      <Show when={props.picker.summaries.length > 0} fallback={<text>No Transcripts yet.</text>}>
-        <For each={props.picker.summaries}>
-          {(summary, index) => (
-            <text>{`${index() === props.picker.selected ? "›" : " "} ${new Date(summary.updatedAt).toLocaleString()}  ${summary.preview || "(no user message)"}`}</text>
-          )}
-        </For>
+const TranscriptPicker = (props: { readonly picker: TranscriptPickerState }) => {
+  let list: ScrollBoxRenderable | undefined;
+  createEffect(() => {
+    const selected = props.picker.selected;
+    if (!props.picker.loading) list?.scrollChildIntoView(`transcript-${selected}`);
+  });
+  return (
+    <box flexDirection="column" gap={1} flexGrow={1}>
+      <text>Transcripts</text>
+      <Show when={!props.picker.loading} fallback={<text>Loading…</text>}>
+        <Show when={props.picker.summaries.length > 0} fallback={<text>No Transcripts yet.</text>}>
+          <scrollbox
+            flexGrow={1}
+            ref={(element: ScrollBoxRenderable) => {
+              list = element;
+            }}
+          >
+            <For each={props.picker.summaries}>
+              {(summary, index) => (
+                <text
+                  id={`transcript-${index()}`}
+                >{`${index() === props.picker.selected ? "›" : " "} ${new Date(summary.updatedAt).toLocaleString()}  ${summary.preview || "(no user message)"}`}</text>
+              )}
+            </For>
+          </scrollbox>
+        </Show>
       </Show>
-    </Show>
-  </box>
-);
+    </box>
+  );
+};
 
 export const Shell = (props: { readonly prompt: string; readonly viewModel: SessionViewModel }) => {
   const [state, setState] = createSignal(props.viewModel.getState());
@@ -77,22 +93,22 @@ export const Shell = (props: { readonly prompt: string; readonly viewModel: Sess
   return (
     <box flexDirection="column" width="100%" height="100%" padding={1} gap={1}>
       <text>mitome</text>
-      <scrollbox flexGrow={1} stickyScroll stickyStart="bottom">
-        <Show
-          when={state().picker}
-          fallback={
+      <Show
+        when={state().picker}
+        fallback={
+          <scrollbox flexGrow={1} stickyScroll stickyStart="bottom">
             <box flexDirection="column" gap={1}>
               <For each={state().turns}>{(turn) => <Turn turn={turn} />}</For>
               <Show when={state().activeTurn}>
                 {(turn: () => SessionTurn) => <Turn turn={turn()} />}
               </Show>
             </box>
-          }
-        >
-          {(picker: () => TranscriptPickerState) => <TranscriptPicker picker={picker()} />}
-        </Show>
-        <Show when={state().notice}>{(notice: () => string) => <text>{notice()}</text>}</Show>
-      </scrollbox>
+            <Show when={state().notice}>{(notice: () => string) => <text>{notice()}</text>}</Show>
+          </scrollbox>
+        }
+      >
+        {(picker: () => TranscriptPickerState) => <TranscriptPicker picker={picker()} />}
+      </Show>
       <box border title="Prompt" height={5}>
         <textarea
           ref={(element: TextareaRenderable) => {

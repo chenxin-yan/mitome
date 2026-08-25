@@ -8,8 +8,8 @@ import type { SessionResource } from "../src/session-manager.js";
 import { makeSessionViewModel } from "../src/view-model.js";
 import type { SessionState } from "../src/view-model.js";
 
-const waitFor = async (predicate: () => boolean): Promise<void> => {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+const waitFor = async (predicate: () => boolean, attempts = 100): Promise<void> => {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (predicate()) return;
     await Bun.sleep(1);
   }
@@ -394,6 +394,31 @@ describe("session view model", () => {
     expect(viewModel.getState().picker).toBeUndefined();
     await viewModel.dispose();
   });
+
+  test("returns to idle when the previous Session close hangs", async () => {
+    const initial = { ...scriptedSession([]), close: Effect.never };
+    const viewModel = makeSessionViewModel(initial, {
+      transcripts: undefined,
+      open: () => Effect.succeed(scriptedSession([])),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle", 2_000);
+    expect(viewModel.getState().notice).toBe("Previous Session did not close in time.");
+    await viewModel.dispose();
+  }, 5_000);
+
+  test("bounds disposal while a Session switch is stuck", async () => {
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: undefined,
+      open: () => Effect.promise(() => new Promise<SessionResource>(() => {})),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    const started = performance.now();
+    await viewModel.dispose();
+    expect(performance.now() - started).toBeLessThan(2_500);
+  }, 5_000);
 
   test("closes a Session opened mid-switch when disposed first", async () => {
     let releaseOpen!: () => void;
