@@ -46,6 +46,9 @@ if (existsSync(manifestPath)) {
   if (patched.length > 0) {
     await writeFile(manifestPath, `${JSON.stringify({ ...manifest, dependencies }, null, 2)}\n`);
   }
+  // A lockfile from `init` pins published versions; it can never match the
+  // workspace:* manifest, so reconcile would force a doomed `bun install`.
+  await rm(join(home, "bun.lock"), { force: true });
 }
 
 // The definition side needs sdk/extensions dist too; `@mitome/cli^...` alone only
