@@ -1,7 +1,7 @@
 // Runs inside the embedded Bun runtime with the composition-root path as argv[1].
 // child-host.ts embeds this file as text and never bundles it: dependencies are
 // resolved beside the selected root so it shares the author's module instances.
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { MitomeDefinition, TurnEvent } from "@mitome/core";
 
@@ -15,10 +15,28 @@ const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
 
+interface TranscriptStoreCandidate {
+  readonly save?: unknown;
+  readonly load?: unknown;
+  readonly list?: unknown;
+  readonly appendEvent?: unknown;
+}
+
 interface DefinitionCandidate {
   readonly agent?: object;
   readonly hosts?: ReadonlyArray<object>;
+  readonly transcripts?: TranscriptStoreCandidate | undefined;
 }
+
+const isTranscriptStore = (value: TranscriptStoreCandidate): boolean =>
+  "save" in value &&
+  value.save instanceof Function &&
+  "load" in value &&
+  value.load instanceof Function &&
+  "list" in value &&
+  value.list instanceof Function &&
+  "appendEvent" in value &&
+  value.appendEvent instanceof Function;
 
 const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefinition =>
   "agent" in value &&
@@ -26,6 +44,9 @@ const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefiniti
   "hosts" in value &&
   Array.isArray(value.hosts) &&
   value.hosts.length <= 1 &&
+  (!("transcripts" in value) ||
+    value.transcripts === undefined ||
+    (value.transcripts instanceof Object && isTranscriptStore(value.transcripts))) &&
   value.hosts.every(
     (host) =>
       host instanceof Object &&
@@ -49,7 +70,11 @@ const interactiveHost = loaded.hosts[0];
 if (mode === "auto" && interactiveHost !== undefined) {
   const reason = interactiveHost.unsupported?.();
   if (reason === undefined) {
-    await interactiveHost.run({ agent: loaded.agent, prompt: prompt ?? "" });
+    await interactiveHost.run({
+      agent: loaded.agent,
+      prompt: prompt ?? "",
+      transcripts: loaded.transcripts,
+    });
     process.exit(0);
   }
   process.stderr.write(`${reason}; falling back to one-shot output.\n`);
@@ -121,10 +146,11 @@ const effect: typeof import("effect") = await import(pathToFileURL(effectPath).h
 const { Cause, Effect, Exit, Fiber, Stream } = effect;
 const program = Effect.scoped(
   Effect.gen(function* () {
-    const home = core.configDirectory();
-    const store =
-      home === undefined ? undefined : core.makeFileTranscriptStore(join(home, "transcripts"));
-    const session = yield* core.createSession(loaded.agent, { store });
+    const session = yield* core.createHostSession({
+      agent: loaded.agent,
+      prompt,
+      transcripts: loaded.transcripts,
+    });
     yield* Stream.runForEach(session.prompt(prompt), (event) =>
       Effect.gen(function* () {
         render(event);

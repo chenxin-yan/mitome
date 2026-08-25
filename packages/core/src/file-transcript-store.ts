@@ -1,9 +1,15 @@
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
+import { configDirectory, configDirectoryMessage } from "./config.js";
 import { TranscriptSchema } from "./transcript.js";
 import type { TranscriptId } from "./transcript.js";
-import { StoreError, TranscriptEventRecordSchema, TranscriptNotFound } from "./transcript-store.js";
+import {
+  StoreError,
+  summarizeTranscript,
+  TranscriptEventRecordSchema,
+  TranscriptNotFound,
+} from "./transcript-store.js";
 import type {
   TranscriptEventRecord,
   TranscriptStore,
@@ -120,8 +126,18 @@ const validateTranscriptId = (
     ? Effect.void
     : Effect.fail(storeError(`Transcript id in ${path} does not match its file name.`));
 
-/** Creates a disk-backed store rooted at `directory`. */
-export const makeFileTranscriptStore = (directory: string): TranscriptStore => ({
+const defaultTranscriptDirectory = (): string => {
+  const home = configDirectory();
+  if (home === undefined) {
+    throw new Error(`Cannot configure file Transcript persistence. ${configDirectoryMessage}`);
+  }
+  return join(home, "transcripts");
+};
+
+/** Creates a disk-backed store rooted at `directory` or the Mitome config directory. */
+export const fileTranscripts = (
+  directory: string = defaultTranscriptDirectory(),
+): TranscriptStore => ({
   save: (transcript) =>
     Effect.gen(function* () {
       yield* ensureDirectory(directory);
@@ -182,7 +198,7 @@ export const makeFileTranscriptStore = (directory: string): TranscriptStore => (
             parentTranscriptId: stored.transcript.parentTranscriptId,
             createdAt: stored.createdAt,
             updatedAt: stored.updatedAt,
-            messageCount: stored.transcript.messages.length,
+            ...summarizeTranscript(stored.transcript),
           });
           continue;
         }

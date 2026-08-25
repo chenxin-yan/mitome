@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { text } from "node:stream/consumers";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { makeFileTranscriptStore } from "@mitome/core";
+import { fileTranscripts } from "@mitome/core";
 import { Effect, type Schema } from "effect";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
@@ -30,6 +30,8 @@ const definitionSource = (
     readonly block?: boolean;
     readonly tui?: boolean;
     readonly customHost?: boolean;
+    readonly transcripts?: boolean;
+    readonly malformedTranscripts?: boolean;
     readonly signalProbe?: {
       readonly pid: string;
       readonly cleanupStarted: string;
@@ -40,7 +42,7 @@ const definitionSource = (
 import { writeFileSync } from "node:fs";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { defineMitome, makeProvider } from "@mitome/core";
+import { defineMitome, fileTranscripts, makeProvider } from "@mitome/core";
 ${options.tui ? 'import { tui } from "@mitome/tui";' : ""}
 
 ${options.signalProbe ? `writeFileSync(${JSON.stringify(options.signalProbe.pid)}, String(process.pid));` : ""}
@@ -60,7 +62,7 @@ const agent = { providers: [provider], model: "test/default", extensions: ${
     }) } }]`
     : "[]"
 } };
-export default defineMitome({ agent, hosts: ${options.tui ? "[tui()]" : options.customHost ? '[{ name: "custom", mode: "interactive", run: async ({ prompt }) => console.log(`CUSTOM_HOST ${prompt}`) }]' : "[]"} });
+export default defineMitome({ agent, hosts: ${options.tui ? "[tui()]" : options.customHost ? '[{ name: "custom", mode: "interactive", run: async ({ prompt, transcripts }) => console.log(`CUSTOM_HOST ${prompt} ${transcripts !== undefined}`) }]' : "[]"}${options.transcripts ? ", transcripts: fileTranscripts()" : options.malformedTranscripts ? ", transcripts: {}" : ""} });
 `;
 
 const envDefinitionSource = (): string => `
@@ -391,6 +393,14 @@ describe("compiled mitome", () => {
     expect(result.stderr).toContain("must default-export defineMitome({ agent, hosts })");
   });
 
+  test("rejects a malformed Transcript store", async () => {
+    const current = await fixture(definitionSource("first", { malformedTranscripts: true }));
+
+    const result = await output(spawn("", ["hello", "--use", current.definition], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("must default-export defineMitome({ agent, hosts })");
+  });
+
   test("opens a configured TUI in a supported terminal with optional prompt staging", async ({
     skip,
   }) => {
@@ -411,11 +421,13 @@ describe("compiled mitome", () => {
 
   test("runs a custom interactive Host outside the TUI terminal matrix", async ({ skip }) => {
     if (ptyUnavailable) skip();
-    const current = await fixture(definitionSource("first", { customHost: true }));
+    const current = await fixture(
+      definitionSource("first", { customHost: true, transcripts: true }),
+    );
 
     const result = await ptyOutput(["hello", "--use", current.definition], current, "xterm");
     expect(result).toMatchObject({ exitCode: 0 });
-    expect(result.stdout).toContain("CUSTOM_HOST hello");
+    expect(result.stdout).toContain("CUSTOM_HOST hello true");
     expect(result.stdout).not.toContain("falling back to one-shot output");
   });
 
@@ -839,8 +851,20 @@ describe("compiled mitome", () => {
     ).toEqual({ exitCode: 0, stdout: "first second\n", stderr: "" });
   });
 
-  test("persists one-shot Transcripts under MITOME_HOME by default", async () => {
+  test("does not persist one-shot Transcripts when the Definition omits a store", async () => {
     const current = await fixture();
+
+    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toEqual({
+      exitCode: 0,
+      stdout: "first second\n",
+      stderr: "",
+    });
+
+    expect(exists(join(current.env.XDG_CONFIG_HOME, "mitome", "transcripts"))).toBe(false);
+  });
+
+  test("persists one-shot Transcripts through the explicitly composed store", async () => {
+    const current = await fixture(definitionSource("first", { transcripts: true }));
     const mitomeHome = join(current.root, "override-home");
     const env = { ...current.env, MITOME_HOME: mitomeHome };
 
@@ -854,7 +878,7 @@ describe("compiled mitome", () => {
     const files = await readdir(storeDirectory);
     expect(files.filter((name) => name.endsWith(".transcript.json"))).toHaveLength(1);
     expect(files.filter((name) => name.endsWith(".events.jsonl"))).toHaveLength(1);
-    const store = makeFileTranscriptStore(storeDirectory);
+    const store = fileTranscripts(storeDirectory);
     const transcripts = await Effect.runPromise(store.list());
     expect(transcripts).toHaveLength(1);
     expect((await Effect.runPromise(store.load(transcripts[0]!.id))).messages).toEqual([

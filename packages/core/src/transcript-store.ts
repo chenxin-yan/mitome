@@ -8,6 +8,7 @@ export const TranscriptSummarySchema = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
   messageCount: Schema.Natural,
+  preview: Schema.String,
 });
 export type TranscriptSummary = typeof TranscriptSummarySchema.Type;
 
@@ -48,7 +49,22 @@ interface StoredTranscript {
   readonly updatedAt: string;
 }
 
-export const makeMemoryTranscriptStore = (): TranscriptStore => {
+export const summarizeTranscript = (
+  transcript: Transcript,
+): Pick<TranscriptSummary, "messageCount" | "preview"> => {
+  const firstUserMessage = transcript.messages.find((message) => message.role === "user");
+  const preview =
+    firstUserMessage?.content
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 100) ?? "";
+  return { messageCount: transcript.messages.length, preview };
+};
+
+export const memoryTranscripts = (): TranscriptStore => {
   const transcripts = new Map<TranscriptId, StoredTranscript>();
   const events: Array<TranscriptEventRecord> = [];
 
@@ -77,7 +93,7 @@ export const makeMemoryTranscriptStore = (): TranscriptStore => {
           parentTranscriptId: transcript.parentTranscriptId,
           createdAt,
           updatedAt,
-          messageCount: transcript.messages.length,
+          ...summarizeTranscript(transcript),
         })),
       ),
     appendEvent: (record) =>

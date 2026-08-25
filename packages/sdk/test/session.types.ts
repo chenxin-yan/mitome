@@ -24,9 +24,13 @@ void withSession(definition, async (session) => {
 
 declare const store: TranscriptStore;
 const transcript = { schemaVersion: 1 as const, id: "seed", messages: [] };
-void withSession(definition, async () => undefined, { store, resume: "seed" });
+void withSession(definition, async () => undefined, { transcripts: store, resume: "seed" });
 void withSession(definition, async () => undefined, { transcript });
 // @ts-expect-error resume needs a TranscriptStore from which to load the seed.
 void withSession(definition, async () => undefined, { resume: "seed" });
-// @ts-expect-error direct Transcript seeds and stored resume identities are mutually exclusive.
-void withSession(definition, async () => undefined, { store, resume: "seed", transcript });
+void withSession(definition, async () => undefined, {
+  transcripts: store,
+  resume: "seed",
+  // @ts-expect-error direct Transcript seeds and stored resume identities are mutually exclusive.
+  transcript,
+});

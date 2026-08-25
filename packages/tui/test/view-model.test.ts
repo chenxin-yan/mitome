@@ -153,7 +153,7 @@ describe("session view model", () => {
         Effect.gen(function* () {
           const session = yield* createSession(
             { providers: [provider], model: "test/default", extensions: [] },
-            { store },
+            { transcripts: store },
           );
           const viewModel = makeSessionViewModel(session);
           yield* Effect.promise(async () => {

@@ -3,7 +3,7 @@ import { Effect, Stream } from "effect";
 import { Response } from "effect/unstable/ai";
 import {
   defineAgent,
-  makeMemoryTranscriptStore,
+  memoryTranscripts,
   StoreError,
   TranscriptSchemaVersion,
   TurnError,
@@ -27,7 +27,7 @@ const definitionWith = (run: Parameters<typeof makeTestProvider>[0]) =>
   });
 
 test("snapshots and resumes prior context through the public SDK", async () => {
-  const store = makeMemoryTranscriptStore();
+  const store = memoryTranscripts();
   const prompts: Array<ReadonlyArray<string>> = [];
   const definition = definitionWith(({ prompt }) => {
     prompts.push(prompt.content.map((message) => message.role));
@@ -40,7 +40,7 @@ test("snapshots and resumes prior context through the public SDK", async () => {
       await Array.fromAsync(session.prompt("first"));
       return session.transcript().id;
     },
-    { store },
+    { transcripts: store },
   );
   const child = await withSession(
     definition,
@@ -48,7 +48,7 @@ test("snapshots and resumes prior context through the public SDK", async () => {
       await Array.fromAsync(session.prompt("second"));
       return session.transcript();
     },
-    { store, resume: parentId },
+    { transcripts: store, resume: parentId },
   );
 
   expect(prompts).toEqual([["user"], ["user", "assistant", "user"]]);
@@ -58,7 +58,7 @@ test("snapshots and resumes prior context through the public SDK", async () => {
 });
 
 test("two resumes create independent child Transcripts with parent provenance", async () => {
-  const store = makeMemoryTranscriptStore();
+  const store = memoryTranscripts();
   const definition = definitionWith(() => textResponse("done"));
   const parentId = await withSession(
     definition,
@@ -66,7 +66,7 @@ test("two resumes create independent child Transcripts with parent provenance", 
       await Array.fromAsync(session.prompt("parent"));
       return session.transcript().id;
     },
-    { store },
+    { transcripts: store },
   );
 
   const resume = (text: string) =>
@@ -76,7 +76,7 @@ test("two resumes create independent child Transcripts with parent provenance", 
         await Array.fromAsync(session.prompt(text));
         return session.transcript();
       },
-      { store, resume: parentId },
+      { transcripts: store, resume: parentId },
     );
   const [first, second] = await Promise.all([resume("first fork"), resume("second fork")]);
 
@@ -119,7 +119,7 @@ test("a hand-constructed Transcript seeds a Session", async () => {
 });
 
 test("a failed save surfaces StoreError but keeps the completed turn committed", async () => {
-  const store = makeMemoryTranscriptStore();
+  const store = memoryTranscripts();
   const failing = {
     ...store,
     save: () => Effect.fail(new StoreError({ message: "disk full" })),
@@ -140,14 +140,14 @@ test("a failed save surfaces StoreError but keeps the completed turn committed",
       ]);
       await expect(Array.fromAsync(session.prompt("second"))).rejects.toBeInstanceOf(StoreError);
     },
-    { store: failing },
+    { transcripts: failing },
   );
 
   expect(roles).toEqual([["user"], ["user", "assistant", "user"]]);
 });
 
 test("failed and interrupted Turns leave stored Transcripts unchanged", async () => {
-  const store = makeMemoryTranscriptStore();
+  const store = memoryTranscripts();
   let calls = 0;
   const definition = definitionWith(() => {
     calls += 1;
@@ -171,7 +171,7 @@ test("failed and interrupted Turns leave stored Transcripts unchanged", async ()
       expect(await Effect.runPromise(store.load(before.id))).toEqual(before);
       return before.id;
     },
-    { store },
+    { transcripts: store },
   );
   const summariesBefore = await Effect.runPromise(store.list());
 
@@ -182,7 +182,7 @@ test("failed and interrupted Turns leave stored Transcripts unchanged", async ()
       await iterator.next();
       await iterator.return?.();
     },
-    { store, resume: transcriptId },
+    { transcripts: store, resume: transcriptId },
   );
 
   expect(await Effect.runPromise(store.list())).toEqual(summariesBefore);
