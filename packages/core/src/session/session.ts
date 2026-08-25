@@ -30,7 +30,7 @@ export interface CreateSessionOptions {
    * instructions are intentionally not injected.
    */
   readonly transcript?: TranscriptValue | undefined;
-  readonly store?: TranscriptStore | undefined;
+  readonly transcripts?: TranscriptStore | undefined;
 }
 
 export interface Session<
@@ -101,8 +101,8 @@ const createSessionImpl: (
   const parentTranscriptId = sessionOptions.transcript?.id;
   let eventSeq = 0;
   const appendTurnEvent = (event: PersistedTurnEvent): Effect.Effect<void, StoreError> => {
-    const store = sessionOptions.store;
-    return store === undefined
+    const transcripts = sessionOptions.transcripts;
+    return transcripts === undefined
       ? Effect.void
       : Effect.sync(() => ({
           transcriptId,
@@ -110,7 +110,7 @@ const createSessionImpl: (
           seq: eventSeq++,
           version: TranscriptEventRecordVersion,
           event: turnEventToDto(event),
-        })).pipe(Effect.flatMap((record) => store.appendEvent(record)));
+        })).pipe(Effect.flatMap((record) => transcripts.appendEvent(record)));
   };
   let history =
     sessionOptions.transcript === undefined
@@ -188,9 +188,9 @@ const createSessionImpl: (
                           // snapshot is then stale until the caller re-saves session.transcript().
                           history = nextHistory;
                           const persist =
-                            sessionOptions.store === undefined
+                            sessionOptions.transcripts === undefined
                               ? Effect.void
-                              : sessionOptions.store.save(
+                              : sessionOptions.transcripts.save(
                                   Transcript.makeTranscript({
                                     id: transcriptId,
                                     parentTranscriptId,

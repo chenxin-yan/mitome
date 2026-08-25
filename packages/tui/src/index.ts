@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import type { Host } from "@mitome/core";
 
 export const tui = (): Host => ({
@@ -8,28 +7,21 @@ export const tui = (): Host => ({
     process.stdin.isTTY === true && process.stdout.isTTY === true
       ? undefined
       : "@mitome/tui requires an interactive terminal",
-  run: async ({ agent, prompt }) => {
+  run: async (context) => {
     await import("@opentui/solid/preload");
-    const [
-      { configDirectory, createSession, makeFileTranscriptStore },
-      { Effect },
-      { runShell },
-      { makeSessionViewModel },
-    ] = await Promise.all([
-      import("@mitome/core"),
-      import("effect"),
-      import("./shell.jsx"),
-      import("./view-model.js"),
-    ]);
-    const home = configDirectory();
-    const store =
-      home === undefined ? undefined : makeFileTranscriptStore(join(home, "transcripts"));
+    const [{ createHostSession }, { Effect }, { runShell }, { makeSessionViewModel }] =
+      await Promise.all([
+        import("@mitome/core"),
+        import("effect"),
+        import("./shell.jsx"),
+        import("./view-model.js"),
+      ]);
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const session = yield* createSession(agent, { store });
+          const session = yield* createHostSession(context);
           const viewModel = makeSessionViewModel(session);
-          yield* Effect.promise(() => runShell(viewModel, prompt));
+          yield* Effect.promise(() => runShell(viewModel, context.prompt));
         }),
       ),
     );

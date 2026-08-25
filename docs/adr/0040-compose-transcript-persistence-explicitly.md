@@ -1,0 +1,9 @@
+# Compose Transcript persistence explicitly
+
+Transcript persistence is an optional, named part of the Mitome Definition: `defineMitome({ agent, hosts, transcripts })`. A declared `TranscriptStore` is passed to every Host through `HostContext`; omitting it means no Transcript snapshots or event records are written. Built-in Hosts never discover or construct a store. This keeps persistence visible at the composition root, gives one-shot and interactive Hosts the same resume source, and preserves the explicit-composition rule established by ADR-0039.
+
+`fileTranscripts(dir?)` and `memoryTranscripts()` are the two first-party adapters. The zero-argument file adapter resolves `<configDirectory()>/transcripts` and fails when no config directory is available. `mitome init` and `create-mitome` scaffold `transcripts: fileTranscripts()` so new Definitions persist by default through one visible, removable line. An adapter belongs in Core only when it adds no dependency; an adapter requiring a database or other driver belongs in its own package.
+
+This amends ADR-0036 and issue #63's persist-by-default decision: Transcripts may still outlive Sessions, but persistence is no longer inferred by a Host from the environment. A generic composition-root `use` list is rejected because named fields preserve slot cardinality in the type system. Per-Host stores are rejected because all Hosts in one composition must share the same resume source.
+
+A Transcript `name` and store `rename()` operation are deferred until the review before first npm publication, because adding them later would break community adapters. Compaction is deferred until measured context pressure justifies an in-schema migration. A Promise-facing store-author helper is deferred until the first concrete request. Additional first-party adapters are deferred until needed and, because they require drivers, will live in their own packages rather than Core.

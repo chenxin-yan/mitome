@@ -30,12 +30,12 @@ export interface Session<
 
 export type SessionOptions =
   | {
-      readonly store?: TranscriptStore | undefined;
+      readonly transcripts?: TranscriptStore | undefined;
       readonly transcript?: Transcript | undefined;
       readonly resume?: never;
     }
   | {
-      readonly store: TranscriptStore;
+      readonly transcripts: TranscriptStore;
       readonly resume: TranscriptId;
       readonly transcript?: never;
     };
@@ -108,8 +108,11 @@ export const withSession = <const Definition extends AgentDefinition, A>(
         const transcript =
           options.resume === undefined
             ? options.transcript
-            : yield* options.store.load(options.resume);
-        const session = yield* createSession(definition, { store: options.store, transcript });
+            : yield* options.transcripts.load(options.resume);
+        const session = yield* createSession(definition, {
+          transcripts: options.transcripts,
+          transcript,
+        });
         const scope = yield* Effect.scope;
         return yield* Effect.tryPromise({
           try: () =>

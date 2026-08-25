@@ -106,6 +106,7 @@ export const TurnEventDtoSchema = Schema.Union([
 export type TurnEventDto = typeof TurnEventDtoSchema.Type;
 
 export const turnEventToDto = (event: PersistedTurnEvent): TurnEventDto => {
+  // Event records are write-only observability data, so unsupported values become null; makeTranscript fails loud for durable history.
   if (event.type === "tool-call") {
     return { ...event, params: Schema.is(Schema.Json)(event.params) ? event.params : null };
   }

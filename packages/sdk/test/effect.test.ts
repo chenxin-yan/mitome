@@ -26,16 +26,18 @@ test("keeps the complete Effect facade export contract", async () => {
       "compileAgentDefinition",
       "configDirectory",
       "configDirectoryMessage",
+      "createHostSession",
       "createSession",
       "credentialDescriptor",
       "defineAgent",
       "defineExtension",
       "defineMitome",
-      "makeFileTranscriptStore",
-      "makeMemoryTranscriptStore",
+      "fileTranscripts",
       "makeProvider",
       "makeTranscript",
+      "memoryTranscripts",
       "promptFromTranscript",
+      "summarizeTranscript",
     ]
   `);
 });

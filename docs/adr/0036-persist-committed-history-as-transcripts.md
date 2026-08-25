@@ -1,3 +1,7 @@
+---
+status: amended by ADR-0040
+---
+
 # Persist committed history as versioned Transcripts
 
 Sessions remain process-bound, scope-owned runtime objects. Their committed messages may be copied into a Transcript: a durable, ordered, Schema-backed value that may outlive its Session and seed a new Session. Resuming creates a fresh Session with freshly acquired Resources; it does not reattach to the old Session. Pending Approvals and every other part of an incomplete Turn remain ephemeral because Transcript updates use the existing turn-completion commit boundary. A Transcript has its own id and may name a parent Transcript id when it is forked.

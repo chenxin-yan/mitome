@@ -1,14 +1,16 @@
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
+import { configDirectory, configDirectoryMessage } from "./config.js";
 import { TranscriptSchema } from "./transcript.js";
 import type { TranscriptId } from "./transcript.js";
-import { StoreError, TranscriptEventRecordSchema, TranscriptNotFound } from "./transcript-store.js";
-import type {
-  TranscriptEventRecord,
-  TranscriptStore,
-  TranscriptSummary,
+import {
+  StoreError,
+  summarizeTranscript,
+  TranscriptEventRecordSchema,
+  TranscriptNotFound,
 } from "./transcript-store.js";
+import type { TranscriptStore, TranscriptSummary } from "./transcript-store.js";
 
 const StoredTranscriptFileVersion = 1 as const;
 const StoredTranscriptFileSchema = Schema.Struct({
@@ -53,23 +55,6 @@ const decodeStoredTranscript = (
         JSON.parse(contents),
       ),
     catch: (cause) => storeError(`Invalid Transcript store file: ${path}.`, cause),
-  });
-
-const decodeEventLog = (
-  path: string,
-  contents: string,
-): Effect.Effect<ReadonlyArray<TranscriptEventRecord>, StoreError> =>
-  Effect.try({
-    try: () => {
-      const lines = contents.split("\n").slice(0, -1);
-      return lines.map((line) => {
-        if (line === "") throw new Error("Empty event record");
-        return Schema.decodeUnknownSync(TranscriptEventRecordSchema, {
-          onExcessProperty: "error",
-        })(JSON.parse(line));
-      });
-    },
-    catch: (cause) => storeError(`Invalid Transcript event log: ${path}.`, cause),
   });
 
 const idFromFileName = (
@@ -120,8 +105,18 @@ const validateTranscriptId = (
     ? Effect.void
     : Effect.fail(storeError(`Transcript id in ${path} does not match its file name.`));
 
-/** Creates a disk-backed store rooted at `directory`. */
-export const makeFileTranscriptStore = (directory: string): TranscriptStore => ({
+const defaultTranscriptDirectory = (): string => {
+  const home = configDirectory();
+  if (home === undefined) {
+    throw new Error(`Cannot configure file Transcript persistence. ${configDirectoryMessage}`);
+  }
+  return join(home, "transcripts");
+};
+
+/** Creates a disk-backed store rooted at `directory` or the Mitome config directory. */
+export const fileTranscripts = (
+  directory: string = defaultTranscriptDirectory(),
+): TranscriptStore => ({
   save: (transcript) =>
     Effect.gen(function* () {
       yield* ensureDirectory(directory);
@@ -166,10 +161,7 @@ export const makeFileTranscriptStore = (directory: string): TranscriptStore => (
       const summaries: Array<TranscriptSummary> = [];
       for (const entry of entries) {
         const path = join(directory, entry.name);
-        if (!entry.isFile()) {
-          return yield* storeError(`Foreign entry in Transcript store: ${path}.`);
-        }
-        if (entry.name.startsWith(temporaryPrefix)) continue;
+        if (!entry.isFile() || entry.name.startsWith(temporaryPrefix)) continue;
         if (entry.name.endsWith(transcriptSuffix)) {
           const id = yield* idFromFileName(entry.name, transcriptSuffix, path);
           const stored = yield* decodeStoredTranscript(
@@ -182,22 +174,10 @@ export const makeFileTranscriptStore = (directory: string): TranscriptStore => (
             parentTranscriptId: stored.transcript.parentTranscriptId,
             createdAt: stored.createdAt,
             updatedAt: stored.updatedAt,
-            messageCount: stored.transcript.messages.length,
+            ...summarizeTranscript(stored.transcript),
           });
           continue;
         }
-        if (entry.name.endsWith(eventsSuffix)) {
-          const id = yield* idFromFileName(entry.name, eventsSuffix, path);
-          const records = yield* decodeEventLog(
-            path,
-            yield* attempt("read", path, () => readFile(path, "utf8")),
-          );
-          for (const record of records) {
-            yield* validateTranscriptId(path, id, record.transcriptId);
-          }
-          continue;
-        }
-        return yield* storeError(`Foreign file in Transcript store: ${path}.`);
       }
       return summaries.sort((left, right) => left.id.localeCompare(right.id));
     }),

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
-import { Response } from "effect/unstable/ai";
+import { Prompt, Response } from "effect/unstable/ai";
 import {
-  makeMemoryTranscriptStore,
+  memoryTranscripts,
   makeTranscript,
+  summarizeTranscript,
   TranscriptEventRecordSchema,
   TranscriptEventRecordVersion,
   TranscriptNotFound,
@@ -11,11 +12,40 @@ import {
   TurnEventDtoSchema,
 } from "../src/index.js";
 
-describe("makeMemoryTranscriptStore", () => {
+describe("Transcript summaries", () => {
+  it("derives a normalized, truncated preview from the first user message's text parts", () => {
+    const transcript = makeTranscript({
+      id: "preview",
+      messages: Prompt.make([
+        Prompt.makeMessage("system", { content: "instructions" }),
+        Prompt.makeMessage("user", {
+          content: [
+            Prompt.textPart({ text: "  first\npart  " }),
+            Prompt.filePart({ mediaType: "text/plain", data: "ignored" }),
+            Prompt.textPart({ text: `second ${"x".repeat(100)}` }),
+          ],
+        }),
+        Prompt.makeMessage("user", { content: [Prompt.textPart({ text: "later" })] }),
+      ]).content,
+    });
+
+    expect(summarizeTranscript(transcript)).toEqual({
+      messageCount: 3,
+      preview: `first part second ${"x".repeat(82)}`,
+    });
+  });
+});
+
+describe("memoryTranscripts", () => {
   it.effect("saves, loads, and lists Transcript metadata", () =>
     Effect.gen(function* () {
-      const store = makeMemoryTranscriptStore();
-      const transcript = makeTranscript({ id: "transcript-1", messages: [] });
+      const store = memoryTranscripts();
+      const transcript = makeTranscript({
+        id: "transcript-1",
+        messages: Prompt.make([
+          Prompt.makeMessage("user", { content: [Prompt.textPart({ text: "hello" })] }),
+        ]).content,
+      });
 
       yield* store.save(transcript);
 
@@ -25,7 +55,8 @@ describe("makeMemoryTranscriptStore", () => {
           id: "transcript-1",
           createdAt: expect.any(String),
           updatedAt: expect.any(String),
-          messageCount: 0,
+          messageCount: 1,
+          preview: "hello",
         },
       ]);
     }),
@@ -33,7 +64,7 @@ describe("makeMemoryTranscriptStore", () => {
 
   it.effect("retains creation metadata when replacing a Transcript", () =>
     Effect.gen(function* () {
-      const store = makeMemoryTranscriptStore();
+      const store = memoryTranscripts();
       const first = makeTranscript({ id: "child", parentTranscriptId: "parent", messages: [] });
       yield* store.save(first);
       const [before] = yield* store.list();
@@ -50,7 +81,7 @@ describe("makeMemoryTranscriptStore", () => {
 
   it.effect("fails a missing load with TranscriptNotFound", () =>
     Effect.gen(function* () {
-      const store = makeMemoryTranscriptStore();
+      const store = memoryTranscripts();
       const error = yield* Effect.flip(store.load("missing"));
 
       expect(error).toEqual(new TranscriptNotFound({ id: "missing" }));
@@ -59,7 +90,7 @@ describe("makeMemoryTranscriptStore", () => {
 
   it.effect("accepts versioned event envelopes without exposing a replay API", () =>
     Effect.gen(function* () {
-      const store = makeMemoryTranscriptStore();
+      const store = memoryTranscripts();
 
       yield* store.appendEvent({
         transcriptId: "transcript-1",
@@ -141,6 +172,7 @@ describe("makeMemoryTranscriptStore", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
         messageCount: -1,
+        preview: "",
       }),
     ).toThrow();
 

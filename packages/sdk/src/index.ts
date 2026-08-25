@@ -15,10 +15,11 @@ export {
   TurnError,
   defineAgent,
   defineMitome,
+  fileTranscripts,
   makeTranscript,
-  makeFileTranscriptStore,
-  makeMemoryTranscriptStore,
+  memoryTranscripts,
   promptFromTranscript,
+  summarizeTranscript,
 } from "@mitome/core";
 export type {
   AgentDefinition,

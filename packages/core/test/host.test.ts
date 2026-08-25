@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defineMitome, type AgentDefinition, type Host } from "../src/index.js";
+import { defineMitome, memoryTranscripts, type AgentDefinition, type Host } from "../src/index.js";
 
 // SAFETY: defineMitome only stores the Agent Definition; this unit test never compiles it.
 const agent = {} as AgentDefinition;
@@ -10,8 +10,13 @@ const host: Host = {
 };
 
 describe("defineMitome", () => {
-  it("returns an explicit agent and Host composition", () => {
-    expect(defineMitome({ agent, hosts: [host] })).toEqual({ agent, hosts: [host] });
+  it("returns an explicit agent, Host, and Transcript store composition", () => {
+    const transcripts = memoryTranscripts();
+    expect(defineMitome({ agent, hosts: [host], transcripts })).toEqual({
+      agent,
+      hosts: [host],
+      transcripts,
+    });
   });
 
   it("rejects multiple interactive Hosts", () => {

@@ -34,7 +34,7 @@ describe("Session event log", () => {
           model: "test/default",
           extensions: [],
         },
-        { store: makeRecordingStore(records) },
+        { transcripts: makeRecordingStore(records) },
       );
 
       yield* Stream.runDrain(session.prompt("first"));
@@ -83,7 +83,7 @@ describe("Session event log", () => {
           model: "test/default",
           extensions: [],
         },
-        { store },
+        { transcripts: store },
       );
       const interruptedTurn = yield* Effect.forkChild(Stream.runDrain(session.prompt("first")));
 
@@ -112,7 +112,7 @@ describe("Session event log", () => {
           model: "test/default",
           extensions: [],
         },
-        { store },
+        { transcripts: store },
       );
 
       yield* Stream.runDrain(session.prompt("Hi"));
@@ -141,7 +141,7 @@ describe("Session event log", () => {
       const session = yield* createSession(
         { providers: [provider], model: "test/default", extensions: [] },
         {
-          store: makeRecordingStore(
+          transcripts: makeRecordingStore(
             records,
             Deferred.succeed(appended, undefined).pipe(Effect.asVoid),
           ),
@@ -217,7 +217,7 @@ describe("Session event log", () => {
             },
           ],
         },
-        { store: makeRecordingStore(records) },
+        { transcripts: makeRecordingStore(records) },
       );
 
       const events = yield* Stream.runCollect(session.prompt("Hi"));
@@ -301,7 +301,9 @@ describe("Session event log", () => {
         ],
       };
       const records: Array<TranscriptEventRecord> = [];
-      const session = yield* createSession(definition, { store: makeRecordingStore(records) });
+      const session = yield* createSession(definition, {
+        transcripts: makeRecordingStore(records),
+      });
 
       yield* Stream.runForEach(session.prompt("Hi"), (event) =>
         event.type === "approval-required" ? event.deny("not allowed") : Effect.void,
