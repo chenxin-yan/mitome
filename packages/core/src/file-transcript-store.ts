@@ -178,7 +178,6 @@ export const fileTranscripts = (
           });
           continue;
         }
-        if (entry.name.endsWith(eventsSuffix)) continue;
       }
       return summaries.sort((left, right) => left.id.localeCompare(right.id));
     }),

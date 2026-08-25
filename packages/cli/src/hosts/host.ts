@@ -29,13 +29,9 @@ interface DefinitionCandidate {
 }
 
 const isTranscriptStore = (value: TranscriptStoreCandidate): boolean =>
-  "save" in value &&
   value.save instanceof Function &&
-  "load" in value &&
   value.load instanceof Function &&
-  "list" in value &&
   value.list instanceof Function &&
-  "appendEvent" in value &&
   value.appendEvent instanceof Function;
 
 const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefinition =>
@@ -44,8 +40,7 @@ const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefiniti
   "hosts" in value &&
   Array.isArray(value.hosts) &&
   value.hosts.length <= 1 &&
-  (!("transcripts" in value) ||
-    value.transcripts === undefined ||
+  (value.transcripts === undefined ||
     (value.transcripts instanceof Object && isTranscriptStore(value.transcripts))) &&
   value.hosts.every(
     (host) =>

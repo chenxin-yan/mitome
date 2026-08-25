@@ -13,7 +13,6 @@ export {
   TurnEventDtoSchema,
   StoreError,
   TurnError,
-  createHostSession,
   defineAgent,
   defineMitome,
   fileTranscripts,
