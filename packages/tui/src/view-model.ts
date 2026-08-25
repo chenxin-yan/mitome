@@ -85,6 +85,7 @@ export const makeSessionViewModel = (
   let state: SessionState = { phase: "idle", turns: [] };
   let active: ActiveRun | undefined;
   let switching: Promise<void> | undefined;
+  let switchFiber: Fiber.Fiber<SessionResource, unknown> | undefined;
   let pickerRequest = 0;
   let disposed = false;
   // Reads `disposed` after an await; the wrapper stops TS/oxlint from stale
@@ -188,6 +189,12 @@ export const makeSessionViewModel = (
   };
 
   const interrupt = (): boolean => {
+    // A stuck Session open must stay user-recoverable: Esc during switching
+    // interrupts the open Fiber instead of leaving the TUI wedged.
+    if (state.phase === "switching" && switchFiber !== undefined) {
+      Effect.runFork(Fiber.interrupt(switchFiber));
+      return true;
+    }
     if (active === undefined || state.phase !== "running" || active.completed()) return false;
     active.interrupted = true;
     publish({ ...state, phase: "interrupting" });
@@ -251,13 +258,18 @@ export const makeSessionViewModel = (
     pickerRequest += 1;
     publish({ ...state, phase: "switching", picker: undefined });
     const previous = session;
+    const fiber = Effect.runFork(manager.open(transcriptId));
+    switchFiber = fiber;
     const operation = (async () => {
-      const opened = await Effect.runPromiseExit(manager.open(transcriptId));
+      const opened = await Effect.runPromise(Fiber.await(fiber));
+      switchFiber = undefined;
       if (Exit.isFailure(opened)) {
         publish({
           ...state,
           phase: "idle",
-          notice: `Could not start Session: ${Cause.pretty(opened.cause)}`,
+          notice: Cause.hasInterruptsOnly(opened.cause)
+            ? "Session start cancelled."
+            : `Could not start Session: ${Cause.pretty(opened.cause)}`,
         });
         return;
       }

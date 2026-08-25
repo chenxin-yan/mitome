@@ -408,6 +408,20 @@ describe("session view model", () => {
     await viewModel.dispose();
   }, 5_000);
 
+  test("interrupt cancels a stuck Session open and returns to idle", async () => {
+    const viewModel = makeSessionViewModel(scriptedSession([]), {
+      transcripts: undefined,
+      open: () => Effect.promise(() => new Promise<SessionResource>(() => {})),
+    });
+
+    expect(viewModel.newSession()).toBe(true);
+    expect(viewModel.getState().phase).toBe("switching");
+    expect(viewModel.interrupt()).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(viewModel.getState().notice).toBe("Session start cancelled.");
+    await viewModel.dispose();
+  });
+
   test("bounds disposal while a Session switch is stuck", async () => {
     const viewModel = makeSessionViewModel(scriptedSession([]), {
       transcripts: undefined,
