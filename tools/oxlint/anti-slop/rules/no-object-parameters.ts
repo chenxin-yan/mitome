@@ -2,30 +2,14 @@ import { defineRule } from "@oxlint/plugins";
 
 import type { ESTree, SourceCode } from "@oxlint/plugins";
 
+import {
+	functionSignatureVisitor,
+	parameterAnnotation,
+	type ParameterOwner,
+} from "../shared/ast.ts";
 import { lexicalTypeParameterNames } from "../shared/lexical-type-parameters.ts";
 
 type Parameter = ESTree.ParamPattern;
-type ParameterOwner =
-	| ESTree.ArrowFunctionExpression
-	| ESTree.Function
-	| ESTree.TSCallSignatureDeclaration
-	| ESTree.TSConstructSignatureDeclaration
-	| ESTree.TSConstructorType
-	| ESTree.TSFunctionType
-	| ESTree.TSMethodSignature;
-
-function parameterAnnotation(parameter: Parameter): ESTree.TSTypeAnnotation | null | undefined {
-	if (parameter.type === "TSParameterProperty") {
-		return parameterAnnotation(parameter.parameter);
-	}
-	if (parameter.type === "RestElement") {
-		return parameter.typeAnnotation ?? parameterAnnotation(parameter.argument);
-	}
-	if (parameter.type === "AssignmentPattern") {
-		return parameter.typeAnnotation ?? parameter.left.typeAnnotation;
-	}
-	return parameter.typeAnnotation;
-}
 
 function parameterName(parameter: Parameter, sourceCode: SourceCode): string {
 	return parameter.type === "Identifier"
@@ -111,16 +95,7 @@ export const noObjectParametersRule = defineRule({
 					}
 				}
 			},
-			ArrowFunctionExpression: checkParameters,
-			FunctionDeclaration: checkParameters,
-			FunctionExpression: checkParameters,
-			TSCallSignatureDeclaration: checkParameters,
-			TSConstructSignatureDeclaration: checkParameters,
-			TSConstructorType: checkParameters,
-			TSDeclareFunction: checkParameters,
-			TSEmptyBodyFunctionExpression: checkParameters,
-			TSFunctionType: checkParameters,
-			TSMethodSignature: checkParameters,
+			...functionSignatureVisitor(checkParameters),
 		};
 	},
 });

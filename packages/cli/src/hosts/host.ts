@@ -45,8 +45,6 @@ const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefiniti
   value.hosts.every(
     (host) =>
       host instanceof Object &&
-      "mode" in host &&
-      host.mode === "interactive" &&
       "run" in host &&
       host.run instanceof Function &&
       (!("unsupported" in host) ||

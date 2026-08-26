@@ -57,6 +57,9 @@ const toSdkEvent = (event: CoreTurnEvent): TurnEvent => {
 // readahead so work continues while the consumer processes the previous event.
 // The ReadableStream bridge runs the producer in a forked fiber and cancellation
 // interrupts it; the scope finalizer covers iterators abandoned without return().
+// A native async generator cannot serve here: its return() queues behind an
+// in-flight next() blocked on reader.read(), so breaking out of iteration
+// mid-read would deadlock. return()/throw() must cancel the reader immediately.
 const toAsyncIterable = (
   stream: Stream.Stream<CoreTurnEvent, unknown>,
   scope: Scope.Scope,

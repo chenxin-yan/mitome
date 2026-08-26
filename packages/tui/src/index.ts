@@ -2,8 +2,6 @@ import type { Host } from "@mitome/core";
 import { Effect } from "effect";
 
 export const tui = (): Host => ({
-  name: "tui",
-  mode: "interactive",
   unsupported: () =>
     process.stdin.isTTY === true && process.stdout.isTTY === true
       ? undefined

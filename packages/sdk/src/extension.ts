@@ -1,4 +1,4 @@
-import { Context, Effect, Exit, Layer, Predicate, Result, Schema } from "effect";
+import { Context, Effect, Exit, Layer, Predicate, Schema } from "effect";
 import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import type { Response as AiResponse } from "effect/unstable/ai";
 import type {
@@ -9,7 +9,6 @@ import type {
   ToolHookContext,
   ToolInputValidator,
   ToolResultHookContext,
-  ToolResultValidator,
 } from "@mitome/core";
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec";
 
@@ -38,7 +37,6 @@ export interface HookContext<Resource = never, Services = never> {
 export type ResponsePart = AiResponse.AnyPart;
 type ToolHookResult = ToolResultHookContext["result"];
 type UnvalidatedToolInput = Parameters<ToolInputValidator>[0];
-type UnvalidatedToolResult = Parameters<ToolResultValidator>[0];
 type StandardInputValue = Parameters<StandardSchemaV1.Props["validate"]>[0];
 
 export interface StepEndContext<Resource = never, Services = never> extends HookContext<
@@ -138,16 +136,8 @@ const standardOutput = <Output>(
   return standard;
 };
 
-const PropertyKey = Schema.Union([Schema.String, Schema.Number, Schema.Symbol]);
-const PathSegment = Schema.Struct({ key: PropertyKey });
-const PathPart = Schema.Union([PropertyKey, PathSegment]);
-const isPathSegment = Schema.is(PathSegment);
-
 const formatPathPart = (part: PropertyKey | StandardSchemaV1.PathSegment): string =>
-  Result.match(Schema.decodeResult(PathPart)(part), {
-    onFailure: () => "<invalid path>",
-    onSuccess: (value) => String(isPathSegment(value) ? value.key : value),
-  });
+  part instanceof Object ? String(part.key) : String(part);
 
 const validate = async <Output>(
   standard: StandardSchemaV1.Props<unknown, Output>,
@@ -375,32 +365,26 @@ export function defineExtension<
       needsApproval: Predicate.isFunction(needsApproval)
         ? (params: ToolHookContext["params"], context: ToolApprovalContext) =>
             // Rejections become defects, matching Core's fail-closed approval handling.
-            Effect.promise(() => Promise.resolve().then(() => needsApproval(params, context)))
+            Effect.promise(async () => needsApproval(params, context))
         : needsApproval,
     });
   });
-  const toolInputValidators = Object.fromEntries(
-    definitions.map(({ tool, input }) => [
-      tool.name,
-      (params: UnvalidatedToolInput) =>
-        // @effect-diagnostics-next-line unknownInEffectCatch:off
-        Effect.tryPromise({
-          try: () => validate(input, params),
-          catch: (cause) => cause,
-        }),
-    ]),
-  );
-  const toolResultValidators = Object.fromEntries(
-    definitions.map(({ tool, output }) => [
-      tool.name,
-      (result: UnvalidatedToolResult) =>
-        // @effect-diagnostics-next-line unknownInEffectCatch:off
-        Effect.tryPromise({
-          try: () => validate(output, result),
-          catch: (cause) => cause,
-        }),
-    ]),
-  );
+  const validators = (
+    pick: (definition: (typeof definitions)[number]) => StandardSchemaV1.Props<unknown, unknown>,
+  ) =>
+    Object.fromEntries(
+      definitions.map((definition) => [
+        definition.tool.name,
+        (value: StandardInputValue) =>
+          // @effect-diagnostics-next-line unknownInEffectCatch:off
+          Effect.tryPromise({
+            try: () => validate(pick(definition), value),
+            catch: (cause) => cause,
+          }),
+      ]),
+    );
+  const toolInputValidators = validators(({ input }) => input);
+  const toolResultValidators = validators(({ output }) => output);
 
   const resource =
     service === undefined

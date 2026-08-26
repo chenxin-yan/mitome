@@ -9,8 +9,6 @@ export interface HostContext {
 }
 
 export interface Host {
-  readonly name: string;
-  readonly mode: "interactive";
   /** Reason this Host cannot run in the current environment, or undefined when it can. */
   readonly unsupported?: () => string | undefined;
   readonly run: (context: HostContext) => Promise<void>;

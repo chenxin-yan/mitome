@@ -2,10 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { tui } from "../src/index.js";
 
 describe("TUI Host", () => {
-  test("declares the interactive Host contract", () => {
-    expect(tui()).toMatchObject({ name: "tui", mode: "interactive" });
-  });
-
   test("requires an interactive terminal", () => {
     const originalIn = process.stdin.isTTY;
     const originalOut = process.stdout.isTTY;

@@ -68,7 +68,7 @@ const agent = { providers: [provider], model: "test/default", extensions: ${
     }) } }]`
     : "[]"
 } };
-export default defineMitome({ agent, hosts: ${options.tui ? "[tui()]" : options.customHost ? '[{ name: "custom", mode: "interactive", run: async ({ prompt, transcripts }) => console.log(`CUSTOM_HOST ${prompt} ${transcripts !== undefined}`) }]' : "[]"}${options.transcripts ? ", transcripts: fileTranscripts()" : options.malformedTranscripts ? ", transcripts: {}" : ""} });
+export default defineMitome({ agent, hosts: ${options.tui ? "[tui()]" : options.customHost ? "[{ run: async ({ prompt, transcripts }) => console.log(`CUSTOM_HOST ${prompt} ${transcripts !== undefined}`) }]" : "[]"}${options.transcripts ? ", transcripts: fileTranscripts()" : options.malformedTranscripts ? ", transcripts: {}" : ""} });
 `;
 
 const envDefinitionSource = (): string => `
@@ -198,7 +198,7 @@ const installTui = async (current: Fixture): Promise<void> => {
   );
   await writeFile(
     join(tui, "index.js"),
-    'export const tui = () => ({ name: "tui", mode: "interactive", unsupported: () => process.env.TERM_PROGRAM === "ghostty" ? undefined : "@mitome/tui currently supports Ghostty on Linux", run: ({ prompt }) => process.stdout.write(`TUI_PROMPT ${JSON.stringify(prompt)}\\n`) });\n',
+    'export const tui = () => ({ unsupported: () => process.env.TERM_PROGRAM === "ghostty" ? undefined : "@mitome/tui currently supports Ghostty on Linux", run: ({ prompt }) => process.stdout.write(`TUI_PROMPT ${JSON.stringify(prompt)}\\n`) });\n',
   );
 };
 

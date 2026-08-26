@@ -5,16 +5,31 @@ import { noConditionalEmptyObjectSpreadRule } from "./rules/no-conditional-empty
 import { noKnownValueWideningRule } from "./rules/no-known-value-widening.ts";
 import { noModuleMockingRule } from "./rules/no-module-mocking.ts";
 import { noObjectParametersRule } from "./rules/no-object-parameters.ts";
-import { noReflectApplyRule } from "./rules/no-reflect-apply.ts";
-import { noReflectGetRule } from "./rules/no-reflect-get.ts";
 import { noRuntimeTypeofRule } from "./rules/no-runtime-typeof.ts";
-import { noForbiddenTermInSymbolNamesRule } from "./rules/no-shape-in-symbol-names.ts";
+import { noShapeInSymbolNamesRule } from "./rules/no-shape-in-symbol-names.ts";
 import { noUnknownParametersRule } from "./rules/no-unknown-parameters.ts";
 import { noUnknownReturnsRule } from "./rules/no-unknown-returns.ts";
 import { noUnknownTypeAliasesRule } from "./rules/no-unknown-type-aliases.ts";
 import { noUnsafeDictionaryTypeRule } from "./rules/no-unsafe-dictionary-type.ts";
 import { noWidenThenAssertRule } from "./rules/no-widen-then-assert.ts";
 import { requireSafetyCommentForTypeAssertionRule } from "./rules/require-safety-comment-for-type-assertion.ts";
+import { reflectMethodRule } from "./shared/reflect-method.ts";
+
+/** Ban Reflect.apply, which bypasses ordinary typed function calls. */
+const noReflectApplyRule = reflectMethodRule(
+	"apply",
+	"reflectApply",
+	"Disallow Reflect.apply; call typed functions directly or model dynamic dispatch behind an interface.",
+	"Replace `Reflect.apply` with a typed function call. Model dynamic dispatch behind a named interface.",
+);
+
+/** Ban Reflect.get, which bypasses ordinary property access and useful type evidence. */
+const noReflectGetRule = reflectMethodRule(
+	"get",
+	"reflectGet",
+	"Disallow Reflect.get; use typed property access or parse dynamic input into a domain type.",
+	"Replace `Reflect.get` with typed property access. Parse dynamic input into a named domain type before reading it.",
+);
 
 /** Generic Oxlint rules that reject low-evidence and low-signal implementation patterns. */
 const antiSlopPlugin = eslintCompatPlugin({
@@ -29,7 +44,7 @@ const antiSlopPlugin = eslintCompatPlugin({
 		"no-reflect-get": noReflectGetRule,
 		"no-runtime-typeof": noRuntimeTypeofRule,
 		"no-unsafe-dictionary-type": noUnsafeDictionaryTypeRule,
-		"no-shape-in-symbol-names": noForbiddenTermInSymbolNamesRule,
+		"no-shape-in-symbol-names": noShapeInSymbolNamesRule,
 		"no-unknown-parameters": noUnknownParametersRule,
 		"no-unknown-returns": noUnknownReturnsRule,
 		"no-unknown-type-aliases": noUnknownTypeAliasesRule,

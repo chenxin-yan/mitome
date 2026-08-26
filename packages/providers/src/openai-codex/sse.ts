@@ -163,9 +163,8 @@ const decodeOutputItemDone = (
     const arguments_ = done.arguments ?? call.arguments;
     let params: Json;
     try {
-      params = Schema.decodeUnknownSync(Schema.Json)(
-        Tool.unsafeSecureJsonParse(arguments_ || "{}"),
-      );
+      // SAFETY: JSON.parse output is Json by construction.
+      params = Tool.unsafeSecureJsonParse(arguments_ || "{}") as Json;
     } catch {
       throw invalidOutput(`Invalid JSON arguments for Tool ${call.name}`);
     }

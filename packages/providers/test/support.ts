@@ -3,14 +3,12 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import { type AddressInfo } from "node:net";
 import { Readable } from "node:stream";
 import type { AgentDefinition, AnyExtension, AnyProvider } from "@mitome/core";
-import { Result, Schema } from "effect";
+import { Schema } from "effect";
 
 type SseData = string | typeof Schema.Json.Type;
 
-export const sse = (data: SseData) => {
-  const string = Schema.decodeUnknownResult(Schema.String)(data);
-  return `data: ${Result.isSuccess(string) ? string.success : JSON.stringify(data)}\n\n`;
-};
+export const sse = (data: SseData) =>
+  `data: ${Schema.is(Schema.String)(data) ? data : JSON.stringify(data)}\n\n`;
 
 export const agent = (
   provider: AnyProvider,

@@ -78,13 +78,8 @@ const decodeJsonObject = (value: Schema.Json): JsonObject | undefined => {
   return Result.isSuccess(decoded) ? decoded.success : undefined;
 };
 
-const dependencyRecord = (
-  value: Schema.Json | undefined,
-): Readonly<Record<string, Schema.Json>> => {
-  if (value === undefined) return {};
-  const decoded = Schema.decodeUnknownResult(JsonObject)(value);
-  return Result.isSuccess(decoded) ? decoded.success : {};
-};
+const dependencyRecord = (value: Schema.Json | undefined): Readonly<Record<string, Schema.Json>> =>
+  value === undefined ? {} : (decodeJsonObject(value) ?? {});
 
 const sameDependencies = (manifest: JsonObject, lockWorkspace: JsonObject): boolean =>
   dependencyFields.every((field) => {

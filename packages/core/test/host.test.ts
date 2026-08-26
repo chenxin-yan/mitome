@@ -4,8 +4,6 @@ import { defineMitome, memoryTranscripts, type AgentDefinition, type Host } from
 // SAFETY: defineMitome only stores the Agent Definition; this unit test never compiles it.
 const agent = {} as AgentDefinition;
 const host: Host = {
-  name: "test",
-  mode: "interactive",
   run: async () => undefined,
 };
 
@@ -20,7 +18,7 @@ describe("defineMitome", () => {
   });
 
   it("rejects multiple interactive Hosts", () => {
-    expect(() => defineMitome({ agent, hosts: [host, { ...host, name: "other" }] })).toThrow(
+    expect(() => defineMitome({ agent, hosts: [host, { ...host }] })).toThrow(
       "Mitome Definition must declare at most one interactive Host",
     );
   });

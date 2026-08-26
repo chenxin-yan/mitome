@@ -12,21 +12,14 @@ export const providerError = (description: string) =>
 export const invalidOutput = (description: string) =>
   makeError(new AiError.InvalidOutputError({ description }));
 
-// Upstream's auth reason has a fixed API-key message; keep its taxonomy while naming the Codex login remedy.
-const authenticationMessages = new WeakMap<AiError.AuthenticationError, string>();
-
-class CodexAuthenticationError extends AiError.AuthenticationError {
-  override get message(): string {
-    return authenticationMessages.get(this) ?? super.message;
-  }
-}
-
 const authenticationError = (
   kind: "ExpiredKey" | "MissingKey" | "Unknown",
   description: string,
 ) => {
-  const reason = new CodexAuthenticationError({ kind });
-  authenticationMessages.set(reason, description);
+  const reason = new AiError.AuthenticationError({ kind });
+  // Upstream's auth reason has a fixed API-key message getter; an own property
+  // shadows it while keeping its taxonomy, naming the Codex login remedy.
+  Object.defineProperty(reason, "message", { value: description });
   return makeError(reason);
 };
 

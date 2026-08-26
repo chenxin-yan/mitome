@@ -66,7 +66,6 @@ export const summarizeTranscript = (
 
 export const memoryTranscripts = (): TranscriptStore => {
   const transcripts = new Map<TranscriptId, StoredTranscript>();
-  const events: Array<TranscriptEventRecord> = [];
 
   return {
     save: (transcript) =>
@@ -74,7 +73,7 @@ export const memoryTranscripts = (): TranscriptStore => {
         const now = new Date().toISOString();
         const previous = transcripts.get(transcript.id);
         transcripts.set(transcript.id, {
-          transcript: structuredClone(transcript),
+          transcript,
           createdAt: previous?.createdAt ?? now,
           updatedAt: now,
         });
@@ -84,7 +83,7 @@ export const memoryTranscripts = (): TranscriptStore => {
         const stored = transcripts.get(id);
         return stored === undefined
           ? Effect.fail(new TranscriptNotFound({ id }))
-          : Effect.succeed(structuredClone(stored.transcript));
+          : Effect.succeed(stored.transcript);
       }),
     list: () =>
       Effect.sync(() =>
@@ -96,9 +95,6 @@ export const memoryTranscripts = (): TranscriptStore => {
           ...summarizeTranscript(transcript),
         })),
       ),
-    appendEvent: (record) =>
-      Effect.sync(() => {
-        events.push(structuredClone(record));
-      }),
+    appendEvent: () => Effect.void,
   };
 };

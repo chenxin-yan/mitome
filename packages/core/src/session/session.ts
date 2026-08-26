@@ -85,10 +85,10 @@ const createSessionImpl: (
       (service) =>
         `Extension ${extension.name} Provided Service ${service.key} is missing from its resource Layer`,
     );
-    const firstMissingServiceIssue = missingServiceIssues[0];
-    if (firstMissingServiceIssue !== undefined) {
+    if (missingServiceIssues.length > 0) {
       return yield* new AgentDefinitionError({
-        issues: [firstMissingServiceIssue, ...missingServiceIssues.slice(1)],
+        // SAFETY: guarded by missingServiceIssues.length > 0, so the array satisfies Schema.NonEmptyArray.
+        issues: missingServiceIssues as [string, ...Array<string>],
       });
     }
     extensionContexts.set(extension, context);

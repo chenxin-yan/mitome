@@ -1,14 +1,12 @@
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { Cause, Clock, Data, Effect, Result, Schema } from "effect";
+import { Cause, Clock, Data, Effect, Schema } from "effect";
 import {
   FetchHttpClient,
   HttpClient,
   HttpClientRequest,
   type HttpClientError,
 } from "effect/unstable/http";
-
-const ErrorCode = Schema.Struct({ code: Schema.optional(Schema.String) });
 
 /** The per-Provider half of an OAuth2 PKCE flow: who we are and where we talk. */
 export interface OAuthConfig {
@@ -219,8 +217,8 @@ export const authorize = async (
       });
     } catch (error) {
       // EADDRINUSE: another process holds the port; the pasted redirect flow still works.
-      const decodedError = Schema.decodeUnknownResult(ErrorCode)(error);
-      if (Result.isFailure(decodedError) || decodedError.success.code !== "EADDRINUSE") throw error;
+      // SAFETY: Node http servers reject with Error objects whose optional code is the errno.
+      if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
       options.output(`Callback port ${port} is busy; paste the redirect URL instead.\n`);
     }
 
