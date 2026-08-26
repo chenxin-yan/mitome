@@ -16,6 +16,12 @@ const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const binary = join(packageDir, "dist/local/mitome");
 const coreDir = resolve(packageDir, "../core");
 const effectDir = dirname(createRequire(import.meta.url).resolve("effect/package.json"));
+// The concrete installed version: a "catalog:" range (as in cli devDependencies)
+// inside a file: dep makes Bun 1.4 re-resolve effect and refuse its out-of-project
+// folder path as unsafe. https://github.com/oven-sh/bun/issues/40561
+// SAFETY: effect/package.json is a published npm manifest; version is always a string.
+const effectVersion = (createRequire(import.meta.url)("effect/package.json") as { version: string })
+  .version;
 // SAFETY: This reads the repository-owned package manifest whose fields are required by the test setup.
 const cliPackage = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as {
   version: string;
@@ -244,7 +250,7 @@ const reconcileFixture = async (): Promise<Fixture> => {
       version: "0.0.0",
       type: "module",
       exports: { ".": "./dist/index.js", "./package.json": "./package.json" },
-      peerDependencies: { effect: cliPackage.devDependencies.effect },
+      peerDependencies: { effect: effectVersion },
     }),
   );
   await mkdir(definitionDirectory, { recursive: true });

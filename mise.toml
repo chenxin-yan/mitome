@@ -1,5 +1,3 @@
+# node version comes from .node-version; bun version from packageManager in package.json
 [settings]
-idiomatic_version_file_enable_tools = ["bun"]
-
-[tools]
-node = "24"
+idiomatic_version_file_enable_tools = ["bun", "node"]

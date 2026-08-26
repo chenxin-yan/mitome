@@ -62,7 +62,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v7
         with:
-          node-version: 24.18.0
+          node-version-file: .node-version
       - name: Verify release tag matches source
         run: test "${RELEASE_TAG#v}" = "$(node -p 'require("./packages/core/package.json").version')"
       - run: bun install --frozen-lockfile
