@@ -1,8 +1,6 @@
 # Mitome
 
-Mitome runs user-authored AI agents in local, scoped Sessions. Start with the Promise-first SDK; use the Effect facade only when you need Effect-native composition.
-
-## Quickstart
+Mitome lets you define and run AI agents for your own use cases. Use the Promise-first SDK in applications; use the CLI and an explicitly composed Host for terminal workflows.
 
 ```sh
 npm install @mitome/sdk @mitome/providers
@@ -25,18 +23,8 @@ await withSession(agent, async (session) => {
 });
 ```
 
-Set `OPENAI_API_KEY` in the launching process. For CLI setup, an interactive Session, Extensions, Approvals, Effect usage, and credential guidance, read the [documentation](apps/docs/content/docs/index.mdx).
-
-The supported public surfaces are `@mitome/sdk` and `@mitome/sdk/effect`; `@mitome/core` is an internal runtime dependency.
+See the [documentation](apps/docs/content/docs/) for the quickstart, authentication, interactive TUI, Extensions, Transcript persistence, Providers, and Effect-native API.
 
 ## Development
 
-Install [mise](https://mise.jdx.dev/getting-started.html) and activate it in your shell, then run:
-
-```sh
-mise trust
-mise install
-bun install
-```
-
-Run the CLI with `bun run dev:cli` or the docs site with `bun run dev:docs`.
+Install [mise](https://mise.jdx.dev/getting-started.html), then run `mise trust`, `mise install`, and `bun install`. Use `bun run dev:cli` for the CLI or `bun run dev:docs` for the docs site.

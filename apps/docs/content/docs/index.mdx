@@ -3,3 +3,19 @@ title: Mitome
 description: Define and run AI agents for your own use cases.
 icon: Rocket
 ---
+
+Mitome gives an Agent a typed Provider, a Default Model, Extensions, and one or more ways to run Sessions. Start with the Promise-first SDK; move to the Effect-native surface only when your application already composes Effect services and Layers.
+
+## Start here
+
+- [Quickstart](/docs/quickstart): initialize, authenticate, and open an interactive Session.
+- [SDK](/docs/sdk): embed an Agent and consume the Turn event stream.
+- [Extensions](/docs/extensions): add Tools, lifecycle Hooks, Resources, and Provided Services.
+- [Transcript persistence](/docs/persistence): choose whether and where committed messages are stored.
+- [CLI](/docs/cli) and [TUI](/docs/tui): run a trusted Mitome Definition from a terminal.
+- [Providers](/docs/providers): configure OpenAI, Codex, or an OpenAI-compatible endpoint.
+- [Effect](/docs/effect): use the supported Effect-native facade.
+
+## Public packages
+
+Install APIs from `@mitome/sdk` and Providers from `@mitome/providers` subpaths. First-party Extensions live at `@mitome/sdk/extensions`; Effect-native APIs live at `@mitome/sdk/effect`. These are the documented public surfaces.

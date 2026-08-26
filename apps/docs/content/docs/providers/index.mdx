@@ -1,0 +1,40 @@
+---
+title: Providers and Models
+description: Register Providers and select Models with qualified ids.
+icon: Cpu
+---
+
+A Provider is a configured integration through which an Agent uses a family of Models. Register Provider values in `defineAgent`, then select a Default Model with a qualified id in `provider/model` form.
+
+```ts
+import { defineAgent } from "@mitome/sdk";
+import { openai } from "@mitome/providers/openai";
+
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+  extensions: [],
+});
+```
+
+The Provider prefix must match a registered Provider. A Model catalog supplies discovery and type hints, but it is not a closed registry and does not prove account entitlement.
+
+## Available Provider packages
+
+- [OpenAI](/docs/providers/openai): official OpenAI API with an API-key Credential.
+- [Codex](/docs/providers/codex): ChatGPT subscription OAuth through an unofficial, best-effort transport.
+- `@mitome/providers/openai-compatible`: a separately identified OpenAI-compatible endpoint.
+
+An OpenAI-compatible Provider requires a unique `id` and `baseUrl`; its empty Model catalog deliberately accepts endpoint-native ids:
+
+```ts
+import { openaiCompatible } from "@mitome/providers/openai-compatible";
+
+const local = openaiCompatible({
+  id: "local",
+  baseUrl: "http://127.0.0.1:8080/v1",
+  apiKeyEnv: "LOCAL_API_KEY",
+});
+```
+
+Do not configure Codex as an OpenAI-compatible base URL. Its authentication and transport contracts are different.

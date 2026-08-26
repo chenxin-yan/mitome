@@ -1,0 +1,113 @@
+---
+title: Promise-first SDK
+description: Embed an Agent, consume Turn events, handle Approvals, cancellation, and failures.
+icon: Code
+---
+
+Use `@mitome/sdk` when your application is Promise-first. An Agent Definition contains Providers, one qualified Default Model id, and Extensions; `withSession` owns the Session's scoped lifetime.
+
+```ts
+import { defineAgent, withSession } from "@mitome/sdk";
+import { openai } from "@mitome/providers/openai";
+
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+  extensions: [],
+});
+
+await withSession(agent, async (session) => {
+  for await (const event of session.prompt("Summarize this design.")) {
+    switch (event.type) {
+      case "model-output":
+        process.stdout.write(event.text);
+        break;
+      case "approval-required":
+        await event.deny("This Host does not permit side effects.");
+        break;
+    }
+  }
+});
+```
+
+`session.prompt()` returns a single-use `AsyncIterable<TurnEvent>`. A Turn may emit:
+
+- `model-output` and `reasoning` text;
+- `tool-call` and `tool-result` activity;
+- `approval-required`, with Promise-returning `approve()` and `deny(reason?)` decisions;
+- `response-complete`, optionally carrying finish reason and usage.
+
+A Host must resolve every pending Approval or interrupt the Turn. A decision is one-shot; trying to resolve it twice, or after the Turn ended, rejects with `ApprovalResolutionError`.
+
+## Cancel a Turn
+
+Returning the iterator interrupts production. The Session remains usable, while the interrupted Turn is not committed:
+
+```ts
+await withSession(agent, async (session) => {
+  const iterator = session.prompt("Generate a very long report.")[Symbol.asyncIterator]();
+  const first = await iterator.next();
+  console.log(first.value);
+  await iterator.return?.();
+
+  for await (const event of session.prompt("Give me the short version.")) {
+    if (event.type === "model-output") process.stdout.write(event.text);
+  }
+});
+```
+
+An `AbortSignal` is also passed to every Promise Extension Hook and Tool handler through its context, so external work can stop with the Turn.
+
+## Choose a Model per Turn
+
+The optional second argument selects another Model under a Provider already registered on the Agent:
+
+```ts
+session.prompt("Be concise.", { model: "openai/gpt-5.4" });
+```
+
+Qualified Model ids always have `provider/model` form.
+
+## Tagged failures
+
+Failures surface while iterating the Turn (or while creating the Session), not as synthetic event variants. The SDK exports Schema-tagged error classes for recovery:
+
+- `AgentDefinitionError`: the Agent Definition cannot compile, including Extension graph errors.
+- `SessionBusyError`: another Turn is active on this Session.
+- `SessionReleasedError`: code prompted after `withSession` released the Session.
+- `TurnError`: a Model, Tool, or Extension Hook failed during a Turn.
+- `StoreError`: Transcript snapshot or event persistence failed.
+- `ApprovalResolutionError`: an Approval decision was already resolved or is no longer pending.
+- `TranscriptNotFound`: a requested resume id does not exist.
+
+Catch narrowly by class or `_tag`; unexpected callback errors passed to `withSession` are rethrown unchanged.
+
+```ts
+import { TurnError, withSession } from "@mitome/sdk";
+
+try {
+  await withSession(agent, (session) => Array.fromAsync(session.prompt("Run")));
+} catch (error) {
+  if (error instanceof TurnError) console.error(error.message);
+  else throw error;
+}
+```
+
+## Session state
+
+`session.history()` exposes the committed in-memory model prompt. `session.transcript()` returns a serializable Transcript snapshot. Passing `{ transcripts }`, `{ transcript }`, or `{ transcripts, resume: id }` to `withSession` controls persistence and seeding; see [Transcript persistence](/docs/persistence).
+
+## Contributor test seams
+
+Keep behavior tests at the public seam that owns the behavior:
+
+| Package seam | Test responsibility                                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Core runtime | Session lifecycle, Tool execution, Hooks, Extension graph, Transcript schemas and stores with Effect/Vitest              |
+| SDK          | Promise adaptation, public type inference, Approval callbacks, cancellation, and persistence through `withSession`       |
+| Providers    | request/response mapping, authentication, transport behavior, and Provider-specific errors with deterministic transports |
+| CLI          | black-box commands, Definition selection, install/auth dispatch, and child-Host behavior in temporary directories        |
+| TUI          | headless view-model state with `bun:test`; focused OpenTUI rendering and real-terminal smoke checks                      |
+| Docs         | MDX type/build gates, internal-link validation, and examples checked against exported package types                      |
+
+Do not duplicate the Core runtime suite in SDK, Provider, CLI, or TUI tests. Assert each adapter's user-visible contract and reuse deterministic fixtures instead of making live Provider calls.

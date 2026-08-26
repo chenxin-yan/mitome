@@ -1,0 +1,40 @@
+---
+title: OpenAI API key
+description: Configure the official OpenAI Provider and its Credential safely.
+icon: KeyRound
+---
+
+The official OpenAI Provider uses an API-key Credential. It is separate from the [Codex subscription Provider](/docs/providers/codex).
+
+```ts
+import { openai } from "@mitome/providers/openai";
+
+const provider = openai(); // reads OPENAI_API_KEY
+```
+
+Options let you change the environment variable, API URL, or Responses transport:
+
+```ts
+const provider = openai({
+  apiKeyEnv: "MY_OPENAI_KEY",
+  transport: "websocket", // default: WebSocket on Bun/Node, HTTP elsewhere
+});
+```
+
+`baseUrl` defaults to `https://api.openai.com/v1`. Use `openaiCompatible()` rather than changing this option when the endpoint represents a distinct Provider identity.
+
+## Authenticate the CLI
+
+```sh
+mitome auth login
+```
+
+The CLI prompts for the environment variable named by `apiKeyEnv`. See [CLI credentials](/docs/cli#credentials) for storage and precedence.
+
+Prefer your deployment platform's secret manager for embedded or production use. Never put the key in `index.ts`, commit `.env`, include it in logs, or expose it to an Agent as Instructions or Tool output.
+
+## Model hints
+
+The OpenAI Model catalog is generated from models.dev and cached for offline CLI initialization. See [Providers and Models](/docs/providers) for catalog semantics. Repository maintainers refresh the generated fallback with `bun run hints:refresh` when updating releases.
+
+See [ADR-0028](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0028-generate-model-hints-from-models-dev.md) for the catalog policy.

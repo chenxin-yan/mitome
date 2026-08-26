@@ -1,0 +1,14 @@
+{
+  "title": "Mitome",
+  "pages": [
+    "index",
+    "quickstart",
+    "sdk",
+    "extensions",
+    "persistence",
+    "cli",
+    "tui",
+    "effect",
+    "providers"
+  ]
+}
