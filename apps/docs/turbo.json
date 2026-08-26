@@ -6,7 +6,7 @@
       "persistent": true
     },
     "build": {
-      "outputs": [".vercel/output/**"]
+      "outputs": ["dist/**", ".wrangler/deploy/**"]
     },
     "check:types": {
       "outputs": [".source/**"]
