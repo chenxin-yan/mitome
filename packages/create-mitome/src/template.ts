@@ -88,11 +88,14 @@ const tsconfigSource = `${JSON.stringify(
       strict: true,
       noEmit: true,
     },
-    include: ["index.ts"],
+    // The README suggests adding an embed module beside index.ts; check every source file.
+    include: ["**/*.ts"],
   },
   null,
   2,
 )}\n`;
+
+const gitignoreSource = "node_modules/\n";
 
 const readmeSource = (flavor: Flavor): string => {
   const embed =
@@ -119,6 +122,7 @@ export const projectPlan = (options: ScaffoldOptions): FileMap =>
     ["index.ts", agentDefinitionSource(options)],
     ["instructions.md", instructionsSource],
     ["tsconfig.json", tsconfigSource],
+    [".gitignore", gitignoreSource],
     ["README.md", readmeSource(options.flavor)],
   ]);
 

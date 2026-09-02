@@ -58,6 +58,7 @@ describe("scaffold plans", () => {
       "index.ts",
       "instructions.md",
       "tsconfig.json",
+      ".gitignore",
       "README.md",
     ]);
     expect(plan.get("index.ts")).toContain(
@@ -77,8 +78,9 @@ describe("scaffold plans", () => {
         strict: true,
         noEmit: true,
       },
-      include: ["index.ts"],
+      include: ["**/*.ts"],
     });
+    expect(plan.get(".gitignore")).toBe("node_modules/\n");
     expect(plan.get("README.md")).not.toContain("npm install effect");
     expect(plan.get("README.md")).toContain("createSession(mitome.agent)");
   });
@@ -159,7 +161,7 @@ describe("create-mitome scaffold", () => {
     expect(agent).toContain('extensions: [instructionFiles({ paths: ["./instructions.md"] })]');
     expect(agent).not.toContain('instructions: "You are a helpful Agent."');
     expect(await contents(path, "instructions.md")).toBe("You are a helpful Agent.\n");
-    expect(JSON.parse(await contents(path, "tsconfig.json")).include).toEqual(["index.ts"]);
+    expect(JSON.parse(await contents(path, "tsconfig.json")).include).toEqual(["**/*.ts"]);
     // The embed sample must unwrap the composition root, not pass it to a session.
     const readme = await contents(path, "README.md");
     expect(readme).toContain('import mitome from "./index.js";');

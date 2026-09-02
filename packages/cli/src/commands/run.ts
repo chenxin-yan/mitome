@@ -25,7 +25,11 @@ export const runPrompt = Effect.fn("@mitome/cli/runPrompt")(function* ({
 }) {
   const promptValue = Option.getOrUndefined(prompt);
   const forcePrint = print || process.stdout.isTTY !== true;
-  if (forcePrint && promptValue === undefined) return yield* fail("Missing argument prompt");
+  if (forcePrint && promptValue === undefined) {
+    return yield* fail(
+      "Missing argument prompt (one-shot output needs a prompt; interactive Sessions need a TTY without --print)",
+    );
+  }
 
   const childHost = yield* ChildHost;
   const path = yield* attempt(() => definitionPath(use));

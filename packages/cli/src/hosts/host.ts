@@ -76,7 +76,9 @@ if (mode === "auto" && interactiveHost !== undefined) {
 // One-shot has nothing to run without a prompt; an explicitly empty prompt is
 // still a valid Session input.
 if (prompt === undefined) {
-  process.stderr.write("Missing argument prompt\n");
+  process.stderr.write(
+    "Missing argument prompt (one-shot output needs a prompt; interactive Sessions need a TTY without --print)\n",
+  );
   process.exit(1);
 }
 

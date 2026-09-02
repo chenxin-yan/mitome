@@ -74,12 +74,15 @@ const usageSnippet = (packageName: string, exportNames: ReadonlyArray<string>): 
     .sort();
   const selected =
     candidates.length === 1 ? candidates[0] : candidates.find((name) => name === derived);
+  // The CLI cannot tell an Extension from a Host package, so the snippet hedges the placement.
+  const placement = (name: string) =>
+    `extensions: [${name}()], // or hosts: [${name}()] for a Host package`;
   if (selected !== undefined) {
     // A lone export that does not match the derived name may be a helper, not the factory.
     const hedge = selected === derived ? "" : " // verify export name";
-    return `import { ${selected} } from "${packageName}";${hedge}\nextensions: [${selected}()],`;
+    return `import { ${selected} } from "${packageName}";${hedge}\n${placement(selected)}`;
   }
-  return `import { ${derived} } from "${packageName}"; // verify export name\nextensions: [${derived}()],`;
+  return `import { ${derived} } from "${packageName}"; // verify export name\n${placement(derived)}`;
 };
 
 export const runAdd = Effect.fn("@mitome/cli/runAdd")(function* ({

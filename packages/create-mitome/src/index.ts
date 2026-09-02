@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import {
   customModel,
@@ -56,7 +56,8 @@ const main = async (): Promise<void> => {
       { label: "Promise-first", value: "promise" },
       { label: "Effect-native", value: "effect" },
     ] as const);
-    const directory = process.cwd();
+    // npm create mitome <dir> forwards <dir> as the first CLI argument.
+    const directory = resolve(process.argv[2] ?? ".");
     await scaffold(directory, { flavor, provider, model });
     console.log(`Created a Mitome Agent in ${basename(directory)}.`);
   } finally {

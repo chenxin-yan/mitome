@@ -61,10 +61,10 @@ const initCommand = Command.make("init", {}, () => useExitCode(runInit())).pipe(
 );
 const loginCommand = Command.make("login", definitionCommandConfig, ({ use }) =>
   useExitCode(runAuth("login", use)),
-);
+).pipe(Command.withDescription("Authenticate the Agent Definition's Providers"));
 const logoutCommand = Command.make("logout", definitionCommandConfig, ({ use }) =>
   useExitCode(runAuth("logout", use)),
-);
+).pipe(Command.withDescription("Remove stored Provider Credentials"));
 const authCommand = Command.make("auth", {}, () =>
   fail("Usage: mitome auth <login|logout> [--use <path>]"),
 ).pipe(
