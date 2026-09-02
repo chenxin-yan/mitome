@@ -22,7 +22,7 @@ export type TurnEvent =
 export interface Session<
   Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
 > {
-  /** Treat the returned iterable as single-use; requesting another iterator re-runs the Turn. */
+  /** The returned iterable is single-use; requesting a second iterator throws. */
   readonly prompt: (text: string, options?: PromptOptions<Providers>) => AsyncIterable<TurnEvent>;
   readonly history: CoreSession<Providers>["history"];
   readonly transcript: CoreSession<Providers>["transcript"];
@@ -63,42 +63,52 @@ const toSdkEvent = (event: CoreTurnEvent): TurnEvent => {
 const toAsyncIterable = (
   stream: Stream.Stream<CoreTurnEvent, unknown>,
   scope: Scope.Scope,
-): AsyncIterable<TurnEvent> => ({
-  [Symbol.asyncIterator]() {
-    const reader = Stream.toReadableStream(stream).getReader();
-    const cancel = () => reader.cancel().catch(() => undefined);
-    if (scope.state._tag !== "Closed") {
-      Effect.runSync(Scope.addFinalizer(scope, Effect.promise(cancel)));
-    }
-    let done = false;
-    return {
-      async next(): Promise<IteratorResult<TurnEvent>> {
-        if (done) return { done: true, value: undefined };
-        try {
-          const result = await reader.read();
-          if (result.done) {
+): AsyncIterable<TurnEvent> => {
+  // Single-use guard: a second iteration would silently re-run the paid Turn.
+  let iterated = false;
+  return {
+    [Symbol.asyncIterator]() {
+      if (iterated) {
+        throw new Error(
+          "session.prompt() returns a single-use iterable; call prompt() again to run a new Turn",
+        );
+      }
+      iterated = true;
+      const reader = Stream.toReadableStream(stream).getReader();
+      const cancel = () => reader.cancel().catch(() => undefined);
+      if (scope.state._tag !== "Closed") {
+        Effect.runSync(Scope.addFinalizer(scope, Effect.promise(cancel)));
+      }
+      let done = false;
+      return {
+        async next(): Promise<IteratorResult<TurnEvent>> {
+          if (done) return { done: true, value: undefined };
+          try {
+            const result = await reader.read();
+            if (result.done) {
+              done = true;
+              return { done: true, value: undefined };
+            }
+            return { done: false, value: toSdkEvent(result.value) };
+          } catch (error) {
             done = true;
-            return { done: true, value: undefined };
+            throw error;
           }
-          return { done: false, value: toSdkEvent(result.value) };
-        } catch (error) {
+        },
+        async return(): Promise<IteratorResult<TurnEvent>> {
           done = true;
-          throw error;
-        }
-      },
-      async return(): Promise<IteratorResult<TurnEvent>> {
-        done = true;
-        await cancel();
-        return { done: true, value: undefined };
-      },
-      async throw(cause: unknown): Promise<IteratorResult<TurnEvent>> {
-        done = true;
-        await cancel();
-        throw cause;
-      },
-    };
-  },
-});
+          await cancel();
+          return { done: true, value: undefined };
+        },
+        async throw(cause: unknown): Promise<IteratorResult<TurnEvent>> {
+          done = true;
+          await cancel();
+          throw cause;
+        },
+      };
+    },
+  };
+};
 
 export const withSession = <const Definition extends AgentDefinition, A>(
   definition: Definition,

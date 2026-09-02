@@ -1,5 +1,6 @@
 import { Layer, Predicate, Schema } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
+import { CredentialDescriptorSchema } from "./credential.js";
 import type { CredentialDescriptor } from "./credential.js";
 
 // Module-private runtime brand complements WeakMap metadata with compile-time Provider identity.
@@ -52,7 +53,7 @@ export const makeProvider = <const Id extends string, const ModelIds extends Rea
   if (id.length === 0 || id.includes("/")) {
     throw new TypeError("Provider id must be non-empty and contain no '/'");
   }
-  if (Predicate.isString(credential) && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(credential)) {
+  if (Predicate.isString(credential) && !Schema.is(CredentialDescriptorSchema)(credential)) {
     throw new TypeError("Provider credential must be a valid environment variable name");
   }
 

@@ -82,6 +82,21 @@ describe("@mitome/sdk", () => {
     expect(roles).toEqual(["user", "assistant"]);
   });
 
+  test("prompt() iterable throws on a second iteration instead of re-running the Turn", async () => {
+    const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
+    const definition = defineAgent({
+      providers: [fixture.provider],
+      model: "test/default",
+      extensions: [],
+    });
+
+    await withSession(definition, async (session) => {
+      const iterable = session.prompt("Hi");
+      await Array.fromAsync(iterable);
+      expect(() => iterable[Symbol.asyncIterator]()).toThrowError("single-use");
+    });
+  });
+
   test("forwards a typed per-Turn Model override", async () => {
     const provider = (id: string, output: string) =>
       makeTestProvider(
