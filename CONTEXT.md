@@ -4,7 +4,9 @@ Mitome exists to let people define and run AI agents for their own use cases.
 
 ## Public interface
 
-Users install `@mitome/sdk` and `@mitome/providers`; first-party Extensions ship at `@mitome/sdk/extensions`. Promise-first APIs come from `@mitome/sdk`, while Effect-native APIs come from `@mitome/sdk/effect`. [ADR-0022](docs/adr/0022-publish-the-sdk-as-the-sole-documented-surface.md) defines the public surface. Core errors are public Schema-tagged errors, provider errors are internal `Data.TaggedError` values widened at the boundary, and the CLI uses a plain app-level error.
+Users install `@mitome/sdk` and `@mitome/providers`; first-party Extensions ship at `@mitome/sdk/extensions`. Promise-first APIs come from `@mitome/sdk`, while Effect-native APIs come from `@mitome/sdk/effect`; no type imported from `effect` appears in a public signature outside `@mitome/sdk/effect`, though Mitome-owned types may be Effect-backed internally. [ADR-0022](docs/adr/0022-publish-the-sdk-as-the-sole-documented-surface.md) defines the public surface. Core errors are public Schema-tagged errors, provider errors are internal `Data.TaggedError` values widened at the boundary, and the CLI uses a plain app-level error.
+
+Public constructors are named by operation: `define*` authors a generic user declaration, a bare noun configures a named first-party component, `make*` constructs a data value, and `create*` acquires a runtime value.
 
 ## Language
 
@@ -19,6 +21,14 @@ _Avoid_: Chat, conversation
 **Turn**:
 The work triggered by one user message and completed by one final Agent response.
 _Avoid_: Request
+
+**Message**:
+One user, Agent, or Tool contribution to a Session.
+_Avoid_: Prompt, request
+
+**Model Prompt**:
+The ordered Messages supplied to a Model for one Step, including the Agent's Instructions and committed Session history.
+_Avoid_: User Message, input (bare)
 
 **Transcript**:
 The durable, ordered record of a Session's committed messages; it may outlive the Session that produced it and seed new Sessions.
