@@ -9,6 +9,7 @@
     "cli",
     "tui",
     "effect",
+    "core",
     "providers"
   ]
 }

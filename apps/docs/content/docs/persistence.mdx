@@ -19,7 +19,7 @@ export default defineMitome({
 
 Use `memoryTranscripts()` in tests or applications that need a shared store without disk writes. It survives across Sessions only while that store value remains alive.
 
-Built-in Hosts never discover or construct a store; the declared store is passed to every Host through `HostContext`, letting one-shot and TUI flows share the same resume source.
+Built-in Hosts never discover or construct a store; the declared store is passed to every Host, letting one-shot and TUI flows share the same resume source.
 
 ## Embed and resume
 
@@ -40,7 +40,7 @@ await withSession(agent, { transcripts, resume: parentId }, async (session) => {
 });
 ```
 
-You may instead seed a Session with a plain `Transcript` through `{ transcript }`. `makeTranscript` and the exported Transcript schemas help at serialization boundaries.
+You may instead seed a Session with a `Transcript` returned by `session.transcript()` through `{ transcript }`.
 
 ## Commit boundary
 
@@ -50,18 +50,7 @@ Each emitted Turn event is also appended as a versioned, serializable record. Th
 
 ## Custom `TranscriptStore`
 
-The Promise-first store interface has exactly four methods:
-
-```ts
-interface TranscriptStore {
-  save(transcript: Transcript): Promise<void>;
-  load(id: TranscriptId): Promise<Transcript | null>;
-  list(): Promise<ReadonlyArray<TranscriptSummary>>;
-  appendEvent(record: TranscriptEventRecord): Promise<void>;
-}
-```
-
-A database adapter can implement that interface directly. Keep driver dependencies in its own package and decode stored values with the exported schemas at the database trust boundary:
+A database adapter can implement the Promise-first store interface directly. Keep driver dependencies in its own package. Stored bytes are a trust boundary: adapters should validate them with their chosen schema library before returning a `Transcript`.
 
 ```ts
 import type {

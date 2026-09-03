@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { TurnEventDtoSchema } from "./session/events.js";
+import { TurnEventDtoSchema, type TurnEventDto } from "./session/events.js";
 import type { Transcript, TranscriptId } from "./transcript.js";
 
 export const TranscriptSummarySchema = Schema.Struct({
@@ -24,7 +24,13 @@ export const TranscriptEventRecordSchema = Schema.Struct({
   version: Schema.Literal(TranscriptEventRecordVersion),
   event: TurnEventDtoSchema,
 });
-export type TranscriptEventRecord = typeof TranscriptEventRecordSchema.Type;
+export interface TranscriptEventRecord {
+  readonly transcriptId: string;
+  readonly sessionId: string;
+  readonly seq: number;
+  readonly version: typeof TranscriptEventRecordVersion;
+  readonly event: TurnEventDto;
+}
 
 export class StoreError extends Schema.TaggedError<StoreError>()("StoreError", {
   message: Schema.String,

@@ -2,6 +2,14 @@ import { Effect, Schema } from "effect";
 import { Response } from "effect/unstable/ai";
 import type { ApprovalResolutionError } from "./errors.js";
 
+export type Json =
+  | null
+  | boolean
+  | number
+  | string
+  | ReadonlyArray<Json>
+  | { readonly [key: string]: Json };
+
 export interface ToolExecutionDenied {
   readonly type: "execution-denied";
   readonly reason: string;
@@ -103,7 +111,64 @@ export const TurnEventDtoSchema = Schema.Union([
   approvalResolvedEventDto,
   responseCompleteEventDto,
 ]);
-export type TurnEventDto = typeof TurnEventDtoSchema.Type;
+export type TurnEventDto =
+  | { readonly type: "model-output"; readonly text: string }
+  | { readonly type: "reasoning"; readonly text: string }
+  | {
+      readonly type: "tool-call";
+      readonly id: string;
+      readonly name: string;
+      readonly params: Json;
+    }
+  | {
+      readonly type: "tool-result";
+      readonly id: string;
+      readonly name: string;
+      readonly result: Json;
+      readonly isFailure: boolean;
+    }
+  | {
+      readonly type: "approval-required";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+      readonly name: string;
+      readonly params: Json;
+    }
+  | {
+      readonly type: "approval-resolved";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+      readonly approved: boolean;
+      readonly reason?: string | undefined;
+    }
+  | {
+      readonly type: "response-complete";
+      readonly finishReason?:
+        | "stop"
+        | "length"
+        | "content-filter"
+        | "tool-calls"
+        | "error"
+        | "pause"
+        | "other"
+        | "unknown"
+        | undefined;
+      readonly usage?:
+        | {
+            readonly inputTokens: {
+              readonly uncached?: number | undefined;
+              readonly total?: number | undefined;
+              readonly cacheRead?: number | undefined;
+              readonly cacheWrite?: number | undefined;
+            };
+            readonly outputTokens: {
+              readonly total?: number | undefined;
+              readonly text?: number | undefined;
+              readonly reasoning?: number | undefined;
+            };
+          }
+        | undefined;
+    };
 
 export const turnEventToDto = (event: PersistedTurnEvent): TurnEventDto => {
   // Event records are write-only observability data, so unsupported values become null; makeTranscript fails loud for durable history.

@@ -1,10 +1,6 @@
-export type Json =
-  | null
-  | boolean
-  | number
-  | string
-  | ReadonlyArray<Json>
-  | { readonly [key: string]: Json };
+import type { Json } from "@mitome/core";
+
+export type { Json } from "@mitome/core";
 
 export type ProviderOptions = Readonly<Record<string, Json>>;
 

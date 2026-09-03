@@ -4,7 +4,7 @@ import { Tool, Toolkit } from "effect/unstable/ai";
 import { FetchHttpClient } from "effect/unstable/http";
 import { createSession, credentialDescriptor } from "@mitome/core";
 import { agent, sse } from "../support.js";
-import { openaiCompatible } from "../../src/openai-compatible/index.js";
+import { knownModelIds, openaiCompatible } from "../../src/openai-compatible/index.js";
 
 type Json = typeof Schema.Json.Type;
 type JsonObject = { readonly [key: string]: Json };
@@ -41,6 +41,10 @@ const chunk = (delta: JsonObject, finishReason: string | null = null) => ({
 });
 
 describe("openaiCompatible", () => {
+  it("exports an intentionally empty Model catalog", () => {
+    expect(knownModelIds).toEqual([]);
+  });
+
   it("exposes its credential descriptor without building a Session", () => {
     expect(
       credentialDescriptor(

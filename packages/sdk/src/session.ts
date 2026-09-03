@@ -8,7 +8,6 @@ import type {
   AgentDefinition,
   AnyProvider,
   TurnOptions,
-  Session as CoreSession,
   Transcript,
   TranscriptId,
   TurnEvent as CoreTurnEvent,
@@ -34,7 +33,7 @@ export interface Session<
   /** The returned iterable is single-use; requesting a second iterator throws. */
   readonly runTurn: (message: string, options?: TurnOptions<Providers>) => AsyncIterable<TurnEvent>;
   readonly history: () => ReadonlyArray<PromptMessage>;
-  readonly transcript: CoreSession<Providers>["transcript"];
+  readonly transcript: () => Transcript;
 }
 
 export type SessionOptions =

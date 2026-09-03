@@ -71,7 +71,7 @@ Qualified Model ids always have `provider/model` form.
 
 Failures surface while iterating the Turn (or while creating the Session), not as synthetic event variants. The SDK exports Schema-tagged error classes for recovery:
 
-- `AgentDefinitionError`: the Agent Definition cannot compile, including Extension graph errors.
+- `AgentDefinitionError`: the Agent Definition cannot compile, including conflicting Extensions or Tools.
 - `SessionBusyError`: another Turn is active on this Session.
 - `SessionReleasedError`: a Turn was requested after `withSession` released the Session.
 - `TurnError`: a Model, Tool, or Extension Hook failed during a Turn.
@@ -95,18 +95,3 @@ try {
 ## Session state
 
 `session.history()` exposes the committed in-memory Model Prompt. `session.transcript()` returns a serializable Transcript snapshot. Pass `{ transcripts }`, `{ transcript }`, or `{ transcripts, resume: id }` between the Agent Definition and callback to control persistence and seeding; see [Transcript persistence](/docs/persistence).
-
-## Contributor test seams
-
-Keep behavior tests at the public seam that owns the behavior:
-
-| Package seam | Test responsibility                                                                                                      |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| Core runtime | Session lifecycle, Tool execution, Hooks, Extension graph, Transcript schemas and stores with Effect/Vitest              |
-| SDK          | Promise adaptation, public type inference, Approval callbacks, cancellation, and persistence through `withSession`       |
-| Providers    | request/response mapping, authentication, transport behavior, and Provider-specific errors with deterministic transports |
-| CLI          | black-box commands, Definition selection, install/auth dispatch, and child-Host behavior in temporary directories        |
-| TUI          | headless view-model state with `bun:test`; focused OpenTUI rendering and real-terminal smoke checks                      |
-| Docs         | MDX type/build gates, internal-link validation, and examples checked against exported package types                      |
-
-Do not duplicate the Core runtime suite in SDK, Provider, CLI, or TUI tests. Assert each adapter's user-visible contract and reuse deterministic fixtures instead of making live Provider calls.

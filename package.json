@@ -23,7 +23,7 @@
   "scripts": {
     "hints:generate": "bun scripts/generate-model-hints.ts",
     "hints:refresh": "bun scripts/generate-model-hints.ts --refresh",
-    "lint": "oxlint scripts/ && turbo run lint",
+    "lint": "! grep -RnE --include='*.ts' --include='*.tsx' '^export (type )?\\*' packages/*/src && oxlint scripts/ && turbo run lint",
     "lint:fix": "turbo run lint:fix",
     "fmt": "oxfmt --check",
     "fmt:fix": "oxfmt .",
