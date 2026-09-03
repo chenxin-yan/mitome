@@ -33,8 +33,8 @@ const configEnvFlag = (): string => {
 };
 
 export const childHostLayer = Layer.succeed(ChildHost, {
-  runHost: (path, prompt, mode) =>
-    Effect.uninterruptible(attempt(() => runHost(path, prompt, mode))),
+  runHost: (path, message, mode) =>
+    Effect.uninterruptible(attempt(() => runHost(path, message, mode))),
   install: (path) => Effect.uninterruptible(attempt(() => install(path))),
   removeDependency: (path, packageName) =>
     Effect.uninterruptible(attempt(() => removeDependency(path, packageName))),
@@ -162,22 +162,22 @@ const inspectExtensions = async (path: string): Promise<ExtensionListResult> => 
 
 const runHost = (
   path: string,
-  prompt: string | undefined,
+  message: string | undefined,
   mode: "auto" | "print",
-): Promise<ExitCode> => runEmbeddedHost(hostSource, path, prompt, mode);
+): Promise<ExitCode> => runEmbeddedHost(hostSource, path, message, mode);
 
 export const runEmbeddedHost = async (
   source: string,
   path: string,
-  prompt: string | undefined,
+  message: string | undefined,
   mode: "auto" | "print",
 ): Promise<ExitCode> => {
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.
-  // The prompt argument is omitted entirely when absent so the child can tell
-  // "no prompt given" apart from an explicitly empty prompt.
+  // The message argument is omitted entirely when absent so the child can tell
+  // "no message given" apart from an explicitly empty message.
   const arguments_ = [process.execPath, configEnvFlag(), "--eval", source, path, mode];
-  if (prompt !== undefined) arguments_.push(prompt);
+  if (message !== undefined) arguments_.push(message);
   const child = Bun.spawn(arguments_, {
     env: childEnv,
     stdin: "inherit",
@@ -197,7 +197,7 @@ const inspectProviderAuthentication = async (
   path: string,
 ): Promise<ReadonlyArray<ProviderAuthentication>> => {
   // The descriptor travels via file rather than stdout: importing the Agent Definition
-  // may print, and stdout stays ignored so nothing leaks into the prompt flow.
+  // may print, and stdout stays ignored so nothing leaks into the message flow.
   const result = await runJsonHost(
     "mitome-auth-",
     [process.execPath, "--no-env-file", "--eval", authHostSource, path],

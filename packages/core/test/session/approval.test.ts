@@ -43,7 +43,7 @@ const start = (definition: AgentDefinition) =>
     const turn = yield* Effect.forkChild(
       Effect.gen(function* () {
         const session = yield* createSession(definition);
-        yield* Stream.runForEach(session.prompt("Hi"), (event) => {
+        yield* Stream.runForEach(session.runTurn("Hi"), (event) => {
           events.push(event);
           if (event.type !== "approval-required") return Effect.void;
           pending = event;
@@ -156,7 +156,7 @@ describe("Session Approval event adaptation", () => {
       yield* Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(current.definition);
-          yield* Stream.runDrain(session.prompt("Hi"));
+          yield* Stream.runDrain(session.runTurn("Hi"));
         }),
       ).pipe(Effect.provide(Logger.layer([logger])));
 
@@ -173,7 +173,7 @@ describe("Session Approval event adaptation", () => {
       yield* Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(current.definition);
-          yield* Stream.runForEach(session.prompt("Hi"), (event) =>
+          yield* Stream.runForEach(session.runTurn("Hi"), (event) =>
             event.type === "approval-required" ? event.deny("declined") : Effect.void,
           );
         }),
@@ -216,7 +216,7 @@ describe("Session Approval event adaptation", () => {
         yield* Effect.flip(
           Effect.gen(function* () {
             const session = yield* createSession(current.definition);
-            yield* Stream.runDrain(session.prompt("Hi"));
+            yield* Stream.runDrain(session.runTurn("Hi"));
           }),
         ),
       ).toMatchObject({ _tag: "TurnError", message: "Pre-Tool Hook failed", cause: failure });
@@ -228,7 +228,7 @@ describe("Session Approval event adaptation", () => {
     Effect.gen(function* () {
       const current = definition(() => Effect.succeed({ reason: "vetoed" }));
       const session = yield* createSession(current.definition);
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
 
       expect(events.some((event) => event.type === "approval-required")).toBe(false);
       expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });

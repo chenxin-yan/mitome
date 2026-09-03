@@ -195,7 +195,7 @@ if (definition.providers[0] !== provider) throw new Error("SDK wrapped the canon
 if (definition.extensions[0]?.instructions !== "Release fixture") throw new Error("SDK extensions subpath was not installed.");
 const events = await withSession(definition, async (session) => {
   const values = [];
-  for await (const event of session.prompt("hello", { model: "fixture/override" })) values.push(event);
+  for await (const event of session.runTurn("hello", { model: "fixture/override" })) values.push(event);
   return values;
 });
 if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke did not complete.");

@@ -20,7 +20,7 @@ import type { StoreError, TranscriptStore } from "../transcript-store.js";
 type ProvidersOf<Definition extends AgentDefinition> =
   Definition extends AgentDefinition<infer Providers, any, any> ? Providers : never;
 
-export interface PromptOptions<Providers extends ReadonlyArray<AnyProvider>> {
+export interface TurnOptions<Providers extends ReadonlyArray<AnyProvider>> {
   readonly model: QualifiedModelId<Providers[number]>;
 }
 
@@ -36,9 +36,9 @@ export interface CreateSessionOptions {
 export interface Session<
   Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
 > {
-  readonly prompt: (
-    text: string,
-    options?: PromptOptions<Providers>,
+  readonly runTurn: (
+    message: string,
+    options?: TurnOptions<Providers>,
   ) => Stream.Stream<TurnEvent, SessionBusyError | SessionReleasedError | StoreError | TurnError>;
   readonly history: () => ReadonlyArray<Prompt.Message>;
   readonly transcript: () => TranscriptValue;
@@ -140,7 +140,7 @@ const createSessionImpl: (
   yield* Effect.addFinalizer(() => sessionHooks.cleanup);
 
   return {
-    prompt: (text, promptOptions) =>
+    runTurn: (message, turnOptions) =>
       Stream.suspend<
         TurnEvent,
         SessionBusyError | SessionReleasedError | StoreError | TurnError,
@@ -152,7 +152,7 @@ const createSessionImpl: (
         if (isTurnActive) {
           return Stream.fail(new SessionBusyError({}));
         }
-        const qualifiedModelId = promptOptions?.model ?? definition.model;
+        const qualifiedModelId = turnOptions?.model ?? definition.model;
         isTurnActive = true;
         return Stream.unwrap(
           modelResolver.resolve(qualifiedModelId).pipe(
@@ -163,19 +163,19 @@ const createSessionImpl: (
                   provideExtensionHook(
                     extension,
                     extensionContexts,
-                    extension.hooks?.turnStart?.(text),
+                    extension.hooks?.turnStart?.(message),
                   ),
                 (extension) =>
                   provideExtensionHook(
                     extension,
                     extensionContexts,
-                    extension.hooks?.turnEnd?.(text),
+                    extension.hooks?.turnEnd?.(message),
                   ),
                 "Turn end Hook failed",
               ).pipe(
                 hookTurnError("Turn start Hook failed"),
                 Effect.map((turnHooks) =>
-                  stepRunner.run(Prompt.concat(history, text), selected).pipe(
+                  stepRunner.run(Prompt.concat(history, message), selected).pipe(
                     Stream.mapEffect((event) => {
                       if (event.type !== "turn-complete") return Effect.succeed(event);
                       return turnHooks.end.pipe(

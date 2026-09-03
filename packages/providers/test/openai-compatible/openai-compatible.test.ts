@@ -104,7 +104,7 @@ describe("openaiCompatible", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(agent(provider, "gpt-4o-mini"));
-          yield* Stream.runForEach(session.prompt("Hi"), (event) =>
+          yield* Stream.runForEach(session.runTurn("Hi"), (event) =>
             Effect.sync(() => {
               events.push(event);
               if (event.type === "model-output") firstOutput();
@@ -129,7 +129,7 @@ describe("openaiCompatible", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(agent(provider, "ft:private-model"));
-          yield* Stream.runDrain(session.prompt("Hi"));
+          yield* Stream.runDrain(session.runTurn("Hi"));
         }),
       ),
       fetch,
@@ -151,7 +151,7 @@ describe("openaiCompatible", () => {
         Effect.scoped(
           Effect.gen(function* () {
             const session = yield* createSession(agent(provider, "gpt-4o-mini"));
-            yield* Stream.runDrain(session.prompt("Hi"));
+            yield* Stream.runDrain(session.runTurn("Hi"));
           }),
         ),
         globalThis.fetch,
@@ -178,7 +178,7 @@ describe("openaiCompatible", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(agent(provider, "future-private-model"));
-          return yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
+          return yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
         }),
       ),
       fetch,
@@ -253,7 +253,7 @@ describe("openaiCompatible", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(definition);
-          return yield* Stream.runCollect(session.prompt("Hi"));
+          return yield* Stream.runCollect(session.runTurn("Hi"));
         }),
       ),
       fetch,

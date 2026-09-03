@@ -4,7 +4,7 @@ import type { TranscriptStore } from "./transcript-store.js";
 
 export interface HostContext {
   readonly agent: AgentDefinition;
-  readonly prompt: string;
+  readonly message: string;
   readonly transcripts?: TranscriptStore | undefined;
 }
 

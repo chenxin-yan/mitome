@@ -81,7 +81,7 @@ describe("@mitome/sdk Tool", () => {
     });
 
     const events = await withSession(definition, (session) =>
-      Array.fromAsync(session.prompt("Hi")),
+      Array.fromAsync(session.runTurn("Hi")),
     );
 
     expect(events).toEqual([
@@ -129,7 +129,7 @@ describe("@mitome/sdk Tool", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
-      for await (const event of session.prompt("Hi")) collected.push(event);
+      for await (const event of session.runTurn("Hi")) collected.push(event);
       return collected;
     });
 
@@ -216,7 +216,7 @@ describe("@mitome/sdk Tool", () => {
     });
 
     const events = await withSession(definition, async (session) => {
-      const iterator = session.prompt("first")[Symbol.asyncIterator]();
+      const iterator = session.runTurn("first")[Symbol.asyncIterator]();
       await iterator.next();
       const pending = iterator.next();
       await started;
@@ -224,7 +224,7 @@ describe("@mitome/sdk Tool", () => {
       await aborted;
       await pending.catch(() => undefined);
       const next = [];
-      for await (const event of session.prompt("second")) next.push(event);
+      for await (const event of session.runTurn("second")) next.push(event);
       return next;
     });
 
@@ -296,7 +296,7 @@ describe("@mitome/sdk Tool", () => {
     });
     const order: string[] = [];
     const completion = withSession(definition, async (session) => {
-      const iterator = session.prompt("Hi")[Symbol.asyncIterator]();
+      const iterator = session.runTurn("Hi")[Symbol.asyncIterator]();
       await iterator.next();
       await started;
     }).then(() => order.push("session-resolved"));
@@ -330,7 +330,7 @@ describe("@mitome/sdk Tool", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
-      for await (const event of session.prompt("Hi")) collected.push(event);
+      for await (const event of session.runTurn("Hi")) collected.push(event);
       return collected;
     });
 
@@ -413,7 +413,7 @@ describe("@mitome/sdk Tool", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
-      for await (const event of session.prompt("Hi")) collected.push(event);
+      for await (const event of session.runTurn("Hi")) collected.push(event);
       return collected;
     });
 

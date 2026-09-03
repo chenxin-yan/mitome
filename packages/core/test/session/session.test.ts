@@ -73,7 +73,7 @@ describe("createSession", () => {
         extensions: [],
       };
       const session = yield* createSession(definition);
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
 
       expect([...events]).toStrictEqual([
         { type: "model-output", text: "hello" },
@@ -105,7 +105,7 @@ describe("createSession", () => {
         model: "test/default",
         extensions: [],
       });
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
 
       expect([...events]).toEqual([
         { type: "reasoning", text: "thinking" },
@@ -144,7 +144,7 @@ describe("createSession", () => {
         model: "test/default",
         extensions: [],
       });
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
 
       expect([...events]).toEqual([
         { type: "reasoning", text: "summary" },
@@ -175,7 +175,7 @@ describe("createSession", () => {
         model: "test/default",
         extensions: [],
       });
-      const events = yield* Stream.runCollect(session.prompt("Hi")).pipe(
+      const events = yield* Stream.runCollect(session.runTurn("Hi")).pipe(
         Effect.provideService(Greeting, { text: "from the caller" }),
       );
 
@@ -211,7 +211,7 @@ describe("createSession", () => {
       ];
 
       expect(session.history().map(({ role, content }) => ({ role, content }))).toEqual(expected);
-      yield* Stream.runDrain(session.prompt("Hi"));
+      yield* Stream.runDrain(session.runTurn("Hi"));
       expect(modelPrompt[0]).toMatchObject(expected[0]!);
       expect(modelPrompt.map((message) => message.role)).toEqual(["system", "user"]);
       expect(session.history()[0]).toMatchObject(expected[0]!);
@@ -250,7 +250,7 @@ describe("createSession", () => {
             model: "test/default",
             extensions: [],
           });
-          return yield* Effect.flip(Stream.runDrain(session.prompt("Hi")));
+          return yield* Effect.flip(Stream.runDrain(session.runTurn("Hi")));
         }),
       );
       expect(error).toBeInstanceOf(TurnError);
@@ -271,7 +271,7 @@ describe("createSession", () => {
         extensions: [],
       });
 
-      expect(yield* Effect.flip(Stream.runDrain(session.prompt("Hi")))).toMatchObject({
+      expect(yield* Effect.flip(Stream.runDrain(session.runTurn("Hi")))).toMatchObject({
         _tag: "TurnError",
         message: cause.reason.message,
         cause,
@@ -296,7 +296,7 @@ describe("createSession", () => {
       const events: Array<unknown> = [];
       const error = yield* Effect.flip(
         Stream.runDrain(
-          session.prompt("Hi").pipe(Stream.tap((event) => Effect.sync(() => events.push(event)))),
+          session.runTurn("Hi").pipe(Stream.tap((event) => Effect.sync(() => events.push(event)))),
         ),
       );
 
@@ -318,7 +318,7 @@ describe("createSession", () => {
         Effect.gen(function* () {
           const first = yield* createSession(definition);
           const second = yield* createSession(definition);
-          yield* Stream.runDrain(first.prompt("first"));
+          yield* Stream.runDrain(first.runTurn("first"));
           expect(first.history().map((message) => message.role)).toEqual(["user"]);
           expect(second.history().map((message) => message.role)).toEqual([]);
           return first;
@@ -329,7 +329,7 @@ describe("createSession", () => {
     }),
   );
 
-  it.effect("fails overlapping prompts with a typed busy error", () =>
+  it.effect("fails overlapping Turns with a typed busy error", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");
       const definition: AgentDefinition = {
@@ -338,9 +338,9 @@ describe("createSession", () => {
         extensions: [],
       };
       const session = yield* createSession(definition);
-      const pull = yield* Stream.toPull(session.prompt("first"));
+      const pull = yield* Stream.toPull(session.runTurn("first"));
       yield* pull;
-      const exit = yield* Effect.exit(Stream.runCollect(session.prompt("second")));
+      const exit = yield* Effect.exit(Stream.runCollect(session.runTurn("second")));
 
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {
@@ -375,11 +375,11 @@ describe("createSession", () => {
         model: "test/default",
         extensions: [],
       });
-      const first = yield* Effect.forkChild(Stream.runDrain(session.prompt("first")));
+      const first = yield* Effect.forkChild(Stream.runDrain(session.runTurn("first")));
       yield* Effect.promise(() => started);
       yield* Fiber.interrupt(first);
       expect(session.history().map((message) => message.role)).toEqual([]);
-      const events = yield* Stream.runCollect(session.prompt("second"));
+      const events = yield* Stream.runCollect(session.runTurn("second"));
 
       expect([...events]).toEqual([
         { type: "model-output", text: "done" },
@@ -389,7 +389,7 @@ describe("createSession", () => {
     }),
   );
 
-  it.effect("allows sequential prompts after a Turn completes", () =>
+  it.effect("allows sequential Turns after a Turn completes", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");
       const definition: AgentDefinition = {
@@ -398,8 +398,8 @@ describe("createSession", () => {
         extensions: [],
       };
       const session = yield* createSession(definition);
-      yield* Stream.runDrain(session.prompt("first"));
-      yield* Stream.runDrain(session.prompt("second"));
+      yield* Stream.runDrain(session.runTurn("first"));
+      yield* Stream.runDrain(session.runTurn("second"));
       // The deterministic fixture emits bare text-deltas, which record no assistant message.
       expect(session.history().map((message) => message.role)).toEqual(["user", "user"]);
       expect(yield* fixture.calls).toBe(2);
@@ -426,14 +426,14 @@ describe("createSession", () => {
         extensions: [],
       });
 
-      expect(yield* Effect.flip(Stream.runDrain(session.prompt("Hi")))).toMatchObject({
+      expect(yield* Effect.flip(Stream.runDrain(session.runTurn("Hi")))).toMatchObject({
         _tag: "TurnError",
         message: "Tool approval request is missing its Tool call",
       });
     }),
   );
 
-  it.effect("rejects prompts after the session scope closes", () =>
+  it.effect("rejects Turns after the session scope closes", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");
       const definition: AgentDefinition = {
@@ -442,7 +442,7 @@ describe("createSession", () => {
         extensions: [],
       };
       const session = yield* Effect.scoped(createSession(definition));
-      const exit = yield* Effect.exit(Stream.runCollect(session.prompt("late")));
+      const exit = yield* Effect.exit(Stream.runCollect(session.runTurn("late")));
 
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {

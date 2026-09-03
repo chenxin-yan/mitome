@@ -36,7 +36,7 @@ describe("TUI Host", () => {
       );
       await tui().run({
         agent: { providers: [provider], model: "test/default", extensions: [] },
-        prompt: "dynamic preload",
+        message: "dynamic preload",
       });
       console.log("DYNAMIC_PRELOAD_OK");
     `;

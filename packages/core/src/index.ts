@@ -29,7 +29,7 @@ export {
 export { TurnEventDtoSchema } from "./session/events.js";
 export type { ToolExecutionDenied, TurnEvent, TurnEventDto } from "./session/events.js";
 export { createSession } from "./session/session.js";
-export type { CreateSessionOptions, PromptOptions, Session } from "./session/session.js";
+export type { CreateSessionOptions, TurnOptions, Session } from "./session/session.js";
 export {
   makeTranscript,
   promptFromTranscript,

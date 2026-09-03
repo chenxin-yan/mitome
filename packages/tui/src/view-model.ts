@@ -3,7 +3,7 @@ import { Cause, Effect, Exit, Fiber, Stream } from "effect";
 import type { SessionManager, SessionResource } from "./session-manager.js";
 
 export interface SessionTurn {
-  readonly prompt: string;
+  readonly message: string;
   readonly response: string;
   readonly activities: ReadonlyArray<string>;
 }
@@ -130,13 +130,13 @@ export const makeSessionViewModel = (
     publish({
       ...state,
       phase: "running",
-      activeTurn: { prompt: text, response: "", activities: [] },
+      activeTurn: { message: text, response: "", activities: [] },
       notice: undefined,
     });
     let completed = false;
     const historyLength = session.history().length;
     const fiber = Effect.runFork(
-      Stream.runForEach(session.prompt(text), (event) =>
+      Stream.runForEach(session.runTurn(text), (event) =>
         handleEvent(event, () => {
           completed = true;
         }),

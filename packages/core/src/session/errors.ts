@@ -3,7 +3,7 @@ import { AiError } from "effect/unstable/ai";
 
 const coreModuleName = "@mitome/core";
 
-/** Overlapping `Session.prompt()` while a Turn is active. */
+/** Overlapping `Session.runTurn()` while a Turn is active. */
 export class SessionBusyError extends Schema.TaggedError<SessionBusyError>()(
   "SessionBusyError",
   {},
@@ -13,7 +13,7 @@ export class SessionBusyError extends Schema.TaggedError<SessionBusyError>()(
   }
 }
 
-/** Prompt on a Session whose scope has already closed. */
+/** Turn requested on a Session whose scope has already closed. */
 export class SessionReleasedError extends Schema.TaggedError<SessionReleasedError>()(
   "SessionReleasedError",
   {},

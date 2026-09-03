@@ -71,7 +71,7 @@ describe("createSession Tool Turn", () => {
       };
 
       const session = yield* createSession(definition);
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
 
       expect([...events]).toEqual([
         { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
@@ -117,7 +117,7 @@ describe("createSession Tool Turn", () => {
         model: "test/default",
         extensions: [],
       });
-      const events = yield* Stream.runCollect(session.prompt("Find it"));
+      const events = yield* Stream.runCollect(session.runTurn("Find it"));
 
       expect([...events]).toEqual([
         { type: "tool-call", id: "provider-call", name: "web-search", params: {} },
@@ -163,7 +163,7 @@ describe("createSession Tool Turn", () => {
           },
         ],
       });
-      const events = yield* Stream.runCollect(session.prompt("Start"));
+      const events = yield* Stream.runCollect(session.runTurn("Start"));
 
       expect(calls).toBe(17);
       expect(events.at(-1)).toEqual({ type: "response-complete" });
@@ -227,7 +227,7 @@ describe("createSession Tool Turn", () => {
         ],
       });
 
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
 
       expect([...events]).toEqual([
         { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
@@ -294,7 +294,7 @@ describe("createSession Tool Turn", () => {
         ],
       });
 
-      const error = yield* Effect.flip(Stream.runDrain(session.prompt("Hi")));
+      const error = yield* Effect.flip(Stream.runDrain(session.runTurn("Hi")));
 
       expect(error).toMatchObject({
         _tag: "TurnError",
@@ -379,7 +379,7 @@ describe("createSession Tool Turn", () => {
         ],
       });
 
-      const error = yield* Effect.flip(Stream.runDrain(session.prompt("Hi")));
+      const error = yield* Effect.flip(Stream.runDrain(session.runTurn("Hi")));
 
       expect(error).toMatchObject({
         _tag: "TurnError",
@@ -435,7 +435,7 @@ describe("createSession Tool Turn", () => {
         ],
       });
 
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
 
       expect(order).toEqual(["handler", "postTool", "validator"]);
       expect([...events]).toContainEqual({
@@ -492,7 +492,7 @@ describe("createSession Tool Turn", () => {
       };
 
       const session = yield* createSession(definition);
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
 
       expect(events.find((event) => event.type === "tool-result")).toMatchObject({
         type: "tool-result",
@@ -544,7 +544,7 @@ describe("createSession Tool Turn", () => {
       };
 
       const session = yield* createSession(definition);
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
 
       expect([...events]).toContainEqual({
         type: "tool-result",

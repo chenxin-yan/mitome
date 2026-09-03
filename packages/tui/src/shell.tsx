@@ -5,7 +5,7 @@ import type { SessionTurn, SessionViewModel, TranscriptPickerState } from "./vie
 
 const Turn = (props: { readonly turn: SessionTurn }) => (
   <box flexDirection="column" gap={1}>
-    <text>{`You\n${props.turn.prompt}`}</text>
+    <text>{`You\n${props.turn.message}`}</text>
     <For each={props.turn.activities}>{(item) => <text>{`• ${item}`}</text>}</For>
     <text>{`Assistant\n${props.turn.response}`}</text>
   </box>
@@ -42,9 +42,12 @@ const TranscriptPicker = (props: { readonly picker: TranscriptPickerState }) => 
   );
 };
 
-export const Shell = (props: { readonly prompt: string; readonly viewModel: SessionViewModel }) => {
+export const Shell = (props: {
+  readonly message: string;
+  readonly viewModel: SessionViewModel;
+}) => {
   const [state, setState] = createSignal(props.viewModel.getState());
-  const [initialPrompt, setInitialPrompt] = createSignal(props.prompt);
+  const [initialMessage, setInitialMessage] = createSignal(props.message);
   let input: TextareaRenderable | undefined;
   const unsubscribe = props.viewModel.subscribe(setState);
   onCleanup(unsubscribe);
@@ -85,7 +88,7 @@ export const Shell = (props: { readonly prompt: string; readonly viewModel: Sess
 
   const submit = (): void => {
     if (input !== undefined && props.viewModel.submit(input.plainText)) {
-      setInitialPrompt("");
+      setInitialMessage("");
       input.clear();
     }
   };
@@ -109,16 +112,16 @@ export const Shell = (props: { readonly prompt: string; readonly viewModel: Sess
       >
         {(picker: () => TranscriptPickerState) => <TranscriptPicker picker={picker()} />}
       </Show>
-      <box border title="Prompt" height={5}>
+      <box border title="Message" height={5}>
         <textarea
           ref={(element: TextareaRenderable) => {
             input = element;
           }}
-          id="prompt"
-          initialValue={initialPrompt()}
+          id="message"
+          initialValue={initialMessage()}
           placeholder={
             state().phase === "idle"
-              ? "Type a prompt"
+              ? "Type a message"
               : state().phase === "interrupting"
                 ? "Interrupting…"
                 : state().phase === "switching"
@@ -137,10 +140,10 @@ export const Shell = (props: { readonly prompt: string; readonly viewModel: Sess
   );
 };
 
-export const runShell = async (viewModel: SessionViewModel, prompt: string): Promise<void> => {
+export const runShell = async (viewModel: SessionViewModel, message: string): Promise<void> => {
   try {
     await new Promise<void>((resolve, reject) => {
-      render(() => <Shell prompt={prompt} viewModel={viewModel} />, {
+      render(() => <Shell message={message} viewModel={viewModel} />, {
         exitOnCtrlC: true,
         onDestroy: resolve,
       }).catch(reject);

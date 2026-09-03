@@ -110,7 +110,7 @@ describe("createSession Tool serialization", () => {
       const turn = yield* Effect.forkChild(
         Effect.gen(function* () {
           const session = yield* createSession(definition);
-          return yield* Stream.runCollect(session.prompt("Hi"));
+          return yield* Stream.runCollect(session.runTurn("Hi"));
         }),
       );
       yield* Effect.promise(() => firstStarted);

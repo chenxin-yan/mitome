@@ -52,7 +52,7 @@ describe("@mitome/sdk Extension Provided Services", () => {
         model: "test/default",
         extensions: [dependent],
       }),
-      (session) => Array.fromAsync(session.prompt("increment")),
+      (session) => Array.fromAsync(session.runTurn("increment")),
     );
 
     expect(events).toContainEqual({

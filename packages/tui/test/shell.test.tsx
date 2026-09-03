@@ -16,20 +16,20 @@ afterEach(async () => {
 });
 
 const renderShell = async (
-  prompt: string,
+  message: string,
   streams: ReadonlyArray<Stream.Stream<TurnEvent, never>> = [],
   manager: SessionManager = { transcripts: undefined, open: () => Effect.die("not used") },
 ) => {
   let next = 0;
   viewModel = makeSessionViewModel(
     {
-      prompt: () => streams[next++] ?? Stream.empty,
+      runTurn: () => streams[next++] ?? Stream.empty,
       history: () => [],
       close: Effect.void,
     },
     manager,
   );
-  setup = await testRender(() => <Shell prompt={prompt} viewModel={viewModel!} />, {
+  setup = await testRender(() => <Shell message={message} viewModel={viewModel!} />, {
     width: 70,
     height: 16,
   });
@@ -37,11 +37,11 @@ const renderShell = async (
 };
 
 describe("TUI shell", () => {
-  test("stages the initial prompt and focuses its input", async () => {
-    await renderShell("staged prompt");
+  test("stages the initial message and focuses its input", async () => {
+    await renderShell("staged message");
 
-    expect(setup!.captureCharFrame()).toContain("staged prompt");
-    expect(setup!.renderer.currentFocusedRenderable?.id).toBe("prompt");
+    expect(setup!.captureCharFrame()).toContain("staged message");
+    expect(setup!.renderer.currentFocusedRenderable?.id).toBe("message");
   });
 
   test("accepts multiline paste and renders a completed Turn", async () => {
@@ -60,7 +60,7 @@ describe("TUI shell", () => {
     expect(frame).toContain("first");
     expect(frame).toContain("second");
     expect(frame).toContain("streamed answer");
-    expect(setup!.renderer.currentFocusedRenderable?.id).toBe("prompt");
+    expect(setup!.renderer.currentFocusedRenderable?.id).toBe("message");
   });
 
   test("opens the Transcript picker from the keyboard", async () => {
@@ -123,7 +123,7 @@ describe("TUI shell", () => {
       open: (transcriptId) => {
         opened.push(transcriptId);
         return Effect.succeed({
-          prompt: () => Stream.empty,
+          runTurn: () => Stream.empty,
           history: () => [],
           close: Effect.void,
         });
@@ -166,7 +166,7 @@ describe("TUI shell", () => {
       transcripts: undefined,
       open: () =>
         Effect.succeed({
-          prompt: () => Stream.empty,
+          runTurn: () => Stream.empty,
           history: () => [],
           close: Effect.void,
         }),
@@ -177,10 +177,10 @@ describe("TUI shell", () => {
       candidate.includes("Started a new Session."),
     );
 
-    expect(frame).toContain("Type a prompt");
+    expect(frame).toContain("Type a message");
   });
 
-  test("maps Escape to Turn interruption and restores the prompt", async () => {
+  test("maps Escape to Turn interruption and restores the message", async () => {
     await renderShell("cancel", [Stream.never]);
 
     setup!.mockInput.pressEnter({ meta: true });
@@ -189,7 +189,7 @@ describe("TUI shell", () => {
     await Bun.sleep(50);
     const frame = await setup!.waitForFrame((candidate) => candidate.includes("Turn interrupted."));
 
-    expect(frame).toContain("Type a prompt");
-    expect(setup!.renderer.currentFocusedRenderable?.id).toBe("prompt");
+    expect(frame).toContain("Type a message");
+    expect(setup!.renderer.currentFocusedRenderable?.id).toBe("message");
   });
 });

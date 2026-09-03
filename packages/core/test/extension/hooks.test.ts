@@ -90,7 +90,7 @@ describe("Extension Hooks", () => {
         yield* Effect.scoped(
           Effect.gen(function* () {
             const session = yield* createSession(definition);
-            yield* Stream.runDrain(session.prompt("Hi"));
+            yield* Stream.runDrain(session.runTurn("Hi"));
           }),
         );
 
@@ -149,7 +149,7 @@ describe("Extension Hooks", () => {
       };
 
       const session = yield* createSession(definition);
-      yield* Stream.runDrain(session.prompt("Hi"));
+      yield* Stream.runDrain(session.runTurn("Hi"));
 
       expect(log).toEqual(["stepStart(1)", "stepEnd(1)", "stepStart(2)", "stepEnd(2)"]);
       expect(responsePartTypes).toEqual([["tool-call", "tool-result"], ["text-delta"]]);
@@ -174,8 +174,8 @@ describe("Extension Hooks", () => {
       };
 
       const session = yield* createSession(definition);
-      yield* Stream.runDrain(session.prompt("first"));
-      yield* Stream.runDrain(session.prompt("second"));
+      yield* Stream.runDrain(session.runTurn("first"));
+      yield* Stream.runDrain(session.runTurn("second"));
       history = session.history();
 
       expect(prompts).toHaveLength(2);
@@ -216,7 +216,7 @@ describe("Extension Hooks", () => {
       };
 
       const session = yield* createSession(definition);
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
 
       const denial = events.find((event) => event.type === "tool-result");
       expect(denial).toMatchObject({
@@ -256,7 +256,7 @@ describe("Extension Hooks", () => {
         ],
       };
       const session = yield* createSession(valid);
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
       expect(events).toContainEqual({
         type: "tool-result",
         id: "call-1",
@@ -279,7 +279,7 @@ describe("Extension Hooks", () => {
       let failure: unknown;
       let history: ReadonlyArray<unknown> = [];
       const invalidSession = yield* createSession(invalid);
-      const exit = yield* Effect.exit(Stream.runDrain(invalidSession.prompt("Hi")));
+      const exit = yield* Effect.exit(Stream.runDrain(invalidSession.runTurn("Hi")));
       failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
       history = invalidSession.history();
       expect(failure).toBeInstanceOf(TurnError);
@@ -330,7 +330,7 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-      yield* Effect.exit(Stream.runDrain(turnSession.prompt("Hi")));
+      yield* Effect.exit(Stream.runDrain(turnSession.runTurn("Hi")));
       expect(laterTurnStarts).toBe(0);
       expect(turnEnds).toBe(0);
 
@@ -349,7 +349,7 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-      yield* Effect.exit(Stream.runDrain(stepSession.prompt("Hi")));
+      yield* Effect.exit(Stream.runDrain(stepSession.runTurn("Hi")));
       expect(stepLog).toEqual(["start", "end"]);
     }),
   );
@@ -407,7 +407,7 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-      yield* Effect.exit(Stream.runDrain(turnSession.prompt("Hi")));
+      yield* Effect.exit(Stream.runDrain(turnSession.runTurn("Hi")));
       expect(turnLog).toEqual(["start:first", "start:second", "end:first"]);
 
       const stepLog: Array<string> = [];
@@ -434,7 +434,7 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-      yield* Effect.exit(Stream.runDrain(stepSession.prompt("Hi")));
+      yield* Effect.exit(Stream.runDrain(stepSession.runTurn("Hi")));
       expect(stepLog).toEqual(["start:first", "start:second", "end:first"]);
     }),
   );
@@ -496,7 +496,7 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-      yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
+      yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
       expect(turnLog).toEqual(["step:first", "step:second", "turn:first", "turn:second"]);
     }),
   );
@@ -516,7 +516,7 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-      yield* Stream.runForEach(session.prompt("Hi"), (event) =>
+      yield* Stream.runForEach(session.runTurn("Hi"), (event) =>
         Effect.sync(() => void log.push(event.type)),
       );
       expect(log).toEqual(["model-output", "turn-end", "response-complete"]);
@@ -540,7 +540,7 @@ describe("Extension Hooks", () => {
         ],
       });
       const exit = yield* Effect.exit(
-        Stream.runForEach(session.prompt("Hi"), (event) =>
+        Stream.runForEach(session.runTurn("Hi"), (event) =>
           Effect.sync(() => void events.push(event.type)),
         ),
       );
@@ -585,7 +585,7 @@ describe("Extension Hooks", () => {
             },
           ],
         });
-        const exit = yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
+        const exit = yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
         const failure = Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty);
         expect(failure).toBeInstanceOf(TurnError);
         if (hookName === "preTool" || hookName === "postTool") {
@@ -627,7 +627,7 @@ describe("Extension Hooks", () => {
         extensions: [{ name: "bad", hooks: { turnStart: () => Effect.fail(turn) } }],
       };
       const turnSession = yield* createSession(turnDefinition);
-      const turnExit = yield* Effect.exit(Stream.runDrain(turnSession.prompt("Hi")));
+      const turnExit = yield* Effect.exit(Stream.runDrain(turnSession.runTurn("Hi")));
       expect(Cause.squash(Exit.isFailure(turnExit) ? turnExit.cause : Cause.empty)).toMatchObject({
         _tag: "TurnError",
         cause: turn,
@@ -644,7 +644,7 @@ describe("Extension Hooks", () => {
         ],
       };
       const recoveredSession = yield* createSession(recovered);
-      yield* Stream.runDrain(recoveredSession.prompt("Hi"));
+      yield* Stream.runDrain(recoveredSession.runTurn("Hi"));
     }),
   );
 });

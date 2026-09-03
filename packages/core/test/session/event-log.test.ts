@@ -37,8 +37,8 @@ describe("Session event log", () => {
         { transcripts: makeRecordingStore(records) },
       );
 
-      yield* Stream.runDrain(session.prompt("first"));
-      yield* Stream.runDrain(session.prompt("second"));
+      yield* Stream.runDrain(session.runTurn("first"));
+      yield* Stream.runDrain(session.runTurn("second"));
 
       expect(records.map(({ seq }) => seq)).toEqual([0, 1, 2, 3]);
       expect(new Set(records.map(({ sessionId }) => sessionId)).size).toBe(1);
@@ -85,11 +85,11 @@ describe("Session event log", () => {
         },
         { transcripts: store },
       );
-      const interruptedTurn = yield* Effect.forkChild(Stream.runDrain(session.prompt("first")));
+      const interruptedTurn = yield* Effect.forkChild(Stream.runDrain(session.runTurn("first")));
 
       yield* Deferred.await(appended);
       yield* Fiber.interrupt(interruptedTurn);
-      yield* Stream.runDrain(session.prompt("second"));
+      yield* Stream.runDrain(session.runTurn("second"));
 
       expect(records.map(({ seq }) => seq)).toEqual([0, 1, 2]);
     }),
@@ -115,7 +115,7 @@ describe("Session event log", () => {
         { transcripts: store },
       );
 
-      yield* Stream.runDrain(session.prompt("Hi"));
+      yield* Stream.runDrain(session.runTurn("Hi"));
 
       expect(records).toHaveLength(2);
     }),
@@ -147,7 +147,7 @@ describe("Session event log", () => {
           ),
         },
       );
-      const turn = yield* Effect.forkChild(Stream.runDrain(session.prompt("Hi")));
+      const turn = yield* Effect.forkChild(Stream.runDrain(session.runTurn("Hi")));
 
       yield* Deferred.await(appended);
       yield* Fiber.interrupt(turn);
@@ -220,7 +220,7 @@ describe("Session event log", () => {
         { transcripts: makeRecordingStore(records) },
       );
 
-      const events = yield* Stream.runCollect(session.prompt("Hi"));
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
       const decoded = yield* Schema.decodeUnknownEffect(Schema.Array(TranscriptEventRecordSchema))(
         JSON.parse(JSON.stringify(records)),
       );
@@ -305,7 +305,7 @@ describe("Session event log", () => {
         transcripts: makeRecordingStore(records),
       });
 
-      yield* Stream.runForEach(session.prompt("Hi"), (event) =>
+      yield* Stream.runForEach(session.runTurn("Hi"), (event) =>
         event.type === "approval-required" ? event.deny("not allowed") : Effect.void,
       );
       const encoded = JSON.parse(

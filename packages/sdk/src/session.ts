@@ -3,7 +3,7 @@ import { createSession } from "@mitome/core";
 import type {
   AgentDefinition,
   AnyProvider,
-  PromptOptions,
+  TurnOptions,
   Session as CoreSession,
   Transcript,
   TranscriptId,
@@ -23,7 +23,7 @@ export interface Session<
   Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
 > {
   /** The returned iterable is single-use; requesting a second iterator throws. */
-  readonly prompt: (text: string, options?: PromptOptions<Providers>) => AsyncIterable<TurnEvent>;
+  readonly runTurn: (message: string, options?: TurnOptions<Providers>) => AsyncIterable<TurnEvent>;
   readonly history: CoreSession<Providers>["history"];
   readonly transcript: CoreSession<Providers>["transcript"];
 }
@@ -70,7 +70,7 @@ const toAsyncIterable = (
     [Symbol.asyncIterator]() {
       if (iterated) {
         throw new Error(
-          "session.prompt() returns a single-use iterable; call prompt() again to run a new Turn",
+          "session.runTurn() returns a single-use iterable; call runTurn() again to run a new Turn",
         );
       }
       iterated = true;
@@ -130,8 +130,8 @@ export const withSession = <const Definition extends AgentDefinition, A>(
         return yield* Effect.tryPromise({
           try: () =>
             use({
-              prompt: (text, promptOptions) =>
-                toAsyncIterable(session.prompt(text, promptOptions), scope),
+              runTurn: (message, turnOptions) =>
+                toAsyncIterable(session.runTurn(message, turnOptions), scope),
               history: session.history,
               transcript: session.transcript,
             }),

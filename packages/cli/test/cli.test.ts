@@ -68,7 +68,7 @@ const agent = { providers: [provider], model: "test/default", extensions: ${
     }) } }]`
     : "[]"
 } };
-export default defineMitome({ agent, hosts: ${options.tui ? "[tui()]" : options.customHost ? "[{ run: async ({ prompt, transcripts }) => console.log(`CUSTOM_HOST ${prompt} ${transcripts !== undefined}`) }]" : "[]"}${options.transcripts ? ", transcripts: fileTranscripts()" : options.malformedTranscripts ? ", transcripts: {}" : ""} });
+export default defineMitome({ agent, hosts: ${options.tui ? "[tui()]" : options.customHost ? "[{ run: async ({ message, transcripts }) => console.log(`CUSTOM_HOST ${message} ${transcripts !== undefined}`) }]" : "[]"}${options.transcripts ? ", transcripts: fileTranscripts()" : options.malformedTranscripts ? ", transcripts: {}" : ""} });
 `;
 
 const envDefinitionSource = (): string => `
@@ -198,7 +198,7 @@ const installTui = async (current: Fixture): Promise<void> => {
   );
   await writeFile(
     join(tui, "index.js"),
-    'export const tui = () => ({ unsupported: () => process.env.TERM_PROGRAM === "ghostty" ? undefined : "@mitome/tui currently supports Ghostty on Linux", run: ({ prompt }) => process.stdout.write(`TUI_PROMPT ${JSON.stringify(prompt)}\\n`) });\n',
+    'export const tui = () => ({ unsupported: () => process.env.TERM_PROGRAM === "ghostty" ? undefined : "@mitome/tui currently supports Ghostty on Linux", run: ({ message }) => process.stdout.write(`TUI_MESSAGE ${JSON.stringify(message)}\\n`) });\n',
   );
 };
 
@@ -350,7 +350,7 @@ describe("compiled mitome", () => {
   });
 
   test("exits 130 when the production Prompter receives closed input", async () => {
-    const current = await scaffold("mitome-prompt-interrupt-");
+    const current = await scaffold("mitome-message-interrupt-");
 
     expect(await output(spawn("", ["init"], current))).toMatchObject({ exitCode: 130 });
     expect(exists(join(current.env.XDG_CONFIG_HOME, "mitome", "index.ts"))).toBe(false);
@@ -372,12 +372,12 @@ describe("compiled mitome", () => {
 
     const result = await output(spawn("", ["--use", current.definition], current));
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("Missing argument prompt");
+    expect(result.stderr).toContain("Missing argument message");
 
-    // A TTY without a declared interactive Host exercises the child's missing-prompt branch.
+    // A TTY without a declared interactive Host exercises the child's missing-message branch.
     const tty = await ptyOutput(["--use", current.definition], current);
     expect(tty.exitCode).not.toBe(0);
-    expect(tty.stdout + tty.stderr).toContain("Missing argument prompt");
+    expect(tty.stdout + tty.stderr).toContain("Missing argument message");
   });
 
   test("does not activate an installed but unconfigured TUI package", async ({ skip }) => {
@@ -388,7 +388,7 @@ describe("compiled mitome", () => {
     const result = await ptyOutput(["hello", "--use", current.definition], current);
     expect(result).toMatchObject({ exitCode: 0 });
     expect(result.stdout).toContain("first second");
-    expect(result.stdout).not.toContain("TUI_PROMPT");
+    expect(result.stdout).not.toContain("TUI_MESSAGE");
   });
 
   test("rejects a selected module that does not export defineMitome", async () => {
@@ -407,7 +407,7 @@ describe("compiled mitome", () => {
     expect(result.stderr).toContain("must default-export defineMitome({ agent, hosts })");
   });
 
-  test("opens a configured TUI in a supported terminal with optional prompt staging", async ({
+  test("opens a configured TUI in a supported terminal with optional message staging", async ({
     skip,
   }) => {
     if (ptyUnavailable) skip();
@@ -415,14 +415,14 @@ describe("compiled mitome", () => {
     await installTui(current);
     await writeFile(current.definition, definitionSource("first", { tui: true }));
 
-    const prompted = await ptyOutput(["hello", "--use", current.definition], current);
-    expect(prompted).toMatchObject({ exitCode: 0 });
-    expect(prompted.stdout).toContain('TUI_PROMPT "hello"');
-    expect(prompted.stdout).not.toContain("first second");
+    const withMessage = await ptyOutput(["hello", "--use", current.definition], current);
+    expect(withMessage).toMatchObject({ exitCode: 0 });
+    expect(withMessage.stdout).toContain('TUI_MESSAGE "hello"');
+    expect(withMessage.stdout).not.toContain("first second");
 
     const bare = await ptyOutput(["--use", current.definition], current);
     expect(bare).toMatchObject({ exitCode: 0 });
-    expect(bare.stdout).toContain('TUI_PROMPT ""');
+    expect(bare.stdout).toContain('TUI_MESSAGE ""');
   });
 
   test("runs a custom interactive Host outside the TUI terminal matrix", async ({ skip }) => {
@@ -449,11 +449,11 @@ describe("compiled mitome", () => {
       const printed = await ptyOutput([flag, "hello", "--use", current.definition], current);
       expect(printed).toMatchObject({ exitCode: 0 });
       expect(printed.stdout).toContain("first second");
-      expect(printed.stdout).not.toContain("TUI_PROMPT");
+      expect(printed.stdout).not.toContain("TUI_MESSAGE");
 
       const missing = await ptyOutput([flag, "--use", current.definition], current);
       expect(missing.exitCode).not.toBe(0);
-      expect(missing.stdout + missing.stderr).toContain("Missing argument prompt");
+      expect(missing.stdout + missing.stderr).toContain("Missing argument message");
     }
 
     expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
@@ -463,7 +463,7 @@ describe("compiled mitome", () => {
     });
     const missing = await output(spawn("", ["--use", current.definition], current));
     expect(missing.exitCode).not.toBe(0);
-    expect(missing.stderr).toContain("Missing argument prompt");
+    expect(missing.stderr).toContain("Missing argument message");
   });
 
   test("reports an unsupported terminal and falls back to one-shot output", async ({ skip }) => {
@@ -477,12 +477,12 @@ describe("compiled mitome", () => {
     expect(result.stdout).toContain("currently supports Ghostty on Linux");
     expect(result.stdout).toContain("falling back to one-shot output");
     expect(result.stdout).toContain("first second");
-    expect(result.stdout).not.toContain("TUI_PROMPT");
+    expect(result.stdout).not.toContain("TUI_MESSAGE");
 
     const missing = await ptyOutput(["--use", current.definition], current, "xterm");
     expect(missing.exitCode).not.toBe(0);
-    expect(missing.stdout + missing.stderr).toContain("Missing argument prompt");
-    expect(missing.stdout).not.toContain("TUI_PROMPT");
+    expect(missing.stdout + missing.stderr).toContain("Missing argument message");
+    expect(missing.stdout).not.toContain("TUI_MESSAGE");
   });
 
   test("loads the config env file in the Child Host without cwd leakage", async () => {
@@ -839,7 +839,7 @@ describe("compiled mitome", () => {
       stderr: "",
     });
 
-    // An explicitly empty prompt is valid Session input, unlike an omitted one.
+    // An explicitly empty message is valid Session input, unlike an omitted one.
     expect(await output(spawn("", ["", "--use", current.definition], current))).toMatchObject({
       exitCode: 0,
       stdout: "first second\n",

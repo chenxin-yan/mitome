@@ -155,7 +155,7 @@ describe("openai", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(agent(provider, "gpt-5.6"));
-          yield* Stream.runForEach(session.prompt("Hi"), (item) =>
+          yield* Stream.runForEach(session.runTurn("Hi"), (item) =>
             Effect.sync(() => {
               events.push(item);
               if (item.type === "model-output") firstOutput();
@@ -194,7 +194,7 @@ describe("openai", () => {
           Effect.scoped(
             Effect.gen(function* () {
               const session = yield* createSession(agent(provider, "gpt-5.6"));
-              yield* Stream.runDrain(session.prompt("Hi"));
+              yield* Stream.runDrain(session.runTurn("Hi"));
             }),
           ),
         ),
@@ -214,7 +214,7 @@ describe("openai", () => {
         Effect.scoped(
           Effect.gen(function* () {
             const session = yield* createSession(agent(provider, "gpt-5.6"));
-            yield* Stream.runDrain(session.prompt("Hi"));
+            yield* Stream.runDrain(session.runTurn("Hi"));
           }),
         ),
         globalThis.fetch,
@@ -241,7 +241,7 @@ describe("openai", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(agent(provider, "future-private-model"));
-          return yield* Effect.exit(Stream.runDrain(session.prompt("Hi")));
+          return yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
         }),
       ),
       fetch,
@@ -333,7 +333,7 @@ describe("openai", () => {
                 },
               ]),
             );
-            return yield* Stream.runCollect(session.prompt("Hi"));
+            return yield* Stream.runCollect(session.runTurn("Hi"));
           }),
         ),
       );
@@ -430,7 +430,7 @@ describe("openai", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(definition);
-          return yield* Stream.runCollect(session.prompt("Hi"));
+          return yield* Stream.runCollect(session.runTurn("Hi"));
         }),
       ),
       fetch,

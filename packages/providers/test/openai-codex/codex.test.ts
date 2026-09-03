@@ -146,7 +146,7 @@ describe("Codex SSE", () => {
                 "future-private-model",
               ),
             );
-            yield* Stream.runForEach(session.prompt("Hi"), (event) =>
+            yield* Stream.runForEach(session.runTurn("Hi"), (event) =>
               Effect.sync(() => {
                 events.push(event);
                 if (event.type === "model-output") firstOutput();
@@ -259,7 +259,7 @@ describe("Codex SSE", () => {
                 ],
               ),
             );
-            const events = yield* Stream.runCollect(session.prompt("Hi"));
+            const events = yield* Stream.runCollect(session.runTurn("Hi"));
             return { events: [...events], history: session.history() };
           }),
         ),
@@ -340,7 +340,7 @@ describe("Codex SSE", () => {
                 "future-private-model",
               ),
             );
-            return yield* Effect.flip(Stream.runDrain(session.prompt("Hi")));
+            return yield* Effect.flip(Stream.runDrain(session.runTurn("Hi")));
           }),
         ),
       );
@@ -401,7 +401,7 @@ describe("Codex SSE", () => {
     const child = () =>
       spawnRuntime([
         "-e",
-        `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const provider = codex(${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ providers: [provider], model: "openai-codex/gpt-5.4", extensions: [] }); yield* Stream.runDrain(session.prompt("Hi")); })));`,
+        `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const provider = codex(${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ providers: [provider], model: "openai-codex/gpt-5.4", extensions: [] }); yield* Stream.runDrain(session.runTurn("Hi")); })));`,
       ]);
     try {
       const children = [child(), child()];

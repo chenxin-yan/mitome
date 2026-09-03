@@ -28,7 +28,7 @@ const agent = defineAgent({
 const program = Effect.scoped(
   Effect.gen(function* () {
     const session = yield* createSession(agent);
-    yield* Stream.runForEach(session.prompt("Write a haiku."), (event) =>
+    yield* Stream.runForEach(session.runTurn("Write a haiku."), (event) =>
       event.type === "model-output"
         ? Effect.sync(() => process.stdout.write(event.text))
         : Effect.void,
@@ -39,7 +39,7 @@ const program = Effect.scoped(
 await Effect.runPromise(program);
 ```
 
-`createSession` requires a `Scope`; closing it runs Session-end Hooks and releases Extension Resources. `session.prompt()` is an Effect `Stream` whose typed failure channel includes busy/released Session errors, `StoreError`, and `TurnError`. Consume or interrupt that Stream exactly once per Turn.
+`createSession` requires a `Scope`; closing it runs Session-end Hooks and releases Extension Resources. `session.runTurn()` is an Effect `Stream` whose typed failure channel includes busy/released Session errors, `StoreError`, and `TurnError`. Consume or interrupt that Stream exactly once per Turn.
 
 Pass `{ transcripts }` or `{ transcript }` to `createSession` using the same adapters and schemas documented under [Transcript persistence](/docs/persistence).
 

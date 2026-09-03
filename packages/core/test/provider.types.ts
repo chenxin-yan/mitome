@@ -44,10 +44,10 @@ const reordered = defineAgent({
 });
 
 declare const session: Session<readonly [typeof alpha, typeof beta]>;
-void session.prompt("known", { model: "alpha/known" });
-void session.prompt("arbitrary", { model: "beta/private" });
+void session.runTurn("known", { model: "alpha/known" });
+void session.runTurn("arbitrary", { model: "beta/private" });
 // @ts-expect-error Per-Turn selection must use a registered Provider prefix.
-void session.prompt("invalid", { model: "missing/model" });
+void session.runTurn("invalid", { model: "missing/model" });
 
 const defaultModel: "alpha/known" = definition.model;
 const reorderedModel: "beta/private" = reordered.model;
