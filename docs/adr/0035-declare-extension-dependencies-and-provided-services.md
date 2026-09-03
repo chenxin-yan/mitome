@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0041; naming rule amended by ADR-0042
+---
+
 # Declare Extension Dependencies and Provided Services
 
 An Extension may declare other Extension values in `dependencies`. Agent Definition compilation follows those edges, auto-includes dependencies, deduplicates reference-identical values by name, and produces a deterministic dependency-first order stable with respect to the author's root and dependency declaration order. The resolved order governs resource acquisition, Hooks, and Instructions. Because the existing Session scope releases resources in reverse acquisition order, dependencies outlive their dependents.

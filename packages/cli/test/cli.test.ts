@@ -108,16 +108,15 @@ import { LanguageModel } from "effect/unstable/ai";
 import { defineMitome, makeProvider } from "@mitome/core";
 
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {}));
-const shared = { name: "fixture-shared" };
-const first = { name: "fixture-first", dependencies: [shared] };
-const second = { name: "fixture-second", dependencies: [shared] };
-const root = { name: "fixture-root", dependencies: [second] };
-${invalid ? 'const cycle = { name: "fixture-cycle", instructions: 42 }; cycle.dependencies = [cycle];' : ""}
+const first = { name: "fixture-first" };
+const second = { name: "fixture-second" };
+const root = { name: "fixture-root" };
+${invalid ? 'const malformed = { name: "fixture-malformed", instructions: 42 };' : ""}
 export default defineMitome({
   agent: {
     providers: [provider],
     model: "test/default",
-    extensions: ${invalid ? "[first, cycle]" : "[first, second, root]"},
+    extensions: ${invalid ? "[first, malformed]" : '[first, { instructions: "x" }, second, root]'},
   },
   hosts: [],
 });
@@ -785,19 +784,18 @@ describe("compiled mitome", () => {
     expect(result.stderr).toContain("Agent Definition Extensions must be an array");
   });
 
-  test("lists Extensions in compiled order with direct and dependency provenance", async () => {
+  test("lists Extensions in Agent Definition order", async () => {
     const current = await fixture(extensionListDefinitionSource());
-    await writePackageVersion(current, "fixture-shared", "1.2.3");
     await writePackageVersion(current, "fixture-first", "2.0.0");
     await writePackageVersion(current, "fixture-second", "3.1.0");
 
     expect(await output(spawn("", ["ext", "list", "--use", current.definition], current))).toEqual({
       exitCode: 0,
       stdout: [
-        "fixture-shared\t1.2.3\tdependency of fixture-first, fixture-second",
-        "fixture-first\t2.0.0\tdirect",
-        "fixture-second\t3.1.0\tdirect",
-        "fixture-root\tunknown\tdirect",
+        "fixture-first\t2.0.0",
+        "(anonymous)\tunknown",
+        "fixture-second\t3.1.0",
+        "fixture-root\tunknown",
         "",
       ].join("\n"),
       stderr: "",
@@ -811,8 +809,7 @@ describe("compiled mitome", () => {
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("Extension dependency cycle: fixture-cycle -> fixture-cycle");
-    expect(result.stderr).toContain("Extension fixture-cycle Instructions must be a string");
+    expect(result.stderr).toContain("Extension fixture-malformed Instructions must be a string");
   });
 
   test("loads config env while inspecting and exits despite active handles", async () => {
@@ -823,7 +820,7 @@ describe("compiled mitome", () => {
 
     expect(await output(spawn("", ["ext", "list", "--use", current.definition], current))).toEqual({
       exitCode: 0,
-      stdout: "config-extension\tunknown\tdirect\n",
+      stdout: "config-extension\tunknown\n",
       stderr: "",
     });
   });

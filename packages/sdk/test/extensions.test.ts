@@ -55,9 +55,35 @@ describe("@mitome/sdk/extensions", () => {
     expect(history).toMatchObject([{ role: "system", content: "Be helpful." }]);
   });
 
+  test("composes multiple unnamed instruction Extensions", async () => {
+    const history = await Effect.runPromise(
+      Effect.scoped(
+        Effect.map(
+          createSession({
+            providers: [provider()],
+            model: "test/default",
+            extensions: [
+              instructions("First."),
+              instructions("Second."),
+              instructionFiles({ paths: ["./fixtures/instructions.md"] }),
+              instructionFiles({ paths: ["./fixtures/instructions.md"] }),
+            ],
+          }),
+          (session) => session.history(),
+        ),
+      ),
+    );
+
+    expect(history).toMatchObject([
+      {
+        role: "system",
+        content: "First.\n\nSecond.\n\nSibling instructions.\n\n\nSibling instructions.\n",
+      },
+    ]);
+  });
+
   test("resolves explicit paths relative to the defining module", () => {
     expect(instructionFiles({ paths: ["./fixtures/instructions.md"] })).toEqual({
-      name: "instruction-files",
       instructions: "Sibling instructions.\n",
     });
   });
@@ -74,7 +100,6 @@ describe("@mitome/sdk/extensions", () => {
     execFileSync("bun", ["build", entry, "--outfile", bundle, "--target", "node"]);
 
     expect(JSON.parse(execFileSync(process.execPath, [bundle], { encoding: "utf8" }))).toEqual({
-      name: "instruction-files",
       instructions: "Bundled instructions.",
     });
   });
@@ -85,7 +110,6 @@ describe("@mitome/sdk/extensions", () => {
     expect(
       instructionFiles({ paths: ["./fixtures/instructions.md"], discover: ["instructions.md"] }),
     ).toEqual({
-      name: "instruction-files",
       instructions: "Sibling instructions.\n",
     });
   });
@@ -109,7 +133,6 @@ describe("@mitome/sdk/extensions", () => {
     process.chdir(cwd);
 
     expect(instructionFiles({ discover: ["AGENTS.md", "RULES.md"] })).toEqual({
-      name: "instruction-files",
       instructions: "Root instructions.\n\nRoot rules.\n\nNested instructions.\n\nNested rules.",
     });
   });
@@ -122,9 +145,8 @@ describe("@mitome/sdk/extensions", () => {
     writeFileSync(join(cwd, "LOCAL.md"), "Cwd instructions.");
     process.chdir(cwd);
 
-    expect(instructionFiles({ discover: ["AGENTS.md"] })).toEqual({ name: "instruction-files" });
+    expect(instructionFiles({ discover: ["AGENTS.md"] })).toEqual({});
     expect(instructionFiles({ discover: ["LOCAL.md"] })).toEqual({
-      name: "instruction-files",
       instructions: "Cwd instructions.",
     });
   });

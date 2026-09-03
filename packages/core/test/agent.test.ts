@@ -86,126 +86,26 @@ describe("Agent Definition compilation", () => {
     }),
   );
 
-  it.effect("resolves Extension dependencies once in stable dependency-first order", () =>
+  it.effect("identifies unnamed Extensions by reference and keeps named conflicts", () =>
     Effect.gen(function* () {
-      const shared = { name: "shared", instructions: "Shared" };
-      const first = { name: "first", instructions: "First", dependencies: [shared] };
-      const second = { name: "second", instructions: "Second", dependencies: [shared] };
-      const root = { name: "root", instructions: "Root", dependencies: [first, second] };
+      const unnamed = { instructions: "Once" };
+      const firstNamed = { name: "same", instructions: "First" };
+      const secondNamed = { name: "same", instructions: "Second" };
 
       const compiled = yield* compileAgentDefinition({
         providers: [model],
         model: "test/default",
-        extensions: [root, shared],
+        extensions: [unnamed, unnamed],
       });
-
-      expect(compiled.extensions).toEqual([shared, first, second, root]);
-      expect(compiled.instructions).toBe("Shared\n\nFirst\n\nSecond\n\nRoot");
-    }),
-  );
-
-  it.effect("reports Extension dependency conflicts and cycles with deterministic paths", () =>
-    Effect.gen(function* () {
-      const conflictA = { name: "conflict" };
-      const conflictB = { name: "conflict" };
-      const conflictC = { name: "conflict" };
-      interface DependencyNode {
-        readonly name: string;
-        dependencies?: Array<DependencyNode>;
-      }
-      const alpha: DependencyNode = { name: "alpha" };
-      const beta: DependencyNode = { name: "beta" };
-      alpha.dependencies = [beta];
-      beta.dependencies = [alpha];
-      const self: DependencyNode = { name: "self" };
-      self.dependencies = [self];
-      const a: DependencyNode = { name: "a" };
-      const b: DependencyNode = { name: "b" };
-      a.dependencies = [b];
-      b.dependencies = [a];
+      expect(compiled.extensions).toEqual([unnamed]);
+      expect(compiled.instructions).toBe("Once");
 
       const error = yield* getAgentDefinitionError({
         providers: [model],
         model: "test/default",
-        extensions: [
-          conflictA,
-          { name: "owner", dependencies: [conflictB, conflictC] },
-          alpha,
-          self,
-          { name: "root", dependencies: [a] },
-        ],
+        extensions: [firstNamed, secondNamed],
       });
-
-      expect(error.issues).toEqual([
-        "Conflicting Extension name: conflict refers to different values",
-        "Extension dependency cycle: alpha -> beta -> alpha",
-        "Extension dependency cycle: self -> self",
-        "Extension dependency cycle: a -> b -> a",
-      ]);
-    }),
-  );
-
-  it.effect("compiles an auto-included dependency's Tool contributions", () =>
-    Effect.gen(function* () {
-      const tool = Tool.make("dep-tool", { success: Schema.String });
-      const handler = () => Effect.succeed("ok");
-      const dependency = {
-        name: "dependency",
-        toolkit: Toolkit.make(tool),
-        handlers: { "dep-tool": handler },
-      };
-
-      const compiled = yield* compileAgentDefinition({
-        providers: [model],
-        model: "test/default",
-        extensions: [{ name: "root", dependencies: [dependency] }],
-      });
-
-      expect(compiled.tools.get("dep-tool")).toEqual({
-        tool,
-        owner: dependency,
-        handler,
-        inputValidator: undefined,
-        resultValidator: undefined,
-      });
-    }),
-  );
-
-  it.effect("aggregates malformed dependency declarations", () =>
-    Effect.gen(function* () {
-      const error = yield* getAgentDefinitionError({
-        providers: [model],
-        model: "test/default",
-        extensions: [
-          { name: "not-an-array", dependencies: null },
-          { name: "bad-elements", dependencies: [null, { name: 1 }, { name: "valid" }] },
-        ],
-      });
-
-      expect(error.issues).toEqual([
-        "Extension not-an-array Dependencies must be an array",
-        "Extension dependency bad-elements[0] must be an object with a string name",
-        "Extension dependency bad-elements[1] must be an object with a string name",
-      ]);
-    }),
-  );
-
-  it.effect("aggregates malformed provided Service declarations", () =>
-    Effect.gen(function* () {
-      const error = yield* getAgentDefinitionError({
-        providers: [model],
-        model: "test/default",
-        extensions: [
-          { name: "not-an-array", provides: null },
-          { name: "bad-elements", provides: [null, { key: "not-a-context-key" }] },
-        ],
-      });
-
-      expect(error.issues).toEqual([
-        "Extension not-an-array Provides must be an array",
-        "Extension bad-elements Provides[0] must be a Context Key",
-        "Extension bad-elements Provides[1] must be a Context Key",
-      ]);
+      expect(error.issues).toContain("Conflicting Extension name: same refers to different values");
     }),
   );
 
@@ -334,13 +234,19 @@ describe("Agent Definition compilation", () => {
       const definition = {
         providers: [model],
         model: "test/default",
-        extensions: [null, { name: 1, instructions: false }, { name: "named", instructions: 1 }],
+        extensions: [
+          null,
+          { name: 1, instructions: false },
+          { name: "named", instructions: 1 },
+          { instructions: 42 },
+        ],
       };
 
       expect((yield* getAgentDefinitionError(definition)).issues).toEqual([
-        "Extension at index 0 must be an object with a string name",
-        "Extension at index 1 must be an object with a string name",
+        "Extension at index 0 must be an object with an optional string name",
+        "Extension at index 1 must be an object with an optional string name",
         "Extension named Instructions must be a string",
+        "Anonymous Extension Instructions must be a string",
       ]);
     }),
   );

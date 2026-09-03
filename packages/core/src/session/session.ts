@@ -55,42 +55,11 @@ const createSessionImpl: (
   const sessionScope = yield* Effect.scope;
   const extensionContexts = new Map<AnyExtension, Context.Context<any>>();
   for (const extension of compiled.extensions) {
+    if (extension.resource === undefined) continue;
     // SAFETY: contexts are intentionally heterogeneous and indexed by their owning Extension.
-    let context = Context.empty() as Context.Context<any>;
-    for (const dependency of extension.dependencies ?? []) {
-      if (dependency.provides !== undefined) {
-        // SAFETY: topological compilation ensures every dependency context was built first.
-        context = Context.merge(
-          context,
-          Context.pick(...dependency.provides)(extensionContexts.get(dependency)!),
-        );
-      }
-    }
-    // SAFETY: contexts are intentionally heterogeneous and narrowed by the Extension's provides keys.
-    let ownContext = Context.empty() as Context.Context<any>;
-    if (extension.resource !== undefined) {
-      // AnyExtension erases Layer input/output types; the compiled graph restores
-      // the declared dependency context before hooks and handlers run.
-      // SAFETY: the compiled dependency graph supplies the erased Layer requirements.
-      ownContext = (yield* Layer.build(extension.resource).pipe(
-        Effect.provide(context),
-        hookTurnError("Extension setup failed"),
-      )) as Context.Context<any>;
-      context = Context.merge(context, ownContext);
-    }
-    const missingProvidedServices = (extension.provides ?? []).filter(
-      (service) => !ownContext.mapUnsafe.has(service.key),
-    );
-    const missingServiceIssues = missingProvidedServices.map(
-      (service) =>
-        `Extension ${extension.name} Provided Service ${service.key} is missing from its resource Layer`,
-    );
-    if (missingServiceIssues.length > 0) {
-      return yield* new AgentDefinitionError({
-        // SAFETY: guarded by missingServiceIssues.length > 0, so the array satisfies Schema.NonEmptyArray.
-        issues: missingServiceIssues as [string, ...Array<string>],
-      });
-    }
+    const context = (yield* Layer.build(extension.resource).pipe(
+      hookTurnError("Extension setup failed"),
+    )) as Context.Context<any>;
     extensionContexts.set(extension, context);
   }
   const toolExecution = yield* ToolExecution.makeToolExecution(compiled, extensionContexts);

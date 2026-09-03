@@ -14,7 +14,7 @@ describe("Hook phases", () => {
         extensions("first", "second"),
         () => Effect.void,
         (extension) =>
-          Effect.sync(() => void log.push(extension.name)).pipe(
+          Effect.sync(() => void log.push(extension.name!)).pipe(
             Effect.andThen(extension.name === "first" ? Effect.interrupt : Effect.void),
           ),
         "end failed",
@@ -36,7 +36,7 @@ describe("Hook phases", () => {
         extensions("first", "second", "third"),
         () => Effect.void,
         (extension) =>
-          Effect.sync(() => void log.push(extension.name)).pipe(
+          Effect.sync(() => void log.push(extension.name!)).pipe(
             Effect.andThen(
               extension.name === "first"
                 ? Effect.fail(first)

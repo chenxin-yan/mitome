@@ -77,7 +77,5 @@ export function instructionFiles(options: InstructionFilesOptions = {}): Extensi
     ...discoveredPaths(options.discover ?? []).filter((path) => !paths.includes(path)),
   ];
   const fragments = files.map((path) => readFileSync(path, "utf8"));
-  return fragments.length === 0
-    ? { name: "instruction-files" }
-    : { name: "instruction-files", instructions: fragments.join("\n\n") };
+  return fragments.length === 0 ? {} : { instructions: fragments.join("\n\n") };
 }

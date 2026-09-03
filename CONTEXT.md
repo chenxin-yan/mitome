@@ -55,11 +55,11 @@ A directory selected as a load target whose Mitome Definition module is `index.t
 _Avoid_: Agent Definition directory, folder
 
 **Extension**:
-A named, reusable unit included by an Agent Definition to add Tools, contribute Instructions, or participate in the Agent lifecycle.
+A reusable unit included by an Agent Definition to add Tools, contribute Instructions, or participate in the Agent lifecycle. An optional name identifies it in diagnostics; otherwise its object reference is its identity.
 _Avoid_: Plugin, Toolkit, package, add-on
 
 **Instructions**:
-A static markdown fragment an Extension contributes to an Agent's system prompt, composed in resolved dependency-first Extension order at Session creation.
+A static markdown fragment an Extension contributes to an Agent's system prompt, composed in Agent Definition order at Session creation.
 _Avoid_: System prompt (the composed whole), prompt fragment
 
 **Model**:
@@ -97,14 +97,6 @@ _Avoid_: Function, command
 **Resource**:
 The private set of services an Extension acquires at Session creation, holds for the Session's lifetime, and releases at Session end; visible only to that Extension's own Hooks and Tool handlers.
 _Avoid_: Dependency, state, shared context
-
-**Provided Service**:
-A service an Extension deliberately publishes from its Resource Layer as a typed contract; visible only to Extensions that declare it as an Extension Dependency, and shared as one instance per Session.
-_Avoid_: Export, API (bare), Resource
-
-**Extension Dependency**:
-An Extension's declaration that another Extension must be active in the same Agent Definition, loaded before it, with its Provided Services accessible to the dependent's Hooks and Tool handlers.
-_Avoid_: Plugin dependency, import, requirement (bare)
 
 **Tool Call**:
 One Agent invocation of a Tool within a Step, gated by Approval before it may execute.

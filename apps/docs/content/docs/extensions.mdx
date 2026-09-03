@@ -1,10 +1,10 @@
 ---
 title: Extensions
-description: Add typed Tools, lifecycle Hooks, scoped Resources, and Provided Services.
+description: Add typed Tools, lifecycle Hooks, and scoped Resources.
 icon: Blocks
 ---
 
-An Extension is a named, reusable unit that can contribute Instructions and Tools or participate in the Agent lifecycle. Use `defineExtension` and `tool` from the Promise-first SDK.
+An Extension is a reusable unit that can contribute Instructions and Tools or participate in the Agent lifecycle. Use `defineExtension` and `tool` from the Promise-first SDK. A name is optional: unnamed Extensions use reference identity, while two different named Extensions with the same name conflict.
 
 ## A Tool with a scoped Resource
 
@@ -38,13 +38,13 @@ export const notes = defineExtension({
 });
 ```
 
-Tool input and output are validated. `inputSchema` may be an Effect Schema or a Standard Schema that also supplies JSON Schema; `outputSchema` may be either validation form. `needsApproval` accepts a boolean or an input-aware predicate. The handler receives the Extension's private Resource, an `AbortSignal`, and access to declared Provided Services.
+Tool input and output are validated. `inputSchema` may be an Effect Schema or a Standard Schema that also supplies JSON Schema; `outputSchema` may be either validation form. `needsApproval` accepts a boolean or an input-aware predicate. The handler receives the Extension's private Resource and an `AbortSignal`.
 
 `setup` runs once when a Session starts. `dispose` runs when its Session scope closes, including failure and interruption paths. A resumed Transcript seeds a new Session and therefore acquires fresh Resources.
 
 ## Hook contracts
 
-Every Promise Hook receives a context containing `resource`, `signal`, and `getService`. Hooks run in deterministic dependency-first, declaration-stable order; teardown is reversed.
+Every Promise Hook receives a context containing `resource` and `signal`. Hooks run in Agent Definition order; teardown is reversed.
 
 | Hook                          | Contract                                                                                              |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -60,44 +60,12 @@ Every Promise Hook receives a context containing `resource`, `signal`, and `getS
 
 A Hook rejection fails the Turn with `TurnError`. `preTool` is policy before execution, while Approval is a separate Host decision after policy. Do not use one as a substitute for the other.
 
-## Extension Dependencies and Provided Services
+## Sharing Session state
 
-An Extension may depend on another Extension. Dependencies are auto-included, deduplicated by identity, and loaded dependency-first. Same-name conflicts and cycles fail Agent Definition compilation.
-
-A dependency exposes only the services listed in `provides`; its other Resources remain private. One Provided Service instance is shared by all declared dependents for a Session. Promise Extensions use Effect service tags as typed contracts:
-
-```ts
-import { Context } from "effect";
-import { defineExtension, tool } from "@mitome/sdk";
-import { Schema } from "effect";
-
-class Counter extends Context.Service<Counter, { count: number }>()("example/Counter") {}
-
-const counter = defineExtension({
-  name: "counter",
-  provides: [Counter],
-  setup: async () => ({ count: 0 }),
-});
-
-export const increment = defineExtension({
-  name: "increment",
-  dependencies: [counter],
-  tools: [
-    tool({
-      name: "increment",
-      dependencies: [Counter],
-      inputSchema: Schema.Void,
-      outputSchema: Schema.Number,
-      handler: async (_input, { getService }) => ++getService(Counter).count,
-    }),
-  ],
-});
-```
-
-The compile-time coverage rule rejects Tool handlers or Hooks that ask for a service not supplied by their own Resource or a declared dependency's Provided Services.
+A Resource is private to its Extension. Put Tools and Hooks that need the same Session state in one Extension and access that state through their shared Resource. Compose separate Extensions explicitly in the Agent Definition.
 
 ## Approvals and cancellation
 
 A Tool marked `needsApproval` pauses the Turn and emits `approval-required`. The Host must call `approve()` or `deny(reason?)`. Interrupting event iteration cancels the Turn and triggers the context `AbortSignal`, allowing Tools and Hooks to stop external work.
 
-See [the SDK event loop](/docs/sdk) for Host-side handling, [Transcript persistence](/docs/persistence#commit-boundary) for resume and commit semantics, and [ADR-0035](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0035-declare-extension-dependencies-and-provided-services.md) for dependency rationale.
+See [the SDK event loop](/docs/sdk) for Host-side handling and [Transcript persistence](/docs/persistence#commit-boundary) for resume and commit semantics.

@@ -27,7 +27,7 @@ mitome ext list [--use <path>]
 
 `--use` selects a Mitome Definition module or directory; a directory resolves through its `index.ts`. Without `--use`, Mitome loads `<config-dir>/index.ts`. Only an explicitly selected or default Definition is eligible for dependency reconciliation—Mitome does not discover executable definitions from the current directory.
 
-Before loading a selected Definition, Agent commands reconcile its `package.json` dependencies with its local installation. `add` and `remove` are conveniences over that manifest; `ext list` reports the resolved Extension graph and whether each Extension is direct or included as a dependency.
+Before loading a selected Definition, Agent commands reconcile its `package.json` dependencies with its local installation. `add` and `remove` are conveniences over that manifest; `ext list` reports the configured Extensions in Agent Definition order.
 
 ## Trusted in-process execution
 
