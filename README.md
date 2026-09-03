@@ -6,4 +6,4 @@ Mitome lets you define and run AI agents for your own use cases. Use the Promise
 npm install @mitome/sdk @mitome/providers
 ```
 
-See the [documentation](apps/docs/content/docs/) for the quickstart, Extensions, persistence, Providers, CLI, TUI, and Effect-native APIs.
+See the [documentation](apps/docs/content/docs/) for the quickstart, Extensions, persistence, Providers, CLI, TUI, and Effect-native APIs. Host and Provider authors use [`@mitome/core`](apps/docs/content/docs/core.mdx).

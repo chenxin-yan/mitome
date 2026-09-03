@@ -20,7 +20,11 @@ export const host: Host = {
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createHostSession(context);
-          yield* Stream.runDrain(session.runTurn(context.message));
+          yield* Stream.runForEach(session.runTurn(context.message), (event) =>
+            event.type === "approval-required"
+              ? event.deny("This Host does not permit Tool execution")
+              : Effect.void,
+          );
         }),
       ),
     ),
