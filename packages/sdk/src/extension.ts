@@ -104,7 +104,7 @@ export interface Tool<
 type ToolOptions<Input> = Pick<Tool<Input>, "description" | "inputSchema" | "needsApproval">;
 
 /** A Tool declaration function scoped to one Extension Resource. */
-export interface ToolBuilder<Resource = never> {
+export interface ToolBuilder<in out Resource = never> {
   <Input, Output, Failure, const Name extends string>(
     definition: ToolOptions<Input> & {
       readonly name: Name;
@@ -290,9 +290,9 @@ export function defineExtension<
     ? readonly []
     : ReadonlyArray<AnyTool>,
 >(
-  definition: ExtensionDefinition<Resource, Tools> &
-    { readonly tools: (scope: { readonly tool: ToolBuilder<Resource> }) => Tools } &
-    ([Resource] extends [never]
+  definition: ExtensionDefinition<Resource, Tools> & {
+    readonly tools: (scope: { readonly tool: ToolBuilder<Resource> }) => Tools;
+  } & ([Resource] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : { readonly setup: () => Promise<Resource> }),
 ): NoInfer<Extension<Resource, unknown, ToolContributionsOf<Tools>>>;

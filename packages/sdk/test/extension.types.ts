@@ -191,6 +191,11 @@ defineExtension({
   setup: async () => ({ db: "connection" }),
   tools: ({ tool }) => sharedTools(tool),
 });
+defineExtension({
+  name: "shared-tools-without-resource",
+  // @ts-expect-error A resource-free builder cannot be passed to a resourceful helper.
+  tools: ({ tool }) => sharedTools(tool),
+});
 
 type InferenceContributions = ContributionsOf<typeof inferenceExtension>;
 export type InferenceContributionKeys = Expect<
