@@ -1,6 +1,11 @@
 import { Context, Effect, Exit, Layer, Predicate, Schema } from "effect";
-import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
-import type { Response as AiResponse } from "effect/unstable/ai";
+import {
+  AiError,
+  Prompt as AiPrompt,
+  Response as AiResponse,
+  Tool as AiTool,
+  Toolkit,
+} from "effect/unstable/ai";
 import type {
   Extension,
   ExtensionHooks,
@@ -10,8 +15,16 @@ import type {
   ToolResultHookContext,
 } from "@mitome/core";
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec";
+import type { Prompt, ResponsePart } from "./models.js";
 
-type EffectSchema<Output> = Schema.Codec<Output, unknown, never, never>;
+// Structural view of an Effect Schema. Keeping this local lets the Promise entry point accept
+// Effect-native schemas without publishing an Effect type in its declarations.
+interface EffectSchema<Output> {
+  readonly Type: Output;
+  readonly Encoded: unknown;
+  readonly DecodingServices: never;
+  readonly EncodingServices: never;
+}
 
 export type StandardSchema<Input = unknown, Output = Input> = StandardSchemaV1<Input, Output>;
 export type InputSchema<Input = unknown> =
@@ -21,14 +34,11 @@ export type OutputSchema<Output = unknown> =
   | StandardSchemaV1<unknown, Output>
   | EffectSchema<Output>;
 
-export type ModelPrompt = AiPrompt.Prompt;
-
 export interface HookContext<Resource = never> {
   readonly resource: Resource;
   readonly signal: AbortSignal;
 }
 
-export type ResponsePart = AiResponse.AnyPart;
 type ToolHookResult = ToolResultHookContext["result"];
 type UnvalidatedToolInput = Parameters<ToolInputValidator>[0];
 type StandardInputValue = Parameters<StandardSchemaV1.Props["validate"]>[0];
@@ -47,10 +57,10 @@ export interface ExtensionHooksDefinition<Resource = never> {
   readonly sessionEnd?: (context: HookContext<Resource>) => Promise<void>;
   readonly turnStart?: (message: string, context: HookContext<Resource>) => Promise<void>;
   readonly turnEnd?: (message: string, context: HookContext<Resource>) => Promise<void>;
-  readonly stepStart?: (prompt: ModelPrompt, context: HookContext<Resource>) => Promise<void>;
+  readonly stepStart?: (prompt: Prompt, context: HookContext<Resource>) => Promise<void>;
   /** Receives the Model Prompt and emitted response parts; failed Steps provide their partial parts. */
-  readonly stepEnd?: (prompt: ModelPrompt, context: StepEndContext<Resource>) => Promise<void>;
-  readonly preStep?: (prompt: ModelPrompt, context: HookContext<Resource>) => Promise<ModelPrompt>;
+  readonly stepEnd?: (prompt: Prompt, context: StepEndContext<Resource>) => Promise<void>;
+  readonly preStep?: (prompt: Prompt, context: HookContext<Resource>) => Promise<Prompt>;
   readonly preTool?: (
     context: ToolHookContext & HookContext<Resource>,
   ) => Promise<void | { readonly reason: string }>;
@@ -141,9 +151,15 @@ type StandardInput<Input> = StandardSchemaV1.Props<unknown, Input> &
 
 const standardInput = <Input>(schema: InputSchema<Input>): StandardInput<Input> => {
   if (Schema.isSchema(schema)) {
-    return Schema.toStandardJSONSchemaV1(Schema.toStandardSchemaV1(schema))["~standard"];
+    // SAFETY: Schema.isSchema established the full Effect Schema protocol; the public structural
+    // view fixes the same decoded Input and excludes service requirements.
+    const effectSchema = schema as Schema.Codec<Input, unknown, never, never>;
+    return Schema.toStandardJSONSchemaV1(Schema.toStandardSchemaV1(effectSchema))["~standard"];
   }
-  const standard = schema["~standard"];
+  // SAFETY: the Effect branch returned above, leaving the Standard Schema union member.
+  const standard = (
+    schema as StandardSchemaV1<unknown, Input> & StandardJSONSchemaV1<unknown, Input>
+  )["~standard"];
   if (!("validate" in standard) || !("jsonSchema" in standard)) {
     throw new Error("Tool input schema must provide validation and JSON Schema");
   }
@@ -154,9 +170,13 @@ const standardOutput = <Output>(
   schema: OutputSchema<Output>,
 ): StandardSchemaV1.Props<unknown, Output> => {
   if (Schema.isSchema(schema)) {
-    return Schema.toStandardSchemaV1(schema)["~standard"];
+    // SAFETY: Schema.isSchema established the full Effect Schema protocol; the public structural
+    // view fixes the same decoded Output and excludes service requirements.
+    const effectSchema = schema as Schema.Codec<Output, unknown, never, never>;
+    return Schema.toStandardSchemaV1(effectSchema)["~standard"];
   }
-  const standard = schema["~standard"];
+  // SAFETY: the Effect branch returned above, leaving the Standard Schema union member.
+  const standard = (schema as StandardSchemaV1<unknown, Output>)["~standard"];
   if (!("validate" in standard)) {
     throw new Error("Tool output schema must provide validation");
   }
@@ -200,6 +220,21 @@ const promiseHook = Effect.fn("@mitome/sdk/promiseHook")(function* <A, Resource>
   });
 });
 
+const toPrompt: (prompt: AiPrompt.Prompt) => Prompt = Schema.encodeSync(AiPrompt.Prompt);
+
+const toResponsePart = (responsePart: AiResponse.AnyPart): ResponsePart => {
+  const { ["~effect/ai/Content/Part"]: _, ...part } = responsePart;
+  return part.type === "finish"
+    ? {
+        ...part,
+        usage: {
+          inputTokens: { ...part.usage.inputTokens },
+          outputTokens: { ...part.usage.outputTokens },
+        },
+      }
+    : part;
+};
+
 const adaptHooks = <Resource>(
   hooks: ExtensionHooksDefinition<Resource> | undefined,
   resource: Context.Service<Resource, Resource> | undefined,
@@ -219,15 +254,21 @@ const adaptHooks = <Resource>(
   const turnEnd = hooks.turnEnd;
   if (turnEnd) adapted.turnEnd = (message) => run((context) => turnEnd(message, context));
   const stepStart = hooks.stepStart;
-  if (stepStart) adapted.stepStart = (prompt) => run((context) => stepStart(prompt, context));
+  if (stepStart)
+    adapted.stepStart = (prompt) => run((context) => stepStart(toPrompt(prompt), context));
   const stepEnd = hooks.stepEnd;
   if (stepEnd)
     adapted.stepEnd = (prompt, responseParts) =>
-      run((context) => stepEnd(prompt, { ...context, responseParts }));
+      run((context) =>
+        stepEnd(toPrompt(prompt), {
+          ...context,
+          responseParts: responseParts.map(toResponsePart),
+        }),
+      );
   const preStep = hooks.preStep;
   if (preStep)
     adapted.preStep = (prompt) =>
-      run((context) => preStep(prompt, context)).pipe(
+      run((context) => preStep(toPrompt(prompt), context)).pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(AiPrompt.Prompt)),
       );
   const preTool = hooks.preTool;

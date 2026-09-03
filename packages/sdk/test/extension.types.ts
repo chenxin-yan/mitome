@@ -10,11 +10,11 @@ import {
   type ExtensionHooksDefinition,
   type ToolBuilder,
   type ToolInputValidator,
-  type ModelPrompt,
+  type Prompt,
 } from "../src/index.js";
 
 export type PublicToolInputValidator = ToolInputValidator;
-export type PublicModelPrompt = ModelPrompt;
+export type PublicPrompt = Prompt;
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2

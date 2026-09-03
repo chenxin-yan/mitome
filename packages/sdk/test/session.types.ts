@@ -2,7 +2,7 @@ import { Layer } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
 import { makeProvider } from "@mitome/core";
 import { defineAgent, withSession } from "../src/index.js";
-import type { TranscriptStore } from "../src/index.js";
+import type { Prompt, PromptMessage, TranscriptStore } from "../src/index.js";
 
 // SAFETY: This compile-only fixture is never executed; it only supplies the nominal service
 // required to exercise Session's provider/model type constraints.
@@ -17,6 +17,8 @@ const noExtensions: readonly [] = definition.extensions;
 void noExtensions;
 
 void withSession(definition, async (session) => {
+  const history: ReadonlyArray<PromptMessage> = session.history();
+  void history;
   session.runTurn("known", { model: "first/known" });
   session.runTurn("private", { model: "second/private" });
   // @ts-expect-error Promise SDK selections must use a registered Provider prefix.
@@ -35,3 +37,15 @@ void withSession(
   { transcripts: store, resume: "seed", transcript },
   async () => undefined,
 );
+
+const invalidUserPrompt = {
+  content: [
+    {
+      role: "user",
+      content: [{ type: "tool-result", id: "id", name: "tool", isFailure: false, result: null }],
+    },
+  ],
+} as const;
+// @ts-expect-error User Messages cannot contain Tool result parts.
+const prompt: Prompt = invalidUserPrompt;
+void prompt;

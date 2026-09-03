@@ -13,10 +13,7 @@ export {
   TurnEventDtoSchema,
   StoreError,
   TurnError,
-  defineMitome,
-  fileTranscripts,
   makeTranscript,
-  memoryTranscripts,
   promptFromTranscript,
   summarizeTranscript,
 } from "@mitome/core";
@@ -28,7 +25,6 @@ export type {
   ExtensionHooks,
   Host,
   HostContext,
-  MitomeDefinition,
   TurnOptions,
   QualifiedModelId,
   ToolFailureValidator,
@@ -42,19 +38,30 @@ export type {
   TranscriptEventRecord,
   TranscriptId,
   TranscriptMessage,
-  TranscriptStore,
   TranscriptSummary,
   TurnEventDto,
 } from "@mitome/core";
 export { defineAgent } from "./agent.js";
+export { defineMitome } from "./mitome.js";
+export type { MitomeDefinition } from "./mitome.js";
+export { fileTranscripts, memoryTranscripts } from "./transcript-store.js";
+export type { TranscriptStore } from "./transcript-store.js";
+export type {
+  FinishReason,
+  Json,
+  Prompt,
+  PromptMessage,
+  PromptPart,
+  ProviderOptions,
+  ResponsePart,
+  Usage,
+} from "./models.js";
 export { defineExtension, fail, ok } from "./extension.js";
 export type {
   HookContext,
   InputSchema,
   OutputSchema,
   ExtensionHooksDefinition,
-  ModelPrompt,
-  ResponsePart,
   StandardSchema,
   StepEndContext,
   Tool,

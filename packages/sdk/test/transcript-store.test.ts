@@ -1,10 +1,11 @@
 import { expect, test } from "vitest";
-import { Effect, Stream } from "effect";
+import { Stream } from "effect";
 import { Response } from "effect/unstable/ai";
 import {
   defineAgent,
   memoryTranscripts,
   StoreError,
+  TranscriptNotFound,
   TranscriptSchemaVersion,
   TurnError,
   withSession,
@@ -25,6 +26,32 @@ const definitionWith = (run: Parameters<typeof makeTestProvider>[0]) =>
     model: "test/default",
     extensions: [],
   });
+
+test("adapts Promise Transcript store misses and rejections to tagged Core errors", async () => {
+  const definition = definitionWith(() => textResponse("done"));
+  const methods = {
+    save: async () => undefined,
+    list: async () => [],
+    appendEvent: async () => undefined,
+  };
+
+  await expect(
+    withSession(
+      definition,
+      { transcripts: { ...methods, load: async () => null }, resume: "missing" },
+      async () => undefined,
+    ),
+  ).rejects.toEqual(new TranscriptNotFound({ id: "missing" }));
+
+  const cause = new Error("database offline");
+  await expect(
+    withSession(
+      definition,
+      { transcripts: { ...methods, load: async () => Promise.reject(cause) }, resume: "seed" },
+      async () => undefined,
+    ),
+  ).rejects.toMatchObject({ _tag: "StoreError", cause });
+});
 
 test("snapshots and resumes prior context through the public SDK", async () => {
   const store = memoryTranscripts();
@@ -50,7 +77,7 @@ test("snapshots and resumes prior context through the public SDK", async () => {
   expect(prompts).toEqual([["user"], ["user", "assistant", "user"]]);
   expect(child.id).not.toBe(parentId);
   expect(child.parentTranscriptId).toBe(parentId);
-  expect(await Effect.runPromise(store.load(child.id))).toEqual(child);
+  expect(await store.load(child.id)).toEqual(child);
 });
 
 test("two resumes create independent child Transcripts with parent provenance", async () => {
@@ -106,7 +133,7 @@ test("a failed save surfaces StoreError but keeps the completed turn committed",
   const store = memoryTranscripts();
   const failing = {
     ...store,
-    save: () => Effect.fail(new StoreError({ message: "disk full" })),
+    save: () => Promise.reject(new StoreError({ message: "disk full" })),
   };
   const roles: Array<ReadonlyArray<string>> = [];
   const definition = definitionWith(({ prompt }) => {
@@ -143,13 +170,14 @@ test("failed and interrupted Turns leave stored Transcripts unchanged", async ()
 
   const transcriptId = await withSession(definition, { transcripts: store }, async (session) => {
     await Array.fromAsync(session.runTurn("saved"));
-    const before = await Effect.runPromise(store.load(session.transcript().id));
+    const before = await store.load(session.transcript().id);
+    if (before === null) throw new Error("expected stored Transcript");
 
     await expect(Array.fromAsync(session.runTurn("failed"))).rejects.toBeInstanceOf(TurnError);
-    expect(await Effect.runPromise(store.load(before.id))).toEqual(before);
+    expect(await store.load(before.id)).toEqual(before);
     return before.id;
   });
-  const summariesBefore = await Effect.runPromise(store.list());
+  const summariesBefore = await store.list();
 
   await withSession(definition, { transcripts: store, resume: transcriptId }, async (session) => {
     const iterator = session.runTurn("interrupted")[Symbol.asyncIterator]();
@@ -157,5 +185,5 @@ test("failed and interrupted Turns leave stored Transcripts unchanged", async ()
     await iterator.return?.();
   });
 
-  expect(await Effect.runPromise(store.list())).toEqual(summariesBefore);
+  expect(await store.list()).toEqual(summariesBefore);
 });

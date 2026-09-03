@@ -39,19 +39,18 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@standard-schema/spec": "^1.1.0"
+    "@standard-schema/spec": "^1.1.0",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
     "@types/node": "catalog:",
-    "effect": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "peerDependencies": {
-    "@mitome/core": "workspace:*",
-    "effect": "4.0.0-rc.108"
+    "@mitome/core": "workspace:*"
   },
   "engines": {
     "node": ">=24"

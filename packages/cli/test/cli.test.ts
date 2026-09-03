@@ -249,7 +249,7 @@ const reconcileFixture = async (): Promise<Fixture> => {
       version: "0.0.0",
       type: "module",
       exports: { ".": "./dist/index.js", "./package.json": "./package.json" },
-      peerDependencies: { effect: effectVersion },
+      dependencies: { effect: effectVersion },
     }),
   );
   await mkdir(definitionDirectory, { recursive: true });
