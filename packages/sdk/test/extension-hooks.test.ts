@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Stream } from "effect";
 import { Response } from "effect/unstable/ai";
-import { defineAgent, defineExtension, tool, withSession, type Extension } from "../src/index.js";
+import { defineAgent, defineExtension, withSession, type Extension } from "../src/index.js";
 import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
 
 describe("@mitome/sdk Extension Hooks", () => {
@@ -23,7 +23,7 @@ describe("@mitome/sdk Extension Hooks", () => {
     };
     const sdk = defineExtension({
       name: "sdk",
-      tools: [
+      tools: ({ tool }) => [
         tool({
           name: "echo",
           inputSchema: jsonStringSchema,
@@ -116,7 +116,6 @@ describe("@mitome/sdk Extension Hooks", () => {
       extensions: [
         defineExtension({
           name: "sdk",
-          tools: [],
           hooks: {
             // SAFETY: This test deliberately violates the Hook's runtime output contract to verify
             // that SDK boundary validation rejects an invalid Promise Hook result.
@@ -141,7 +140,6 @@ describe("@mitome/sdk Extension Hooks", () => {
       extensions: [
         defineExtension({
           name: "sdk",
-          tools: [],
           hooks: {
             preStep: (_prompt, { signal }) =>
               new Promise((_resolve, reject) => {
@@ -185,7 +183,6 @@ describe("@mitome/sdk Extension Hooks", () => {
       extensions: [
         defineExtension({
           name: "blocking",
-          tools: [],
           hooks: {
             stepEnd: (_prompt, { signal }) =>
               new Promise((_resolve, reject) => {
@@ -203,7 +200,6 @@ describe("@mitome/sdk Extension Hooks", () => {
         }),
         defineExtension({
           name: "later",
-          tools: [],
           hooks: {
             stepEnd: async () => {
               laterCompleted = true;
@@ -235,7 +231,6 @@ describe("@mitome/sdk Extension Hooks", () => {
       extensions: [
         defineExtension({
           name: "sdk",
-          tools: [],
           hooks: { turnStart: async () => Promise.reject(original) },
         }),
       ],
@@ -265,12 +260,12 @@ describe("@mitome/sdk Extension Hooks", () => {
         core,
         defineExtension({
           name: "sdk",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "echo",
               inputSchema: jsonStringSchema,
               outputSchema: stringSchema,
-              handler: async () => Promise.reject(new Error("expected")),
+              handler: async () => Promise.reject<string>(new Error("expected")),
             }),
           ],
         }),
@@ -291,7 +286,7 @@ describe("@mitome/sdk Extension Hooks", () => {
         { name: "core", hooks: { postTool: () => Effect.succeed(1) } },
         defineExtension({
           name: "sdk",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "echo",
               inputSchema: jsonStringSchema,

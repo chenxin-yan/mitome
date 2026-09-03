@@ -4,13 +4,13 @@ description: Add typed Tools, lifecycle Hooks, and scoped Resources.
 icon: Blocks
 ---
 
-An Extension is a reusable unit that can contribute Instructions and Tools or participate in the Agent lifecycle. Use `defineExtension` and `tool` from the Promise-first SDK. A name is optional: unnamed Extensions use reference identity, while two different named Extensions with the same name conflict.
+An Extension is a reusable unit that contributes Instructions and Tools or participates in the Agent lifecycle. Author Extensions with `defineExtension`. A name is optional: unnamed Extensions use reference identity, while two different named Extensions with the same name conflict.
 
 ## A Tool with a scoped Resource
 
 ```ts
-import { Schema } from "effect";
-import { defineExtension, tool } from "@mitome/sdk";
+import { z } from "zod";
+import { defineExtension } from "@mitome/sdk";
 
 interface Notes {
   readonly values: Array<string>;
@@ -19,12 +19,14 @@ interface Notes {
 export const notes = defineExtension({
   name: "notes",
   instructions: "Save a note when the user asks you to remember something.",
-  tools: [
-    tool<string, string, Notes>({
+  setup: async (): Promise<Notes> => ({ values: [] }),
+  dispose: async (resource) => void resource.values.splice(0),
+  tools: ({ tool }) => [
+    tool({
       name: "save_note",
       description: "Save one note for this Session",
-      inputSchema: Schema.String,
-      outputSchema: Schema.String,
+      inputSchema: z.string(),
+      outputSchema: z.string(),
       needsApproval: true,
       handler: async (text, { resource, signal }) => {
         signal.throwIfAborted();
@@ -33,14 +35,74 @@ export const notes = defineExtension({
       },
     }),
   ],
-  setup: async (): Promise<Notes> => ({ values: [] }),
-  dispose: async (resource) => void resource.values.splice(0),
 });
 ```
 
-Tool input and output are validated. `inputSchema` may be an Effect Schema or a Standard Schema that also supplies JSON Schema; `outputSchema` may be either validation form. `needsApproval` accepts a boolean or an input-aware predicate. The handler receives the Extension's private Resource and an `AbortSignal`.
+The scoped `tool` builder carries the Extension's Resource type from `setup` into every handler. Tool input is validated and must supply JSON Schema; zod v4 does both through Standard Schema. `outputSchema` is optional: when omitted, output is inferred from the handler and passed through without validation. `needsApproval` accepts a boolean or an input-aware predicate. Each handler also receives an `AbortSignal`.
+
+For one-off Tools, `defineAgent` accepts the same builder as `tools: ({ tool }) => [...]`; use an Extension when Tools need a Resource, Hooks, Instructions, or reuse.
 
 `setup` runs once when a Session starts. `dispose` runs when its Session scope closes, including failure and interruption paths. A resumed Transcript seeds a new Session and therefore acquires fresh Resources.
+
+## Expected Tool failures
+
+Use `failureSchema` with `ok()` and `fail()` when a Tool has an expected outcome the Model should see and react to:
+
+```ts
+import { z } from "zod";
+import { defineExtension, fail, ok } from "@mitome/sdk";
+
+declare const findNote: (slug: string) => Promise<string | undefined>;
+
+export const lookup = defineExtension({
+  tools: ({ tool }) => [
+    tool({
+      name: "find_note",
+      inputSchema: z.object({ slug: z.string() }),
+      outputSchema: z.string(),
+      failureSchema: z.object({ code: z.literal("NOT_FOUND"), slug: z.string() }),
+      handler: async ({ slug }) => {
+        const note = await findNote(slug);
+        return note === undefined ? fail({ code: "NOT_FOUND", slug }) : ok(note);
+      },
+    }),
+  ],
+});
+```
+
+Both success and failure values are schema-checked. A `fail()` value becomes a failed Tool result visible to the Model. A thrown error or rejected Promise is still a defect and is replaced with the opaque `SDK tool handler failed` result; do not expose secrets by throwing them.
+
+## Sharing Tools
+
+Prefer these options in order:
+
+1. Share an Extension. It is the unit of reuse and composition.
+2. Extract plain logic functions into separate files while keeping Tool declarations inline.
+3. For a large Extension, extract a plain function that accepts `ToolBuilder<Resource>`:
+
+```ts
+import { z } from "zod";
+import { defineExtension, type ToolBuilder } from "@mitome/sdk";
+
+interface Notes {
+  readonly values: Array<string>;
+}
+
+const noteTools = (tool: ToolBuilder<Notes>) => [
+  tool({
+    name: "list_notes",
+    inputSchema: z.object({}),
+    handler: async (_input, { resource }) => resource.values,
+  }),
+];
+
+export const notes = defineExtension({
+  setup: async (): Promise<Notes> => ({ values: [] }),
+  tools: ({ tool }) => noteTools(tool),
+});
+```
+
+A Resource is private to its Extension. Put Tools and Hooks that need the same Session state in one Extension and use their shared Resource. Compose unrelated Extensions explicitly in the Agent Definition.
 
 ## Hook contracts
 
@@ -59,10 +121,6 @@ Every Promise Hook receives a context containing `resource` and `signal`. Hooks 
 | `postTool(context)`           | Observe and return the Tool result, transformed or unchanged; `isFailure` identifies failed handlers. |
 
 A Hook rejection fails the Turn with `TurnError`. `preTool` is policy before execution, while Approval is a separate Host decision after policy. Do not use one as a substitute for the other.
-
-## Sharing Session state
-
-A Resource is private to its Extension. Put Tools and Hooks that need the same Session state in one Extension and access that state through their shared Resource. Compose separate Extensions explicitly in the Agent Definition.
 
 ## Approvals and cancellation
 

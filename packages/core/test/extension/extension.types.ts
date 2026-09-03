@@ -40,6 +40,7 @@ const typedCoreExtension = defineExtension({
     Tool.make("count", {
       parameters: Schema.Struct({ amount: Schema.Finite }),
       success: Schema.String,
+      failure: Schema.Struct({ code: Schema.String }),
     }),
     Tool.make("label", { parameters: Schema.String, success: Schema.Boolean }),
   ),
@@ -54,6 +55,9 @@ export type CoreCountInput = Expect<
   Equal<TypedCoreContributions["count"]["input"], { readonly amount: number }>
 >;
 export type CoreLabelOutput = Expect<Equal<TypedCoreContributions["label"]["output"], boolean>>;
+export type CoreCountFailure = Expect<
+  Equal<TypedCoreContributions["count"]["failure"], { readonly code: string }>
+>;
 
 defineExtension({
   name: "independent",

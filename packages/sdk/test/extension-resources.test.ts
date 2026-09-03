@@ -7,7 +7,7 @@ import {
   type Extension,
 } from "@mitome/core";
 import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
-import { defineAgent, defineExtension, tool, withSession } from "../src/index.js";
+import { defineAgent, defineExtension, withSession } from "../src/index.js";
 
 const textModel = () =>
   makeTestProvider(() =>
@@ -20,7 +20,6 @@ describe("@mitome/sdk Extension resources", () => {
     const extension = (name: string) =>
       defineExtension({
         name,
-        tools: [],
         setup: async () => {
           log.push(`setup:${name}`);
           return name;
@@ -63,7 +62,6 @@ describe("@mitome/sdk Extension resources", () => {
     const setupLog: Array<string> = [];
     const first = defineExtension({
       name: "first",
-      tools: [],
       setup: async () => {
         setupLog.push("setup:first");
         return "first";
@@ -74,7 +72,6 @@ describe("@mitome/sdk Extension resources", () => {
     });
     const second = defineExtension({
       name: "second",
-      tools: [],
       setup: async (): Promise<string> => {
         setupLog.push("setup:second");
         throw setupFailure;
@@ -97,7 +94,6 @@ describe("@mitome/sdk Extension resources", () => {
     const extension = (name: string, fail = false) =>
       defineExtension({
         name,
-        tools: [],
         setup: async () => {
           hookLog.push(`setup:${name}`);
           return name;
@@ -136,8 +132,8 @@ describe("@mitome/sdk Extension resources", () => {
     const log: Array<string> = [];
     const alpha = defineExtension({
       name: "alpha",
-      tools: [
-        tool<string, string, { readonly name: string; readonly count: number }>({
+      tools: ({ tool }) => [
+        tool({
           name: "alpha-tool",
           inputSchema: jsonStringSchema,
           outputSchema: stringSchema,
@@ -152,7 +148,6 @@ describe("@mitome/sdk Extension resources", () => {
     });
     const beta = defineExtension({
       name: "beta",
-      tools: [],
       setup: async () => ({ name: "beta", enabled: true }),
       hooks: {
         sessionStart: async ({ resource }) => {
@@ -185,8 +180,8 @@ describe("@mitome/sdk Extension resources", () => {
     const log: Array<string> = [];
     const extension = defineExtension({
       name: "all-hooks",
-      tools: [
-        tool<string, string, string>({
+      tools: ({ tool }) => [
+        tool({
           name: "res-tool",
           inputSchema: jsonStringSchema,
           outputSchema: stringSchema,
@@ -293,8 +288,8 @@ describe("@mitome/sdk Extension resources", () => {
       extensions: [
         defineExtension({
           name: "wait",
-          tools: [
-            tool<string, string, { readonly wait: (signal: AbortSignal) => Promise<string> }>({
+          tools: ({ tool }) => [
+            tool({
               name: "wait",
               inputSchema: jsonStringSchema,
               outputSchema: stringSchema,
@@ -367,7 +362,6 @@ describe("@mitome/sdk Extension resources", () => {
     };
     const sdk = defineExtension({
       name: "sdk",
-      tools: [],
       setup: async () => {
         log.push("setup:sdk");
         return "sdk";
@@ -471,7 +465,6 @@ describe("@mitome/sdk Extension resources", () => {
       extensions: [
         defineExtension({
           name: "failing-dispose",
-          tools: [],
           setup: async () => "resource",
           dispose: async () => {
             throw disposeFailure;
@@ -503,7 +496,6 @@ describe("@mitome/sdk Extension resources", () => {
     const log: Array<string> = [];
     const extension = defineExtension({
       name: "failing-dispose",
-      tools: [],
       setup: async () => "resource",
       dispose: async (resource) => {
         log.push(`dispose:${resource}`);

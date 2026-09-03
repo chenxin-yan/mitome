@@ -13,7 +13,6 @@ export {
   TurnEventDtoSchema,
   StoreError,
   TurnError,
-  defineAgent,
   defineMitome,
   fileTranscripts,
   makeTranscript,
@@ -32,6 +31,7 @@ export type {
   MitomeDefinition,
   TurnOptions,
   QualifiedModelId,
+  ToolFailureValidator,
   ToolHookContext,
   ToolInputValidator,
   ToolResultHookContext,
@@ -46,7 +46,8 @@ export type {
   TranscriptSummary,
   TurnEventDto,
 } from "@mitome/core";
-export { defineExtension, tool } from "./extension.js";
+export { defineAgent } from "./agent.js";
+export { defineExtension, fail, ok } from "./extension.js";
 export type {
   HookContext,
   InputSchema,
@@ -57,6 +58,9 @@ export type {
   StandardSchema,
   StepEndContext,
   Tool,
+  ToolBuilder,
+  ToolFailure,
+  ToolSuccess,
 } from "./extension.js";
 export { withSession } from "./session.js";
 export type { Session, SessionOptions, TurnEvent } from "./session.js";

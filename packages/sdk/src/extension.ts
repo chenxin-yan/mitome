@@ -59,27 +59,82 @@ export interface ExtensionHooksDefinition<Resource = never> {
   ) => Promise<ToolHookResult>;
 }
 
+export interface ToolSuccess<Output> {
+  readonly ok: true;
+  readonly value: Output;
+}
+
+export interface ToolFailure<Failure> {
+  readonly ok: false;
+  readonly error: Failure;
+}
+
+export const ok = <const Output>(value: Output): ToolSuccess<Output> => ({ ok: true, value });
+export const fail = <const Failure>(error: Failure): ToolFailure<Failure> => ({ ok: false, error });
+
+declare const ToolTypeId: unique symbol;
+
 export interface Tool<
   Input = unknown,
   Output = unknown,
+  Failure = never,
   Resource = never,
   Name extends string = string,
 > {
+  readonly [ToolTypeId]?: {
+    readonly input: Input;
+    readonly output: Output;
+    readonly failure: Failure;
+    readonly resource: Resource;
+  };
   readonly name: Name;
   readonly description?: string;
   readonly inputSchema: InputSchema<Input>;
-  readonly outputSchema: OutputSchema<Output>;
+  readonly outputSchema?: OutputSchema<Output>;
+  readonly failureSchema?: OutputSchema<Failure>;
   readonly needsApproval?:
     | boolean
     | ((input: Input, context: ToolApprovalContext) => boolean | Promise<boolean>);
-  readonly handler: (input: Input, context: HookContext<Resource>) => Promise<Output>;
+  readonly handler: (
+    input: Input,
+    context: HookContext<Resource>,
+  ) => Promise<Output | ToolSuccess<Output> | ToolFailure<Failure>>;
 }
 
-export function tool<Input, Output, Resource = never, const Name extends string = string>(
-  definition: Tool<Input, Output, Resource, Name>,
-): Tool<Input, Output, Resource, Name> {
-  return definition;
+type ToolOptions<Input> = Pick<Tool<Input>, "description" | "inputSchema" | "needsApproval">;
+
+/** A Tool declaration function scoped to one Extension Resource. */
+export interface ToolBuilder<Resource = never> {
+  <Input, Output, Failure, const Name extends string>(
+    definition: ToolOptions<Input> & {
+      readonly name: Name;
+      readonly outputSchema: OutputSchema<Output>;
+      readonly failureSchema: OutputSchema<Failure>;
+      readonly handler: (
+        input: Input,
+        context: HookContext<Resource>,
+      ) => Promise<ToolSuccess<NoInfer<Output>> | ToolFailure<NoInfer<Failure>>>;
+    },
+  ): Tool<Input, Output, Failure, Resource, Name>;
+  <Input, Output, const Name extends string>(
+    definition: ToolOptions<Input> & {
+      readonly name: Name;
+      readonly outputSchema: OutputSchema<Output>;
+      readonly failureSchema?: undefined;
+      readonly handler: (input: Input, context: HookContext<Resource>) => Promise<NoInfer<Output>>;
+    },
+  ): Tool<Input, Output, never, Resource, Name>;
+  <Input, Output, const Name extends string>(
+    definition: ToolOptions<Input> & {
+      readonly name: Name;
+      readonly outputSchema?: undefined;
+      readonly failureSchema?: undefined;
+      readonly handler: (input: Input, context: HookContext<Resource>) => Promise<Output>;
+    },
+  ): Tool<Input, Output, never, Resource, Name>;
 }
+
+const toolBuilder: ToolBuilder<any> = (definition: any) => definition;
 
 type StandardInput<Input> = StandardSchemaV1.Props<unknown, Input> &
   StandardJSONSchemaV1.Props<unknown, Input>;
@@ -186,90 +241,83 @@ const adaptHooks = <Resource>(
   return adapted;
 };
 
-type AnyTool = {
+export type AnyTool = {
+  readonly [ToolTypeId]?: {
+    readonly input: any;
+    readonly output: any;
+    readonly failure: any;
+    readonly resource: any;
+  };
   readonly name: string;
   readonly description?: string;
   readonly inputSchema: InputSchema<any>;
-  readonly outputSchema: OutputSchema<any>;
+  readonly outputSchema?: OutputSchema<any>;
+  readonly failureSchema?: OutputSchema<any>;
   readonly needsApproval?: Tool<any, any>["needsApproval"];
   readonly handler: (...args: never[]) => Promise<any>;
 };
-type ToolResource<Value extends AnyTool> = Value extends unknown
-  ? Parameters<Value["handler"]>[1] extends HookContext<infer Resource>
-    ? 0 extends 1 & Resource
-      ? never
-      : Resource
-    : never
-  : never;
-type ToolResources<Tools extends ReadonlyArray<AnyTool>> = ToolResource<Tools[number]>;
-type UnsatisfiedToolResources<Resource, Value extends AnyTool> = Value extends unknown
-  ? [ToolResource<Value>] extends [never]
-    ? never
-    : Resource extends ToolResource<Value>
-      ? never
-      : ToolResource<Value>
-  : never;
-type ToolContributions<Tools extends ReadonlyArray<AnyTool>> = {
+type ToolTypes<Value extends AnyTool> = NonNullable<Value[typeof ToolTypeId]>;
+
+export type ToolContributionsOf<Tools extends ReadonlyArray<AnyTool>> = {
   readonly [Value in Tools[number] as Value["name"]]: ToolContribution<
-    Parameters<Value["handler"]>[0],
-    Awaited<ReturnType<Value["handler"]>>
+    ToolTypes<Value>["input"],
+    ToolTypes<Value>["output"],
+    ToolTypes<Value>["failure"]
   >;
 };
 
 export interface ExtensionDefinition<
   Resource = never,
-  Tools extends ReadonlyArray<AnyTool> = ReadonlyArray<Tool<any, any, Resource, string>>,
+  Tools extends ReadonlyArray<AnyTool> = readonly [],
 > {
   readonly name?: string;
   readonly instructions?: string;
-  readonly tools?: Tools;
+  readonly tools?: (scope: { readonly tool: ToolBuilder<Resource> }) => Tools;
   readonly hooks?: ExtensionHooksDefinition<Resource>;
   readonly setup?: () => Promise<Resource>;
   readonly dispose?: (resource: Resource) => Promise<void>;
 }
 
-// A declared Resource without setup would hand handlers `undefined as Resource`,
-// so setup is mandatory whenever anything in the Extension declares a Resource.
 export function defineExtension<Resource = never>(
   definition: ExtensionDefinition<Resource, readonly []> &
     ([Resource] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : { readonly setup: () => Promise<Resource> }),
-): NoInfer<Extension<Resource, unknown, ToolContributions<readonly []>>>;
+): NoInfer<Extension<Resource, unknown, ToolContributionsOf<readonly []>>>;
 export function defineExtension<
   Resource = never,
   const Tools extends ReadonlyArray<AnyTool> = [Resource] extends [never]
     ? readonly []
-    : ReadonlyArray<Tool<any, any, Resource, string>>,
+    : ReadonlyArray<AnyTool>,
 >(
-  definition: ExtensionDefinition<Resource, Tools> & { readonly tools: Tools } & ([
-      UnsatisfiedToolResources<Resource, Tools[number]>,
-    ] extends [never]
-      ? unknown
-      : never) &
-    ([Resource | ToolResources<Tools>] extends [never]
+  definition: ExtensionDefinition<Resource, Tools> &
+    { readonly tools: (scope: { readonly tool: ToolBuilder<Resource> }) => Tools } &
+    ([Resource] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : { readonly setup: () => Promise<Resource> }),
-): NoInfer<Extension<Resource, unknown, ToolContributions<Tools>>>;
+): NoInfer<Extension<Resource, unknown, ToolContributionsOf<Tools>>>;
 export function defineExtension<
   Resource = never,
-  Tools extends ReadonlyArray<AnyTool> = ReadonlyArray<Tool<any, any, Resource, string>>,
+  Tools extends ReadonlyArray<AnyTool> = readonly [],
 >(
   definition: ExtensionDefinition<Resource, Tools>,
-): Extension<Resource, unknown, ToolContributions<Tools>> {
+): Extension<Resource, unknown, ToolContributionsOf<Tools>> {
   if (definition.dispose !== undefined && definition.setup === undefined) {
     throw new Error(
       `Extension "${definition.name ?? "<anonymous>"}" declares dispose without setup`,
     );
   }
   const names = new Set<string>();
-  const definitions = (definition.tools === undefined ? [] : definition.tools).map((tool) => {
+  const definitions = (
+    definition.tools === undefined ? [] : definition.tools({ tool: toolBuilder })
+  ).map((tool) => {
     if (names.has(tool.name)) throw new Error(`Duplicate Tool name: ${tool.name}`);
     names.add(tool.name);
     return {
       tool,
       input: standardInput(tool.inputSchema),
-      output: standardOutput(tool.outputSchema),
+      output: tool.outputSchema === undefined ? undefined : standardOutput(tool.outputSchema),
+      failure: tool.failureSchema === undefined ? undefined : standardOutput(tool.failureSchema),
     };
   });
 
@@ -280,6 +328,7 @@ export function defineExtension<
     return AiTool.dynamic(tool.name, {
       description: tool.description,
       parameters: input.jsonSchema.input({ target: "draft-2020-12" }),
+      failure: tool.failureSchema === undefined ? undefined : Schema.Unknown,
       failureMode: "return",
       needsApproval: Predicate.isFunction(needsApproval)
         ? (params: ToolHookContext["params"], context: ToolApprovalContext) =>
@@ -289,21 +338,31 @@ export function defineExtension<
     });
   });
   const validators = (
-    pick: (definition: (typeof definitions)[number]) => StandardSchemaV1.Props<unknown, unknown>,
+    pick: (
+      definition: (typeof definitions)[number],
+    ) => StandardSchemaV1.Props<unknown, unknown> | undefined,
   ) =>
     Object.fromEntries(
-      definitions.map((definition) => [
-        definition.tool.name,
-        (value: StandardInputValue) =>
-          // @effect-diagnostics-next-line unknownInEffectCatch:off
-          Effect.tryPromise({
-            try: () => validate(pick(definition), value),
-            catch: (cause) => cause,
-          }),
-      ]),
+      definitions.flatMap((definition) => {
+        const schema = pick(definition);
+        return schema === undefined
+          ? []
+          : [
+              [
+                definition.tool.name,
+                (value: StandardInputValue) =>
+                  // @effect-diagnostics-next-line unknownInEffectCatch:off
+                  Effect.tryPromise({
+                    try: () => validate(schema, value),
+                    catch: (cause) => cause,
+                  }),
+              ] as const,
+            ];
+      }),
     );
   const toolInputValidators = validators(({ input }) => input);
   const toolResultValidators = validators(({ output }) => output);
+  const toolFailureValidators = validators(({ failure }) => failure);
 
   const resource =
     service === undefined
@@ -342,23 +401,38 @@ export function defineExtension<
     toolkit: Toolkit.make(...tools),
     toolInputValidators,
     toolResultValidators,
+    toolFailureValidators,
     handlers: Object.fromEntries(
-      definitions.map(({ tool, input, output }) => [
+      definitions.map(({ tool, input, output, failure }) => [
         tool.name,
         (params: UnvalidatedToolInput) =>
           promiseHook<any, Resource>(async (context) => {
-            // SAFETY: every public Tool overload fixes this erased handler to the same input/context pair.
+            // SAFETY: ToolBuilder fixes this erased handler to the same input/context pair.
             const handler = tool.handler as (input: any, context: HookContext<any>) => Promise<any>;
-            return validate(output, await handler(await validate(input, params), context));
+            const result = await handler(await validate(input, params), context);
+            if (failure !== undefined) {
+              if (result.ok) {
+                return { ok: true as const, value: await validate(output!, result.value) };
+              }
+              return { ok: false as const, error: await validate(failure, result.error) };
+            }
+            return output === undefined ? result : validate(output, result);
           }, service).pipe(
             Effect.tapError((cause) => Effect.logWarning(`SDK Tool "${tool.name}" failed`, cause)),
-            // SDK handlers are untrusted promises; the model gets a stable failure instead.
+            // Rejections and validation errors are defects; the model gets a stable failure instead.
             Effect.mapError(() =>
               AiError.make({
                 module: "@mitome/sdk",
                 method: tool.name,
                 reason: new AiError.UnknownError({ description: "SDK tool handler failed" }),
               }),
+            ),
+            Effect.flatMap((result) =>
+              failure === undefined
+                ? Effect.succeed(result)
+                : result.ok
+                  ? Effect.succeed(result.value)
+                  : Effect.fail(result.error),
             ),
           ),
       ]),

@@ -87,6 +87,7 @@ const makeFixture = (options?: {
             }),
           inputValidator: options?.inputValidator,
           resultValidator: undefined,
+          failureValidator: undefined,
         },
       ],
     ]),
