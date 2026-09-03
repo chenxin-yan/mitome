@@ -46,7 +46,11 @@ describe("@mitome/sdk Extension Hooks", () => {
         },
         stepEnd: async (_prompt, { responseParts, signal }) => {
           signals.push(signal.aborted);
-          expect(responseParts.every((part) => !("~effect/ai/Content/Part" in part))).toBe(true);
+          expect(
+            responseParts.every(
+              (part) => !("~effect/ai/Content/Part" in part) && !("encodedResult" in part),
+            ),
+          ).toBe(true);
           responsePartTypes.push(responseParts.map((part) => part.type));
           log.push("sdk:step-end");
         },

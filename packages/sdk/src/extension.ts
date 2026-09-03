@@ -224,15 +224,20 @@ const toPrompt: (prompt: AiPrompt.Prompt) => Prompt = Schema.encodeSync(AiPrompt
 
 const toResponsePart = (responsePart: AiResponse.AnyPart): ResponsePart => {
   const { ["~effect/ai/Content/Part"]: _, ...part } = responsePart;
-  return part.type === "finish"
-    ? {
-        ...part,
-        usage: {
-          inputTokens: { ...part.usage.inputTokens },
-          outputTokens: { ...part.usage.outputTokens },
-        },
-      }
-    : part;
+  if (part.type === "finish") {
+    return {
+      ...part,
+      usage: {
+        inputTokens: { ...part.usage.inputTokens },
+        outputTokens: { ...part.usage.outputTokens },
+      },
+    };
+  }
+  if (part.type === "tool-result") {
+    const { encodedResult: _, ...toolResult } = part;
+    return toolResult;
+  }
+  return part;
 };
 
 const adaptHooks = <Resource>(
