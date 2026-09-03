@@ -242,9 +242,11 @@ export function defineExtension<
     ? readonly []
     : ReadonlyArray<Tool<any, any, Resource, string>>,
 >(
-  definition: ExtensionDefinition<Resource, Tools> &
-    { readonly tools: Tools } &
-    ([UnsatisfiedToolResources<Resource, Tools[number]>] extends [never] ? unknown : never) &
+  definition: ExtensionDefinition<Resource, Tools> & { readonly tools: Tools } & ([
+      UnsatisfiedToolResources<Resource, Tools[number]>,
+    ] extends [never]
+      ? unknown
+      : never) &
     ([Resource | ToolResources<Tools>] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : { readonly setup: () => Promise<Resource> }),
