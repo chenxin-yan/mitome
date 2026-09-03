@@ -339,8 +339,9 @@ export function defineExtension<
   const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
   const Provides extends ReadonlyArray<Context.Service.Any> = readonly [],
 >(
-  definition: ExtensionDefinition<Resource, Tools, Dependencies, Provides> &
-    ([UnsatisfiedToolResources<Resource, Tools[number]>] extends [never] ? unknown : never) &
+  definition: ExtensionDefinition<Resource, Tools, Dependencies, Provides> & {
+    readonly tools: Tools;
+  } & ([UnsatisfiedToolResources<Resource, Tools[number]>] extends [never] ? unknown : never) &
     ([UnsatisfiedToolServices<ProvidedServices<NoInfer<Dependencies>>, Tools[number]>] extends [
       never,
     ]
@@ -370,7 +371,7 @@ export function defineExtension<
     throw new Error(`Extension "${definition.name}" declares dispose without setup`);
   }
   const names = new Set<string>();
-  const definitions = (definition.tools ?? []).map((tool) => {
+  const definitions = (definition.tools === undefined ? [] : definition.tools).map((tool) => {
     if (names.has(tool.name)) throw new Error(`Duplicate Tool name: ${tool.name}`);
     names.add(tool.name);
     return {

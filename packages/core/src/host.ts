@@ -28,7 +28,7 @@ export const defineMitome = <const Agent extends AgentDefinition>(
     readonly hosts?: ReadonlyArray<Host>;
   },
 ): MitomeDefinition<Agent> => {
-  const hosts = definition.hosts ?? [];
+  const hosts = definition.hosts === undefined ? [] : definition.hosts;
   if (hosts.length > 1) {
     throw new Error("Mitome Definition must declare at most one interactive Host.");
   }
