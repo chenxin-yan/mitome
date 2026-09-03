@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Prompt, Response } from "effect/unstable/ai";
+import { AiError, LanguageModel, Prompt, Response } from "effect/unstable/ai";
 import { makeProvider } from "@mitome/core";
 import {
   AgentDefinitionError,
@@ -504,7 +504,7 @@ describe("@mitome/sdk Tool", () => {
             }),
           ],
           hooks: {
-            postTool: async ({ result }) => result,
+            postTool: async () => ({ code: "NOT_FOUND" }),
           },
         }),
       ],
@@ -517,9 +517,51 @@ describe("@mitome/sdk Tool", () => {
     });
 
     const failure = events.find((event) => event.type === "tool-result");
-    expect(failure).toMatchObject({ type: "tool-result", isFailure: true });
+    expect(failure).toMatchObject({
+      type: "tool-result",
+      isFailure: true,
+      result: { _tag: "AiError", method: "echo", module: "@mitome/sdk" },
+    });
     expect(JSON.stringify(failure)).not.toContain("secret");
+    expect(JSON.stringify(failure)).not.toContain("NOT_FOUND");
     expect(events.at(-1)).toEqual({ type: "response-complete" });
     expect(fixture.calls()).toBe(2);
+  });
+
+  test("schema-checks an expected failure after postTool transforms it into an AiError", async () => {
+    const fixture = makeToolModel();
+    const definition = defineAgent({
+      providers: [fixture.provider],
+      model: "test/default",
+      extensions: [
+        defineExtension({
+          tools: ({ tool }) => [
+            tool({
+              name: "echo",
+              inputSchema: jsonStringSchema,
+              outputSchema: stringSchema,
+              failureSchema: Schema.Struct({ code: Schema.Literal("NOT_FOUND") }),
+              handler: async () => fail({ code: "NOT_FOUND" }),
+            }),
+          ],
+          hooks: {
+            postTool: async () =>
+              AiError.make({
+                module: "test",
+                method: "postTool",
+                reason: new AiError.UnknownError({ description: "not a declared failure" }),
+              }),
+          },
+        }),
+      ],
+    });
+
+    await expect(
+      withSession(definition, (session) => Array.fromAsync(session.runTurn("Hi"))),
+    ).rejects.toMatchObject({
+      _tag: "TurnError",
+      message: expect.stringContaining("Post-Tool result validation failed"),
+    });
+    expect(fixture.calls()).toBe(1);
   });
 });

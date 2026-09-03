@@ -448,7 +448,7 @@ describe("createSession Tool Turn", () => {
     }),
   );
 
-  it.effect("runs post-Tool Hooks for dynamic Tool failures", () =>
+  it.effect("runs post-Tool Hooks but keeps dynamic AiError failures opaque", () =>
     Effect.gen(function* () {
       const fixture = makeToolModel();
       let postCalls = 0;
@@ -497,12 +497,11 @@ describe("createSession Tool Turn", () => {
       expect(events.find((event) => event.type === "tool-result")).toMatchObject({
         type: "tool-result",
         isFailure: true,
-        result: { code: "transformed" },
+        result: { _tag: "AiError", method: "echo", module: "test" },
       });
       expect(postCalls).toBe(1);
-      // The transformed payload is what the model receives on the next Step.
       const toolMessage = fixture.prompt()?.content.find((message) => message.role === "tool");
-      expect(JSON.stringify(toolMessage)).toContain("transformed");
+      expect(JSON.stringify(toolMessage)).not.toContain("transformed");
       expect(events.at(-1)).toEqual({ type: "response-complete" });
     }),
   );

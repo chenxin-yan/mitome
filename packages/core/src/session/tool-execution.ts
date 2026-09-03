@@ -92,16 +92,18 @@ const validateResult = (
 ): Effect.Effect<Tool.HandlerResult<Tool.Any>, unknown> => {
   // SAFETY: the owning Extension context is supplied by the caller around this schema encoding.
   return Effect.gen(function* () {
-    // Expected failures use their Tool failure schema. AiError values are opaque defects created
-    // after a thrown handler error and must not be interpreted as user-declared failure values.
+    // Classify before Hooks: transformed defects stay opaque, while transformed expected
+    // failures still pass through their declared failure schema.
+    const isDefect = handlerResult.isFailure && AiError.isAiError(handlerResult.result);
+    const transformed = isDefect ? handlerResult.result : result;
     const validator = handlerResult.isFailure
-      ? AiError.isAiError(result)
+      ? isDefect
         ? undefined
         : failureValidator
       : resultValidator;
-    const validated = validator === undefined ? result : yield* validator(result);
-    // Dynamic Tools have no failure schema to re-encode with, so the Hook-transformed
-    // value doubles as the encoded payload the model sees.
+    const validated = validator === undefined ? transformed : yield* validator(transformed);
+    // Dynamic Tools have no failure schema to re-encode with, so the validated value
+    // doubles as the encoded payload the model sees.
     if (handlerResult.isFailure && Tool.isDynamic(tool) && tool.failureSchema === Schema.Never) {
       return {
         ...handlerResult,
