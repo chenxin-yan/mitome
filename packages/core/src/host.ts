@@ -1,3 +1,4 @@
+import { Predicate } from "effect";
 import type { AgentDefinition } from "./agent.js";
 import { createSession } from "./session/session.js";
 import type { TranscriptStore } from "./transcript-store.js";
@@ -29,6 +30,18 @@ export const defineMitome = <const Agent extends AgentDefinition>(
   },
 ): MitomeDefinition<Agent> => {
   const hosts = definition.hosts === undefined ? [] : definition.hosts;
+  if (
+    hosts.some(
+      (host) =>
+        !Predicate.isObject(host) ||
+        !Predicate.isFunction(host.run) ||
+        (host.unsupported !== undefined && !Predicate.isFunction(host.unsupported)),
+    )
+  ) {
+    throw new Error(
+      "Host must be an object with a run function and optional unsupported function — did you forget to call the factory?",
+    );
+  }
   if (hosts.length > 1) {
     throw new Error("Mitome Definition must declare at most one interactive Host.");
   }

@@ -4,7 +4,13 @@ import * as core from "@mitome/core";
 import { Response } from "effect/unstable/ai";
 import { createSession } from "@mitome/core";
 import * as sdkEffect from "../src/effect.js";
-import { TurnError, defineAgent, defineExtension, withSession } from "../src/index.js";
+import {
+  TurnError,
+  defineAgent,
+  defineExtension,
+  defineMitome,
+  withSession,
+} from "../src/index.js";
 import { makeDeterministicProvider, makeTestProvider } from "./provider.js";
 
 class ModelFailure extends Schema.TaggedError<ModelFailure>()("ModelFailure", {
@@ -14,6 +20,17 @@ class ModelFailure extends Schema.TaggedError<ModelFailure>()("ModelFailure", {
 describe("@mitome/sdk", () => {
   test("re-exports the canonical Effect runtime", () => {
     expect(sdkEffect.createSession).toBe(core.createSession);
+  });
+
+  test("rejects a Host factory that was not called", () => {
+    const agent = defineAgent({
+      providers: [makeTestProvider(() => Stream.empty)],
+      model: "test/default",
+    });
+
+    expect(() => defineMitome({ agent, hosts: [() => undefined] })).toThrow(
+      "Host must be an object with a run function and optional unsupported function — did you forget to call the factory?",
+    );
   });
 
   test("runs a minimal Agent Definition without composition boilerplate", async () => {

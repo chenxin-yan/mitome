@@ -107,7 +107,7 @@ A user decision allowing one pending Tool call to execute; the Turn stays paused
 _Avoid_: Permission, confirmation
 
 **Host**:
-A public SDK interface for a program that drives Sessions on a user's behalf: starting Turns, presenting events, and resolving Approvals. A Host declares its mode; the only current mode is `interactive`.
+An Effect-native `@mitome/core` contract for a program that drives Sessions on a user's behalf: starting Turns, presenting events, and resolving Approvals. The Promise SDK accepts configured Host values opaquely so their Effect-native context does not leak into its surface.
 _Avoid_: Extension, Frontend, client, harness
 
 **Child Host**:
