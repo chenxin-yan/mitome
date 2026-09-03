@@ -11,7 +11,6 @@ import { defineMitome, fileTranscripts } from "@mitome/sdk";
 
 export default defineMitome({
   agent,
-  hosts: [],
   transcripts: fileTranscripts(),
 });
 ```
@@ -31,22 +30,14 @@ import { memoryTranscripts, withSession } from "@mitome/sdk";
 
 const transcripts = memoryTranscripts();
 
-const parentId = await withSession(
-  agent,
-  async (session) => {
-    await Array.fromAsync(session.runTurn("Remember that my project is blue."));
-    return session.transcript().id;
-  },
-  { transcripts },
-);
+const parentId = await withSession(agent, { transcripts }, async (session) => {
+  await Array.fromAsync(session.runTurn("Remember that my project is blue."));
+  return session.transcript().id;
+});
 
-await withSession(
-  agent,
-  async (session) => {
-    await Array.fromAsync(session.runTurn("What color is my project?"));
-  },
-  { transcripts, resume: parentId },
-);
+await withSession(agent, { transcripts, resume: parentId }, async (session) => {
+  await Array.fromAsync(session.runTurn("What color is my project?"));
+});
 ```
 
 You may instead seed a Session with a plain `Transcript` through `{ transcript }`. `makeTranscript` and the exported Transcript schemas help at serialization boundaries.

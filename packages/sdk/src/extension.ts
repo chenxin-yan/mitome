@@ -305,7 +305,7 @@ export interface ExtensionDefinition<
   readonly dependencies?: Dependencies;
   readonly provides?: Provides;
   readonly instructions?: string;
-  readonly tools: Tools;
+  readonly tools?: Tools;
   readonly hooks?: ExtensionHooksDefinition<Resource, ProvidedServices<Dependencies>>;
   readonly setup?: () => Promise<Resource>;
   readonly dispose?: (resource: Resource) => Promise<void>;
@@ -315,7 +315,9 @@ export interface ExtensionDefinition<
 // so setup is mandatory whenever anything in the Extension declares a Resource.
 export function defineExtension<
   Resource = never,
-  const Tools extends ReadonlyArray<AnyTool> = ReadonlyArray<Tool<any, any, Resource, string>>,
+  const Tools extends ReadonlyArray<AnyTool> = [Resource] extends [never]
+    ? readonly []
+    : ReadonlyArray<Tool<any, any, Resource, string>>,
   const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
   const Provides extends ReadonlyArray<Context.Service.Any> = readonly [],
 >(
@@ -350,7 +352,7 @@ export function defineExtension<
     throw new Error(`Extension "${definition.name}" declares dispose without setup`);
   }
   const names = new Set<string>();
-  const definitions = definition.tools.map((tool) => {
+  const definitions = (definition.tools ?? []).map((tool) => {
     if (names.has(tool.name)) throw new Error(`Duplicate Tool name: ${tool.name}`);
     names.add(tool.name);
     return {

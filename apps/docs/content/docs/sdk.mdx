@@ -13,7 +13,6 @@ import { openai } from "@mitome/providers/openai";
 const agent = defineAgent({
   providers: [openai()],
   model: "openai/gpt-5.4-mini",
-  extensions: [],
 });
 
 await withSession(agent, async (session) => {
@@ -95,7 +94,7 @@ try {
 
 ## Session state
 
-`session.history()` exposes the committed in-memory Model Prompt. `session.transcript()` returns a serializable Transcript snapshot. Passing `{ transcripts }`, `{ transcript }`, or `{ transcripts, resume: id }` to `withSession` controls persistence and seeding; see [Transcript persistence](/docs/persistence).
+`session.history()` exposes the committed in-memory Model Prompt. `session.transcript()` returns a serializable Transcript snapshot. Pass `{ transcripts }`, `{ transcript }`, or `{ transcripts, resume: id }` between the Agent Definition and callback to control persistence and seeding; see [Transcript persistence](/docs/persistence).
 
 ## Contributor test seams
 

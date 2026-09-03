@@ -8,6 +8,10 @@ const host: Host = {
 };
 
 describe("defineMitome", () => {
+  it("defaults Hosts to an empty array", () => {
+    expect(defineMitome({ agent })).toEqual({ agent, hosts: [] });
+  });
+
   it("returns an explicit agent, Host, and Transcript store composition", () => {
     const transcripts = memoryTranscripts();
     expect(defineMitome({ agent, hosts: [host], transcripts })).toEqual({

@@ -16,24 +16,18 @@ describe("@mitome/sdk", () => {
     expect(sdkEffect.createSession).toBe(core.createSession);
   });
 
-  test("returns a canonical Agent Definition accepted directly by Core", async () => {
+  test("runs a minimal Agent Definition without composition boilerplate", async () => {
     const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      extensions: [{ name: "first" }, { name: "second" }],
     });
 
-    expect(definition.extensions.map((extension) => extension.name)).toEqual(["first", "second"]);
+    expect(definition.extensions).toEqual([]);
 
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* createSession(definition);
-          return yield* Stream.runDrain(session.runTurn("Hi"));
-        }),
-      ),
-    );
+    await withSession(definition, async (session) => {
+      await Array.fromAsync(session.runTurn("Hi"));
+    });
   });
 
   test("adapts SDK Extension Instructions into Core Session history", async () => {
@@ -42,7 +36,10 @@ describe("@mitome/sdk", () => {
       providers: [fixture.provider],
       model: "test/default",
       extensions: [
-        defineExtension({ name: "instructions", instructions: "SDK Instructions", tools: [] }),
+        defineExtension({
+          name: "instructions",
+          instructions: "SDK Instructions",
+        }),
       ],
     });
 

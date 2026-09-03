@@ -12,8 +12,9 @@ const second = makeProvider("second", [] as const, undefined, () => layer);
 const definition = defineAgent({
   providers: [first, second] as const,
   model: "first/known",
-  extensions: [],
 });
+const noExtensions: readonly [] = definition.extensions;
+void noExtensions;
 
 void withSession(definition, async (session) => {
   session.runTurn("known", { model: "first/known" });
@@ -24,13 +25,13 @@ void withSession(definition, async (session) => {
 
 declare const store: TranscriptStore;
 const transcript = { schemaVersion: 1 as const, id: "seed", messages: [] };
-void withSession(definition, async () => undefined, { transcripts: store, resume: "seed" });
-void withSession(definition, async () => undefined, { transcript });
+void withSession(definition, { transcripts: store, resume: "seed" }, async () => undefined);
+void withSession(definition, { transcript }, async () => undefined);
 // @ts-expect-error resume needs a TranscriptStore from which to load the seed.
-void withSession(definition, async () => undefined, { resume: "seed" });
-void withSession(definition, async () => undefined, {
-  transcripts: store,
-  resume: "seed",
+void withSession(definition, { resume: "seed" }, async () => undefined);
+void withSession(
+  definition,
   // @ts-expect-error direct Transcript seeds and stored resume identities are mutually exclusive.
-  transcript,
-});
+  { transcripts: store, resume: "seed", transcript },
+  async () => undefined,
+);

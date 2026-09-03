@@ -49,16 +49,20 @@ export class AgentDefinitionError extends Schema.TaggedError<AgentDefinitionErro
 export function defineAgent<
   const Providers extends ReadonlyArray<unknown>,
   const DefaultModel extends QualifiedModelId<Extract<NoInfer<Providers[number]>, AnyProvider>>,
-  const Extensions extends ReadonlyArray<AnyExtension>,
+  const Extensions extends ReadonlyArray<AnyExtension> = readonly [],
 >(
   definition: {
     readonly providers: Providers;
     readonly model: DefaultModel;
-    readonly extensions: Extensions;
+    readonly extensions?: Extensions;
   } & ([Providers[number]] extends [AnyProvider] ? unknown : never),
 ): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, Extensions>;
-export function defineAgent(definition: AgentDefinition): AgentDefinition {
-  return definition;
+export function defineAgent(
+  definition: Omit<AgentDefinition, "extensions"> & {
+    readonly extensions?: ReadonlyArray<AnyExtension>;
+  },
+): AgentDefinition {
+  return { ...definition, extensions: definition.extensions ?? [] };
 }
 
 interface CompiledExtensions {
