@@ -251,6 +251,13 @@ const sdkToolkitlessExtension = defineExtension({ name: "sdk-toolkitless" });
 export type SdkToolkitlessContributionsAreEmpty = Expect<
   Equal<keyof ContributionsOf<typeof sdkToolkitlessExtension>, never>
 >;
+const sdkResourceToolkitlessExtension = defineExtension<{ readonly db: string }>({
+  name: "sdk-resource-toolkitless",
+  setup: async () => ({ db: "connection" }),
+});
+export type SdkResourceToolkitlessContributionsAreEmpty = Expect<
+  Equal<keyof ContributionsOf<typeof sdkResourceToolkitlessExtension>, never>
+>;
 const sdkDefinition = defineAgent({
   providers: [model],
   model: "test/default",

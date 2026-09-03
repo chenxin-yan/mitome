@@ -315,6 +315,24 @@ export interface ExtensionDefinition<
 // so setup is mandatory whenever anything in the Extension declares a Resource.
 export function defineExtension<
   Resource = never,
+  const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
+  const Provides extends ReadonlyArray<Context.Service.Any> = readonly [],
+>(
+  definition: ExtensionDefinition<Resource, readonly [], Dependencies, Provides> &
+    ([Resource] extends [ProvidedImplementations<Provides>] ? unknown : never) &
+    ([Resource | ProvidedTags<Provides>[number]] extends [never]
+      ? { readonly setup?: undefined; readonly dispose?: undefined }
+      : { readonly setup: () => Promise<Resource> }),
+): NoInfer<
+  Extension<
+    Resource | ProvidedServices<Dependencies>,
+    unknown,
+    ToolContributions<readonly []>,
+    Provides
+  >
+>;
+export function defineExtension<
+  Resource = never,
   const Tools extends ReadonlyArray<AnyTool> = [Resource] extends [never]
     ? readonly []
     : ReadonlyArray<Tool<any, any, Resource, string>>,
