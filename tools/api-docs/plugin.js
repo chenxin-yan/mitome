@@ -24,7 +24,9 @@ export function load(app) {
     page.contents = `---\ntitle: "${page.model.name}"\n---\n\n${contents}`;
   });
   app.renderer.on(RendererEvent.END, (event) => {
-    const pages = ["index", ...event.project.children.map((module) => slug(module.name))];
+    // `index` is deliberately omitted: fumadocs attaches it to the folder itself (clickable group);
+    // listing it in `pages` would render it as a duplicate child row.
+    const pages = event.project.children.map((module) => slug(module.name));
     writeFileSync(
       join(event.outputDirectory, "meta.json"),
       `${JSON.stringify({ title: event.project.name, pages }, null, 2)}\n`,
