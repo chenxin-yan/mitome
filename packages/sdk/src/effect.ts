@@ -1,3 +1,10 @@
+/**
+ * Curated Effect-native application surface: the same Agent, Extension, and Session contracts as
+ * `@mitome/sdk` with Effect, Stream, Layer, and Schema types exposed.
+ *
+ * @module @mitome/sdk/effect
+ */
+
 export {
   AgentDefinitionError,
   ApprovalResolutionError,

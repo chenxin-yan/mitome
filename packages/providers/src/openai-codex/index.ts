@@ -1,3 +1,9 @@
+/**
+ * Best-effort Provider for a ChatGPT subscription through the unofficial Codex service endpoint.
+ *
+ * @module @mitome/providers/openai-codex
+ */
+
 import { type AuthCapability, makeProvider } from "@mitome/core";
 import { provider } from "./constants.js";
 import { login, logout } from "./login.js";

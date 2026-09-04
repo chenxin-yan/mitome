@@ -11,6 +11,7 @@ export interface Provider<
   Id extends string = string,
   ModelIds extends ReadonlyArray<string> = ReadonlyArray<string>,
 > {
+  /** @internal */
   readonly [ProviderTypeId]: typeof ProviderTypeId;
   readonly id: Id;
   readonly modelIds: ModelIds;

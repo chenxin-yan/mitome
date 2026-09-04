@@ -1,3 +1,9 @@
+/**
+ * Official OpenAI Provider authenticated with an API-key Credential.
+ *
+ * @module @mitome/providers/openai
+ */
+
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai";
 import { makeProvider } from "@mitome/core";
 import { apiKeyClientLayer } from "../shared/api-key-client.js";
@@ -6,6 +12,7 @@ import { knownModelIds } from "./models.js";
 
 export { knownModelIds, type KnownModelId } from "./models.js";
 
+/** Options for `openai()`. */
 export interface OpenAiOptions {
   /** Environment variable containing the API key; defaults to OPENAI_API_KEY. */
   readonly apiKeyEnv?: string;

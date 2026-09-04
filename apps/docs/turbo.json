@@ -3,9 +3,11 @@
   "extends": ["//"],
   "tasks": {
     "dev": {
+      "dependsOn": ["//#api:generate"],
       "persistent": true
     },
     "build": {
+      "dependsOn": ["//#api:generate"],
       "outputs": ["dist/**", ".wrangler/deploy/**"]
     },
     "check:types": {

@@ -12,6 +12,17 @@
         "packages/create-mitome/src/model-hints.ts"
       ]
     },
+    "//#api:generate": {
+      "dependsOn": ["@mitome/core#build"],
+      "inputs": [
+        "$TURBO_ROOT$/scripts/generate-api-docs.ts",
+        "$TURBO_ROOT$/tools/api-docs/*",
+        "$TURBO_ROOT$/packages/sdk/src/**",
+        "$TURBO_ROOT$/packages/providers/src/**",
+        "$TURBO_ROOT$/packages/tui/src/**"
+      ],
+      "outputs": ["apps/docs/content/docs/reference/api/**"]
+    },
     "build": {
       "dependsOn": ["^build", "//#hints:generate"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/scripts/build-lib.ts"],

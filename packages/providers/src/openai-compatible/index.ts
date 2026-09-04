@@ -1,11 +1,20 @@
+/**
+ * Provider for a separately identified OpenAI-compatible endpoint.
+ *
+ * @module @mitome/providers/openai-compatible
+ */
+
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat";
 import { Layer } from "effect";
 import { makeProvider, type ValidProviderId } from "@mitome/core";
 import { apiKeyClientLayer } from "../shared/api-key-client.js";
 
+/** Empty: compatible endpoints share no catalog, so every endpoint-native Model id is accepted as-is. */
 export const knownModelIds = [] as const;
+/** Never inhabited; see `knownModelIds`. */
 export type KnownModelId = (typeof knownModelIds)[number];
 
+/** Options for `openaiCompatible()`. */
 export interface OpenAiCompatibleOptions<Id extends string = string> {
   /** Stable Provider id used in Qualified Model ids. */
   readonly id: Id;

@@ -1,3 +1,10 @@
+/**
+ * Promise-first application surface: define Agents and Extensions, run Sessions, and persist
+ * Transcripts without any Effect type in a public signature.
+ *
+ * @module @mitome/sdk
+ */
+
 export {
   AgentDefinitionError,
   ApprovalResolutionError,

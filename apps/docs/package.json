@@ -8,7 +8,7 @@
     "build": "vite build",
     "start": "vite preview",
     "preview": "vite preview",
-    "deploy": "bun run build && wrangler deploy",
+    "deploy": "bun run --cwd ../.. build:docs && wrangler deploy",
     "cf-typegen": "wrangler types",
     "check:types": "fumadocs-mdx && tsc --noEmit",
     "lint": "oxlint .",

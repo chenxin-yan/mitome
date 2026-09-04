@@ -23,79 +23,117 @@ interface EffectSchema<Output> {
   readonly EncodingServices: never;
 }
 
+/** Any Standard Schema v1 validator, such as a zod v4, valibot, or ArkType schema. */
 export type StandardSchema<Input = unknown, Output = Input> = StandardSchemaV1<Input, Output>;
+/**
+ * Schema for Tool input: a Standard Schema that also emits JSON Schema (zod v4 does), or an
+ * Effect Schema. The Model needs the JSON Schema; the validator decodes what it sends back.
+ */
 export type InputSchema<Input = unknown> =
   | (StandardSchemaV1<unknown, Input> & StandardJSONSchemaV1<unknown, Input>)
   | EffectSchema<Input>;
+/** Schema for a Tool's output or expected failure; validation only, no JSON Schema needed. */
 export type OutputSchema<Output = unknown> =
   | StandardSchemaV1<unknown, Output>
   | EffectSchema<Output>;
 
+/** Passed to every Promise Hook and Tool handler. */
 export interface HookContext<Resource = never> {
+  /** The Extension's Resource from `setup`; `never` for Extensions without one. */
   readonly resource: Resource;
+  /** Aborts when the Turn is interrupted, so external work can stop with it. */
   readonly signal: AbortSignal;
 }
 
 type UnvalidatedToolInput = Parameters<CoreToolInputValidator>[0];
 type StandardInputValue = Parameters<StandardSchemaV1.Props["validate"]>[0];
 
+/** The Tool call a `preTool` Hook observes: its name and decoded input. */
 export interface ToolHookContext {
   readonly name: string;
   readonly params: unknown;
 }
 
+/** The Tool result a `postTool` Hook observes; `isFailure` marks an expected failure value. */
 export interface ToolResultHookContext extends ToolHookContext {
   readonly result: unknown;
   readonly isFailure: boolean;
 }
 
+/** Type-level record of one Tool's input, output, and expected failure types. */
 export interface ToolContribution<Input = unknown, Output = unknown, Failure = never> {
   readonly input: Input;
   readonly output: Output;
   readonly failure: Failure;
 }
 
+/** `stepEnd` context: the response parts the Step emitted; failed Steps include partial parts. */
 export interface StepEndContext<Resource = never> extends HookContext<Resource> {
   readonly responseParts: ReadonlyArray<ResponsePart>;
 }
 
+/** Passed to a `needsApproval` predicate alongside the decoded input. */
 export interface ToolApprovalContext {
   readonly toolCallId: string;
+  /** Messages of the current Model Prompt. */
   readonly messages: ReadonlyArray<unknown>;
 }
 
+/**
+ * Promise lifecycle Hooks. Start Hooks run in Agent Definition order and end Hooks in reverse; a
+ * rejected Hook fails the Turn (or Session start) with `TurnError`.
+ */
 export interface ExtensionHooksDefinition<Resource = never> {
+  /** Runs once after every Extension Resource is acquired. */
   readonly sessionStart?: (context: HookContext<Resource>) => Promise<void>;
+  /** Runs when the Session is released, before Resources are disposed. */
   readonly sessionEnd?: (context: HookContext<Resource>) => Promise<void>;
+  /** Observes the user Message that starts a Turn. */
   readonly turnStart?: (message: string, context: HookContext<Resource>) => Promise<void>;
+  /** Observes the user Message after its Turn completed successfully. */
   readonly turnEnd?: (message: string, context: HookContext<Resource>) => Promise<void>;
+  /** Observes the Model Prompt before one Step. */
   readonly stepStart?: (prompt: Prompt, context: HookContext<Resource>) => Promise<void>;
   /** Receives the Model Prompt and emitted response parts; failed Steps provide their partial parts. */
   readonly stepEnd?: (prompt: Prompt, context: StepEndContext<Resource>) => Promise<void>;
+  /** Returns the Model Prompt to send for one Step, transformed or unchanged. */
   readonly preStep?: (prompt: Prompt, context: HookContext<Resource>) => Promise<Prompt>;
+  /**
+   * Policy check before a Tool runs: return `{ reason }` to veto the call, which the Model then
+   * sees as a denied execution. Approval is a separate Host decision after this Hook passes.
+   */
   readonly preTool?: (
     context: ToolHookContext & HookContext<Resource>,
   ) => Promise<void | { readonly reason: string }>;
+  /** Observes and returns the Tool result, transformed or unchanged; it is revalidated afterwards. */
   readonly postTool?: (
     context: ToolResultHookContext & HookContext<Resource>,
   ) => Promise<ToolResultHookContext["result"]>;
 }
 
+/** Expected success of a Tool with a `failureSchema`; create it with `ok()`. */
 export interface ToolSuccess<Output> {
   readonly ok: true;
   readonly value: Output;
 }
 
+/** Expected failure of a Tool with a `failureSchema`; create it with `fail()`. */
 export interface ToolFailure<Failure> {
   readonly ok: false;
   readonly error: Failure;
 }
 
+/** Wraps a Tool result as an expected success; required when the Tool declares a `failureSchema`. */
 export const ok = <const Output>(value: Output): ToolSuccess<Output> => ({ ok: true, value });
+/**
+ * Wraps an expected failure the Model should see and react to; it is validated against
+ * `failureSchema`. Throwing instead is a defect and yields an opaque failed result.
+ */
 export const fail = <const Failure>(error: Failure): ToolFailure<Failure> => ({ ok: false, error });
 
 declare const ToolTypeId: unique symbol;
 
+/** A Promise Tool declared through a `ToolBuilder`. */
 export interface Tool<
   Input = unknown,
   Output = unknown,
@@ -103,6 +141,7 @@ export interface Tool<
   Resource = never,
   Name extends string = string,
 > {
+  /** @internal */
   readonly [ToolTypeId]?: {
     readonly input: Input;
     readonly output: Output;
@@ -114,9 +153,14 @@ export interface Tool<
   readonly inputSchema: InputSchema<Input>;
   readonly outputSchema?: OutputSchema<Output>;
   readonly failureSchema?: OutputSchema<Failure>;
+  /** Pauses the Turn with `approval-required` before running: a boolean or an input-aware predicate. */
   readonly needsApproval?:
     | boolean
     | ((input: Input, context: ToolApprovalContext) => boolean | Promise<boolean>);
+  /**
+   * Runs the Tool with validated input. Return `ok()`/`fail()` when a `failureSchema` is declared,
+   * otherwise the output directly. A rejection is a defect the Model sees as an opaque failure.
+   */
   readonly handler: (
     input: Input,
     context: HookContext<Resource>,
@@ -127,6 +171,7 @@ type ToolOptions<Input> = Pick<Tool<Input>, "description" | "inputSchema" | "nee
 
 /** A Tool declaration function scoped to one Extension Resource. */
 export interface ToolBuilder<in out Resource = never> {
+  /** With `outputSchema` and `failureSchema`: the handler returns `ok()` or `fail()`, both validated. */
   <Input, Output, Failure, const Name extends string>(
     definition: ToolOptions<Input> & {
       readonly name: Name;
@@ -138,6 +183,7 @@ export interface ToolBuilder<in out Resource = never> {
       ) => Promise<ToolSuccess<NoInfer<Output>> | ToolFailure<NoInfer<Failure>>>;
     },
   ): Tool<Input, Output, Failure, Resource, Name>;
+  /** With `outputSchema` only: the handler returns the output, which is validated. */
   <Input, Output, const Name extends string>(
     definition: ToolOptions<Input> & {
       readonly name: Name;
@@ -146,6 +192,7 @@ export interface ToolBuilder<in out Resource = never> {
       readonly handler: (input: Input, context: HookContext<Resource>) => Promise<NoInfer<Output>>;
     },
   ): Tool<Input, Output, never, Resource, Name>;
+  /** Without schemas: the output is inferred from the handler and passed through unvalidated. */
   <Input, Output, const Name extends string>(
     definition: ToolOptions<Input> & {
       readonly name: Name;
@@ -299,7 +346,9 @@ const adaptHooks = <Resource>(
   return adapted;
 };
 
+/** Any Promise Tool regardless of its input, output, failure, or Resource types. */
 export type AnyTool = {
+  /** @internal */
   readonly [ToolTypeId]?: {
     readonly input: any;
     readonly output: any;
@@ -312,10 +361,12 @@ export type AnyTool = {
   readonly outputSchema?: OutputSchema<any>;
   readonly failureSchema?: OutputSchema<any>;
   readonly needsApproval?: Tool<any, any>["needsApproval"];
+  /** Erased handler; see `Tool.handler` for the contract. */
   readonly handler: (...args: never[]) => Promise<any>;
 };
 type ToolTypes<Value extends AnyTool> = NonNullable<Value[typeof ToolTypeId]>;
 
+/** Tool name to `ToolContribution` map derived from the Tools a builder returned. */
 export type ToolContributionsOf<Tools extends ReadonlyArray<AnyTool>> = {
   readonly [Value in Tools[number] as Value["name"]]: ToolContribution<
     ToolTypes<Value>["input"],
@@ -324,24 +375,38 @@ export type ToolContributionsOf<Tools extends ReadonlyArray<AnyTool>> = {
   >;
 };
 
+/** Input to `defineExtension`. */
 export interface ExtensionDefinition<
   Resource = never,
   Tools extends ReadonlyArray<AnyTool> = readonly [],
 > {
+  /** Label for diagnostics; unnamed Extensions are identified by reference. */
   readonly name?: string;
+  /** Static Instructions fragment composed into the system prompt in Agent Definition order. */
   readonly instructions?: string;
+  /** Declares Tools with a builder whose handlers receive this Extension's Resource. */
   readonly tools?: (scope: { readonly tool: ToolBuilder<Resource> }) => Tools;
   readonly hooks?: ExtensionHooksDefinition<Resource>;
+  /** Acquires the Resource once when a Session starts; required whenever Hooks or Tools use one. */
   readonly setup?: () => Promise<Resource>;
+  /** Releases the Resource when the Session is released, including on failure and interruption; requires `setup`. */
   readonly dispose?: (resource: Resource) => Promise<void>;
 }
 
+/**
+ * Declares a Promise Extension without Tools: Instructions, Hooks, and an optional Resource. A
+ * Resource is private to its Extension, so put Hooks that share state in one Extension.
+ */
 export function defineExtension<Resource = never>(
   definition: ExtensionDefinition<Resource, readonly []> &
     ([Resource] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : { readonly setup: () => Promise<Resource> }),
 ): NoInfer<Extension<Resource, unknown, ToolContributionsOf<readonly []>>>;
+/**
+ * Declares a Promise Extension with Tools. Tool names must be unique within the Extension, and
+ * `dispose` requires `setup`; both throw at definition time.
+ */
 export function defineExtension<
   Resource = never,
   const Tools extends ReadonlyArray<AnyTool> = [Resource] extends [never]

@@ -1,8 +1,10 @@
 import { Encoding, Predicate, Result, Schema } from "effect";
 import { Prompt } from "effect/unstable/ai";
 
+/** Identifies a Transcript; a UUID when Mitome generates it. */
 export type TranscriptId = string;
 
+/** The `schemaVersion` written into every Transcript this version of Mitome produces. */
 export const TranscriptSchemaVersion = 1 as const;
 
 const options = Schema.optional(Prompt.ProviderOptions);
@@ -77,6 +79,7 @@ const assistantPart = Schema.Union([
 ]);
 const toolPart = Schema.Union([toolResultPart, toolApprovalResponsePart]);
 
+/** Schema of one committed Message; file data is stored as a string, base64, or URL. */
 export const TranscriptMessageSchema = Schema.Union([
   Schema.Struct({
     role: Schema.Literal("system"),
@@ -100,6 +103,10 @@ export const TranscriptMessageSchema = Schema.Union([
   }),
 ]);
 
+/**
+ * Schema of a Transcript. Stored bytes are a trust boundary: store adapters decode with it before
+ * returning a Transcript.
+ */
 export const TranscriptSchema = Schema.Struct({
   schemaVersion: Schema.Literal(TranscriptSchemaVersion),
   id: Schema.String,
@@ -107,11 +114,18 @@ export const TranscriptSchema = Schema.Struct({
   messages: Schema.Array(TranscriptMessageSchema),
 });
 
+/** One committed Message of a Transcript. */
 export type TranscriptMessage = typeof TranscriptMessageSchema.Type;
+/**
+ * The durable, ordered record of a Session's committed Messages. It may outlive the Session and
+ * seed new ones; a resumed Session gets a new id with `parentTranscriptId` pointing at its seed.
+ */
 export type Transcript = typeof TranscriptSchema.Type;
 
+/** Input to `makeTranscript`. */
 export interface MakeTranscriptOptions {
   readonly id: TranscriptId;
+  /** The Transcript this one was resumed from, if any. */
   readonly parentTranscriptId?: TranscriptId | undefined;
   readonly messages: ReadonlyArray<Prompt.Message>;
 }
@@ -147,6 +161,10 @@ const messageFromPrompt = (message: Prompt.Message) => {
   };
 };
 
+/**
+ * Encodes Model Prompt messages into a Transcript. Throws when a message cannot be represented, so
+ * the Transcript never silently loses data.
+ */
 export const makeTranscript = (input: MakeTranscriptOptions): Transcript =>
   Schema.decodeUnknownSync(TranscriptSchema)({
     schemaVersion: TranscriptSchemaVersion,
@@ -176,6 +194,7 @@ const messageToPrompt = (message: TranscriptMessage) => {
   };
 };
 
+/** Decodes a Transcript back into the Model Prompt that seeds a Session. */
 export const promptFromTranscript = (transcript: Transcript): Prompt.Prompt =>
   Schema.decodeUnknownSync(Prompt.Prompt)({
     content: transcript.messages.map(messageToPrompt),

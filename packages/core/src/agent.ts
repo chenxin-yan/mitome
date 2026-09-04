@@ -11,27 +11,40 @@ import type {
 import { isProvider, parseQualifiedModelId } from "./provider.js";
 import type { AnyProvider, QualifiedModelId } from "./provider.js";
 
+/**
+ * A user-authored declaration of exactly one Agent: its Providers, Default Model, and Extensions.
+ * Create it with `defineAgent`; a Session compiles it once when it starts.
+ */
 export interface AgentDefinition<
   Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
   DefaultModel extends QualifiedModelId<Providers[number]> = QualifiedModelId<Providers[number]>,
   Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
 > {
+  /** Providers the Agent may select Models from; ids must be unique. */
   readonly providers: Providers;
+  /** Default Model as a Qualified Model id (`provider/model`) under a registered Provider. */
   readonly model: DefaultModel;
+  /** Extensions in composition order; start Hooks run and Resources are acquired in this order. */
   readonly extensions: Extensions;
 }
 
 type AnyToolHandler = (params: ToolInput) => Effect.Effect<ToolOutput, unknown, any>;
 
+/** One Tool after compilation, joined with the Extension that owns it and its validators. */
 export interface CompiledTool {
   readonly tool: Tool.Any;
   readonly owner: AnyExtension;
+  /** Absent only for provider-executed Tools that need no handler. */
   readonly handler: AnyToolHandler | undefined;
   readonly inputValidator: ToolInputValidator | undefined;
   readonly resultValidator: ToolResultValidator | undefined;
   readonly failureValidator: ToolFailureValidator | undefined;
 }
 
+/**
+ * The validated form of an Agent Definition that a Session runs: Providers by id, Tools by name,
+ * and every Extension's Instructions joined into the system prompt.
+ */
 export interface CompiledAgent {
   readonly extensions: ReadonlyArray<AnyExtension>;
   readonly providers: ReadonlyMap<string, AnyProvider>;
@@ -39,15 +52,26 @@ export interface CompiledAgent {
   readonly instructions: string;
 }
 
+/**
+ * The Agent Definition cannot compile: duplicate Provider ids, a malformed or unregistered Default
+ * Model, conflicting Extension or Tool names, or Tool handlers without a matching Tool. `issues`
+ * lists every problem found, not just the first.
+ */
 export class AgentDefinitionError extends Schema.TaggedError<AgentDefinitionError>()(
   "AgentDefinitionError",
   { issues: Schema.NonEmptyArray(Schema.String) },
 ) {
+  /** Every issue, one per line. */
   override get message(): string {
     return this.issues.join("\n");
   }
 }
 
+/**
+ * Declares an Agent from its Providers, Default Model, and optional Extensions. The Default Model
+ * is checked against the registered Providers' catalogs at the type level while still accepting
+ * any `provider/model` id for a registered Provider, because catalogs are hints, not allow-lists.
+ */
 export function defineAgent<
   const Providers extends ReadonlyArray<unknown>,
   const DefaultModel extends QualifiedModelId<Extract<NoInfer<Providers[number]>, AnyProvider>>,
@@ -58,6 +82,7 @@ export function defineAgent<
     readonly extensions?: undefined;
   } & ([Providers[number]] extends [AnyProvider] ? unknown : never),
 ): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, readonly []>;
+/** Declares an Agent with Extensions; see the Extension-free overload for the Default Model rules. */
 export function defineAgent<
   const Providers extends ReadonlyArray<unknown>,
   const DefaultModel extends QualifiedModelId<Extract<NoInfer<Providers[number]>, AnyProvider>>,
@@ -187,6 +212,12 @@ const compileExtensions = (
   return { extensions, tools, handlers, instructions, requiredHandlerNames };
 };
 
+/**
+ * Validates an unknown value as an Agent Definition and resolves it into a `CompiledAgent`.
+ * Sessions call this when they start; a Host may call it earlier to surface
+ * `AgentDefinitionError` before opening a Session. A Provider not created by this copy of Core is
+ * a defect, not an issue.
+ */
 export const compileAgentDefinition: (
   definition: typeof Schema.Unknown.Type,
 ) => Effect.Effect<CompiledAgent, AgentDefinitionError> = Effect.fn(

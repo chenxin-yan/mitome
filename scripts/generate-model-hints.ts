@@ -58,10 +58,12 @@ const items = (ids: ReadonlyArray<string>, indent: string): string =>
 await writeFile(
   openAiHintsPath,
   `${header}
+/** Tool-capable OpenAI Model ids from models.dev, offered as completions; not a closed catalog. */
 export const knownModelIds = [
 ${items(openAiIds, "  ")}
 ] as const;
 
+/** One id from \`knownModelIds\`. */
 export type KnownModelId = (typeof knownModelIds)[number];
 `,
 );

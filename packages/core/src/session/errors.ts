@@ -8,6 +8,7 @@ export class SessionBusyError extends Schema.TaggedError<SessionBusyError>()(
   "SessionBusyError",
   {},
 ) {
+  /** Fixed description; the error carries no fields. */
   override get message(): string {
     return "Session is busy with an active Turn";
   }
@@ -18,6 +19,7 @@ export class SessionReleasedError extends Schema.TaggedError<SessionReleasedErro
   "SessionReleasedError",
   {},
 ) {
+  /** Fixed description; the error carries no fields. */
   override get message(): string {
     return "Session scope has been released";
   }
@@ -29,10 +31,15 @@ export class TurnError extends Schema.TaggedError<TurnError>()("TurnError", {
   cause: Schema.Defect(),
 }) {}
 
+/**
+ * An Approval decision could not be applied: it was already resolved, or (`reason: "not-pending"`)
+ * its Turn has ended. Decisions are one-shot.
+ */
 export class ApprovalResolutionError extends Schema.TaggedError<ApprovalResolutionError>()(
   "ApprovalResolutionError",
   { reason: Schema.optional(Schema.Literal("not-pending")) },
 ) {
+  /** Description derived from `reason`. */
   override get message(): string {
     return this.reason === "not-pending"
       ? "Approval is no longer pending (the Turn ended or the request is missing)"
