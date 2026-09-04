@@ -1,11 +1,9 @@
 # create-mitome
 
-Create a Mitome Agent project in the current directory.
+Scaffold a standalone Mitome Agent project in a directory you own. It prompts for a Provider and Model and never overwrites existing files.
 
 ```sh
-npm create mitome
+npm create mitome my-agent
 ```
 
-The scaffolder prompts for a Provider and native Model id, then generates a registered Provider and qualified Default Model for a Promise-first or Effect-native template. Existing project files are never overwritten.
-
-The `create-mitome/template` export is internal plumbing shared with `mitome init`; it carries no stability guarantee.
+See [Installation](https://mitome.sh/docs/installation#two-ways-to-scaffold). The `create-mitome/template` export is internal plumbing shared with `mitome init` and carries no stability guarantee.

@@ -21,9 +21,9 @@ describe("defineMitome", () => {
     });
   });
 
-  it("rejects multiple interactive Hosts", () => {
+  it("rejects multiple Hosts", () => {
     expect(() => defineMitome({ agent, hosts: [host, { ...host }] })).toThrow(
-      "Mitome Definition must declare at most one interactive Host",
+      "Mitome Definition must declare at most one Host",
     );
   });
 });

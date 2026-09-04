@@ -63,7 +63,7 @@ export const defineMitome = <const Agent extends AgentDefinition>(
     );
   }
   if (hosts.length > 1) {
-    throw new Error("Mitome Definition must declare at most one interactive Host.");
+    throw new Error("Mitome Definition must declare at most one Host.");
   }
   return { ...definition, hosts };
 };

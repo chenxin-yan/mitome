@@ -1,9 +1,20 @@
 # Mitome
 
-Mitome lets you define and run AI agents for your own use cases. Use the Promise-first SDK in applications, or compose the Effect-native engine for custom Hosts and Providers.
+Define an AI Agent once in TypeScript — its Provider, Model, Instructions, Tools, and Extensions — then run it embedded in your application or from your terminal. Sessions stream Turn events, Tool calls can require Approval, and completed Turns persist as resumable Transcripts.
+
+Embed in an application:
 
 ```sh
 npm install @mitome/sdk @mitome/providers
 ```
 
-See the [documentation](apps/docs/content/docs/) for the quickstart, Extensions, persistence, Providers, CLI, TUI, and Effect-native APIs. Host and Provider authors use [`@mitome/core`](apps/docs/content/docs/core.mdx).
+Run from a terminal:
+
+```sh
+npm install -g @mitome/cli
+mitome init
+```
+
+Documentation: [mitome.sh](https://mitome.sh). Contributing: [mitome.sh/docs/contributing](https://mitome.sh/docs/contributing).
+
+MIT licensed; see [LICENSE](LICENSE).

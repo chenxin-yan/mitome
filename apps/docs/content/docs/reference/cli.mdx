@@ -1,0 +1,75 @@
+---
+title: CLI reference
+description: Every mitome command, argument, flag, environment variable, and exit behavior.
+icon: SquareTerminal
+---
+
+Exhaustive tables for the `mitome` command. The narrative is on the [CLI](/docs/cli) page; where each file lives and how Credentials are resolved is on the [Configuration](/docs/configuration) page.
+
+## Commands
+
+| Command                                 | Arguments and flags                                               | What it does                                                                                                                                                             |
+| --------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mitome [message]`                      | `[message]`, `--print`/`-p`, `--use`                              | Reconciles the Mitome Definition's dependencies, then runs its Host or one Turn.                                                                                         |
+| `mitome init`                           | none                                                              | Prompts for a Provider and Model, writes the default Mitome Definition, installs its dependencies, and runs `auth login`. Fails if a file it would write exists.         |
+| `mitome install`                        | `--use`                                                           | Installs the Mitome Definition's dependencies without running it.                                                                                                        |
+| `mitome add <package>`                  | `<package>`, `--use`                                              | Adds a dependency to the Mitome Definition's `package.json`, installs, and prints an import snippet. A failed install restores the manifest.                             |
+| `mitome remove <package>`               | `<package>`, `--use`                                              | Removes the dependency and uninstalls it.                                                                                                                                |
+| `mitome ext list`                       | `--use`                                                           | Prints one `name<TAB>version` line per Extension in Agent Definition order; `(anonymous)` for an unnamed Extension, `unknown` when its name is not an installed package. |
+| `mitome auth login`                     | `--use`                                                           | Collects a Credential for one Provider: masked input for API-key Providers, the Provider's own flow for OAuth Providers.                                                 |
+| `mitome auth logout`                    | `--use`                                                           | Removes that Provider's stored Credential.                                                                                                                               |
+| `mitome --help`, `<command> --help`     | `-h`                                                              | Prints usage.                                                                                                                                                            |
+| `mitome --version`                      | `-v`                                                              | Prints the CLI version.                                                                                                                                                  |
+| `mitome --completions <shell>`          | `bash`, `zsh`, `fish`, `sh`                                       | Prints a shell completion script; `sh` produces the bash script.                                                                                                         |
+| `mitome --wizard`, `<command> --wizard` |                                                                   | Prompts for each argument and flag interactively.                                                                                                                        |
+| `mitome --log-level <level>`            | `all`, `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `none` | Sets the minimum level for Effect log output.                                                                                                                            |
+
+`mitome ext` and `mitome auth` without a subcommand print their usage line and exit with status 1.
+
+## Arguments and flags
+
+| Name            | Applies to                  | Meaning                                                                                                                                                                                                             |
+| --------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[message]`     | `mitome`                    | The first user Message. Optional for an interactive Host; required for one-shot output. An empty string is a valid Message.                                                                                         |
+| `--print`, `-p` | `mitome`                    | Force one-shot output: run one Turn, stream the response to stdout, exit. Implied when stdout is not a TTY.                                                                                                         |
+| `--use <path>`  | every command except `init` | Select a Mitome Definition: a `.ts` module, or a directory whose `index.ts` is one. Default: `<config-dir>/index.ts`. Selection rules are under [Configuration](/docs/configuration#selecting-a-mitome-definition). |
+| `<package>`     | `add`, `remove`             | A package name such as `@mitome/tui`; `add` also accepts `name@version`.                                                                                                                                            |
+
+## Environment variables
+
+Variables the CLI itself reads. Providers read their own; see [Configuration](/docs/configuration#environment-variables) for the complete list.
+
+| Variable                             | Effect                                                                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `MITOME_HOME`                        | Config directory, used verbatim.                                                                                           |
+| `XDG_CONFIG_HOME`, `APPDATA`, `HOME` | Config directory fallbacks; the order is under [Configuration](/docs/configuration#the-config-directory).                  |
+| `MITOME_NO_BROWSER`                  | `1` makes an OAuth `auth login` print the authorization URL and wait for the pasted redirect instead of opening a browser. |
+
+## One-shot output
+
+When `mitome` prints one Turn instead of running a Host, stdout receives:
+
+| Event               | Output                                                   |
+| ------------------- | -------------------------------------------------------- |
+| `model-output`      | The text, streamed.                                      |
+| `reasoning`         | Nothing.                                                 |
+| `tool-call`         | `[tool <name>]` on its own line.                         |
+| `tool-result`       | `[tool <name> completed]` or `[tool <name> failed]`.     |
+| `approval-required` | `[approval <name> auto-approved]`; the call is approved. |
+| `response-complete` | A newline.                                               |
+
+How the CLI decides between a Host and one-shot output is under [Hosts](/docs/hosts#how-the-cli-picks-a-host).
+
+## Exit status and messages
+
+| Status | When                                                                                                                              |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `0`    | The command completed; an interactive Host returned.                                                                              |
+| `1`    | Any failure. The message is printed to stderr; the [errors reference](/docs/reference/errors#cli-messages) lists the common ones. |
+| `130`  | One-shot output interrupted with `Ctrl-C`; the Turn is not committed.                                                             |
+| `124`  | One-shot output did not stop within one second of `Ctrl-C` and was killed.                                                        |
+
+Two messages are informational and do not change the exit status on their own:
+
+- `<reason>; falling back to one-shot output.` (stderr) — the declared Host's `unsupported()` returned `<reason>`; with `@mitome/tui` that is `@mitome/tui requires an interactive terminal`.
+- `Installing Mitome Definition dependencies...` (stdout) — dependency reconciliation ran before the command.

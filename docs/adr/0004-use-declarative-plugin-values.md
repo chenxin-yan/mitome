@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0024
+status: amended by ADR-0024, ADR-0049
 ---
 
 # Use declarative Plugin values

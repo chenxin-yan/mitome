@@ -1,0 +1,67 @@
+---
+title: Troubleshooting
+description: Symptoms you may hit, why they happen, and the page that fixes each.
+icon: LifeBuoy
+---
+
+Each entry is symptom, cause, fix. Exact error texts are catalogued under [Errors](/docs/reference/errors).
+
+## `mitome` printed one-shot output instead of opening the TUI
+
+**Cause.** One of: the Mitome Definition does not declare `hosts: [tui()]` (installing `@mitome/tui` alone changes nothing); stdout is not a TTY, for example under a pipe or in some IDE terminals, so the CLI implied `--print`; or the TUI reported `@mitome/tui requires an interactive terminal` because stdin or stdout is not a TTY. In the last case stderr shows `...; falling back to one-shot output.`
+
+**Fix.** Declare the Host and run `mitome` in a real terminal. The selection rules are under [Hosts](/docs/hosts#how-the-cli-picks-a-host).
+
+## `Ctrl-O` says `Transcript persistence is not configured.`
+
+**Cause.** The Mitome Definition has no `transcripts` field, so there is no store to list.
+
+**Fix.** Add `transcripts: fileTranscripts()` to `defineMitome`; see [Persistence](/docs/persistence).
+
+## My Tool ran without asking for Approval
+
+**Cause.** The CLI's one-shot printer and the TUI approve every `approval-required` event that `preTool` Hooks let through. `needsApproval` pauses the Turn for a Host decision; those two Hosts decide "yes".
+
+**Fix.** For rules that never need a person, veto in a `preTool` Hook. For a human decision, drive `runTurn` yourself or author a Host that presents it; see [Approvals](/docs/approvals#who-approves-by-default).
+
+## My API key is not picked up from `.env`
+
+**Cause.** Either your shell already exports the same variable, which wins over `<config-dir>/.env`, or the key contains `#`, `$`, quotes, or edge whitespace, which Bun's `.env` format cannot round-trip; `mitome auth login` refuses such values. Embedded applications never read `.env` at all.
+
+**Fix.** Unset the shell variable, or export the key in your shell instead of storing it; see [Configuration](/docs/configuration#credentials).
+
+## Codex does not work as an OpenAI-compatible endpoint
+
+**Cause.** ChatGPT and Codex use OAuth and a different transport; they are not a Chat Completions API behind another `baseUrl`, and an OpenAI API key does not authenticate them.
+
+**Fix.** Use `codex()` from `@mitome/providers/openai-codex` and log in with `mitome auth login`; see [Codex](/docs/providers/codex).
+
+## `fileTranscripts()` throws about the config directory
+
+**Cause.** With no argument it stores under `<config-dir>/transcripts`, and none of `MITOME_HOME`, `XDG_CONFIG_HOME`, `APPDATA`, or `HOME` is set, which is common in containers and CI.
+
+**Fix.** Set `MITOME_HOME`, or pass a directory: `fileTranscripts("./transcripts")`; see [Configuration](/docs/configuration#the-config-directory).
+
+## `StoreError` after the Agent finished answering
+
+**Cause.** The Model completed the Turn but the Transcript store failed to `save` it. The Turn is not committed: `history()` and `transcript()` do not include it, and the response you saw is gone from the Session.
+
+**Fix.** Fix the store (disk, permissions, database), then send the Message again; the Model will run again. If the error came from `appendEvent` on the final event, the Turn is already committed; check `session.transcript()`. Details are under [Persistence](/docs/persistence#commit-boundary).
+
+## Iterating `runTurn()` a second time throws
+
+**Cause.** Each `runTurn()` result is a single-use iterable. A second `for await` over the same value would silently re-run a paid Turn, so it throws instead.
+
+**Fix.** Call `runTurn()` again for a new Turn. To collect events, use `Array.fromAsync(session.runTurn(...))` once; see [Sessions](/docs/sessions).
+
+## `mitome` says `@mitome/core beside <path> is "..."`
+
+**Cause.** The Mitome Definition's `package.json` resolves a different `@mitome/core` than the CLI was built with. All packages release together and must match; see [Versioning](/docs/versioning).
+
+**Fix.** Set `@mitome/core` in that `package.json` to the version the message names and run `mitome install`.
+
+## Two copies of Effect, or types that do not line up across `@mitome/sdk/effect`
+
+**Cause.** Your application installed an Effect version other than the one `@mitome/sdk` pins.
+
+**Fix.** `npm ls effect`, then install exactly that version; see [Versioning](/docs/versioning#the-effect-version).
