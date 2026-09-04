@@ -47,7 +47,7 @@ const definitionSource = (
       ? 'import { openai } from "@mitome/providers/openai";'
       : 'import { codex } from "@mitome/providers/openai-codex";';
   const providerFactory = provider === "openai" ? "openai()" : "codex()";
-  return `import { defineAgent, defineMitome, fileTranscripts } from ${JSON.stringify(sdk)};\nimport { instructionFiles } from "@mitome/sdk/extensions";\n${providerImport}\n\nconst agent = defineAgent({\n  providers: [${providerFactory}],\n  model: ${JSON.stringify(`${provider}/${model}`)},\n  extensions: [instructionFiles(${instructionFilesOptions})],\n});\n\nexport default defineMitome({\n  agent,\n  hosts: [],\n  transcripts: fileTranscripts(),\n});\n`;
+  return `import { defineAgent, defineMitome, fileTranscripts } from ${JSON.stringify(sdk)};\nimport { instructionFiles } from "@mitome/sdk/extensions";\n${providerImport}\n\nconst agent = defineAgent({\n  providers: [${providerFactory}],\n  model: ${JSON.stringify(`${provider}/${model}`)},\n  extensions: [instructionFiles(${instructionFilesOptions})],\n});\n\nexport default defineMitome({\n  agent,\n  transcripts: fileTranscripts(),\n});\n`;
 };
 
 const agentDefinitionSource = (options: ScaffoldOptions): string =>

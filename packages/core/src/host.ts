@@ -24,10 +24,13 @@ export const createHostSession = (context: HostContext) =>
   createSession(context.agent, { transcripts: context.transcripts });
 
 export const defineMitome = <const Agent extends AgentDefinition>(
-  definition: MitomeDefinition<Agent>,
+  definition: Omit<MitomeDefinition<Agent>, "hosts"> & {
+    readonly hosts?: ReadonlyArray<Host>;
+  },
 ): MitomeDefinition<Agent> => {
-  if (definition.hosts.length > 1) {
+  const hosts = definition.hosts === undefined ? [] : definition.hosts;
+  if (hosts.length > 1) {
     throw new Error("Mitome Definition must declare at most one interactive Host.");
   }
-  return definition;
+  return { ...definition, hosts };
 };

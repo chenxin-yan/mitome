@@ -305,7 +305,7 @@ export interface ExtensionDefinition<
   readonly dependencies?: Dependencies;
   readonly provides?: Provides;
   readonly instructions?: string;
-  readonly tools: Tools;
+  readonly tools?: Tools;
   readonly hooks?: ExtensionHooksDefinition<Resource, ProvidedServices<Dependencies>>;
   readonly setup?: () => Promise<Resource>;
   readonly dispose?: (resource: Resource) => Promise<void>;
@@ -315,12 +315,33 @@ export interface ExtensionDefinition<
 // so setup is mandatory whenever anything in the Extension declares a Resource.
 export function defineExtension<
   Resource = never,
-  const Tools extends ReadonlyArray<AnyTool> = ReadonlyArray<Tool<any, any, Resource, string>>,
   const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
   const Provides extends ReadonlyArray<Context.Service.Any> = readonly [],
 >(
-  definition: ExtensionDefinition<Resource, Tools, Dependencies, Provides> &
-    ([UnsatisfiedToolResources<Resource, Tools[number]>] extends [never] ? unknown : never) &
+  definition: ExtensionDefinition<Resource, readonly [], Dependencies, Provides> &
+    ([Resource] extends [ProvidedImplementations<Provides>] ? unknown : never) &
+    ([Resource | ProvidedTags<Provides>[number]] extends [never]
+      ? { readonly setup?: undefined; readonly dispose?: undefined }
+      : { readonly setup: () => Promise<Resource> }),
+): NoInfer<
+  Extension<
+    Resource | ProvidedServices<Dependencies>,
+    unknown,
+    ToolContributions<readonly []>,
+    Provides
+  >
+>;
+export function defineExtension<
+  Resource = never,
+  const Tools extends ReadonlyArray<AnyTool> = [Resource] extends [never]
+    ? readonly []
+    : ReadonlyArray<Tool<any, any, Resource, string>>,
+  const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
+  const Provides extends ReadonlyArray<Context.Service.Any> = readonly [],
+>(
+  definition: ExtensionDefinition<Resource, Tools, Dependencies, Provides> & {
+    readonly tools: Tools;
+  } & ([UnsatisfiedToolResources<Resource, Tools[number]>] extends [never] ? unknown : never) &
     ([UnsatisfiedToolServices<ProvidedServices<NoInfer<Dependencies>>, Tools[number]>] extends [
       never,
     ]
@@ -350,7 +371,7 @@ export function defineExtension<
     throw new Error(`Extension "${definition.name}" declares dispose without setup`);
   }
   const names = new Set<string>();
-  const definitions = definition.tools.map((tool) => {
+  const definitions = (definition.tools === undefined ? [] : definition.tools).map((tool) => {
     if (names.has(tool.name)) throw new Error(`Duplicate Tool name: ${tool.name}`);
     names.add(tool.name);
     return {

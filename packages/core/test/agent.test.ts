@@ -299,6 +299,21 @@ describe("Agent Definition compilation", () => {
     }),
   );
 
+  it.effect("does not normalize a null Extensions value", () =>
+    Effect.gen(function* () {
+      // SAFETY: Deliberately bypass the TypeScript boundary to exercise malformed JavaScript input.
+      const definition = (defineAgent as (definition: any) => AgentDefinition)({
+        providers: [model],
+        model: "test/default",
+        extensions: null,
+      });
+
+      expect((yield* getAgentDefinitionError(definition)).issues).toEqual([
+        "Agent Definition Extensions must be an array",
+      ]);
+    }),
+  );
+
   it.effect("reports malformed Provider elements", () =>
     Effect.gen(function* () {
       const definition = {

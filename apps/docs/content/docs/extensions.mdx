@@ -76,7 +76,6 @@ class Counter extends Context.Service<Counter, { count: number }>()("example/Cou
 const counter = defineExtension({
   name: "counter",
   provides: [Counter],
-  tools: [],
   setup: async () => ({ count: 0 }),
 });
 

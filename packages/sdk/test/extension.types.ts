@@ -143,6 +143,19 @@ defineExtension({
 });
 
 defineExtension<{ readonly db: string }>({
+  name: "explicit-resource",
+  tools: [
+    tool<string, string, { readonly db: string }>({
+      name: "query",
+      inputSchema: Schema.String,
+      outputSchema: Schema.String,
+      handler: async (_input, { resource }) => resource.db,
+    }),
+  ],
+  setup: async () => ({ db: "connection" }),
+});
+
+defineExtension<{ readonly db: string }>({
   name: "explicit-resource-mismatch",
   tools: [
     // @ts-expect-error An explicit Extension Resource must constrain every Tool Resource.
@@ -234,7 +247,17 @@ export type ResourceQueryInput = Expect<Equal<ResourceContributions["query"]["in
 export type ResourceHealthOutput = Expect<
   Equal<ResourceContributions["health"]["output"], boolean>
 >;
-const sdkToolkitlessExtension = defineExtension({ name: "sdk-toolkitless", tools: [] });
+const sdkToolkitlessExtension = defineExtension({ name: "sdk-toolkitless" });
+export type SdkToolkitlessContributionsAreEmpty = Expect<
+  Equal<keyof ContributionsOf<typeof sdkToolkitlessExtension>, never>
+>;
+const sdkResourceToolkitlessExtension = defineExtension<{ readonly db: string }>({
+  name: "sdk-resource-toolkitless",
+  setup: async () => ({ db: "connection" }),
+});
+export type SdkResourceToolkitlessContributionsAreEmpty = Expect<
+  Equal<keyof ContributionsOf<typeof sdkResourceToolkitlessExtension>, never>
+>;
 const sdkDefinition = defineAgent({
   providers: [model],
   model: "test/default",

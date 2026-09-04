@@ -110,12 +110,24 @@ const toAsyncIterable = (
   };
 };
 
-export const withSession = <const Definition extends AgentDefinition, A>(
+export function withSession<const Definition extends AgentDefinition, A>(
   definition: Definition,
   use: (session: Session<Definition["providers"]>) => Promise<A>,
-  options: SessionOptions = {},
-): Promise<A> =>
-  Effect.runPromiseExit(
+): Promise<A>;
+export function withSession<const Definition extends AgentDefinition, A>(
+  definition: Definition,
+  options: SessionOptions,
+  use: (session: Session<Definition["providers"]>) => Promise<A>,
+): Promise<A>;
+export function withSession<const Definition extends AgentDefinition, A>(
+  definition: Definition,
+  ...args:
+    | [use: (session: Session<Definition["providers"]>) => Promise<A>]
+    | [options: SessionOptions, use: (session: Session<Definition["providers"]>) => Promise<A>]
+): Promise<A> {
+  const [options, use] = args.length === 1 ? [{}, args[0]] : args;
+
+  return Effect.runPromiseExit(
     Effect.scoped(
       Effect.gen(function* () {
         const transcript =
@@ -145,3 +157,4 @@ export const withSession = <const Definition extends AgentDefinition, A>(
     if (failure instanceof CallbackFailure) throw failure.cause;
     throw failure;
   });
+}
