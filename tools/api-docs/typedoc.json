@@ -15,7 +15,6 @@
   "out": "../../apps/docs/content/docs/reference/api",
   "cleanOutputDir": true,
   "readme": "none",
-  "skipErrorChecking": true,
   "excludeInternal": true,
   "excludePrivate": true,
   "excludeExternals": true,

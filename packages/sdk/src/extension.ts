@@ -81,12 +81,13 @@ export interface ToolApprovalContext {
 
 /**
  * Promise lifecycle Hooks. Start Hooks run in Agent Definition order and end Hooks in reverse; a
- * rejected Hook fails the Turn (or Session start) with `TurnError`.
+ * rejected Hook fails the Turn (or Session start) with `TurnError`, except `sessionEnd`, whose
+ * rejection is logged so Session release always completes.
  */
 export interface ExtensionHooksDefinition<Resource = never> {
   /** Runs once after every Extension Resource is acquired. */
   readonly sessionStart?: (context: HookContext<Resource>) => Promise<void>;
-  /** Runs when the Session is released, before Resources are disposed. */
+  /** Runs when the Session is released, before Resources are disposed; a rejection is logged, not thrown. */
   readonly sessionEnd?: (context: HookContext<Resource>) => Promise<void>;
   /** Observes the user Message that starts a Turn. */
   readonly turnStart?: (message: string, context: HookContext<Resource>) => Promise<void>;
