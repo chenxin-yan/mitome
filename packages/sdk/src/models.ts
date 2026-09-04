@@ -2,6 +2,7 @@ import type { Json } from "@mitome/core";
 
 export type { Json } from "@mitome/core";
 
+/** Provider-specific options attached to a Message or part; opaque to Mitome. */
 export type ProviderOptions = Readonly<Record<string, Json>>;
 
 interface PromptPartBase<Type extends string> {
@@ -9,6 +10,7 @@ interface PromptPartBase<Type extends string> {
   readonly options?: ProviderOptions | undefined;
 }
 
+/** One content part of a Model Prompt Message. */
 export type PromptPart =
   | (PromptPartBase<"text"> & { readonly text: string })
   | (PromptPartBase<"reasoning"> & { readonly text: string })
@@ -52,6 +54,7 @@ type AssistantPromptPart = PromptPartOf<
 >;
 type ToolPromptPart = PromptPartOf<"tool-result" | "tool-approval-response">;
 
+/** One Message of a Model Prompt, by role; each role permits its own part types. */
 export type PromptMessage =
   | (PromptMessageBase<"system"> & { readonly content: string })
   | (PromptMessageBase<"user"> & {
@@ -67,6 +70,7 @@ export interface Prompt {
   readonly content: ReadonlyArray<PromptMessage>;
 }
 
+/** Why the Model stopped generating in a Step. */
 export type FinishReason =
   | "stop"
   | "length"
@@ -77,6 +81,7 @@ export type FinishReason =
   | "other"
   | "unknown";
 
+/** Token usage of a Step; every count is optional because Providers report different detail. */
 export interface Usage {
   readonly inputTokens: {
     readonly uncached?: number | undefined;
@@ -96,6 +101,7 @@ interface ResponsePartBase<Type extends string> {
   readonly metadata?: ProviderOptions | undefined;
 }
 
+/** One streamed part of a Model response, as `stepEnd` receives them. */
 export type ResponsePart =
   | (ResponsePartBase<"text" | "reasoning"> & { readonly text: string })
   | (ResponsePartBase<"text-start" | "text-end" | "reasoning-start" | "reasoning-end"> & {

@@ -1,3 +1,10 @@
+/**
+ * Effect-native Host and Provider authoring surface. Application code should prefer `@mitome/sdk`
+ * or `@mitome/sdk/effect`; Core carries a weaker stability guarantee.
+ *
+ * @module @mitome/core
+ */
+
 export { configDirectory, configDirectoryMessage } from "./config.js";
 export { fileTranscripts } from "./file-transcript-store.js";
 export { CredentialDescriptorSchema } from "./credential.js";

@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect";
 import { Response } from "effect/unstable/ai";
 import type { ApprovalResolutionError } from "./errors.js";
 
+/** A JSON-serializable value. */
 export type Json =
   | null
   | boolean
@@ -10,11 +11,17 @@ export type Json =
   | ReadonlyArray<Json>
   | { readonly [key: string]: Json };
 
+/** The Tool result the Model receives when a `preTool` Hook vetoes or a Host denies a Tool call. */
 export interface ToolExecutionDenied {
   readonly type: "execution-denied";
   readonly reason: string;
 }
 
+/**
+ * One event emitted while a Turn runs. `approval-required` pauses the Turn until `approve` or
+ * `deny` resolves; `response-complete` is the final event of a successful Turn and is emitted only
+ * after the Transcript save succeeded.
+ */
 export type TurnEvent =
   | { readonly type: "model-output"; readonly text: string }
   | { readonly type: "reasoning"; readonly text: string }
@@ -37,7 +44,9 @@ export type TurnEvent =
       readonly toolCallId: string;
       readonly name: string;
       readonly params: unknown;
+      /** Lets the Tool call run. One-shot: resolving again or after the Turn ended fails. */
       readonly approve: () => Effect.Effect<void, ApprovalResolutionError>;
+      /** Rejects the Tool call; the Model sees `reason`. One-shot like `approve`. */
       readonly deny: (reason?: string) => Effect.Effect<void, ApprovalResolutionError>;
     }
   | {
@@ -102,6 +111,7 @@ const responseCompleteEventDto = Schema.Struct({
   usage: Schema.optional(Response.Usage),
 });
 
+/** Schema of the serializable Turn event persisted through `TranscriptStore.appendEvent`. */
 export const TurnEventDtoSchema = Schema.Union([
   modelOutputEventDto,
   reasoningEventDto,
@@ -111,6 +121,10 @@ export const TurnEventDtoSchema = Schema.Union([
   approvalResolvedEventDto,
   responseCompleteEventDto,
 ]);
+/**
+ * Serializable form of a Turn event. Approval callbacks are dropped, `approval-resolved` records
+ * each decision, and Tool params or results that are not JSON become `null`.
+ */
 export type TurnEventDto =
   | { readonly type: "model-output"; readonly text: string }
   | { readonly type: "reasoning"; readonly text: string }

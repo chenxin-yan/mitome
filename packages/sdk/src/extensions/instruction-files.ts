@@ -3,8 +3,11 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Extension } from "@mitome/core";
 
+/** Options for `instructionFiles`. */
 export interface InstructionFilesOptions {
+  /** Files to read, resolved relative to the module that calls `instructionFiles`. */
   readonly paths?: ReadonlyArray<string>;
+  /** Bare filenames looked up in every directory from the git root down to the working directory. */
   readonly discover?: ReadonlyArray<string>;
 }
 
@@ -67,8 +70,8 @@ const discoveredPaths = (names: ReadonlyArray<string>): ReadonlyArray<string> =>
 };
 
 /**
- * Creates an Extension from synchronous instruction files at definition load time.
- * ADR-0024 intentionally confines these node:fs reads to this first-party SDK subpath.
+ * Creates an Extension whose Instructions are read from files when the definition loads. A missing
+ * `paths` entry throws; missing `discover` names are skipped.
  */
 export function instructionFiles(options: InstructionFilesOptions = {}): Extension {
   const paths = explicitPaths(options.paths);

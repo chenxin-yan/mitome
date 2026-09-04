@@ -15,9 +15,13 @@ import type {
 
 /** Promise-first persistence contract accepted by `@mitome/sdk`. */
 export interface TranscriptStore {
+  /** Persists the snapshot of a Transcript after a Turn completed. */
   readonly save: (transcript: Transcript) => Promise<void>;
+  /** Loads a Transcript to seed a new Session; return `null` for an unknown id and Mitome raises `TranscriptNotFound`. */
   readonly load: (id: TranscriptId) => Promise<Transcript | null>;
+  /** Lists stored Transcripts for pickers and resume. */
   readonly list: () => Promise<ReadonlyArray<TranscriptSummary>>;
+  /** Appends one Turn event record: write-only observability data that is never replayed. */
   readonly appendEvent: (record: TranscriptEventRecord) => Promise<void>;
 }
 
@@ -54,8 +58,17 @@ const fromCoreTranscriptStore = (store: CoreTranscriptStore): TranscriptStore =>
   appendEvent: (record) => Effect.runPromise(store.appendEvent(record)),
 });
 
+/**
+ * In-memory store for tests or a shared store without disk writes. Contents live as long as the
+ * returned value; event records are discarded.
+ */
 export const memoryTranscripts = (): TranscriptStore =>
   fromCoreTranscriptStore(coreMemoryTranscripts());
 
+/**
+ * Disk-backed store rooted at `directory`, defaulting to `<config-dir>/transcripts`; files are
+ * created with mode 0600. Throws immediately when no directory is given and no config directory
+ * resolves (set `MITOME_HOME`).
+ */
 export const fileTranscripts = (directory?: string): TranscriptStore =>
   fromCoreTranscriptStore(coreFileTranscripts(directory));

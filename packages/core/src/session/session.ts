@@ -20,27 +20,39 @@ import type { StoreError, TranscriptStore } from "../transcript-store.js";
 type ProvidersOf<Definition extends AgentDefinition> =
   Definition extends AgentDefinition<infer Providers, any, any> ? Providers : never;
 
+/** Per-Turn overrides for `Session.runTurn`. */
 export interface TurnOptions<Providers extends ReadonlyArray<AnyProvider>> {
+  /** Model for this Turn only, as a Qualified Model id under a Provider registered on the Agent. */
   readonly model: QualifiedModelId<Providers[number]>;
 }
 
+/** Persistence and seeding for `createSession`. */
 export interface CreateSessionOptions {
   /**
-   * Seeds the Session's committed history. If it has no system message, the Agent's compiled
+   * Seeds the Session's committed Messages. If it has no system message, the Agent's compiled
    * instructions are intentionally not injected.
    */
   readonly transcript?: TranscriptValue | undefined;
+  /** Receives the Transcript snapshot after each committed Turn and every Turn event record. */
   readonly transcripts?: TranscriptStore | undefined;
 }
 
+/** A live, process-bound interaction with one Agent, obtained from `createSession` inside a Scope. */
 export interface Session<
   Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
 > {
+  /**
+   * Runs one Turn for a user Message as a Stream of Turn events; consume or interrupt it exactly
+   * once. Fails with `SessionBusyError` while another Turn is active and `SessionReleasedError`
+   * after the Session scope closed. An interrupted or failed Turn is not committed.
+   */
   readonly runTurn: (
     message: string,
     options?: TurnOptions<Providers>,
   ) => Stream.Stream<TurnEvent, SessionBusyError | SessionReleasedError | StoreError | TurnError>;
+  /** The committed Model Prompt, advanced only after a Turn completes and its Transcript save succeeds. */
   readonly history: () => ReadonlyArray<Prompt.Message>;
+  /** Serializable snapshot of the committed Messages with this Session's Transcript id and lineage. */
   readonly transcript: () => TranscriptValue;
 }
 
@@ -208,6 +220,11 @@ const createSessionImpl: (
   };
 });
 
+/**
+ * Compiles the Agent Definition, acquires Extension Resources, and runs `sessionStart` Hooks. The
+ * Session lives until the enclosing Scope closes, which runs `sessionEnd` Hooks and releases
+ * Resources in reverse Agent Definition order.
+ */
 export const createSession = <const Definition extends AgentDefinition>(
   definition: Definition,
   options?: CreateSessionOptions,

@@ -1,0 +1,17 @@
+{
+  "extends": "../../packages/config/tsconfig.lib.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../..",
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid",
+    "types": ["bun"]
+  },
+  "include": [
+    "../../packages/sdk/src/**/*.ts",
+    "../../packages/core/src/**/*.ts",
+    "../../packages/providers/src/**/*.ts",
+    "../../packages/tui/src/**/*.ts",
+    "../../packages/tui/src/**/*.tsx"
+  ]
+}

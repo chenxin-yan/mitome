@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect";
 import { TurnEventDtoSchema, type TurnEventDto } from "./session/events.js";
 import type { Transcript, TranscriptId } from "./transcript.js";
 
+/** Schema of one `TranscriptStore.list` row. */
 export const TranscriptSummarySchema = Schema.Struct({
   id: Schema.String,
   parentTranscriptId: Schema.optional(Schema.String),
@@ -10,8 +11,13 @@ export const TranscriptSummarySchema = Schema.Struct({
   messageCount: Schema.Natural,
   preview: Schema.String,
 });
+/**
+ * One row of `TranscriptStore.list`: id, lineage, ISO timestamps, message count, and a single-line
+ * preview of the first user Message.
+ */
 export type TranscriptSummary = typeof TranscriptSummarySchema.Type;
 
+/** The `version` written into every event record this version of Mitome produces. */
 export const TranscriptEventRecordVersion = 1 as const;
 /**
  * Records decode independently. A tail without `response-complete` is an expected interrupted Turn,
@@ -24,6 +30,7 @@ export const TranscriptEventRecordSchema = Schema.Struct({
   version: Schema.Literal(TranscriptEventRecordVersion),
   event: TurnEventDtoSchema,
 });
+/** One appended Turn event, ordered by `seq` within the Session that produced it. */
 export interface TranscriptEventRecord {
   readonly transcriptId: string;
   readonly sessionId: string;
@@ -32,20 +39,30 @@ export interface TranscriptEventRecord {
   readonly event: TurnEventDto;
 }
 
+/** A Transcript store operation failed; the Turn that triggered it fails and stays uncommitted. */
 export class StoreError extends Schema.TaggedError<StoreError>()("StoreError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {}
 
+/** No Transcript exists for the requested id. */
 export class TranscriptNotFound extends Schema.TaggedError<TranscriptNotFound>()(
   "TranscriptNotFound",
   { id: Schema.String },
 ) {}
 
+/**
+ * Effect-native persistence contract. Sessions call `save` and `appendEvent`; Hosts call `load` and
+ * `list` to resume. Adapters own their concurrency policy: concurrent resumes are independent forks.
+ */
 export interface TranscriptStore {
+  /** Persists the snapshot of a Transcript after a Turn completed. */
   readonly save: (transcript: Transcript) => Effect.Effect<void, StoreError>;
+  /** Loads a Transcript to seed a new Session. */
   readonly load: (id: TranscriptId) => Effect.Effect<Transcript, StoreError | TranscriptNotFound>;
+  /** Lists stored Transcripts for pickers and resume. */
   readonly list: () => Effect.Effect<ReadonlyArray<TranscriptSummary>, StoreError>;
+  /** Appends one Turn event record: write-only observability data that is never replayed. */
   readonly appendEvent: (record: TranscriptEventRecord) => Effect.Effect<void, StoreError>;
 }
 
@@ -55,6 +72,7 @@ interface StoredTranscript {
   readonly updatedAt: string;
 }
 
+/** Derives the `messageCount` and `preview` fields of a `TranscriptSummary` from a Transcript. */
 export const summarizeTranscript = (
   transcript: Transcript,
 ): Pick<TranscriptSummary, "messageCount" | "preview"> => {
@@ -70,6 +88,10 @@ export const summarizeTranscript = (
   return { messageCount: transcript.messages.length, preview };
 };
 
+/**
+ * In-memory store for tests or a shared store without disk writes. Contents live as long as the
+ * returned value; event records are discarded.
+ */
 export const memoryTranscripts = (): TranscriptStore => {
   const transcripts = new Map<TranscriptId, StoredTranscript>();
 

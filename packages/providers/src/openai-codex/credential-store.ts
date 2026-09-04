@@ -8,7 +8,7 @@ import {
 import { isExpired, OAuthTokenError } from "../shared/oauth.js";
 import { oauth, provider } from "./constants.js";
 import { token, type OAuthCredentialFailure } from "./oauth-token.js";
-import { OAuthCredential } from "./types.js";
+import { OAuthCredentialSchema, type OAuthCredential } from "./types.js";
 
 export class CredentialUnavailableError extends Data.TaggedError("CredentialUnavailableError")<{
   readonly message: string;
@@ -22,7 +22,7 @@ export type CredentialError =
 const credentialFrom = (
   value: typeof Schema.Json.Type | undefined,
 ): Effect.Effect<OAuthCredential, CredentialUnavailableError> =>
-  Schema.decodeUnknownEffect(OAuthCredential)(value).pipe(
+  Schema.decodeUnknownEffect(OAuthCredentialSchema)(value).pipe(
     Effect.mapError(
       () =>
         new CredentialUnavailableError({

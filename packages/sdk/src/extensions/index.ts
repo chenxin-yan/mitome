@@ -1,3 +1,9 @@
+/**
+ * First-party Extensions that ship with the SDK.
+ *
+ * @module @mitome/sdk/extensions
+ */
+
 import type { Extension } from "@mitome/core";
 
 export { instructionFiles, type InstructionFilesOptions } from "./instruction-files.js";

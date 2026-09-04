@@ -22,11 +22,15 @@ export interface OAuthConfig {
   readonly authorizeParams?: Readonly<Record<string, string>>;
 }
 
+/** Host-side I/O for an OAuth2 PKCE login. */
 export interface AuthorizeOptions {
   readonly callbackPort?: number;
   readonly tokenUrl?: string;
+  /** `false` skips opening a browser (the user pastes the redirect URL); a function replaces the default opener. */
   readonly openBrowser?: false | ((url: string) => void | Promise<void>) | undefined;
+  /** Reads one line from the user; `undefined` once input is closed. */
   readonly input: () => Promise<string | undefined>;
+  /** Shows one line to the user. */
   readonly output: (text: string) => void;
 }
 

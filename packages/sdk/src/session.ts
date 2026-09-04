@@ -15,10 +15,17 @@ import type {
 
 type CoreApproval = Extract<CoreTurnEvent, { type: "approval-required" }>;
 type CoreResponseComplete = Extract<CoreTurnEvent, { type: "response-complete" }>;
+/**
+ * One event from `Session.runTurn`: `model-output` and `reasoning` text, `tool-call` and
+ * `tool-result` activity, `approval-required` with Promise-returning decisions, and a final
+ * `response-complete`. Failures are thrown while iterating, not emitted as events.
+ */
 export type TurnEvent =
   | Exclude<CoreTurnEvent, CoreApproval | CoreResponseComplete>
   | (Omit<CoreApproval, "approve" | "deny"> & {
+      /** Lets the Tool call run. One-shot: resolving again or after the Turn ended rejects with `ApprovalResolutionError`. */
       readonly approve: () => Promise<void>;
+      /** Rejects the Tool call; the Model sees `reason`. One-shot like `approve`. */
       readonly deny: (reason?: string) => Promise<void>;
     })
   | {
@@ -27,15 +34,27 @@ export type TurnEvent =
       readonly usage?: Usage | undefined;
     };
 
+/** The live Session handed to a `withSession` callback; it is released when the callback settles. */
 export interface Session<
   Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
 > {
-  /** The returned iterable is single-use; requesting a second iterator throws. */
+  /**
+   * Runs one Turn for a user Message. The returned iterable is single-use; requesting a second
+   * iterator throws. Returning from the iterator early interrupts the Turn, fires the Hook
+   * `AbortSignal`, and leaves the Session usable; the interrupted Turn is not committed.
+   */
   readonly runTurn: (message: string, options?: TurnOptions<Providers>) => AsyncIterable<TurnEvent>;
+  /** The committed Model Prompt, advanced only after a Turn completes and its Transcript save succeeds. */
   readonly history: () => ReadonlyArray<PromptMessage>;
+  /** Serializable snapshot of the committed Messages with this Session's Transcript id and lineage. */
   readonly transcript: () => Transcript;
 }
 
+/**
+ * Persistence and seeding for `withSession`: a `transcripts` store, a `transcript` to seed from, or
+ * a store plus the id to `resume`. Resuming loads that Transcript and forks a new one whose
+ * `parentTranscriptId` is the seed; an unknown id rejects with `TranscriptNotFound`.
+ */
 export type SessionOptions =
   | {
       readonly transcripts?: TranscriptStore | undefined;
@@ -133,10 +152,16 @@ const toAsyncIterable = (
   };
 };
 
+/**
+ * Opens a Session for the Agent Definition, runs the callback, and releases the Session afterwards,
+ * including on failure or interruption. Rejects with the tagged Session errors (`AgentDefinitionError`,
+ * `TurnError`, `StoreError`, ...); errors thrown by the callback are rethrown unchanged.
+ */
 export function withSession<const Definition extends AgentDefinition, A>(
   definition: Definition,
   use: (session: Session<Definition["providers"]>) => Promise<A>,
 ): Promise<A>;
+/** Opens a Session with persistence or seeding options; see `SessionOptions`. */
 export function withSession<const Definition extends AgentDefinition, A>(
   definition: Definition,
   options: SessionOptions,

@@ -10,6 +10,7 @@
     "tui",
     "effect",
     "core",
-    "providers"
+    "providers",
+    "reference"
   ]
 }

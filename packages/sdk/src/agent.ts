@@ -34,6 +34,11 @@ type RuntimeAgentDefinition = BaseDefinition<
   readonly tools?: (scope: { readonly tool: ToolBuilder<never> }) => ReadonlyArray<AnyTool>;
 };
 
+/**
+ * Declares an Agent from its Providers, Default Model, and optional Extensions. The Default Model
+ * is a Qualified Model id (`provider/model`) whose prefix must name a registered Provider; catalog
+ * ids are offered as completions but any model id under that Provider is accepted.
+ */
 export function defineAgent<
   const Providers extends ReadonlyArray<AnyProvider>,
   const DefaultModel extends QualifiedModelId<NoInfer<Providers[number]>>,
@@ -41,6 +46,11 @@ export function defineAgent<
 >(
   definition: BaseDefinition<Providers, DefaultModel, Extensions> & { readonly tools?: undefined },
 ): AgentDefinition<Providers, DefaultModel, Extensions>;
+/**
+ * Declares an Agent with one-off Tools that need no Resource. The `tools` builder becomes an
+ * anonymous Extension appended after `extensions`; use `defineExtension` when Tools need a
+ * Resource, Hooks, Instructions, or reuse.
+ */
 export function defineAgent<
   const Providers extends ReadonlyArray<AnyProvider>,
   const DefaultModel extends QualifiedModelId<NoInfer<Providers[number]>>,
