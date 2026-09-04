@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { Effect, Layer, Result, Schema, Stream } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
 import { makeProvider } from "@mitome/core";
-import { defineAgent, defineExtension, tool, withSession, type InputSchema } from "../src/index.js";
+import { defineAgent, defineExtension, withSession, type InputSchema } from "../src/index.js";
 
 const Action = Schema.Struct({ action: Schema.String });
 
@@ -67,7 +67,7 @@ describe("@mitome/sdk Tool Approval", () => {
       extensions: [
         defineExtension({
           name: "dangerous",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "dangerous",
               inputSchema: schema,
@@ -115,7 +115,7 @@ describe("@mitome/sdk Tool Approval", () => {
       extensions: [
         defineExtension({
           name: "dangerous",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "dangerous",
               inputSchema: schema,
@@ -164,7 +164,7 @@ describe("@mitome/sdk Tool Approval", () => {
       extensions: [
         defineExtension({
           name: "dangerous",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "dangerous",
               inputSchema: defaultingSchema,
@@ -202,7 +202,7 @@ describe("@mitome/sdk Tool Approval", () => {
       extensions: [
         defineExtension({
           name: "dangerous",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "dangerous",
               inputSchema: schema,
@@ -247,7 +247,7 @@ describe("@mitome/sdk Tool Approval", () => {
       extensions: [
         defineExtension({
           name: "dangerous",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "dangerous",
               inputSchema: schema,

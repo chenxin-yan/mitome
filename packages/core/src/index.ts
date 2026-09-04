@@ -11,6 +11,7 @@ export type {
   ExtensionHooks,
   ToolContribution,
   ToolContributions,
+  ToolFailureValidator,
   ToolHookContext,
   ToolInputValidator,
   ToolResultHookContext,

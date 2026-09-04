@@ -38,18 +38,23 @@ export interface ExtensionHooks<Resource = never> {
 
 export type ToolInputValidator = (input: ToolInput) => Effect.Effect<ToolInput, unknown>;
 export type ToolResultValidator = (result: ToolOutput) => Effect.Effect<ToolOutput, unknown>;
+export type ToolFailureValidator = (failure: ToolOutput) => Effect.Effect<ToolOutput, unknown>;
 
-export interface ToolContribution<Input = ToolInput, Output = ToolOutput> {
+export interface ToolContribution<Input = ToolInput, Output = ToolOutput, Failure = never> {
   readonly input: Input;
   readonly output: Output;
+  readonly failure: Failure;
 }
 
-export type ToolContributions = Readonly<Record<string, ToolContribution>>;
+export type ToolContributions = Readonly<
+  Record<string, ToolContribution<unknown, unknown, unknown>>
+>;
 type EmptyToolContributions = Readonly<Record<never, never>>;
 type ToolkitContributions<Tools extends Record<string, Tool.Any>> = {
   readonly [Name in keyof Tools]: ToolContribution<
     Tool.Parameters<Tools[Name]>,
-    Tool.Success<Tools[Name]>
+    Tool.Success<Tools[Name]>,
+    Tool.Failure<Tools[Name]>
   >;
 };
 declare const ExtensionContributionsTypeId: unique symbol;
@@ -73,6 +78,8 @@ export interface Extension<
   readonly toolInputValidators?: Readonly<Record<string, ToolInputValidator>>;
   /** Revalidates post-Tool transforms; keys must name Tools in this Extension. */
   readonly toolResultValidators?: Readonly<Record<string, ToolResultValidator>>;
+  /** Revalidates failed results after post-Tool transforms. */
+  readonly toolFailureValidators?: Readonly<Record<string, ToolFailureValidator>>;
   readonly hooks?: ExtensionHooks<Resource> | undefined;
 }
 
@@ -100,12 +107,13 @@ type LayerExtension<LayerValue extends Layer.Any> = Omit<
 
 type ToolkitlessExtension<LayerValue extends Layer.Any> = Omit<
   LayerExtension<LayerValue>,
-  "toolkit" | "handlers" | "toolInputValidators" | "toolResultValidators"
+  "toolkit" | "handlers" | "toolInputValidators" | "toolResultValidators" | "toolFailureValidators"
 > & {
   readonly toolkit?: undefined;
   readonly handlers?: undefined;
   readonly toolInputValidators?: undefined;
   readonly toolResultValidators?: undefined;
+  readonly toolFailureValidators?: undefined;
 };
 
 type ResourceFreeToolkitlessExtension = Omit<
@@ -129,6 +137,9 @@ type ToolkitExtension<ToolkitValue extends Toolkit.Any> = {
   readonly toolResultValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
   >;
+  readonly toolFailureValidators?: Readonly<
+    Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolFailureValidator>>
+  >;
   readonly hooks?: ExtensionHooks<never> | undefined;
 };
 
@@ -137,7 +148,13 @@ type ResourcefulToolkitExtension<
   ToolkitValue extends Toolkit.Any,
 > = Omit<
   LayerExtension<LayerValue>,
-  "resource" | "toolkit" | "handlers" | "toolInputValidators" | "toolResultValidators" | "hooks"
+  | "resource"
+  | "toolkit"
+  | "handlers"
+  | "toolInputValidators"
+  | "toolResultValidators"
+  | "toolFailureValidators"
+  | "hooks"
 > & {
   readonly resource: LayerValue;
   readonly toolkit: ToolkitValue;
@@ -148,6 +165,9 @@ type ResourcefulToolkitExtension<
   >;
   readonly toolResultValidators?: Readonly<
     Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolResultValidator>>
+  >;
+  readonly toolFailureValidators?: Readonly<
+    Partial<Record<keyof Toolkit.Tools<NoInfer<ToolkitValue>> & string, ToolFailureValidator>>
   >;
   readonly hooks?: ExtensionHooks<Layer.Success<NoInfer<LayerValue>>> | undefined;
 };

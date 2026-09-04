@@ -1,8 +1,9 @@
 import { Cause, Deferred, Effect, Predicate, Schema, Stream } from "effect";
-import { Tool, Toolkit, type AiError } from "effect/unstable/ai";
+import { AiError, Tool, Toolkit } from "effect/unstable/ai";
 import type { CompiledAgent, CompiledTool } from "../agent.js";
 import type {
   ExtensionContexts,
+  ToolFailureValidator,
   ToolInput,
   ToolOutput,
   ToolResultValidator,
@@ -86,15 +87,23 @@ const validateResult = (
   tool: Tool.Any,
   handlerResult: Tool.HandlerResult<Tool.Any>,
   result: ToolOutput,
-  validator: ToolResultValidator | undefined,
+  resultValidator: ToolResultValidator | undefined,
+  failureValidator: ToolFailureValidator | undefined,
 ): Effect.Effect<Tool.HandlerResult<Tool.Any>, unknown> => {
   // SAFETY: the owning Extension context is supplied by the caller around this schema encoding.
   return Effect.gen(function* () {
-    // Result validators describe successful SDK outputs; failures use their Tool failure schema instead.
-    const validated =
-      handlerResult.isFailure || validator === undefined ? result : yield* validator(result);
-    // Dynamic Tools have no failure schema to re-encode with, so the Hook-transformed
-    // value doubles as the encoded payload the model sees.
+    // Classify before Hooks: transformed defects stay opaque, while transformed expected
+    // failures still pass through their declared failure schema.
+    const isDefect = handlerResult.isFailure && AiError.isAiError(handlerResult.result);
+    const transformed = isDefect ? handlerResult.result : result;
+    const validator = handlerResult.isFailure
+      ? isDefect
+        ? undefined
+        : failureValidator
+      : resultValidator;
+    const validated = validator === undefined ? transformed : yield* validator(transformed);
+    // Dynamic Tools have no failure schema to re-encode with, so the validated value
+    // doubles as the encoded payload the model sees.
     if (handlerResult.isFailure && Tool.isDynamic(tool) && tool.failureSchema === Schema.Never) {
       return {
         ...handlerResult,
@@ -160,7 +169,7 @@ export const makeToolExecution = (
 
       const pipelines = Object.fromEntries(
         compiledTools.map((compiledTool) => {
-          const { owner, resultValidator, tool } = compiledTool;
+          const { failureValidator, owner, resultValidator, tool } = compiledTool;
           const execute: ToolPipeline["execute"] = Effect.fn("@mitome/core/ToolPipeline.execute")(
             function* (params) {
               // The whole Tool Call runs in the owning Extension's context: the handler
@@ -206,7 +215,7 @@ export const makeToolExecution = (
                   return yield* provideExtension(
                     owner,
                     contexts,
-                    validateResult(tool, handlerResult, result, resultValidator),
+                    validateResult(tool, handlerResult, result, resultValidator, failureValidator),
                   ).pipe(hookAiError("postTool", "Post-Tool result validation failed"));
                 }),
               );

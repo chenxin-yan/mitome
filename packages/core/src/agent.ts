@@ -2,6 +2,7 @@ import { Effect, Predicate, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 import type {
   AnyExtension,
+  ToolFailureValidator,
   ToolInput,
   ToolInputValidator,
   ToolOutput,
@@ -28,6 +29,7 @@ export interface CompiledTool {
   readonly handler: AnyToolHandler | undefined;
   readonly inputValidator: ToolInputValidator | undefined;
   readonly resultValidator: ToolResultValidator | undefined;
+  readonly failureValidator: ToolFailureValidator | undefined;
 }
 
 export interface CompiledAgent {
@@ -142,6 +144,7 @@ const compileExtensions = (
         owner: extension,
         inputValidator: undefined,
         resultValidator: undefined,
+        failureValidator: undefined,
       });
       if (Tool.isProviderDefined(tool) ? tool.requiresHandler : true) {
         requiredHandlerNames.add(tool.name);
@@ -163,6 +166,15 @@ const compileExtensions = (
         issues.push(`Tool result validator has no matching Tool: ${name}`);
       } else {
         tools.set(name, { ...compiledTool, resultValidator: validator });
+      }
+    }
+
+    for (const [name, validator] of Object.entries(extension.toolFailureValidators ?? {})) {
+      const compiledTool = tools.get(name);
+      if (compiledTool === undefined || compiledTool.owner !== extension) {
+        issues.push(`Tool failure validator has no matching Tool: ${name}`);
+      } else {
+        tools.set(name, { ...compiledTool, failureValidator: validator });
       }
     }
 

@@ -5,8 +5,10 @@ import type { ExtensionHooks, Provider } from "@mitome/core";
 import {
   defineAgent,
   defineExtension,
-  tool,
+  fail,
+  ok,
   type ExtensionHooksDefinition,
+  type ToolBuilder,
   type ToolInputValidator,
   type ModelPrompt,
 } from "../src/index.js";
@@ -36,7 +38,7 @@ export type ExtensionHookKeyParity = Expect<
 
 const inferenceExtension = defineExtension({
   name: "inference",
-  tools: [
+  tools: ({ tool }) => [
     tool({
       name: "format",
       inputSchema: formatInputSchema,
@@ -60,12 +62,12 @@ const inferenceExtension = defineExtension({
 
 defineExtension({
   name: "invalid-output",
-  tools: [
+  tools: ({ tool }) => [
     tool({
       name: "invalid",
       inputSchema: Schema.String,
-      outputSchema: Schema.String,
       // @ts-expect-error Handler output must match the output Schema.
+      outputSchema: Schema.String,
       handler: async () => 1,
     }),
   ],
@@ -73,7 +75,6 @@ defineExtension({
 
 defineExtension({
   name: "invalid-prompt",
-  tools: [],
   hooks: {
     // @ts-expect-error preStep must return the canonical Model Prompt type.
     preStep: async () => undefined,
@@ -83,12 +84,12 @@ defineExtension({
 // Resource inferred from setup flows into hooks and tool handlers.
 const resourceInferenceExtension = defineExtension({
   name: "resource-inference",
-  tools: [
+  tools: ({ tool }) => [
     tool({
       name: "query",
       inputSchema: Schema.String,
       outputSchema: Schema.String,
-      handler: async (_input, { resource }: { resource: { readonly db: string } }) => resource.db,
+      handler: async (_input, { resource }) => resource.db,
     }),
     tool({
       name: "health",
@@ -106,37 +107,10 @@ const resourceInferenceExtension = defineExtension({
   },
 });
 
-// @ts-expect-error Tools declaring a Resource require setup.
-defineExtension({
-  name: "resource-without-setup",
-  tools: [
-    tool<string, string, { readonly db: string }>({
-      name: "orphan",
-      inputSchema: Schema.String,
-      outputSchema: Schema.String,
-      handler: async (_input, { resource }) => resource.db,
-    }),
-  ],
-});
-
-// @ts-expect-error Tool Resource must match setup Resource.
-defineExtension({
-  name: "resource-mismatch",
-  tools: [
-    tool<string, string, { readonly db: string }>({
-      name: "query",
-      inputSchema: Schema.String,
-      outputSchema: Schema.String,
-      handler: async (_input, { resource }) => resource.db,
-    }),
-  ],
-  setup: async () => ({ cache: 1 }),
-});
-
 defineExtension<{ readonly db: string }>({
   name: "explicit-resource",
-  tools: [
-    tool<string, string, { readonly db: string }>({
+  tools: ({ tool }) => [
+    tool({
       name: "query",
       inputSchema: Schema.String,
       outputSchema: Schema.String,
@@ -148,76 +122,79 @@ defineExtension<{ readonly db: string }>({
 
 defineExtension<{ readonly db: string }>({
   name: "explicit-resource-mismatch",
-  tools: [
-    // @ts-expect-error An explicit Extension Resource must constrain every Tool Resource.
-    tool<string, string, { readonly cache: number }>({
-      name: "cache",
-      inputSchema: Schema.String,
-      outputSchema: Schema.String,
-      handler: async (_input, { resource }) => String(resource.cache),
-    }),
-  ],
-  setup: async () => ({ db: "connection" }),
-});
-
-// @ts-expect-error Setup Resource must satisfy every Tool Resource.
-defineExtension({
-  name: "partial-resource",
-  tools: [
-    tool<string, string, { readonly db: string }>({
-      name: "query",
-      inputSchema: Schema.String,
-      outputSchema: Schema.String,
-      handler: async (_input, { resource }) => resource.db,
-    }),
-    tool<string, string, { readonly cache: number }>({
-      name: "cache",
-      inputSchema: Schema.String,
-      outputSchema: Schema.String,
-      handler: async (_input, { resource }) => String(resource.cache),
-    }),
-  ],
-  setup: async () => ({ db: "connection" }),
-});
-
-// @ts-expect-error A Resource with optional fields cannot satisfy a Tool requiring them.
-defineExtension({
-  name: "optional-resource",
-  tools: [
-    tool<string, string, { readonly db: string }>({
-      name: "query",
-      inputSchema: Schema.String,
-      outputSchema: Schema.String,
-      handler: async (_input, { resource }) => resource.db,
-    }),
-  ],
-  setup: async (): Promise<{ readonly db?: string }> => ({}),
-});
-
-// @ts-expect-error Any Tool Resource requires setup, including mixed Tool tuples.
-defineExtension({
-  name: "mixed-without-setup",
-  tools: [
-    tool<string, string, { readonly db: string }>({
-      name: "query",
-      inputSchema: Schema.String,
-      outputSchema: Schema.String,
-      handler: async (_input, { resource }) => resource.db,
-    }),
+  tools: ({ tool }) => [
     tool({
-      name: "health",
+      name: "cache",
       inputSchema: Schema.String,
-      outputSchema: Schema.Boolean,
-      handler: async () => true,
+      outputSchema: Schema.String,
+      // @ts-expect-error The scoped builder exposes only the Extension Resource.
+      handler: async (_input, { resource }) => String(resource.cache),
     }),
   ],
+  setup: async () => ({ db: "connection" }),
 });
 
 // @ts-expect-error dispose requires setup.
 defineExtension({
   name: "dispose-without-setup",
-  tools: [],
   dispose: async (resource: string) => void resource,
+});
+
+const inferredOutputExtension = defineExtension({
+  name: "inferred-output",
+  tools: ({ tool }) => [
+    tool({
+      name: "list",
+      inputSchema: Schema.Void,
+      handler: async () => ["a", "b"] as const,
+    }),
+  ],
+});
+
+const failureExtension = defineExtension({
+  name: "failure",
+  tools: ({ tool }) => [
+    tool({
+      name: "read",
+      inputSchema: Schema.String,
+      outputSchema: Schema.String,
+      failureSchema: Schema.Struct({ code: Schema.Literal("NOT_FOUND") }),
+      handler: async (slug) => (slug === "missing" ? fail({ code: "NOT_FOUND" }) : ok(slug)),
+    }),
+  ],
+});
+
+defineExtension({
+  name: "invalid-failure",
+  tools: ({ tool }) => [
+    tool({
+      name: "read",
+      inputSchema: Schema.String,
+      // @ts-expect-error Failure is fixed by schemas rather than widened by the handler.
+      outputSchema: Schema.String,
+      // @ts-expect-error Failure is fixed by schemas rather than widened by the handler.
+      failureSchema: Schema.Struct({ code: Schema.Literal("NOT_FOUND") }),
+      handler: async () => fail({ code: "OTHER" }),
+    }),
+  ],
+});
+
+const sharedTools = (tool: ToolBuilder<{ readonly db: string }>) => [
+  tool({
+    name: "shared",
+    inputSchema: Schema.String,
+    handler: async (_input, { resource }) => resource.db,
+  }),
+];
+defineExtension({
+  name: "shared-tools",
+  setup: async () => ({ db: "connection" }),
+  tools: ({ tool }) => sharedTools(tool),
+});
+defineExtension({
+  name: "shared-tools-without-resource",
+  // @ts-expect-error A resource-free builder cannot be passed to a resourceful helper.
+  tools: ({ tool }) => sharedTools(tool),
 });
 
 type InferenceContributions = ContributionsOf<typeof inferenceExtension>;
@@ -238,6 +215,14 @@ export type ResourceQueryInput = Expect<Equal<ResourceContributions["query"]["in
 export type ResourceHealthOutput = Expect<
   Equal<ResourceContributions["health"]["output"], boolean>
 >;
+type InferredOutputContributions = ContributionsOf<typeof inferredOutputExtension>;
+export type OutputIsInferredWithoutSchema = Expect<
+  Equal<InferredOutputContributions["list"]["output"], readonly ["a", "b"]>
+>;
+type FailureContributions = ContributionsOf<typeof failureExtension>;
+export type FailureIsInferredFromSchema = Expect<
+  Equal<FailureContributions["read"]["failure"], { readonly code: "NOT_FOUND" }>
+>;
 const sdkToolkitlessExtension = defineExtension({ name: "sdk-toolkitless" });
 export type SdkToolkitlessContributionsAreEmpty = Expect<
   Equal<keyof ContributionsOf<typeof sdkToolkitlessExtension>, never>
@@ -249,6 +234,17 @@ const sdkResourceToolkitlessExtension = defineExtension<{ readonly db: string }>
 export type SdkResourceToolkitlessContributionsAreEmpty = Expect<
   Equal<keyof ContributionsOf<typeof sdkResourceToolkitlessExtension>, never>
 >;
+const rootToolsDefinition = defineAgent({
+  providers: [model],
+  model: "test/default",
+  tools: ({ tool }) => [
+    tool({ name: "status", inputSchema: Schema.Void, handler: async () => "ready" as const }),
+  ],
+});
+export type AgentToolBuilderPreservesContributions = Expect<
+  Equal<keyof ContributionsOf<(typeof rootToolsDefinition.extensions)[0]>, "status">
+>;
+
 const sdkDefinition = defineAgent({
   providers: [model],
   model: "test/default",

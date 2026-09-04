@@ -1,12 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Prompt, Response } from "effect/unstable/ai";
+import { AiError, LanguageModel, Prompt, Response } from "effect/unstable/ai";
 import { makeProvider } from "@mitome/core";
 import {
   AgentDefinitionError,
   defineAgent,
   defineExtension,
-  tool,
+  fail,
   withSession,
   type InputSchema,
 } from "../src/index.js";
@@ -60,7 +60,7 @@ describe("@mitome/sdk Tool", () => {
       extensions: [
         defineExtension({
           name: "validation",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "validate",
               inputSchema,
@@ -115,7 +115,7 @@ describe("@mitome/sdk Tool", () => {
       extensions: [
         defineExtension({
           name: "echo-extension",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "echo",
               inputSchema: jsonStringSchema,
@@ -145,6 +145,99 @@ describe("@mitome/sdk Tool", () => {
       "assistant",
       "tool",
     ]);
+  });
+
+  test("passes through output when outputSchema is omitted", async () => {
+    const fixture = makeToolModel();
+    const definition = defineAgent({
+      providers: [fixture.provider],
+      model: "test/default",
+      tools: ({ tool }) => [
+        tool({
+          name: "echo",
+          inputSchema: jsonStringSchema,
+          handler: async (input) => ({ echoed: input }),
+        }),
+      ],
+    });
+
+    const events = await withSession(definition, (session) =>
+      Array.fromAsync(session.runTurn("Hi")),
+    );
+
+    expect(events.find((event) => event.type === "tool-result")).toEqual({
+      type: "tool-result",
+      id: "call-1",
+      name: "echo",
+      result: { echoed: "hello" },
+      isFailure: false,
+    });
+  });
+
+  test("returns a schema-checked expected failure to the Model", async () => {
+    const fixture = makeToolModel();
+    const definition = defineAgent({
+      providers: [fixture.provider],
+      model: "test/default",
+      tools: ({ tool }) => [
+        tool({
+          name: "echo",
+          inputSchema: jsonStringSchema,
+          outputSchema: stringSchema,
+          failureSchema: Schema.Struct({ code: Schema.Literal("NOT_FOUND") }),
+          handler: async () => fail({ code: "NOT_FOUND" }),
+        }),
+      ],
+    });
+
+    const events = await withSession(definition, (session) =>
+      Array.fromAsync(session.runTurn("Hi")),
+    );
+
+    expect(events).toEqual([
+      { type: "tool-call", id: "call-1", name: "echo", params: "hello" },
+      {
+        type: "tool-result",
+        id: "call-1",
+        name: "echo",
+        result: { code: "NOT_FOUND" },
+        isFailure: true,
+      },
+      { type: "model-output", text: "done" },
+      { type: "response-complete" },
+    ]);
+    expect(fixture.prompt()?.content.at(-1)).toMatchObject({
+      role: "tool",
+      content: [expect.objectContaining({ result: { code: "NOT_FOUND" }, isFailure: true })],
+    });
+  });
+
+  test("maps an invalid expected-failure payload to an opaque defect", async () => {
+    const fixture = makeToolModel();
+    // SAFETY: Deliberately violates the declared failure type to exercise runtime schema rejection.
+    const invalidFailure = fail({ code: "OTHER" }) as never;
+    const definition = defineAgent({
+      providers: [fixture.provider],
+      model: "test/default",
+      tools: ({ tool }) => [
+        tool({
+          name: "echo",
+          inputSchema: jsonStringSchema,
+          outputSchema: stringSchema,
+          failureSchema: Schema.Struct({ code: Schema.Literal("NOT_FOUND") }),
+          handler: async () => invalidFailure,
+        }),
+      ],
+    });
+
+    const events = await withSession(definition, (session) =>
+      Array.fromAsync(session.runTurn("Hi")),
+    );
+
+    const failure = events.find((event) => event.type === "tool-result");
+    expect(failure).toMatchObject({ type: "tool-result", isFailure: true });
+    expect(JSON.stringify(failure)).not.toContain("OTHER");
+    expect(events.at(-1)).toEqual({ type: "response-complete" });
   });
 
   test("aborts an active handler when iteration breaks and reuses the Session", async () => {
@@ -189,7 +282,7 @@ describe("@mitome/sdk Tool", () => {
       extensions: [
         defineExtension({
           name: "echo-extension",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "echo",
               inputSchema: jsonStringSchema,
@@ -272,7 +365,7 @@ describe("@mitome/sdk Tool", () => {
       extensions: [
         defineExtension({
           name: "echo-extension",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "echo",
               inputSchema: jsonStringSchema,
@@ -316,7 +409,7 @@ describe("@mitome/sdk Tool", () => {
       extensions: [
         defineExtension({
           name: "effect-schema",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "echo",
               inputSchema: Schema.String,
@@ -347,7 +440,7 @@ describe("@mitome/sdk Tool", () => {
     expect(() =>
       defineExtension({
         name: "duplicate-tools",
-        tools: [
+        tools: ({ tool }) => [
           tool({
             name: "echo",
             inputSchema: jsonStringSchema,
@@ -370,7 +463,7 @@ describe("@mitome/sdk Tool", () => {
     const extension = (name: string) =>
       defineExtension({
         name,
-        tools: [
+        tools: ({ tool }) => [
           tool({
             name: "echo",
             inputSchema: jsonStringSchema,
@@ -391,7 +484,7 @@ describe("@mitome/sdk Tool", () => {
     expect(failure.issues).toContain("Duplicate Tool name: echo");
   });
 
-  test("returns a generic failure result when a Promise handler rejects", async () => {
+  test("keeps a thrown error opaque when failureSchema and postTool are present", async () => {
     const fixture = makeToolModel();
     const definition = defineAgent({
       providers: [fixture.provider],
@@ -399,14 +492,20 @@ describe("@mitome/sdk Tool", () => {
       extensions: [
         defineExtension({
           name: "failing-extension",
-          tools: [
+          tools: ({ tool }) => [
             tool({
               name: "echo",
               inputSchema: jsonStringSchema,
               outputSchema: stringSchema,
-              handler: async () => Promise.reject(new Error("secret")),
+              failureSchema: Schema.Struct({ code: Schema.Literal("NOT_FOUND") }),
+              handler: async () => {
+                throw new Error("secret");
+              },
             }),
           ],
+          hooks: {
+            postTool: async () => ({ code: "NOT_FOUND" }),
+          },
         }),
       ],
     });
@@ -418,9 +517,51 @@ describe("@mitome/sdk Tool", () => {
     });
 
     const failure = events.find((event) => event.type === "tool-result");
-    expect(failure).toMatchObject({ type: "tool-result", isFailure: true });
+    expect(failure).toMatchObject({
+      type: "tool-result",
+      isFailure: true,
+      result: { _tag: "AiError", method: "echo", module: "@mitome/sdk" },
+    });
     expect(JSON.stringify(failure)).not.toContain("secret");
+    expect(JSON.stringify(failure)).not.toContain("NOT_FOUND");
     expect(events.at(-1)).toEqual({ type: "response-complete" });
     expect(fixture.calls()).toBe(2);
+  });
+
+  test("schema-checks an expected failure after postTool transforms it into an AiError", async () => {
+    const fixture = makeToolModel();
+    const definition = defineAgent({
+      providers: [fixture.provider],
+      model: "test/default",
+      extensions: [
+        defineExtension({
+          tools: ({ tool }) => [
+            tool({
+              name: "echo",
+              inputSchema: jsonStringSchema,
+              outputSchema: stringSchema,
+              failureSchema: Schema.Struct({ code: Schema.Literal("NOT_FOUND") }),
+              handler: async () => fail({ code: "NOT_FOUND" }),
+            }),
+          ],
+          hooks: {
+            postTool: async () =>
+              AiError.make({
+                module: "test",
+                method: "postTool",
+                reason: new AiError.UnknownError({ description: "not a declared failure" }),
+              }),
+          },
+        }),
+      ],
+    });
+
+    await expect(
+      withSession(definition, (session) => Array.fromAsync(session.runTurn("Hi"))),
+    ).rejects.toMatchObject({
+      _tag: "TurnError",
+      message: expect.stringContaining("Post-Tool result validation failed"),
+    });
+    expect(fixture.calls()).toBe(1);
   });
 });
