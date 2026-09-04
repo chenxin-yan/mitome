@@ -1,10 +1,10 @@
 ---
-title: Terminal UI
-description: Compose the interactive Host, stream Turns, interrupt work, and resume Transcripts.
+title: TUI
+description: Compose the interactive terminal Host, stream Turns, interrupt them, and resume Transcripts.
 icon: Monitor
 ---
 
-`@mitome/tui` is an interactive Host built on OpenTUI and Solid. Activation is explicit: package presence alone does not select it.
+`@mitome/tui` is an interactive [Host](/docs/concepts#host) built on OpenTUI. Declaring it in the Mitome Definition is what activates it; installing the package alone does nothing.
 
 ```sh
 mitome add @mitome/tui
@@ -21,30 +21,33 @@ export default defineMitome({
 });
 ```
 
-Run `mitome` to open an empty Session, or `mitome "first message"` to open it with the first Turn pre-submitted.
+Run `mitome` to open an empty Session, or `mitome "first message"` to open it with that Turn already submitted.
 
 ## Controls
 
 | Keys          | Action                                                                                        |
 | ------------- | --------------------------------------------------------------------------------------------- |
-| `Alt-Enter`   | Submit the multiline message. Paste is supported.                                             |
-| `Escape`      | Interrupt the active Turn and keep the Session usable; close the Transcript picker when open. |
-| `Ctrl-O`      | List stored Transcripts with update time and first-user-message preview.                      |
-| `Up` / `Down` | Move through the Transcript picker.                                                           |
-| `Enter`       | Resume the selected Transcript into a new Session.                                            |
-| `Ctrl-N`      | Start a fresh Session without restarting the process.                                         |
-| `Ctrl-C`      | Exit and release the current Session.                                                         |
+| `Enter`       | Insert a newline in the message box.                                                          |
+| `Alt-Enter`   | Send the message.                                                                             |
+| `Esc`         | Interrupt the running Turn; the Session stays usable. With the picker open, close the picker. |
+| `Ctrl-O`      | Open the Transcript picker, listing stored Transcripts with update time and a preview.        |
+| `Up` / `Down` | Move through the picker.                                                                      |
+| `Enter`       | With the picker open, resume the selected Transcript into a new Session.                      |
+| `Ctrl-N`      | Start a fresh Session without leaving the TUI.                                                |
+| `Ctrl-C`      | Exit and release the Session.                                                                 |
 
-Transcript list, resume, and new-Session commands are available while idle. Interrupt a running Turn first. Starting a new Session does not modify the prior Transcript. Resuming seeds a new Session with committed messages and records fork lineage after the next completed Turn.
+The picker and `Ctrl-N` are available while the Session is idle; interrupt a running Turn first. Resuming seeds a new Session with the selected Transcript's Messages and records it as the parent of the new Transcript after the next completed Turn. Starting a new Session never modifies the previous Transcript.
 
-If the Mitome Definition omits `transcripts`, `Ctrl-O` reports that persistence is not configured and performs no store access. Add `transcripts: fileTranscripts()` to share history with one-shot runs.
+Without `transcripts` in the Mitome Definition, `Ctrl-O` reports that persistence is not configured and touches no store. Add `transcripts: fileTranscripts()` to share Transcripts between the TUI and one-shot runs; see [Persistence](/docs/persistence).
 
-## Streaming and Tools
+## Streaming, Tools, and Approvals
 
-Model text and Tool activity appear as the Turn runs. Escape interrupts stream consumption; partial output from that Turn is discarded from committed history and persistence. See [CLI Host behavior](/docs/cli#trusted-in-process-execution) for Approval policy.
+Model text and Tool activity appear as the Turn runs. The TUI approves every `approval-required` event and shows `Tool <name> auto-approved`; only `preTool` Hooks can stop a Tool call here. If your Agent has Tools a person should confirm, see [Approvals](/docs/approvals#who-approves-by-default).
 
-## TTY fallback
+`Esc` interrupts the Turn. Nothing from it is committed to the Transcript; the write-only event log may retain the events emitted so far, as described under [Commit boundary](/docs/persistence#commit-boundary).
 
-When the declared Host's `unsupported()` check returns a reason, the CLI prints it and falls back. See [CLI Host behavior](/docs/cli#trusted-in-process-execution) for one-shot and non-TTY fallback.
+## Terminal requirements
 
-Clean exit disposes the view model and closes the Session scope. Completed Turns are already persisted at their commit boundary; idle shutdown does not rewrite or corrupt a Transcript.
+The TUI needs a TTY on both stdin and stdout. When it does not have one, it reports `@mitome/tui requires an interactive terminal` and the CLI falls back to one-shot output; the fallback rules are described under [Hosts](/docs/hosts). The package requires Bun 1.3.14 or later, which the `mitome` binary provides.
+
+Exiting disposes the view and closes the Session. Completed Turns are already saved at their commit boundary, so exiting while idle never rewrites a Transcript.

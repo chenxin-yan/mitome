@@ -1,40 +1,47 @@
 ---
-title: OpenAI API key
-description: Configure the official OpenAI Provider and its Credential safely.
+title: OpenAI
+description: Use the official OpenAI API with an API-key Credential.
 icon: KeyRound
 ---
 
-The official OpenAI Provider uses an API-key Credential. It is separate from the [Codex subscription Provider](/docs/providers/codex).
+The OpenAI Provider talks to the official OpenAI Responses API and authenticates with an API key. It is distinct from the [Codex subscription Provider](/docs/providers/codex), which uses a ChatGPT login instead.
 
 ```ts
+import { defineAgent } from "@mitome/sdk";
 import { openai } from "@mitome/providers/openai";
 
-const provider = openai(); // reads OPENAI_API_KEY
-```
-
-Options let you change the environment variable, API URL, or Responses transport:
-
-```ts
-const provider = openai({
-  apiKeyEnv: "MY_OPENAI_KEY",
-  transport: "websocket", // default: WebSocket on Bun/Node, HTTP elsewhere
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
 });
 ```
 
-`baseUrl` defaults to `https://api.openai.com/v1`. Use `openaiCompatible()` rather than changing this option when the endpoint represents a distinct Provider identity.
+`openai()` reads the key from `OPENAI_API_KEY` when a Session first uses the Provider and fails if the variable is missing or empty.
 
-## Authenticate the CLI
+## Options
+
+| Option      | Default                     | Purpose                                                                                   |
+| ----------- | --------------------------- | ----------------------------------------------------------------------------------------- |
+| `apiKeyEnv` | `"OPENAI_API_KEY"`          | Name of the environment variable holding the key.                                         |
+| `baseUrl`   | `https://api.openai.com/v1` | Responses API root, for proxies and controlled endpoints that still are OpenAI.           |
+| `transport` | WebSocket on Bun and Node   | `"http"` or `"websocket"`. The default falls back to HTTP where WebSocket is unavailable. |
+
+```ts
+const provider = openai({ apiKeyEnv: "MY_OPENAI_KEY", transport: "http" });
+```
+
+If the endpoint is a different service that happens to speak the OpenAI protocol, give it its own identity with [`openaiCompatible()`](/docs/providers/openai-compatible) instead of overriding `baseUrl`.
+
+## Provide the key
+
+From a terminal, `mitome auth login` prompts for the variable named by `apiKeyEnv` with masked input and stores it in `<config-dir>/.env`. Embedded applications never read `.env`; set the variable in the process environment your platform provides.
 
 ```sh
 mitome auth login
 ```
 
-The CLI prompts for the environment variable named by `apiKeyEnv`. See [CLI credentials](/docs/cli#credentials) for storage and precedence.
+Where the file lives, its permissions, and the precedence rules are on the [Configuration](/docs/configuration#credentials) page. Never put a key in `index.ts`, commit `.env`, or let it reach the Agent as Instructions or Tool output.
 
-Prefer your deployment platform's secret manager for embedded or production use. Never put the key in `index.ts`, commit `.env`, include it in logs, or expose it to an Agent as Instructions or Tool output.
+## Model catalog
 
-## Model hints
-
-The OpenAI Model catalog is generated from models.dev and cached for offline CLI initialization. See [Providers and Models](/docs/providers) for catalog semantics. Repository maintainers refresh the generated fallback with `bun run hints:refresh` when updating releases.
-
-See [ADR-0028](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0028-generate-model-hints-from-models-dev.md) for the catalog policy.
+`knownModelIds` lists the Tool-capable OpenAI Models offered as completions and in `mitome init`. Any other Model id under `openai/` is accepted and checked by OpenAI at request time; see [Catalog, not entitlement](/docs/providers#catalog-not-entitlement).

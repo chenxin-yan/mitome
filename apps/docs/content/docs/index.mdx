@@ -1,22 +1,50 @@
 ---
-title: Mitome
-description: Define and run AI agents for your own use cases.
+title: Introduction
+description: Define an AI Agent in TypeScript, then run it from your terminal or inside your application.
 icon: Rocket
 ---
 
-Mitome gives an Agent a typed Provider, a Default Model, Extensions, and one or more ways to run Sessions. Start with the Promise-first SDK; move to the Effect-native surface only when your application already composes Effect services and Layers.
+Mitome is a TypeScript library for defining AI Agents and running them. You describe an Agent once: which Provider it talks to, which Model it uses by default, what Instructions it follows, and which Tools it may call. You then run that Agent wherever you need it: embedded in your own application through a Promise-based SDK, or from a terminal through the optional `mitome` CLI and its interactive terminal UI.
 
-## Start here
+## How a run flows
 
-- [Quickstart](/docs/quickstart): initialize, authenticate, and open an interactive Session.
-- [SDK](/docs/sdk): embed an Agent and consume the Turn event stream.
-- [Extensions](/docs/extensions): add Tools, lifecycle Hooks, and Resources.
-- [Transcript persistence](/docs/persistence): choose whether and where committed messages are stored.
-- [CLI](/docs/cli) and [TUI](/docs/tui): run a trusted Mitome Definition from a terminal.
-- [Providers](/docs/providers): configure OpenAI, Codex, or an OpenAI-compatible endpoint.
-- [Effect](/docs/effect): use the supported Effect-native facade.
-- [Host and Provider authoring](/docs/core): build integration packages against Effect-native Core contracts.
+```
+Mitome Definition ─ pairs one Agent with the Hosts that run it
+        │
+        ▼
+      Agent ─────── Providers, Default Model, Extensions
+        │
+        ▼
+     Session ────── one live interaction; opened, used, released
+        │
+        ▼
+      Turn ──────── one user Message → one final Agent response
+        │
+        ▼
+      Step ──────── one Model generation; repeats while the Model calls Tools
+        │
+        ├── Tool call ── gated by Approval, then executed
+        │
+        ▼
+   Transcript ───── the committed Messages, saved when the Turn completes
+```
 
-## Public packages
+Every term above has a short entry in [Concepts](/docs/concepts). You do not need them all to start.
 
-Application code imports from `@mitome/sdk`, Provider subpaths under `@mitome/providers`, and first-party Extensions from `@mitome/sdk/extensions`. Effect-native applications use the curated `@mitome/sdk/effect` facade. Only Host and Provider authors should import runtime plumbing from `@mitome/core`.
+## Pick your path
+
+- **Run an Agent in your terminal.** Install the CLI, answer two prompts, and talk to your Agent. Add the terminal UI when you want a persistent interactive Session. Start with the [CLI quickstart](/docs/quickstart-cli).
+- **Embed an Agent in your app.** Install two packages, write an Agent Definition, and consume the Turn event stream from a `for await` loop. Start with the [SDK quickstart](/docs/quickstart-sdk).
+
+Both paths use the same Agent Definition. An Agent Definition written for the terminal can be imported into an application, and the other way round.
+
+## Packages by audience
+
+| You are                        | Install                                 | Import from                               |
+| ------------------------------ | --------------------------------------- | ----------------------------------------- |
+| Building an application        | `@mitome/sdk`, `@mitome/providers`      | `@mitome/sdk`, `@mitome/providers/openai` |
+| Using an Agent from a terminal | `@mitome/cli`, optionally `@mitome/tui` | the generated `index.ts`                  |
+| Authoring an Extension         | `@mitome/sdk`                           | `@mitome/sdk`                             |
+| Authoring a Host or Provider   | `@mitome/core`                          | `@mitome/core`                            |
+
+Applications that already run on Effect can use `@mitome/sdk/effect`, a curated Effect-native facade over the same runtime; see [Effect-native API](/docs/effect). Requirements and install commands are on the [Installation](/docs/installation) page.

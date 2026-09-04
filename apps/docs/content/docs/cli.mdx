@@ -1,54 +1,51 @@
 ---
 title: CLI
-description: Initialize, authenticate, select, and run a trusted Mitome Definition.
+description: Run, initialize, authenticate, and maintain a Mitome Definition from the terminal.
 icon: Terminal
 ---
 
-Install the Bun-native CLI globally:
+`@mitome/cli` installs the `mitome` command. It loads a [Mitome Definition](/docs/concepts#agent-definition-and-mitome-definition), runs its Agent through a Host, and manages the Definition's dependencies and Credentials.
 
 ```sh
 npm install -g @mitome/cli
 ```
 
-## Commands
+The command is a compiled binary that embeds its own Bun runtime; you do not install Bun. Requirements are on the [Installation](/docs/installation) page.
+
+## Running an Agent
 
 ```sh
-mitome init
-mitome [message] [--print|-p] [--use <path>]
-mitome install [--use <path>]
-mitome auth login [--use <path>]
-mitome auth logout [--use <path>]
-mitome add <package> [--use <path>]
-mitome remove <package> [--use <path>]
-mitome ext list [--use <path>]
+mitome                    # open the interactive Host declared in the Mitome Definition
+mitome "first message"    # same, with the first Turn already submitted
+mitome -p "message"       # one-shot: run one Turn, print the response, exit
 ```
 
-`mitome init` creates the default Mitome Definition, chooses a Provider and Model, installs dependencies, and authenticates it. Existing Definition files are never overwritten.
+`mitome` runs the Host the Mitome Definition declares; with `-p`, or when stdout is not a TTY, it prints one Turn instead: streamed text, a line per Tool call and result, and a final newline. The full selection and fallback rules, including why installing a Host package alone changes nothing, are under [Hosts](/docs/hosts#how-the-cli-picks-a-host).
 
-`--use` selects a Mitome Definition module or directory; a directory resolves through its `index.ts`. Without `--use`, Mitome loads `<config-dir>/index.ts`. Only an explicitly selected or default Definition is eligible for dependency reconciliation—Mitome does not discover executable definitions from the current directory.
+Both built-in Hosts approve every Tool call that Extension policy lets through; see [Approvals](/docs/approvals#who-approves-by-default).
 
-Before loading a selected Definition, Agent commands reconcile its `package.json` dependencies with its local installation. `add` and `remove` are conveniences over that manifest; `ext list` reports the configured Extensions in Agent Definition order.
+## Commands
 
-## Trusted in-process execution
+Every command except `init` accepts `--use <path>` to select a Mitome Definition module or directory; the default is `<config-dir>/index.ts`. Selection and dependency reconciliation are described under [Configuration](/docs/configuration#selecting-a-mitome-definition).
 
-A Mitome Definition is executable TypeScript, not data. The CLI imports it and its Hosts in a disposable Child Host process, resolving dependencies beside the selected module. Run only Definitions you trust: they have the Child Host process's filesystem, network, environment, and Credential access.
+| Command                                  | Purpose                                                                                                                                                                          |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mitome init`                            | Create the default Mitome Definition: choose a Provider and Model, write `index.ts`, `AGENTS.md`, and `package.json`, install, and log in. Existing files are never overwritten. |
+| `mitome [message] [-p] [--use <path>]`   | Run a Turn or open the interactive Host.                                                                                                                                         |
+| `mitome install [--use <path>]`          | Install the Mitome Definition's dependencies without running it.                                                                                                                 |
+| `mitome add <package> [--use <path>]`    | Add a dependency, install, and print an import snippet for it. A failed install rolls the manifest back.                                                                         |
+| `mitome remove <package> [--use <path>]` | Remove a dependency and uninstall it.                                                                                                                                            |
+| `mitome ext list [--use <path>]`         | Print its Extensions in composition order with their package versions.                                                                                                           |
+| `mitome auth login [--use <path>]`       | Collect a Credential for one of its Providers; prompts to choose when several qualify.                                                                                           |
+| `mitome auth logout [--use <path>]`      | Remove that Provider's stored Credential.                                                                                                                                        |
 
-`-p` forces one-shot output. Non-TTY stdout also falls back to one-shot so scripts cannot hang, and requires a message. Without `-p`, a supported interactive Host declared in the Definition drives the Session. Installing a Host package alone changes nothing.
+Where Credentials are stored, and how a shell variable takes precedence over `<config-dir>/.env`, is on the [Configuration](/docs/configuration#credentials) page.
 
-The built-in one-shot Host and current TUI auto-approve Tool calls after Extension policy Hooks pass. Applications needing human Approval decisions should drive `session.runTurn()` through a custom Host and resolve each `approval-required` event explicitly.
+## Trust
 
-## Credentials
+A Mitome Definition is executable TypeScript, not data. The CLI imports it, its Hosts, and its dependencies in a child process that has your filesystem, network, environment, and Credential access. Run only Definitions you trust; the trust boundary is described under [Security](/docs/security).
 
-`mitome auth login` inspects the selected Definition's Providers:
+## Next
 
-- API-key Providers prompt with masked terminal input and write plaintext `NAME=value` to `<config-dir>/.env` with mode `0600`.
-- OAuth Providers run their Auth capability and store credentials in `<config-dir>/auth.json`, also mode `0600`, preserving other Provider entries.
-- `logout` removes only the selected Provider's Credential.
-
-The Child Host starts with the launching process environment and then reads the config `.env` without replacing variables already set by the process. Therefore a process value such as `OPENAI_API_KEY` wins. Embedded SDK applications do not load the CLI `.env`; they use their process environment as provided by the application.
-
-The config directory is mode `0700` when created by credential storage. Keep `.env` and `auth.json` out of version control, backups with broad access, logs, and bug reports. If a key contains characters the Bun env-file format cannot round-trip (`#`, `$`, quotes, edge whitespace, or newlines), set it directly in the process environment instead.
-
-OpenAI API keys and Codex subscription OAuth are distinct flows; read [OpenAI](/docs/providers/openai) or [Codex](/docs/providers/codex) before authenticating.
-
-See [ADR-0039](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0039-compose-hosts-explicitly-in-the-composition-root.md) for Host composition rationale and [ADR-0037](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0037-reconcile-selected-agent-definition-dependencies.md) for the install trust boundary.
+- [TUI](/docs/tui): the interactive Host.
+- [Configuration](/docs/configuration): every file and environment variable the CLI touches.

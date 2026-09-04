@@ -1,0 +1,132 @@
+---
+title: Tools
+description: Declare typed Tools the Agent can call, validate their input and output, and report expected failures.
+icon: Wrench
+---
+
+A [Tool](/docs/concepts#tool) is a named capability with a typed input schema and a handler. The Model decides when to call it; Mitome validates the input, runs your handler, and feeds the result back into the next [Step](/docs/concepts#step).
+
+The shortest way to add one is the `tools` builder on `defineAgent`. Schemas use [Standard Schema](https://standardschema.dev), so zod v4 works out of the box:
+
+```sh
+npm install zod@^4
+```
+
+```ts
+import { z } from "zod";
+import { defineAgent } from "@mitome/sdk";
+import { openai } from "@mitome/providers/openai";
+
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+  tools: ({ tool }) => [
+    tool({
+      name: "get_time",
+      description: "Current time in ISO 8601",
+      inputSchema: z.object({}),
+      handler: async () => new Date().toISOString(),
+    }),
+  ],
+});
+```
+
+`tool` is a builder scoped to the declaration site. Tools declared this way become an anonymous [Extension](/docs/concepts#extension) appended after `extensions`; they have no Resource and no Hooks. Reach for `defineExtension` when Tools need shared state, Instructions, or reuse across Agents; see [Extensions](/docs/extensions).
+
+## Input and output schemas
+
+`inputSchema` is required. It must be a Standard Schema that also produces JSON Schema, because the Model needs the JSON Schema to call the Tool and Mitome needs the validator to decode the call. zod v4 does both. The handler receives the decoded value.
+
+`outputSchema` is optional. When present, the handler's return value is validated against it before the Model sees it; when absent, the output type is inferred from the handler and passed through unvalidated.
+
+```ts
+tool({
+  name: "word_count",
+  inputSchema: z.object({ text: z.string() }),
+  outputSchema: z.number().int(),
+  handler: async ({ text }) => text.split(/\s+/).filter(Boolean).length,
+});
+```
+
+Every handler also receives a context as its second argument with `signal`, an `AbortSignal` that fires when the Turn is interrupted, and `resource` when the Tool lives in an Extension with a Resource.
+
+## Approval
+
+Set `needsApproval` to pause the Turn before the handler runs and emit an `approval-required` event the Host must resolve:
+
+```ts
+import { rm } from "node:fs/promises";
+
+tool({
+  name: "delete_file",
+  inputSchema: z.object({ path: z.string() }),
+  needsApproval: ({ path }) => !path.startsWith("/tmp/"),
+  handler: async ({ path }) => {
+    await rm(path);
+    return `Deleted ${path}`;
+  },
+});
+```
+
+`needsApproval` is a boolean or a predicate over the decoded input and a small context (`toolCallId`, current Messages). What happens next, and which Hosts ask a human, is on the [Approvals](/docs/approvals) page.
+
+## Expected failures
+
+Some Tools have outcomes the Model should see and react to: a lookup that finds nothing, a validation that fails. Declare a `failureSchema` and return `ok()` or `fail()`:
+
+```ts
+import { z } from "zod";
+import { fail, ok } from "@mitome/sdk";
+
+declare const findNote: (slug: string) => Promise<string | undefined>;
+
+tool({
+  name: "find_note",
+  inputSchema: z.object({ slug: z.string() }),
+  outputSchema: z.string(),
+  failureSchema: z.object({ code: z.literal("NOT_FOUND"), slug: z.string() }),
+  handler: async ({ slug }) => {
+    const note = await findNote(slug);
+    return note === undefined ? fail({ code: "NOT_FOUND", slug }) : ok(note);
+  },
+});
+```
+
+Both branches are schema-checked. A `fail()` value becomes a `tool-result` with `isFailure: true` whose content the Model reads. A thrown error or rejected Promise is different: it is a defect, and the Model receives only the opaque text `SDK tool handler failed`. Do not throw secrets, and do not throw for outcomes the Model should handle.
+
+## Sharing Tools
+
+In order of preference:
+
+1. **Share an Extension.** It is the unit of reuse: `defineExtension({ tools })` produces a value any Agent Definition can include.
+2. **Extract the logic, keep the declaration inline.** Move the handler body into a plain function in another file; the `tool({ ... })` call stays where the schema is.
+3. **Extract a builder function** for a large Extension. `ToolBuilder<Resource>` is the type of the scoped `tool`:
+
+```ts
+import { z } from "zod";
+import { defineExtension, type ToolBuilder } from "@mitome/sdk";
+
+interface Notes {
+  readonly values: Array<string>;
+}
+
+const noteTools = (tool: ToolBuilder<Notes>) => [
+  tool({
+    name: "list_notes",
+    inputSchema: z.object({}),
+    handler: async (_input, { resource }) => resource.values,
+  }),
+];
+
+export const notes = defineExtension({
+  setup: async (): Promise<Notes> => ({ values: [] }),
+  tools: ({ tool }) => noteTools(tool),
+});
+```
+
+Tool names must be unique across the whole Agent Definition. A duplicate within one Extension or `tools` builder throws when it is defined; a clash across Extensions is an `AgentDefinitionError` when the Session starts.
+
+## Next
+
+- [Extensions](/docs/extensions): Resources, Instructions, and Hooks around your Tools.
+- [Approvals](/docs/approvals): gate Tool calls on a human decision.

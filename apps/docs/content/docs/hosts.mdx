@@ -1,0 +1,81 @@
+---
+title: Hosts
+description: Author a Host that drives Sessions for a Mitome Definition, and learn how the CLI chooses one.
+icon: MonitorCog
+---
+
+A [Host](/docs/concepts#host) is the program that drives Sessions for a Mitome Definition: it starts Turns, presents events, and resolves Approvals. `@mitome/tui` is one; the CLI's one-shot printer is another. This page is for authoring your own, against `@mitome/core`.
+
+`@mitome/core` is Effect-native and exposes runtime plumbing, so it carries a weaker stability guarantee than `@mitome/sdk`. Application code should stay on the [Promise SDK](/docs/sessions) or the [Effect-native API](/docs/effect).
+
+## The Host contract
+
+A Host is a plain object with a `run` function and an optional `unsupported` check:
+
+| Member                                | Contract                                                                                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run(context): Promise<void>`         | Runs Sessions for the context and resolves when the Host is finished. The CLI exits when it resolves.                                       |
+| `unsupported?(): string \| undefined` | Returns a reason when the Host cannot run in the current environment, or `undefined` when it can. The CLI prints the reason and falls back. |
+
+`run` receives a `HostContext`:
+
+| Field         | Meaning                                                                                        |
+| ------------- | ---------------------------------------------------------------------------------------------- |
+| `agent`       | The Agent Definition from `defineMitome({ agent })`.                                           |
+| `message`     | The first user Message from the command line, or `""` when the user gave none.                 |
+| `transcripts` | The Effect `TranscriptStore` from `defineMitome({ transcripts })`, or `undefined` when absent. |
+
+Hosts never construct or discover a store; they use the one the Mitome Definition composed, so every Host resumes from the same place.
+
+## A minimal Host
+
+`createHostSession(context)` opens the scoped Session for a context. Closing the Scope ends the Session.
+
+```ts
+import { Effect, Stream } from "effect";
+import { createHostSession, type Host } from "@mitome/core";
+
+export const printer: Host = {
+  unsupported: () => (process.stdout.isTTY ? undefined : "printer needs a TTY"),
+  run: (context) =>
+    Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createHostSession(context);
+          yield* Stream.runForEach(session.runTurn(context.message), (event) => {
+            switch (event.type) {
+              case "model-output":
+                return Effect.sync(() => process.stdout.write(event.text));
+              case "approval-required":
+                return event.deny("This Host does not run Tools.");
+              default:
+                return Effect.void;
+            }
+          });
+        }),
+      ),
+    ),
+};
+```
+
+Export a factory such as `printer()` from your package so users declare it as `hosts: [printer()]`; `defineMitome` throws when given a factory that was not called.
+
+## Approvals
+
+Every `approval-required` event a Host receives must be resolved with `approve()` or `deny(reason?)`, or the Turn interrupted; an unresolved Approval leaves the Turn paused forever. A Host that puts a person in the loop presents `name` and `params` and waits. The built-in one-shot printer and the TUI approve automatically after `preTool` Hooks pass; the [Approvals](/docs/approvals) page explains the difference between policy and consent.
+
+## How the CLI picks a Host
+
+A Mitome Definition declares zero or one Host; `defineMitome` throws on more than one. When `mitome` runs a Definition:
+
+1. With `--print`/`-p`, or when stdout is not a TTY, it uses the built-in one-shot printer and ignores the declared Host. One-shot output needs a message and exits with an error without one.
+2. Otherwise, if the Mitome Definition declares a Host, it calls `unsupported()`. When that returns `undefined`, the Host's `run` gets the context and the process exits when `run` resolves.
+3. When `unsupported()` returns a reason, the CLI writes `<reason>; falling back to one-shot output.` to stderr and continues as in step 1.
+4. With no declared Host, it uses the one-shot printer.
+
+Installing a Host package changes nothing until the Mitome Definition declares it. All of this runs inside the CLI's [Child Host](/docs/concepts#host) process; see [Security](/docs/security) for what that process can reach.
+
+## Next
+
+- [CLI](/docs/cli): the commands that load a Mitome Definition.
+- [Custom Transcript store](/docs/custom-transcript-store): the Effect store contract a Host receives.

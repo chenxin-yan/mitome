@@ -1,12 +1,12 @@
 ---
 title: Codex subscription
-description: Authenticate a ChatGPT subscription through the best-effort Codex Provider.
+description: Use a ChatGPT subscription through the best-effort Codex Provider.
 icon: TriangleAlert
 ---
 
-> **Warning:** `@mitome/providers/openai-codex` uses OpenAI's unofficial, undocumented `chatgpt.com/backend-api`. Compatibility is best effort; the backend can change without notice. This is not the official OpenAI API and carries a higher maintenance and breakage risk.
+> **Warning:** `@mitome/providers/openai-codex` uses OpenAI's unofficial, undocumented ChatGPT service endpoint. Compatibility is best effort: the service can change without notice, and this Provider carries a higher breakage risk than the [official OpenAI Provider](/docs/providers/openai).
 
-Codex uses a ChatGPT subscription Credential and an SSE-only transport. It is not `openai()` with another base URL, and an OpenAI API key does not authenticate it.
+The Codex Provider authenticates with a ChatGPT subscription login and streams over SSE. It is not `openai()` with another `baseUrl`, and an OpenAI API key does not work with it.
 
 ```ts
 import { defineAgent } from "@mitome/sdk";
@@ -18,20 +18,34 @@ const agent = defineAgent({
 });
 ```
 
+The Provider id is `openai-codex`. `knownModelIds` lists the Models documented for Codex; other ids under `openai-codex/` are passed through and judged by the service.
+
 ## Authenticate
 
-Select Codex during `mitome init`, or authenticate an existing selected Definition:
+Choose **OpenAI Codex (ChatGPT)** during `mitome init`, or authenticate an existing Mitome Definition:
 
 ```sh
 mitome auth login
 ```
 
-The Auth capability opens a browser PKCE flow. If browser return cannot complete automatically, paste the redirect URL when prompted. The resulting OAuth Credential is stored under the Codex Provider entry in `<config-dir>/auth.json`; the file is written atomically with mode `0600`. `mitome auth logout` removes only that entry.
+Login opens your browser for a PKCE OAuth flow. If the browser cannot return to the CLI, paste the redirect URL at the prompt; set `MITOME_NO_BROWSER=1` to skip opening a browser and go straight to that prompt. The resulting OAuth Credential (access token, refresh token, expiry, account id) is stored under the `openai-codex` entry of `<config-dir>/auth.json`.
 
-Treat `auth.json` as a secret: never commit, copy into Instructions, log, or share it. Access and refresh credentials are not configured through `OPENAI_API_KEY`, so CLI `.env` precedence does not apply to Codex. The config directory must resolve so the Provider can locate its Credential.
+```sh
+mitome auth logout
+```
 
-## Model-hint maintenance
+Logout removes only the Codex entry; other Providers' entries in `auth.json` stay.
 
-Codex Model hints are hand-maintained from OpenAI's Codex documentation because models.dev has no ChatGPT-backend Provider record. Maintainers must review and update `packages/providers/src/openai-codex/models.ts` when Codex releases change. See [Providers and Models](/docs/providers) for catalog semantics.
+The Provider refreshes the Credential on its own: an expired token is renewed before a request, and a request rejected with `401` triggers one refresh and retry. Refreshes are serialized across processes, so two Sessions never burn the same refresh token. You only log in again when the refresh token itself has been revoked.
 
-See [ADR-0011](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0011-codex-transport-and-auth-design.md) and [ADR-0028](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0028-generate-model-hints-from-models-dev.md) for rationale.
+## Embedded use
+
+An application can use `codex()` too; it reads `auth.json` from the Mitome config directory, or from `configDirectory` if you pass one:
+
+```ts
+const provider = codex({ configDirectory: "/srv/agent/config" });
+```
+
+The config directory must resolve, or the Provider cannot find its Credential. `login()` and `logout()` are exported for applications that want to run the OAuth flow themselves; `mitome auth` is the usual way.
+
+Treat `auth.json` as a secret: keep it out of version control, logs, and Instructions. The [Configuration](/docs/configuration#credentials) page lists every file and its permissions.

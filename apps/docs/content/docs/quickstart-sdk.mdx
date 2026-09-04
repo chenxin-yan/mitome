@@ -1,0 +1,64 @@
+---
+title: "Quickstart: embed"
+description: Install the SDK, define an OpenAI Agent, and stream your first Turn from your own code.
+icon: Braces
+---
+
+You need an OpenAI API key and Node.js 24 or later (or Bun).
+
+## 1. Install
+
+```sh
+npm install @mitome/sdk @mitome/providers
+```
+
+## 2. Provide the API key
+
+The OpenAI Provider reads `OPENAI_API_KEY` from the process environment:
+
+```sh
+export OPENAI_API_KEY=sk-...
+```
+
+An embedded application does not read the CLI's `<config-dir>/.env`; it uses the environment your application gives it. Use your platform's secret manager in production.
+
+## 3. Define the Agent and run a Turn
+
+Create `agent.ts`:
+
+```ts
+import { defineAgent, withSession } from "@mitome/sdk";
+import { openai } from "@mitome/providers/openai";
+
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+});
+
+await withSession(agent, async (session) => {
+  for await (const event of session.runTurn("Say hello in one sentence.")) {
+    if (event.type === "model-output") process.stdout.write(event.text);
+  }
+  process.stdout.write("\n");
+});
+```
+
+`defineAgent` declares the Agent: its Providers and its Default Model as a `provider/model` id. `withSession` opens a [Session](/docs/concepts#session), runs your callback, and releases the Session afterwards, including when the callback throws. `session.runTurn()` returns an async iterable of [Turn](/docs/concepts#turn) events; `model-output` carries streamed text.
+
+## 4. Run it
+
+```sh
+node agent.ts
+```
+
+or
+
+```sh
+bun agent.ts
+```
+
+## Next
+
+- [Sessions and Turns](/docs/sessions): every event type, cancelling a Turn, choosing a Model per Turn.
+- [Tools](/docs/tools): give the Agent typed capabilities; Tool calls that need a human decision are covered in [Approvals](/docs/approvals).
+- [Transcript persistence](/docs/persistence): save completed Turns and resume them later.

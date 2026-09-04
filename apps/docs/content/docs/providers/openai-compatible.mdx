@@ -1,0 +1,48 @@
+---
+title: OpenAI-compatible endpoint
+description: Register a local or third-party endpoint that speaks the OpenAI Chat Completions protocol under its own Provider id.
+icon: Plug
+---
+
+Many local servers and hosted services expose an OpenAI-compatible Chat Completions API. `openaiCompatible()` registers one such endpoint as a Provider with an id you choose, so its Models get their own `id/model` prefix instead of pretending to be OpenAI.
+
+```ts
+import { defineAgent } from "@mitome/sdk";
+import { openaiCompatible } from "@mitome/providers/openai-compatible";
+
+const local = openaiCompatible({
+  id: "local",
+  baseUrl: "http://127.0.0.1:8080/v1",
+});
+
+const agent = defineAgent({
+  providers: [local],
+  model: "local/llama-3.1-8b",
+});
+```
+
+## Options
+
+| Option      | Required | Purpose                                                                                                    |
+| ----------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `id`        | yes      | Stable Provider id. It becomes the prefix of every qualified Model id; it may not be empty or contain `/`. |
+| `baseUrl`   | yes      | Chat Completions API root of the endpoint.                                                                 |
+| `apiKeyEnv` | no       | Environment variable holding the endpoint's API key. Omit it for endpoints that need none.                 |
+
+```ts
+const together = openaiCompatible({
+  id: "together",
+  baseUrl: "https://api.together.xyz/v1",
+  apiKeyEnv: "TOGETHER_API_KEY",
+});
+```
+
+When `apiKeyEnv` is set, `mitome auth login` prompts for that variable like any API-key Provider; see [Configuration](/docs/configuration#credentials).
+
+## Empty catalog
+
+Compatible endpoints share no Model list, so this Provider's `knownModelIds` is empty and every Model id you write after `id/` is passed to the endpoint as-is. You get no completions for the `model` field; the endpoint reports unknown Models at request time.
+
+## Not for Codex
+
+Do not point `openaiCompatible()` at ChatGPT or Codex. That service uses OAuth and a different transport; use the [Codex Provider](/docs/providers/codex).

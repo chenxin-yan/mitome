@@ -1,0 +1,116 @@
+---
+title: Provider authoring
+description: Bind a Model service to a Provider id with makeProvider, and declare how its Credential is collected.
+icon: PlugZap
+---
+
+A [Provider](/docs/concepts#provider) is a configured integration through which an Agent reaches a family of Models. The three first-party Providers under `@mitome/providers` are built with the same constructor this page describes, `makeProvider` from `@mitome/core`. Use it when Mitome has no Provider for a service you need.
+
+`@mitome/core` is Effect-native and exposes runtime plumbing, so it carries a weaker stability guarantee than `@mitome/sdk`. A Provider package depends on `@mitome/core` and on `effect` at the exact version `@mitome/sdk` pins.
+
+## `makeProvider`
+
+```ts
+makeProvider(id, modelIds, credential, provision);
+```
+
+| Argument     | Type                                                                    | Meaning                                                                                                                                                                                   |
+| ------------ | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`         | non-empty string with no `/`                                            | The prefix of every qualified Model id for this Provider, such as `acme` in `acme/large`.                                                                                                 |
+| `modelIds`   | `readonly string[]`, usually `[...] as const`                           | The Model catalog: hints for editor completion and `mitome init`. Not a closed list; any `acme/<model>` is accepted and the service decides at request time.                              |
+| `credential` | environment variable name, `undefined`, or `{ capability: { module } }` | How `mitome auth login` collects the Credential. See below.                                                                                                                               |
+| `provision`  | `(modelId) => Layer<LanguageModel, unknown, never>`                     | Builds the Effect `LanguageModel` Layer for one Model id. Called when a Turn selects a Model; the Layer must resolve everything it needs, including the Credential, without requirements. |
+
+The returned `Provider` value exposes only `id` and `modelIds`. Credential metadata and `provision` stay behind the constructor, so an Agent Definition can be inspected or logged without leaking anything.
+
+## Credential forms
+
+### Environment variable
+
+Pass the variable name. `mitome auth login` prompts for the value with masked input and writes it to `<config-dir>/.env`; the Layer reads it from the process environment when a Turn first selects one of its Models. This is how `openai()` and `openaiCompatible()` work.
+
+```ts
+import type { Layer } from "effect";
+import type { LanguageModel } from "effect/unstable/ai";
+import { makeProvider } from "@mitome/core";
+
+declare const acmeLayer: (
+  modelId: string,
+  apiKeyEnv: string,
+) => Layer.Layer<LanguageModel.LanguageModel, unknown, never>;
+
+export const acme = (options: { readonly apiKeyEnv?: string } = {}) => {
+  const apiKeyEnv = options.apiKeyEnv ?? "ACME_API_KEY";
+  return makeProvider("acme", ["small", "large"] as const, apiKeyEnv, (modelId) =>
+    acmeLayer(modelId, apiKeyEnv),
+  );
+};
+```
+
+Read the variable inside the Layer, for example with `Config.redacted(apiKeyEnv)`, so a missing value fails the Turn with a clear message rather than failing at import time.
+
+### No Credential
+
+Pass `undefined` for a service that needs none, such as a local endpoint. `mitome auth login` skips the Provider.
+
+```ts
+import type { Layer } from "effect";
+import type { LanguageModel } from "effect/unstable/ai";
+import { makeProvider } from "@mitome/core";
+
+declare const localLayer: (
+  modelId: string,
+) => Layer.Layer<LanguageModel.LanguageModel, unknown, never>;
+
+export const local = makeProvider("local", [] as const, undefined, localLayer);
+```
+
+### Auth capability
+
+Pass `{ capability: { module } }` when the Credential is obtained through a flow such as OAuth. `module` is the URL of a module that exports `authenticate`; `import.meta.url` from the Provider's own entry point is the usual choice, as `codex()` does.
+
+```ts
+import type { Layer } from "effect";
+import type { LanguageModel } from "effect/unstable/ai";
+import { makeProvider, type AuthCapability } from "@mitome/core";
+
+declare const acmeOAuthLayer: (
+  modelId: string,
+) => Layer.Layer<LanguageModel.LanguageModel, unknown, never>;
+declare const login: (options: { readonly configDirectory: string }) => Promise<void>;
+declare const logout: (options: { readonly configDirectory: string }) => Promise<void>;
+
+export const acmeOAuth = () =>
+  makeProvider(
+    "acme-oauth",
+    ["large"] as const,
+    { capability: { module: import.meta.url } },
+    acmeOAuthLayer,
+  );
+
+export const authenticate: AuthCapability["authenticate"] = async (options) => {
+  if (options.operation === "logout") return logout(options);
+  await login(options);
+};
+```
+
+`authenticate` receives `AuthenticateOptions`:
+
+| Field             | Meaning                                                                                            |
+| ----------------- | -------------------------------------------------------------------------------------------------- |
+| `operation`       | `"login"` or `"logout"`.                                                                           |
+| `configDirectory` | Where to store or remove the Credential. First-party Providers write `<config-dir>/auth.json`.     |
+| `input()`         | Reads one line from the user; resolves `undefined` once input is closed.                           |
+| `output(text)`    | Shows text to the user.                                                                            |
+| `openBrowser`     | `false` when the user set `MITOME_NO_BROWSER=1`; then offer a paste-the-redirect-URL path instead. |
+
+Store the Credential under your Provider's id so other Providers' entries in the same file survive, and read it back inside `provision` when a Turn first selects one of your Models.
+
+## How `mitome auth login` finds a Provider
+
+The CLI loads the selected Mitome Definition in a Child Host and calls `credentialDescriptor(provider)` on each entry of `agent.providers`. Providers whose descriptor is `undefined` are skipped. For a string descriptor, the CLI prompts and writes the `.env` entry itself. For a capability descriptor, it imports `module`, checks that it exports an `authenticate` function, and calls it with the options above; `logout` does the same with `operation: "logout"`. Where each Credential ends up is described under [Configuration](/docs/configuration#credentials).
+
+## Next
+
+- [Providers and Models](/docs/providers): how applications register Providers and select Models.
+- [Effect-native API](/docs/effect): the Layer and Effect types `provision` builds on.

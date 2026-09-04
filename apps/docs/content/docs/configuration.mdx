@@ -1,0 +1,69 @@
+---
+title: Configuration and files
+description: Where Mitome keeps its config directory, what lives in it, how the CLI selects a Mitome Definition, and how Credentials are read.
+icon: FolderCog
+---
+
+Mitome keeps everything it owns under one **config directory**, written as `<config-dir>` throughout these docs. Libraries resolve it; the CLI and Providers store files in it.
+
+## The config directory
+
+The first of these that is set wins:
+
+1. `$MITOME_HOME`, used verbatim.
+2. `$XDG_CONFIG_HOME/mitome`.
+3. `%APPDATA%\mitome` on Windows.
+4. `$HOME/.config/mitome` elsewhere.
+
+When none resolves, anything that needs the directory fails with `Set MITOME_HOME, XDG_CONFIG_HOME, APPDATA (on Windows), or HOME.` Setting `MITOME_HOME` is also the way to run a second, isolated Mitome setup, for example in CI.
+
+## What lives there
+
+| Path            | Written by                                                          | Mode                 | Read by                                                                         |
+| --------------- | ------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------- |
+| `<config-dir>/` | `mitome init`; `mitome auth login` and OAuth Providers set the mode | `0700`               | everything below                                                                |
+| `index.ts`      | `mitome init`                                                       |                      | the CLI, as the default Mitome Definition module                                |
+| `AGENTS.md`     | `mitome init`                                                       |                      | the generated `instructionFiles` Extension                                      |
+| `package.json`  | `mitome init`, `mitome add`, `mitome remove`                        |                      | the CLI, to reconcile dependencies before loading `index.ts`                    |
+| `node_modules/` | the CLI's dependency reconciliation                                 |                      | the loaded Mitome Definition                                                    |
+| `.env`          | `mitome auth login` for API-key Providers                           | `0600`               | the CLI only, as the environment of the process that runs the Mitome Definition |
+| `auth.json`     | OAuth Providers such as Codex                                       | `0600`               | those Providers, in the CLI and in embedded applications alike                  |
+| `transcripts/`  | `fileTranscripts()` with no argument                                | `0700`, files `0600` | the same store, in any process that uses it                                     |
+
+`fileTranscripts("./data")` moves the Transcript store elsewhere; `codex({ configDirectory })` moves that Provider's `auth.json`. Nothing else is relocatable individually; use `MITOME_HOME` to move the whole directory.
+
+## Selecting a Mitome Definition
+
+Every Agent command of the CLI accepts `--use <path>`:
+
+- Omitted: `<config-dir>/index.ts`, the default Mitome Definition.
+- A `.ts` file: that module.
+- A directory: its `index.ts`.
+
+Anything else, including a missing file, fails with an explicit message. The CLI never searches the current directory for a Mitome Definition; only the selected or default one is loaded.
+
+Before loading, the CLI reconciles the Mitome Definition's `package.json` with what is installed beside it: it installs when dependencies or the lockfile changed, and it checks that `@mitome/core` beside it is the exact version the CLI was built with, because Provider and Extension values are only recognized by the Core copy that created them. `mitome add <package>` and `mitome remove <package>` edit that `package.json` and install; a failed `add` rolls the manifest back.
+
+## Credentials
+
+Where a [Credential](/docs/concepts#credential) lives depends on the Provider's kind.
+
+**API-key Providers** (`openai()`, `openaiCompatible({ apiKeyEnv })`) read one environment variable. `mitome auth login` prompts for it with masked input and writes `NAME=value` to `<config-dir>/.env`, replacing any earlier line for the same name; `mitome auth logout` removes that line. When the CLI runs a Mitome Definition, it starts the child process with your shell environment and then loads that `.env` **without overriding variables already set**, so a value exported in your shell wins.
+
+Embedded applications never read `.env`. Set the variable in the process environment your platform provides, preferably from a secret manager.
+
+Bun's `.env` format cannot round-trip `#`, `$`, quotes, leading or trailing whitespace, or newlines. `mitome auth login` refuses such a value; export it in your shell instead.
+
+**OAuth Providers** (`codex()`) run their own login flow from `mitome auth login` and store the result under their entry in `<config-dir>/auth.json`, preserving other Providers' entries. `mitome auth logout` removes only the selected Provider's entry. `MITOME_NO_BROWSER=1` makes the login flow print the authorization URL and wait for you to paste the redirect instead of opening a browser.
+
+Keep `.env` and `auth.json` out of version control, shared backups, logs, and bug reports.
+
+## Environment variables
+
+| Variable            | Read by                     | Effect                                                              |
+| ------------------- | --------------------------- | ------------------------------------------------------------------- |
+| `MITOME_HOME`       | all packages                | Config directory, used verbatim.                                    |
+| `XDG_CONFIG_HOME`   | all packages                | Config directory root when `MITOME_HOME` is unset.                  |
+| `APPDATA`, `HOME`   | all packages                | Platform fallbacks for the config directory root.                   |
+| `OPENAI_API_KEY`    | `openai()`                  | API key; the name changes with `apiKeyEnv`.                         |
+| `MITOME_NO_BROWSER` | `mitome auth login` (OAuth) | `1` skips opening a browser and asks you to paste the redirect URL. |

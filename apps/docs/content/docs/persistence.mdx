@@ -1,10 +1,10 @@
 ---
-title: Transcript persistence
-description: Persist committed messages explicitly and resume them into new Sessions.
+title: Persistence
+description: Save completed Turns as Transcripts and resume them into new Sessions.
 icon: Database
 ---
 
-A Session is live and process-bound. A Transcript is durable, serializable data containing its committed messages. Persistence is always explicit: a Mitome Definition with no `transcripts` field writes no Transcript snapshots or event records.
+A [Session](/docs/concepts#session) is live and process-bound. A [Transcript](/docs/concepts#transcript) is the durable, serializable record of its committed Messages. Persistence is always explicit: without a `transcripts` store, Mitome writes nothing to disk.
 
 ```ts
 import { defineMitome, fileTranscripts } from "@mitome/sdk";
@@ -15,19 +15,25 @@ export default defineMitome({
 });
 ```
 
-`fileTranscripts()` uses `<config-dir>/transcripts`; it fails loudly when Mitome cannot resolve a config directory. Pass a path to override it: `fileTranscripts("./data/transcripts")`. Files are created with mode `0600`.
+Two stores ship with the SDK:
 
-Use `memoryTranscripts()` in tests or applications that need a shared store without disk writes. It survives across Sessions only while that store value remains alive.
+- `fileTranscripts(directory?)` writes to `<config-dir>/transcripts` by default, or to the directory you pass. With no argument and no resolvable config directory it throws immediately; set `MITOME_HOME` or pass a path. See [Configuration](/docs/configuration).
+- `memoryTranscripts()` keeps Transcripts in memory for as long as the returned value lives. Use it in tests or when several Sessions in one process should share Transcripts without disk writes.
 
-Built-in Hosts never discover or construct a store; the declared store is passed to every Host, letting one-shot and TUI flows share the same resume source.
+In a Mitome Definition, the declared store is handed to every Host, so one-shot runs and the TUI resume from the same place. Hosts never discover or construct a store on their own.
 
 ## Embed and resume
 
-Pass the same store to `withSession`. Every resume creates an independent child Transcript with `parentTranscriptId` pointing to its seed:
+Pass the same store to `withSession`. Every resume creates an independent child Transcript whose `parentTranscriptId` points at the seed:
 
 ```ts
-import { memoryTranscripts, withSession } from "@mitome/sdk";
+import { defineAgent, memoryTranscripts, withSession } from "@mitome/sdk";
+import { openai } from "@mitome/providers/openai";
 
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+});
 const transcripts = memoryTranscripts();
 
 const parentId = await withSession(agent, { transcripts }, async (session) => {
@@ -36,47 +42,33 @@ const parentId = await withSession(agent, { transcripts }, async (session) => {
 });
 
 await withSession(agent, { transcripts, resume: parentId }, async (session) => {
-  await Array.fromAsync(session.runTurn("What color is my project?"));
+  for await (const event of session.runTurn("What color is my project?")) {
+    if (event.type === "model-output") process.stdout.write(event.text);
+  }
 });
 ```
 
-You may instead seed a Session with a `Transcript` returned by `session.transcript()` through `{ transcript }`.
+An unknown `resume` id rejects with `TranscriptNotFound`. You can also seed from a value you already hold: `withSession(agent, { transcript: session.transcript() }, ...)` needs no store at all.
 
 ## Commit boundary
 
-Only a completed Turn updates its Transcript. Failed or interrupted Turns remain absent. A `StoreError` from `save` fails the Turn the same way: it is absent from `history()` and `transcript()`, and re-sending the message re-runs the Model and turn-end Hooks. Resuming never reattaches a live Session: Extension Resources are acquired again, a new Session and Transcript id are created, and any pending Approval from the old process is gone.
+Only a completed Turn updates its Transcript, and only after the store's `save` succeeds. Until then `session.history()` and `session.transcript()` still show the previous state. This means:
 
-Each emitted Turn event is also appended as a versioned, serializable record. This event log is **write-only observability data**: it may end midway through an interrupted Turn and is never replayed to rebuild a Session. The Transcript is the sole resume mechanism.
+- A failed or interrupted Turn leaves the Transcript unchanged.
+- A `StoreError` from `save` fails the Turn the same way. The Turn is absent from `history()` and `transcript()`; sending the Message again runs the Model and the turn-end Hooks again.
+- Resuming never reattaches a live Session. Extension Resources are acquired again, a new Session and Transcript id are created, and any Approval pending in the old process is gone.
 
-## Custom `TranscriptStore`
+Each Turn event is also appended to the store as a versioned record through `appendEvent`. That event log is **write-only observability data**: it may end midway through an interrupted Turn and is never replayed to rebuild a Session. The Transcript snapshot is the sole resume mechanism.
 
-A database adapter can implement the Promise-first store interface directly. Keep driver dependencies in its own package. Stored bytes are a trust boundary: adapters should validate them with their chosen schema library before returning a `Transcript`.
+## Listing Transcripts
 
-```ts
-import type {
-  Transcript,
-  TranscriptEventRecord,
-  TranscriptStore,
-  TranscriptSummary,
-} from "@mitome/sdk";
+`transcripts.list()` returns one `TranscriptSummary` per stored Transcript: id, parent id, timestamps, message count, and a one-line preview of the first user Message. The [TUI's picker](/docs/tui) is built on it.
 
-declare const db: {
-  save(value: Transcript): Promise<void>;
-  load(id: string): Promise<Transcript | null>;
-  list(): Promise<ReadonlyArray<TranscriptSummary>>;
-  append(record: TranscriptEventRecord): Promise<void>;
-};
+## Other stores
 
-export const transcripts: TranscriptStore = {
-  save: (value) => db.save(value),
-  load: (id) => db.load(id),
-  list: () => db.list(),
-  appendEvent: (record) => db.append(record),
-};
-```
+Any object implementing the Promise-first `TranscriptStore` interface (`save`, `load`, `list`, `appendEvent`) works where the built-in stores do. Writing one for a database is covered under [Custom Transcript store](/docs/custom-transcript-store): return `null` from `load` for an unknown id, and treat stored bytes as untrusted input to validate before returning a Transcript.
 
-Return `null` when `load()` misses. Mitome turns that miss into `TranscriptNotFound`; rejected store Promises become `StoreError`. Effect-native adapters instead implement the canonical Effect contract exported from `@mitome/sdk/effect`.
+## Next
 
-`list()` returns `TranscriptSummary` rows with id, lineage, timestamps, message count, and a single-line preview. A production adapter owns its concurrency and transactional policy; Mitome defines concurrent resumes as independent forks rather than shared live state.
-
-See [ADR-0040](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0040-compose-transcript-persistence-explicitly.md) for the explicit-composition rationale and [ADR-0036](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0036-persist-committed-history-as-transcripts.md) for the Transcript model.
+- [Configuration](/docs/configuration): where `<config-dir>/transcripts` is and how to move it.
+- [TUI](/docs/tui): browse and resume Transcripts interactively.

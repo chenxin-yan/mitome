@@ -1,4 +1,4 @@
 {
   "title": "Providers",
-  "pages": ["index", "openai", "codex"]
+  "pages": ["index", "openai", "openai-compatible", "codex"]
 }

@@ -1,0 +1,85 @@
+---
+title: Approvals and cancellation
+description: Decide whether a Tool call may run, understand who decides by default, and stop a Turn cleanly.
+icon: ShieldCheck
+---
+
+An [Approval](/docs/concepts#approval) is a decision that lets one pending Tool call execute. A Tool declares `needsApproval`; when the Model calls it, the Turn pauses and emits `approval-required`. Nothing runs until the [Host](/docs/concepts#host) decides or the Turn is interrupted.
+
+## Resolving an Approval
+
+In an embedded application, your `withSession` callback is the Host. Call `approve()` or `deny(reason?)` on the event; both return a Promise:
+
+```ts
+import { z } from "zod";
+import { defineAgent, withSession } from "@mitome/sdk";
+import { openai } from "@mitome/providers/openai";
+
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+  tools: ({ tool }) => [
+    tool({
+      name: "run_shell",
+      inputSchema: z.object({ command: z.string() }),
+      needsApproval: true,
+      handler: async ({ command }) => `ran ${command}`,
+    }),
+  ],
+});
+
+await withSession(agent, async (session) => {
+  for await (const event of session.runTurn("Clean up the build directory.")) {
+    switch (event.type) {
+      case "approval-required":
+        if (event.name === "run_shell") await event.deny("Shell access is off in this Host.");
+        else await event.approve();
+        break;
+      case "model-output":
+        process.stdout.write(event.text);
+        break;
+    }
+  }
+});
+```
+
+The event carries the Tool `name`, the decoded `params`, and the `toolCallId`, so you can show a human exactly what is about to happen. A denial reaches the Model as a denied execution with your `reason`, and the Turn continues; the Model usually explains or tries another approach.
+
+Decisions are one-shot. Resolving the same Approval twice, or after its Turn has ended, rejects with `ApprovalResolutionError`. A Host must resolve every pending Approval it receives or interrupt the Turn; leaving one unresolved leaves the Turn paused.
+
+## Who approves by default
+
+The built-in Hosts do not ask a human:
+
+- The CLI's one-shot printer (`mitome -p`) approves every `approval-required` event and prints `[approval <name> auto-approved]`.
+- The [TUI](/docs/tui) approves every `approval-required` event and shows `Tool <name> auto-approved` in the Turn.
+
+Both do so only for calls that `preTool` Hooks let through. If your Agent has Tools whose execution needs a person, drive `runTurn` yourself as shown above, or [author a Host](/docs/hosts) that presents the decision.
+
+## `preTool` versus Approval
+
+Two mechanisms gate a Tool call, and they answer different questions.
+
+| Mechanism       | Who decides                | When                   | Sees             | On veto                            |
+| --------------- | -------------------------- | ---------------------- | ---------------- | ---------------------------------- |
+| `preTool` Hook  | An Extension, as policy    | Before anyone is asked | `name`, `params` | Model receives the denial `reason` |
+| `needsApproval` | The Host, usually a person | After policy passed    | The event above  | Model receives the denial `reason` |
+
+Use `preTool` for rules that never need a human: block a Tool outright, restrict paths, rate-limit. Use `needsApproval` for actions a person should confirm. Do not use one as a substitute for the other; policy is not consent, and consent does not replace policy.
+
+## Cancellation
+
+Interrupting the Turn is the third way out of a pending Approval; how interruption works is described under [Sessions](/docs/sessions#cancel-a-turn). For Approvals it means:
+
+```ts
+for await (const event of session.runTurn("Draft the full report.")) {
+  if (event.type === "approval-required") break; // abandon the Turn instead of deciding
+}
+```
+
+The pending Approval is discarded and the Model never receives a decision; this is not a `deny()`. Persisted Turn event records may still contain the `approval-required` event; they are write-only observability data and never replayed, as [Persistence](/docs/persistence#commit-boundary) explains. Resuming a Transcript in a new process never revives a pending Approval: the new Session starts idle.
+
+## Next
+
+- [Tools](/docs/tools): declaring `needsApproval` as a boolean or a predicate.
+- [Extensions](/docs/extensions#hooks): the `preTool` and `postTool` contracts.

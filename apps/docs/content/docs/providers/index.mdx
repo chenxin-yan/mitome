@@ -1,10 +1,10 @@
 ---
 title: Providers and Models
-description: Register Providers and select Models with qualified ids.
+description: Register the Providers an Agent may use and select its Models with qualified ids.
 icon: Cpu
 ---
 
-A Provider is a configured integration through which an Agent uses a family of Models. Register Provider values in `defineAgent`, then select a Default Model with a qualified id in `provider/model` form.
+A [Provider](/docs/concepts#provider) is a configured integration through which an Agent reaches a family of [Models](/docs/concepts#model). You register Provider values in `defineAgent`, then name the Default Model with a **qualified Model id** in `provider/model` form.
 
 ```ts
 import { defineAgent } from "@mitome/sdk";
@@ -16,24 +16,22 @@ const agent = defineAgent({
 });
 ```
 
-The Provider prefix must match a registered Provider. A Model catalog supplies discovery and type hints, but it is not a closed registry and does not prove account entitlement.
+The prefix before the slash must be the id of a registered Provider; `openai()` has id `openai`. Provider ids must be unique within one Agent Definition, and the Provider package has no root import: import each Provider from its own path.
 
-## Available Provider packages
+## Catalog, not entitlement
 
-- [OpenAI](/docs/providers/openai): official OpenAI API with an API-key Credential.
-- [Codex](/docs/providers/codex): ChatGPT subscription OAuth through an unofficial, best-effort transport.
-- `@mitome/providers/openai-compatible`: a separately identified OpenAI-compatible endpoint.
+Every Provider ships a `knownModelIds` catalog. It drives editor completions for the `model` field and the choices `mitome init` offers. It is not a closed list: any id under a registered Provider is accepted, and the Provider decides at request time whether your account may use it. The [OpenAI-compatible Provider](/docs/providers/openai-compatible) has an empty catalog for exactly this reason.
 
-An OpenAI-compatible Provider requires a unique `id` and `baseUrl`; its empty Model catalog deliberately accepts endpoint-native ids:
+The Default Model applies when a Turn does not name another; a Turn can select a different Model under any registered Provider, as shown under [Sessions](/docs/sessions#choose-a-model-per-turn).
 
-```ts
-import { openaiCompatible } from "@mitome/providers/openai-compatible";
+## Available Providers
 
-const local = openaiCompatible({
-  id: "local",
-  baseUrl: "http://127.0.0.1:8080/v1",
-  apiKeyEnv: "LOCAL_API_KEY",
-});
-```
+| Provider                                                        | Import path                           | Credential                    |
+| --------------------------------------------------------------- | ------------------------------------- | ----------------------------- |
+| [OpenAI](/docs/providers/openai)                                | `@mitome/providers/openai`            | API key in `OPENAI_API_KEY`   |
+| [OpenAI-compatible endpoint](/docs/providers/openai-compatible) | `@mitome/providers/openai-compatible` | optional API key, you name it |
+| [Codex subscription](/docs/providers/codex)                     | `@mitome/providers/openai-codex`      | ChatGPT OAuth in `auth.json`  |
 
-Do not configure Codex as an OpenAI-compatible base URL. Its authentication and transport contracts are different.
+Codex is not `openai()` with another `baseUrl`, and not an OpenAI-compatible endpoint either; its authentication and transport differ. Use the Codex Provider for it.
+
+To build a Provider for another service, see [Provider authoring](/docs/provider-authoring).
