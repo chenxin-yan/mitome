@@ -3,6 +3,9 @@ import { Layer } from "effect";
 import { makeProvider, type ValidProviderId } from "@mitome/core";
 import { apiKeyClientLayer } from "../shared/api-key-client.js";
 
+export const knownModelIds = [] as const;
+export type KnownModelId = (typeof knownModelIds)[number];
+
 export interface OpenAiCompatibleOptions<Id extends string = string> {
   /** Stable Provider id used in Qualified Model ids. */
   readonly id: Id;
@@ -19,7 +22,7 @@ export const openaiCompatible = <const Id extends string>(
   },
 ) => {
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
-  return makeProvider(options.id, [] as const, options.apiKeyEnv, (model) =>
+  return makeProvider(options.id, knownModelIds, options.apiKeyEnv, (model) =>
     OpenAiLanguageModel.layer({ model }).pipe(
       Layer.provide(apiKeyClientLayer(options.apiKeyEnv, baseUrl, OpenAiClient.layer)),
     ),

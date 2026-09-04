@@ -4,7 +4,7 @@ description: Compose Sessions, Streams, Layers, and Extension Resources with Eff
 icon: Workflow
 ---
 
-Use `@mitome/sdk/effect` when your application already owns an Effect runtime or needs Layer-based Extension composition. It is the supported Effect-native facade over Mitome's Core runtime; do not import the runtime package directly.
+Use `@mitome/sdk/effect` when your application already owns an Effect runtime or needs Layer-based Extension composition. It is the curated app-facing facade over Mitome's Core runtime. Host and Provider packages instead use the advanced [`@mitome/core` authoring surface](/docs/core).
 
 The SDK installs its exact Effect RC dependency for Promise-first users. Effect-native applications must use that same pinned version to avoid runtime identity and type skew:
 
@@ -22,7 +22,6 @@ import { openai } from "@mitome/providers/openai";
 const agent = defineAgent({
   providers: [openai()],
   model: "openai/gpt-5.4-mini",
-  extensions: [],
 });
 
 const program = Effect.scoped(

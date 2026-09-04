@@ -1,3 +1,7 @@
+---
+status: amended by ADR-0047
+---
+
 # Compose Hosts explicitly in the composition root
 
 The selected TypeScript module default-exports `defineMitome({ agent, hosts })`. `defineMitome` and the public SDK `Host` interface compose one host-agnostic Agent Definition with its consumers; a Host currently has the single mode `interactive`, receives the Agent and staged prompt, and at most one may be declared. `tui()` returns such a Host (an options parameter is future work). Installing `@mitome/tui` alone has no activation semantics.

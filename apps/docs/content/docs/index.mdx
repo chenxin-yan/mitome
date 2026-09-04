@@ -15,7 +15,8 @@ Mitome gives an Agent a typed Provider, a Default Model, Extensions, and one or 
 - [CLI](/docs/cli) and [TUI](/docs/tui): run a trusted Mitome Definition from a terminal.
 - [Providers](/docs/providers): configure OpenAI, Codex, or an OpenAI-compatible endpoint.
 - [Effect](/docs/effect): use the supported Effect-native facade.
+- [Host and Provider authoring](/docs/core): build integration packages against Effect-native Core contracts.
 
 ## Public packages
 
-Install APIs from `@mitome/sdk` and Providers from `@mitome/providers` subpaths. First-party Extensions live at `@mitome/sdk/extensions`; Effect-native APIs live at `@mitome/sdk/effect`. These are the documented public surfaces.
+Application code imports from `@mitome/sdk`, Provider subpaths under `@mitome/providers`, and first-party Extensions from `@mitome/sdk/extensions`. Effect-native applications use the curated `@mitome/sdk/effect` facade. Only Host and Provider authors should import runtime plumbing from `@mitome/core`.

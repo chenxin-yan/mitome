@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0034
+status: amended by ADR-0034, ADR-0047
 ---
 
 # Publish the SDK as the sole documented surface

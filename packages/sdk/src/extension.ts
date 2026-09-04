@@ -9,10 +9,7 @@ import {
 import type {
   Extension,
   ExtensionHooks,
-  ToolContribution,
-  ToolHookContext,
-  ToolInputValidator,
-  ToolResultHookContext,
+  ToolInputValidator as CoreToolInputValidator,
 } from "@mitome/core";
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec";
 import type { Prompt, ResponsePart } from "./models.js";
@@ -39,9 +36,24 @@ export interface HookContext<Resource = never> {
   readonly signal: AbortSignal;
 }
 
-type ToolHookResult = ToolResultHookContext["result"];
-type UnvalidatedToolInput = Parameters<ToolInputValidator>[0];
+type UnvalidatedToolInput = Parameters<CoreToolInputValidator>[0];
 type StandardInputValue = Parameters<StandardSchemaV1.Props["validate"]>[0];
+
+export interface ToolHookContext {
+  readonly name: string;
+  readonly params: unknown;
+}
+
+export interface ToolResultHookContext extends ToolHookContext {
+  readonly result: unknown;
+  readonly isFailure: boolean;
+}
+
+export interface ToolContribution<Input = unknown, Output = unknown, Failure = never> {
+  readonly input: Input;
+  readonly output: Output;
+  readonly failure: Failure;
+}
 
 export interface StepEndContext<Resource = never> extends HookContext<Resource> {
   readonly responseParts: ReadonlyArray<ResponsePart>;
@@ -66,7 +78,7 @@ export interface ExtensionHooksDefinition<Resource = never> {
   ) => Promise<void | { readonly reason: string }>;
   readonly postTool?: (
     context: ToolResultHookContext & HookContext<Resource>,
-  ) => Promise<ToolHookResult>;
+  ) => Promise<ToolResultHookContext["result"]>;
 }
 
 export interface ToolSuccess<Output> {

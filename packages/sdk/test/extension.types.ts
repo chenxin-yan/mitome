@@ -9,11 +9,9 @@ import {
   ok,
   type ExtensionHooksDefinition,
   type ToolBuilder,
-  type ToolInputValidator,
   type Prompt,
 } from "../src/index.js";
 
-export type PublicToolInputValidator = ToolInputValidator;
 export type PublicPrompt = Prompt;
 
 type Equal<Left, Right> =

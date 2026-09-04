@@ -1,51 +1,52 @@
 export {
-  ApprovalResolutionError,
   AgentDefinitionError,
+  ApprovalResolutionError,
   SessionBusyError,
   SessionReleasedError,
-  TranscriptMessageSchema,
-  TranscriptSchema,
-  TranscriptSchemaVersion,
-  TranscriptEventRecordSchema,
-  TranscriptEventRecordVersion,
-  TranscriptNotFound,
-  TranscriptSummarySchema,
-  TurnEventDtoSchema,
   StoreError,
+  TranscriptNotFound,
+  TranscriptSchemaVersion,
   TurnError,
-  makeTranscript,
-  promptFromTranscript,
-  summarizeTranscript,
 } from "@mitome/core";
 export type {
   AgentDefinition,
-  CreateSessionOptions,
+  AnyExtension,
+  AnyProvider,
   Extension,
   Provider,
-  ExtensionHooks,
-  Host,
-  HostContext,
-  TurnOptions,
   QualifiedModelId,
-  ToolFailureValidator,
-  ToolHookContext,
-  ToolInputValidator,
-  ToolResultHookContext,
   ToolExecutionDenied,
-  ToolResultValidator,
-  MakeTranscriptOptions,
   Transcript,
   TranscriptEventRecord,
   TranscriptId,
   TranscriptMessage,
   TranscriptSummary,
   TurnEventDto,
+  TurnOptions,
 } from "@mitome/core";
 export { defineAgent } from "./agent.js";
+export { defineExtension, fail, ok } from "./extension.js";
+export type {
+  AnyTool,
+  ExtensionDefinition,
+  ExtensionHooksDefinition,
+  HookContext,
+  InputSchema,
+  OutputSchema,
+  StandardSchema,
+  StepEndContext,
+  Tool,
+  ToolApprovalContext,
+  ToolBuilder,
+  ToolContributionsOf,
+  ToolContribution,
+  ToolFailure,
+  ToolHookContext,
+  ToolResultHookContext,
+  ToolSuccess,
+} from "./extension.js";
 export { defineMitome } from "./mitome.js";
 export type { MitomeDefinition } from "./mitome.js";
-export { fileTranscripts, memoryTranscripts } from "./transcript-store.js";
-export type { TranscriptStore } from "./transcript-store.js";
 export type {
   FinishReason,
   Json,
@@ -56,18 +57,7 @@ export type {
   ResponsePart,
   Usage,
 } from "./models.js";
-export { defineExtension, fail, ok } from "./extension.js";
-export type {
-  HookContext,
-  InputSchema,
-  OutputSchema,
-  ExtensionHooksDefinition,
-  StandardSchema,
-  StepEndContext,
-  Tool,
-  ToolBuilder,
-  ToolFailure,
-  ToolSuccess,
-} from "./extension.js";
 export { withSession } from "./session.js";
 export type { Session, SessionOptions, TurnEvent } from "./session.js";
+export { fileTranscripts, memoryTranscripts } from "./transcript-store.js";
+export type { TranscriptStore } from "./transcript-store.js";
