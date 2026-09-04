@@ -1,0 +1,103 @@
+---
+title: Sessions and Turns
+description: Open a Session, run Turns, read the event stream, cancel work, and handle failures.
+icon: MessagesSquare
+---
+
+A [Session](/docs/concepts#session) is one live interaction with an Agent. `withSession` opens one, hands it to your callback, and releases it when the callback settles, including when it throws. Inside, `session.runTurn(message)` runs one [Turn](/docs/concepts#turn) and streams its events.
+
+```ts
+import { defineAgent, withSession } from "@mitome/sdk";
+import { openai } from "@mitome/providers/openai";
+
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+});
+
+await withSession(agent, async (session) => {
+  for await (const event of session.runTurn("Summarize this design.")) {
+    if (event.type === "model-output") process.stdout.write(event.text);
+  }
+});
+```
+
+`withSession` returns whatever the callback returns. A Session runs one Turn at a time; starting a second while one is active rejects with `SessionBusyError`.
+
+## Turn events
+
+`runTurn()` returns a single-use `AsyncIterable<TurnEvent>`; asking for a second iterator throws so a paid Turn never runs twice by accident.
+
+| `event.type`        | Payload                                                         | Meaning                                                                   |
+| ------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `model-output`      | `text`                                                          | Streamed response text.                                                   |
+| `reasoning`         | `text`                                                          | Streamed reasoning text, when the Model exposes it.                       |
+| `tool-call`         | `id`, `name`, `params`                                          | The Model called a Tool with decoded input.                               |
+| `tool-result`       | `id`, `name`, `result`, `isFailure`                             | A Tool finished; `isFailure` marks an expected failure or a denial.       |
+| `approval-required` | `name`, `params`, `toolCallId`, `approvalId`, `approve`, `deny` | A Tool needs a decision before it runs; see [Approvals](/docs/approvals). |
+| `response-complete` | `finishReason?`, `usage?`                                       | The Turn completed and, when a store is configured, was saved.            |
+
+Failures are thrown while you iterate, never emitted as events. The full shape of each variant is in the [reference](/docs/reference/api/sdk#turnevent).
+
+## Cancel a Turn
+
+Returning from the iterator early interrupts the Turn. The Session stays usable, and nothing from the interrupted Turn is committed:
+
+```ts
+await withSession(agent, async (session) => {
+  for await (const event of session.runTurn("Generate a very long report.")) {
+    if (event.type === "model-output") break; // interrupts after the first chunk
+  }
+
+  for await (const event of session.runTurn("Give me the short version.")) {
+    if (event.type === "model-output") process.stdout.write(event.text);
+  }
+});
+```
+
+Interrupting also aborts the `AbortSignal` that every Tool handler and Hook receives in its context, so external work stops with the Turn.
+
+## Choose a Model per Turn
+
+The optional second argument selects another Model under a Provider registered on the Agent, for this Turn only:
+
+```ts
+session.runTurn("Be concise.", { model: "openai/gpt-5.4" });
+```
+
+## Failures
+
+Errors are Schema-tagged classes. Catch them by `instanceof` or `_tag`; anything your own callback throws is rethrown unchanged.
+
+| Error                                                                        | When                                                                                                                                                                                                   |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`AgentDefinitionError`](/docs/reference/api/sdk#agentdefinitionerror)       | The Agent Definition cannot compile: duplicate Provider ids, unregistered Default Model, conflicting Extension or Tool names.                                                                          |
+| [`SessionBusyError`](/docs/reference/api/sdk#sessionbusyerror)               | `runTurn` while another Turn is active.                                                                                                                                                                |
+| [`SessionReleasedError`](/docs/reference/api/sdk#sessionreleasederror)       | `runTurn` after `withSession` released the Session.                                                                                                                                                    |
+| [`TurnError`](/docs/reference/api/sdk#turnerror)                             | The Model, a Tool, or a Hook failed during the Turn.                                                                                                                                                   |
+| [`StoreError`](/docs/reference/api/sdk#storeerror)                           | Transcript save failed, leaving the Turn uncommitted; or an event-record append failed, which for the final event surfaces after the Turn was committed. Check `session.transcript()` before retrying. |
+| [`TranscriptNotFound`](/docs/reference/api/sdk#transcriptnotfound)           | The `resume` id does not exist in the store.                                                                                                                                                           |
+| [`ApprovalResolutionError`](/docs/reference/api/sdk#approvalresolutionerror) | An Approval was resolved twice or after its Turn ended.                                                                                                                                                |
+
+```ts
+import { TurnError, withSession } from "@mitome/sdk";
+
+try {
+  await withSession(agent, (session) => Array.fromAsync(session.runTurn("Run")));
+} catch (error) {
+  if (error instanceof TurnError) console.error(error.message);
+  else throw error;
+}
+```
+
+## Session state
+
+`session.history()` returns the committed [Model Prompt](/docs/concepts#model-prompt): the Instructions system message followed by the Messages of every completed Turn, in order. `session.transcript()` returns a serializable [Transcript](/docs/concepts#transcript) snapshot with this Session's id and lineage. Both advance only when a Turn completes and its save succeeds.
+
+To persist Transcripts or seed a Session from an earlier one, pass options between the Agent and the callback: `withSession(agent, { transcripts }, ...)`. See [Persistence](/docs/persistence).
+
+## Next
+
+- [Tools](/docs/tools): give the Agent typed capabilities.
+- [Approvals](/docs/approvals): decide which Tool calls may run.
+- [Persistence](/docs/persistence): save completed Turns and resume them.

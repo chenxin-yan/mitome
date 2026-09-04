@@ -1,0 +1,103 @@
+---
+title: Custom Transcript store
+description: Persist Transcripts in your own database by implementing the Promise or Effect store contract.
+icon: HardDrive
+---
+
+`fileTranscripts()` and `memoryTranscripts()` cover local use. To persist [Transcripts](/docs/concepts#transcript) in a database, implement the `TranscriptStore` contract and pass your object wherever a store is accepted: `defineMitome({ transcripts })`, `withSession(agent, { transcripts }, ...)`, or `createSession(agent, { transcripts })`. Keep driver dependencies in your own package.
+
+## What a store does
+
+| Method                | Called by                            | Contract                                                                                                                                                                                                                                                                                      |
+| --------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `save(transcript)`    | Session                              | Persists the full snapshot after a Turn completed. A failure fails that Turn; see the [commit boundary](/docs/persistence#commit-boundary).                                                                                                                                                   |
+| `load(id)`            | Host, or `withSession` with `resume` | Returns the Transcript to seed a new Session, or reports that the id is unknown.                                                                                                                                                                                                              |
+| `list()`              | Host                                 | Returns one `TranscriptSummary` per stored Transcript: `id`, `parentTranscriptId`, ISO `createdAt`/`updatedAt`, `messageCount`, `preview`.                                                                                                                                                    |
+| `appendEvent(record)` | Session                              | Appends one Turn event record: `transcriptId`, `sessionId`, `seq`, `version`, `event`. Write-only observability data; it is never read back by Mitome. A rejection still fails the running Turn with `StoreError`, so keep it cheap and reliable, or swallow failures you consider non-fatal. |
+
+Mitome does not coordinate concurrent access. Two processes resuming the same Transcript produce two independent forks that each `save` under their own new id; a store needs no locking for that, but it owns whatever transactional policy its database requires.
+
+## The Promise contract
+
+Import `TranscriptStore` from `@mitome/sdk`. `load` returns `null` for an unknown id, and Mitome raises `TranscriptNotFound`. Any rejection from any method becomes a `StoreError`.
+
+```ts
+import type {
+  Transcript,
+  TranscriptEventRecord,
+  TranscriptStore,
+  TranscriptSummary,
+} from "@mitome/sdk";
+
+declare const db: {
+  save(value: Transcript): Promise<void>;
+  load(id: string): Promise<Transcript | null>;
+  list(): Promise<ReadonlyArray<TranscriptSummary>>;
+  append(record: TranscriptEventRecord): Promise<void>;
+};
+
+export const transcripts: TranscriptStore = {
+  save: (value) => db.save(value),
+  load: (id) => db.load(id),
+  list: () => db.list(),
+  appendEvent: (record) => db.append(record),
+};
+```
+
+## The Effect contract
+
+Import `TranscriptStore` from `@mitome/sdk/effect`. This is the contract the built-in stores implement and the one a [Host](/docs/hosts) receives in its context. `load` fails with `TranscriptNotFound` for an unknown id; every method's other failure is `StoreError`.
+
+```ts
+import { Effect, Schema } from "effect";
+import {
+  StoreError,
+  TranscriptNotFound,
+  TranscriptSchema,
+  type Transcript,
+  type TranscriptEventRecord,
+  type TranscriptStore,
+  type TranscriptSummary,
+} from "@mitome/sdk/effect";
+
+declare const db: {
+  put(id: string, json: string, updatedAt: string): Promise<void>;
+  get(id: string): Promise<{ json: string; createdAt: string; updatedAt: string } | undefined>;
+  rows(): Promise<ReadonlyArray<TranscriptSummary>>;
+  append(record: TranscriptEventRecord): Promise<void>;
+};
+
+const decodeTranscript = Schema.decodeUnknownEffect(Schema.fromJsonString(TranscriptSchema));
+const storeError = (message: string) => (cause: unknown) => new StoreError({ message, cause });
+
+export const transcripts: TranscriptStore = {
+  save: (transcript: Transcript) =>
+    Effect.tryPromise({
+      try: () => db.put(transcript.id, JSON.stringify(transcript), new Date().toISOString()),
+      catch: storeError("save failed"),
+    }),
+  load: (id) =>
+    Effect.gen(function* () {
+      const row = yield* Effect.tryPromise({
+        try: () => db.get(id),
+        catch: storeError("load failed"),
+      });
+      if (row === undefined) return yield* new TranscriptNotFound({ id });
+      return yield* decodeTranscript(row.json).pipe(
+        Effect.mapError(storeError("stored transcript is invalid")),
+      );
+    }),
+  list: () => Effect.tryPromise({ try: () => db.rows(), catch: storeError("list failed") }),
+  appendEvent: (record) =>
+    Effect.tryPromise({ try: () => db.append(record), catch: storeError("append failed") }),
+};
+```
+
+## Validate what you read
+
+Stored bytes are a trust boundary. Decode them before returning a `Transcript`, as the Effect sample does with `TranscriptSchema`; from the Promise surface, use the schema library you already have. `TranscriptSchema`, `TranscriptSummarySchema`, and `TranscriptEventRecordSchema` are exported from `@mitome/sdk/effect` for stores that want the canonical shapes, and `summarizeTranscript(transcript)` derives `messageCount` and `preview` for a `list` row. Every Transcript carries `schemaVersion`; a store that meets a version it does not know should fail with `StoreError` rather than guess.
+
+## Next
+
+- [Persistence](/docs/persistence): resume, fork, and the commit boundary.
+- [Hosts](/docs/hosts): the context a Host receives, including this store.

@@ -1,18 +1,43 @@
 ---
 title: Extensions
-description: Add typed Tools, lifecycle Hooks, and scoped Resources.
-icon: Blocks
+description: Package Instructions, Tools, a private Resource, and lifecycle Hooks into a reusable unit.
+icon: Puzzle
 ---
 
-An Extension is a reusable unit that contributes Instructions and Tools or participates in the Agent lifecycle. Author Extensions with `defineExtension`. A name is optional: unnamed Extensions use reference identity, while two different named Extensions with the same name conflict.
+An [Extension](/docs/concepts#extension) is what an Agent Definition includes to change how the Agent behaves. It can contribute [Instructions](/docs/concepts#instructions), declare [Tools](/docs/tools), hold a private Resource for the Session's lifetime, and observe or transform the run through Hooks. Use one instead of inline `defineAgent({ tools })` as soon as Tools need shared state, when you want Instructions to travel with the Tools that need them, or when several Agents should reuse the same behavior.
 
-## A Tool with a scoped Resource
+```ts
+import { defineAgent } from "@mitome/sdk";
+import { instructions } from "@mitome/sdk/extensions";
+import { openai } from "@mitome/providers/openai";
 
-Install zod v4 for the Promise-first examples:
-
-```sh
-npm install zod@^4
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+  extensions: [instructions("Answer in one short paragraph.")],
+});
 ```
+
+Extensions are applied in the order you list them: Instructions are composed in that order, Resources are acquired in that order, and start Hooks run in that order.
+
+## Instructions
+
+Two first-party Extensions in `@mitome/sdk/extensions` cover static Instructions:
+
+- `instructions(text)` contributes the text as-is.
+- `instructionFiles({ paths, discover })` reads files when the Mitome Definition loads. `paths` are resolved relative to the module that calls it and must exist. `discover` names bare filenames, such as `AGENTS.md`, looked up in every directory from the Git root down to the current working directory, or only the current directory when there is no Git root; missing ones are skipped.
+
+```ts
+import { instructionFiles } from "@mitome/sdk/extensions";
+
+instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] });
+```
+
+Your own Extension contributes Instructions through its `instructions` field, shown below.
+
+## A Resource with Tools
+
+`setup` runs once when a Session starts and returns the Resource; `dispose` runs when the Session is released, on success, failure, and interruption alike. The scoped `tool` builder carries the Resource type into every handler:
 
 ```ts
 import { z } from "zod";
@@ -31,10 +56,8 @@ export const notes = defineExtension({
     tool({
       name: "save_note",
       description: "Save one note for this Session",
-      inputSchema: z.string(),
-      outputSchema: z.string(),
-      needsApproval: true,
-      handler: async (text, { resource, signal }) => {
+      inputSchema: z.object({ text: z.string() }),
+      handler: async ({ text }, { resource, signal }) => {
         signal.throwIfAborted();
         resource.values.push(text);
         return `Saved ${resource.values.length} note(s)`;
@@ -44,92 +67,49 @@ export const notes = defineExtension({
 });
 ```
 
-The scoped `tool` builder carries the Extension's Resource type from `setup` into every handler. Tool input is validated and must supply JSON Schema; zod v4 does both through Standard Schema. `outputSchema` is optional: when omitted, output is inferred from the handler and passed through without validation. `needsApproval` accepts a boolean or an input-aware predicate. Each handler also receives an `AbortSignal`.
+A Resource is private to its Extension. Tools and Hooks that need the same Session state belong in one Extension. A resumed Transcript seeds a new Session, so `setup` runs again and the Resource starts fresh.
 
-For one-off Tools, `defineAgent` accepts the same builder as `tools: ({ tool }) => [...]`; use an Extension when Tools need a Resource, Hooks, Instructions, or reuse.
+## Hooks
 
-`setup` runs once when a Session starts. `dispose` runs when its Session scope closes, including failure and interruption paths. A resumed Transcript seeds a new Session and therefore acquires fresh Resources.
+Hooks let an Extension observe or transform the run. Every Hook receives a context with `resource` and `signal`; a rejected Hook fails the Turn, or the Session start, with `TurnError`.
 
-## Expected Tool failures
+| Hook                          | Contract                                                                                             |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `sessionStart(context)`       | Runs once after every Extension's Resource is acquired.                                              |
+| `sessionEnd(context)`         | Runs when the Session is released, before Resources are disposed.                                    |
+| `turnStart(message, context)` | Observes the user Message that starts a Turn.                                                        |
+| `turnEnd(message, context)`   | Observes the user Message after its Turn completed.                                                  |
+| `stepStart(prompt, context)`  | Observes the Model Prompt before one Step.                                                           |
+| `stepEnd(prompt, context)`    | Receives the Model Prompt and the Step's `responseParts`; a failed Step provides its partial parts.  |
+| `preStep(prompt, context)`    | Returns the Model Prompt to send, transformed or unchanged.                                          |
+| `preTool(context)`            | Policy before a Tool runs: return `{ reason }` to veto the call, or nothing to let it continue.      |
+| `postTool(context)`           | Observes and returns the Tool result, transformed or unchanged; `isFailure` marks expected failures. |
 
-Use `failureSchema` with `ok()` and `fail()` when a Tool has an expected outcome the Model should see and react to:
+Start Hooks (`sessionStart`, `turnStart`, `stepStart`) run in Agent Definition order. End Hooks (`sessionEnd`, `turnEnd`, `stepEnd`) run in reverse order, mirroring how Resources are released, so an Extension listed first sees the Session both first and last.
 
 ```ts
-import { z } from "zod";
-import { defineExtension, fail, ok } from "@mitome/sdk";
+import { defineExtension } from "@mitome/sdk";
 
-declare const findNote: (slug: string) => Promise<string | undefined>;
-
-export const lookup = defineExtension({
-  tools: ({ tool }) => [
-    tool({
-      name: "find_note",
-      inputSchema: z.object({ slug: z.string() }),
-      outputSchema: z.string(),
-      failureSchema: z.object({ code: z.literal("NOT_FOUND"), slug: z.string() }),
-      handler: async ({ slug }) => {
-        const note = await findNote(slug);
-        return note === undefined ? fail({ code: "NOT_FOUND", slug }) : ok(note);
-      },
-    }),
-  ],
+export const audit = defineExtension({
+  name: "audit",
+  hooks: {
+    turnStart: async (message) => console.error(`turn: ${JSON.stringify(message)}`),
+    preTool: async ({ name }) =>
+      name === "delete_file" ? { reason: "deletion disabled" } : undefined,
+  },
 });
 ```
 
-Both success and failure values are schema-checked. A `fail()` value becomes a failed Tool result visible to the Model. A thrown error or rejected Promise is still a defect and is replaced with the opaque `SDK tool handler failed` result; do not expose secrets by throwing them.
+A `preTool` veto reaches the Model as a denied execution with your `reason`. It is Extension policy and runs before anyone is asked; [Approval](/docs/approvals) is a separate Host decision that only happens for calls policy let through.
 
-## Sharing Tools
+## Names and identity
 
-Prefer these options in order:
+`name` is optional and only labels diagnostics. An unnamed Extension is identified by its object reference, so including the same value twice is one Extension. Two _different_ named Extensions with the same name conflict and fail the Agent Definition; so do two Tools with the same name in different Extensions; a duplicate within one Extension throws when it is defined.
 
-1. Share an Extension. It is the unit of reuse and composition.
-2. Extract plain logic functions into separate files while keeping Tool declarations inline.
-3. For a large Extension, extract a plain function that accepts `ToolBuilder<Resource>`:
+From a terminal, `mitome ext list` prints the Extensions of the selected Mitome Definition in composition order, with their package versions where known; unnamed ones appear as `(anonymous)`.
 
-```ts
-import { z } from "zod";
-import { defineExtension, type ToolBuilder } from "@mitome/sdk";
+## Next
 
-interface Notes {
-  readonly values: Array<string>;
-}
-
-const noteTools = (tool: ToolBuilder<Notes>) => [
-  tool({
-    name: "list_notes",
-    inputSchema: z.object({}),
-    handler: async (_input, { resource }) => resource.values,
-  }),
-];
-
-export const notes = defineExtension({
-  setup: async (): Promise<Notes> => ({ values: [] }),
-  tools: ({ tool }) => noteTools(tool),
-});
-```
-
-A Resource is private to its Extension. Put Tools and Hooks that need the same Session state in one Extension and use their shared Resource. Compose unrelated Extensions explicitly in the Agent Definition.
-
-## Hook contracts
-
-Every Promise Hook receives a context containing `resource` and `signal`. Hooks run in Agent Definition order; teardown is reversed.
-
-| Hook                          | Contract                                                                                              |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `sessionStart(context)`       | Observe Session startup after Resources are acquired.                                                 |
-| `sessionEnd(context)`         | Observe Session shutdown before Resources are disposed.                                               |
-| `turnStart(message, context)` | Observe the Message at the start of a Turn.                                                           |
-| `turnEnd(message, context)`   | Observe successful Turn completion.                                                                   |
-| `stepStart(prompt, context)`  | Observe the Model Prompt before one Step.                                                             |
-| `stepEnd(prompt, context)`    | Observe emitted `responseParts`; failed Steps include partial parts.                                  |
-| `preStep(prompt, context)`    | Return the Model Prompt to send, transformed or unchanged.                                            |
-| `preTool(context)`            | Observe a decoded Tool call; return `{ reason }` to veto it or nothing to continue.                   |
-| `postTool(context)`           | Observe and return the Tool result, transformed or unchanged; `isFailure` identifies failed handlers. |
-
-A Hook rejection fails the Turn with `TurnError`. `preTool` is policy before execution, while Approval is a separate Host decision after policy. Do not use one as a substitute for the other.
-
-## Approvals and cancellation
-
-A Tool marked `needsApproval` pauses the Turn and emits `approval-required`. The Host must call `approve()` or `deny(reason?)`. Interrupting event iteration cancels the Turn and triggers the context `AbortSignal`, allowing Tools and Hooks to stop external work.
-
-See [the SDK event loop](/docs/sdk) for Host-side handling and [Transcript persistence](/docs/persistence#commit-boundary) for resume and commit semantics.
+- [Tools](/docs/tools): schemas, expected failures, and sharing.
+- [Approvals](/docs/approvals): how `needsApproval` and `preTool` relate.
+- [Effect-native API](/docs/effect): author Extensions whose Resource is a Layer and whose Hooks are Effects.

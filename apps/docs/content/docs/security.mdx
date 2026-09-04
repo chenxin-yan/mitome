@@ -1,0 +1,40 @@
+---
+title: Security
+description: Understand what a Mitome Definition can do when it runs, and keep Credentials out of code, logs, and Model input.
+icon: Lock
+---
+
+Mitome runs code you wrote, with the access you have, against services that bill your account. This page states the trust boundaries so you know what to protect.
+
+## A Mitome Definition is a program
+
+A [Mitome Definition](/docs/concepts#agent-definition-and-mitome-definition) is executable TypeScript, not a configuration file. When you run `mitome`, the CLI starts a **Child Host** process that imports the Definition module, the Hosts it declares, and every dependency in its `package.json`. That process has your filesystem, your network, your environment variables, and every Credential the Definition's Providers can reach.
+
+Run only Mitome Definitions you trust. `mitome --use <path>` executes whatever module is at that path, and `mitome add <package>` installs and later imports whatever that package publishes. Neither the CLI nor a Host sandboxes the code. Treat a Mitome Definition and its dependencies the way you treat any script you would run with your own account.
+
+The same holds when you embed the SDK: an Extension's Tool handlers run in your application process with its permissions.
+
+## Tools act on your behalf
+
+A Tool call is the Model deciding to run your code. Two mechanisms gate it: `preTool` Hooks apply policy an Extension author wrote, and `needsApproval` asks the Host. The built-in one-shot printer and the TUI approve every Tool call that passes policy without asking a person. For Tools with real side effects, mark them `needsApproval` and run them under a Host that puts a person in the loop, as the [Approvals](/docs/approvals) page explains.
+
+## Credentials
+
+A [Credential](/docs/concepts#credential) authorizes Mitome to spend on your account. Keep it in exactly one place: the environment variable or `<config-dir>/auth.json` entry its Provider reads. Never:
+
+- paste it into `index.ts` or any Agent Definition;
+- put it in Instructions, where it becomes Model input;
+- return it from a Tool handler, where it becomes Model input and a Turn event;
+- throw it inside an error, where it can reach logs; a Tool handler that throws produces an opaque failure, but a rejected `withSession` callback surfaces the error unchanged;
+- commit `.env` or `auth.json`, or include them in backups, logs, or bug reports.
+
+The CLI writes `.env` and `auth.json` readable by you alone, and reads `.env` only into the Child Host process. Embedded applications never read `.env`; supply the variable from your platform's secret manager. The full precedence and every file's mode are listed under [Configuration](/docs/configuration#credentials).
+
+## What is persisted
+
+With `transcripts` declared, every completed Turn's Messages and every Turn event, including Tool inputs and results, are written to the store. A Transcript is user data plus whatever your Tools returned; place the store accordingly and treat what you read back as untrusted input, as [Custom Transcript store](/docs/custom-transcript-store#validate-what-you-read) describes. Without `transcripts`, Mitome writes nothing.
+
+## Next
+
+- [Configuration](/docs/configuration): the config directory, its files, and their modes.
+- [Hosts](/docs/hosts): how the CLI decides which Host runs a Mitome Definition.

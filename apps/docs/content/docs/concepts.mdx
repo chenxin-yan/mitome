@@ -1,0 +1,79 @@
+---
+title: Concepts
+description: The vocabulary Mitome uses, in the order a run happens.
+icon: Lightbulb
+---
+
+Every page on this site uses these terms with exactly these meanings. Read them once, top to bottom; each builds on the one before.
+
+## Agent
+
+An Agent is an AI participant you define to pursue one use case. It has Providers to reach Models, a Default Model, Instructions that shape its behavior, and Extensions that give it Tools and lifecycle behavior. An Agent does nothing on its own; it acts inside a Session.
+
+## Agent Definition and Mitome Definition
+
+There are two `define*` calls because two different things need declaring.
+
+An **Agent Definition** is the Agent itself, created with `defineAgent({ providers, model, extensions })`. It is what an application passes to `withSession`, and it is portable: the same value works in a script, a server, or the CLI.
+
+A **Mitome Definition** is a composition root, created with `defineMitome({ agent, hosts, transcripts })`. It pairs one Agent Definition with the Hosts that run it and the store that persists it. The CLI loads a Mitome Definition; an application embedding the SDK usually never needs one. A file whose default export is a Mitome Definition is a _Mitome Definition module_; a directory whose `index.ts` is such a module is a _Mitome Definition directory_.
+
+## Session
+
+A Session is one live interaction between a user and an Agent. It is process-bound: it owns Extension Resources for its lifetime and releases them when it ends. In the Promise SDK, `withSession(agent, async (session) => { ... })` opens one and releases it when the callback settles. A Session runs one Turn at a time.
+
+## Turn
+
+A Turn is the work triggered by one user Message and completed by one final Agent response. `session.runTurn(message)` starts one and returns its events as an async iterable. Returning from that iterable early interrupts the Turn; the Session stays usable, and the interrupted Turn is not committed.
+
+## Step
+
+A Step is one Model generation. A Turn that needs no Tools is one Step. When the Model calls Tools, the Turn runs another Step with the Tool results added, and repeats until the Model answers without calling a Tool.
+
+## Message
+
+A Message is one contribution to a Session: from the user, from the Agent, or from a Tool result. Messages become durable only when their Turn completes; until then they are pending.
+
+## Model Prompt
+
+The Model Prompt is the ordered set of Messages sent to the Model for one Step: the Agent's composed Instructions followed by the committed Session Messages and the current Turn so far. `session.history()` returns the committed part. Hooks such as `preStep` can transform the Model Prompt before it is sent.
+
+## Transcript
+
+A Transcript is the durable, serializable record of a Session's committed Messages. Only a completed Turn updates it, and only after the save succeeds; this is the _commit boundary_, so a failed or interrupted Turn leaves the Transcript unchanged. A Transcript can outlive its Session and seed a new one: resuming loads the Transcript, opens a fresh Session with fresh Resources, and records the old Transcript as the parent of the new one. `session.transcript()` returns the current snapshot.
+
+## Extension
+
+An Extension is a reusable unit an Agent Definition includes to add Tools, contribute Instructions, or participate in the Agent lifecycle through Hooks. It may hold a private Resource, acquired when the Session starts and released when it ends. Author one with `defineExtension`; first-party Extensions ship from `@mitome/sdk/extensions`.
+
+## Tool
+
+A Tool is a named capability the Agent can invoke to inspect or affect something outside the Model. It has a typed input schema, an optional output schema, and a handler. A _Tool call_ is one invocation of a Tool within a Step. Tools are declared through the scoped `tool` builder, inside an Extension or directly on `defineAgent({ tools })`.
+
+## Instructions
+
+Instructions are the static text an Extension contributes to the Agent's system prompt. Contributions are composed in Agent Definition order when a Session is created. `instructions("...")` and `instructionFiles({ paths })` are the first-party ways to add them.
+
+## Approval
+
+An Approval is a user decision that lets one pending Tool call execute. A Tool marked `needsApproval` pauses the Turn and emits an `approval-required` event; the Turn stays paused until the Host calls `approve()` or `deny(reason)`, or interrupts the Turn. Approval is a Host decision, made after the Model asked for the Tool. It is distinct from the `preTool` Hook, which is Extension policy that can veto a Tool call before anyone is asked. The built-in one-shot Host and the TUI approve every Tool call that passes policy.
+
+## Host
+
+A Host is a program that drives Sessions on a user's behalf: it starts Turns, presents events, and resolves Approvals. `@mitome/tui` is a Host, and so is the CLI's one-shot printer. When you embed the SDK, the callback you pass to `withSession` plays this role. A Mitome Definition declares at most one Host. Hosts are authored against `@mitome/core`.
+
+The CLI runs a Mitome Definition in a **Child Host**: a separate process that imports the Definition, its Hosts, and its dependencies. A Definition is executable TypeScript, so that process has whatever filesystem, network, and Credential access the user has; run only Definitions you trust.
+
+## Provider
+
+A Provider is a configured integration through which an Agent reaches a family of Models from one external service. `openai()` is a Provider; so is `codex()`; so is an `openaiCompatible({ id, baseUrl })` endpoint you name yourself. An Agent registers its Providers in `defineAgent({ providers })`.
+
+## Model
+
+A Model is one model available through a Provider. You select it with a **qualified Model id** in `provider/model` form, such as `openai/gpt-5.4-mini`, where the prefix must match a registered Provider's id. Each Provider publishes a **Model catalog**: the Model ids it knows about, offered as hints and editor completions. The catalog is not a closed list and does not prove your account may use a Model; any id under a registered Provider is accepted and the Provider decides at request time.
+
+The **Default Model** is the one an Agent uses when a Turn does not select another with `runTurn`'s `model` option.
+
+## Credential
+
+A Credential is a stored secret that authorizes Mitome to use one Provider for you. API-key Providers read a named environment variable; OAuth Providers store their Credential in `<config-dir>/auth.json`. The CLI collects Credentials with `mitome auth login`; an embedded application supplies them through its own process environment. Where each one lives is covered under [Configuration](/docs/configuration#credentials).

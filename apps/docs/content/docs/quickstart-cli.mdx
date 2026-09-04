@@ -1,0 +1,92 @@
+---
+title: "Quickstart: terminal"
+description: Install the CLI, create an Agent, run your first Turn, and open the interactive terminal UI.
+icon: Play
+---
+
+You need a Credential for one of the [Providers](/docs/providers) and Node.js 22.14 or later. This page uses OpenAI as its example. The `mitome` command is a compiled binary; you do not install Bun.
+
+## 1. Install the CLI
+
+```sh
+npm install -g @mitome/cli
+```
+
+## 2. Create the default Agent
+
+```sh
+mitome init
+```
+
+Choose a Provider and a Model, then authenticate: API-key Providers ask for the key at a masked prompt; OAuth Providers open a browser login. The command writes `index.ts`, `AGENTS.md`, and `package.json` into the Mitome config directory (`~/.config/mitome` on Linux and macOS; see [Configuration](/docs/configuration) for every platform), installs the dependencies, and stores the key in `<config-dir>/.env`. Nothing you already have there is overwritten.
+
+## 3. Run a Turn
+
+```sh
+mitome -p "Say hello"
+```
+
+`-p` runs one [Turn](/docs/concepts#turn) and prints the response; this is one-shot mode, and it is also what the CLI uses when its output is not a terminal. If the response arrives, your Provider, Model, and [Credential](/docs/concepts#credential) all work.
+
+## 4. Read the Mitome Definition
+
+Open `<config-dir>/index.ts`:
+
+```ts
+import { defineAgent, defineMitome, fileTranscripts } from "@mitome/sdk";
+import { instructionFiles } from "@mitome/sdk/extensions";
+import { openai } from "@mitome/providers/openai";
+
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+  extensions: [instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })],
+});
+
+export default defineMitome({
+  agent,
+  transcripts: fileTranscripts(),
+});
+```
+
+- `defineAgent` declares the Agent itself: its Providers, its Default Model as a `provider/model` id, and its Extensions. This value is what an application embeds.
+- `openai()` is the Provider chosen during `mitome init`. Pick another and the import path and the `model` prefix change; nothing else does. [Providers](/docs/providers) lists them.
+- `defineMitome` is the composition root the CLI loads: it pairs that Agent with the Hosts that run it and the store that persists its Transcripts.
+- `instructionFiles` is a first-party Extension that reads `AGENTS.md` next to the Mitome Definition module, plus any `AGENTS.md` in the directories from the Git root down to your current directory (only the current directory when there is no Git root), and adds the text to the Agent's Instructions. Edit `<config-dir>/AGENTS.md` to change how the Agent behaves.
+- `fileTranscripts()` saves each completed Turn under `<config-dir>/transcripts`. Remove the line to keep nothing on disk.
+
+## 5. Add the terminal UI
+
+The TUI is a [Host](/docs/concepts#host). Installing it is not enough; you also declare it in the Mitome Definition:
+
+```sh
+mitome add @mitome/tui
+```
+
+Then edit `<config-dir>/index.ts`:
+
+```ts
+import { tui } from "@mitome/tui";
+
+export default defineMitome({
+  agent,
+  hosts: [tui()],
+  transcripts: fileTranscripts(),
+});
+```
+
+## 6. Open a Session
+
+```sh
+mitome
+```
+
+Type a message and press `Alt-Enter` to send it. `mitome "Explain your instructions"` opens the same Session with the first Turn already submitted. The [TUI](/docs/tui) page lists every key.
+
+Keep `<config-dir>/.env` out of version control and logs; the [Configuration](/docs/configuration#credentials) page covers where each Credential lives and how it is read.
+
+## Next
+
+- [CLI](/docs/cli): every command, `--use` for other Mitome Definitions, and how the CLI runs them.
+- [Extensions](/docs/extensions): let the Agent act, not just answer.
+- [SDK quickstart](/docs/quickstart-sdk): embed the same Agent in your own code.

@@ -1,0 +1,68 @@
+---
+title: Installation
+description: Check requirements, install the packages for your use case, and choose how to scaffold an Agent.
+icon: Download
+---
+
+## Requirements
+
+| Package                                            | Runtime                                                                                                                                 |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `@mitome/sdk`, `@mitome/providers`, `@mitome/core` | Node.js 24 or later, or Bun                                                                                                             |
+| `@mitome/cli`                                      | Node.js 22.14 or later to run the npm shim; the `mitome` command itself is a compiled binary that embeds Bun, so you do not install Bun |
+| `@mitome/tui`                                      | Bun 1.3.14 or later; the `mitome` binary provides it when you run the TUI through the CLI                                               |
+| `create-mitome`                                    | Node.js 24.2 or later                                                                                                                   |
+
+Mitome is published as native ES modules. All packages are pre-release; expect breaking changes between releases.
+
+## Install for your use case
+
+Embed an Agent in an application:
+
+```sh
+npm install @mitome/sdk @mitome/providers
+```
+
+Run Agents from a terminal:
+
+```sh
+npm install -g @mitome/cli
+```
+
+The Provider package has no root import. Import the Provider you use from its own path, such as `@mitome/providers/openai`; [Providers](/docs/providers) lists every path.
+
+Applications that already run on Effect must install the exact `effect` version `@mitome/sdk` pins, to avoid two copies of the runtime. Check it with `npm ls effect` after installing the SDK, then install exactly that version; see [Effect-native API](/docs/effect#install).
+
+## Two ways to scaffold
+
+Both scaffolders generate the same Agent Definition. They differ in where it lives.
+
+**`mitome init`** creates the _default_ Mitome Definition under the Mitome config directory (`<config-dir>/index.ts`, see [Configuration](/docs/configuration)). The CLI loads it whenever you run `mitome` without `--use`. It writes three files, `index.ts`, `AGENTS.md`, and `package.json`, installs the dependencies, and runs Provider authentication. Existing files are never overwritten.
+
+**`npm create mitome <directory>`** creates a standalone project you own and version: `package.json`, `index.ts`, `instructions.md`, `tsconfig.json`, `.gitignore`, and a `README.md`. It also asks whether you want the Promise-first or the Effect-native flavor. Run it from the CLI with `mitome "hi" --use <directory>`, or import its `index.ts` into your application.
+
+With the OpenAI Provider chosen, the generated `index.ts` looks like this:
+
+```ts
+import { defineAgent, defineMitome, fileTranscripts } from "@mitome/sdk";
+import { instructionFiles } from "@mitome/sdk/extensions";
+import { openai } from "@mitome/providers/openai";
+
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+  extensions: [instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })],
+});
+
+export default defineMitome({
+  agent,
+  transcripts: fileTranscripts(),
+});
+```
+
+The standalone project reads `./instructions.md` instead of `./AGENTS.md`. The [CLI quickstart](/docs/quickstart-cli) explains each line.
+
+## Next
+
+- [CLI quickstart](/docs/quickstart-cli): run your first Turn from a terminal.
+- [SDK quickstart](/docs/quickstart-sdk): run your first Turn from your own code.
