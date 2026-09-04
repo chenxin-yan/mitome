@@ -3,6 +3,7 @@ import { Deferred, Effect, Fiber, Layer, Logger, Schema, Stream } from "effect";
 import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
 import {
   type AgentDefinition,
+  type ExtensionHooks,
   createSession,
   makeProvider,
   type TurnEvent,
@@ -55,7 +56,7 @@ const start = (definition: AgentDefinition) =>
     return { events, pending, turn };
   });
 
-type PreTool = NonNullable<NonNullable<AgentDefinition["extensions"][number]["hooks"]>["preTool"]>;
+type PreTool = NonNullable<ExtensionHooks["preTool"]>;
 
 const definition = (preTool?: PreTool, needsApproval: Tool.Any["needsApproval"] = true) => {
   const fixture = approvalModel();

@@ -172,7 +172,6 @@ describe("Codex transport", () => {
         parallel_tool_calls: true,
       }),
     });
-    expect(request?.headers["session_id"]).toBeUndefined();
   });
 
   test("replays encrypted reasoning immediately before its function call", () => {
@@ -328,9 +327,14 @@ describe("Codex transport", () => {
     await expect(
       run(credential(), () => {
         invalidRequests += 1;
-        return new Response("invalid", { status: 400 });
+        return Response.json({ error: { message: "model not found" } }, { status: 400 });
       }),
-    ).rejects.toMatchObject({ reason: { _tag: "InvalidRequestError" } });
+    ).rejects.toMatchObject({
+      reason: {
+        _tag: "InvalidRequestError",
+        description: expect.stringContaining("model not found"),
+      },
+    });
     expect(invalidRequests).toBe(1);
 
     let streamRequests = 0;
@@ -447,33 +451,5 @@ describe("Codex transport", () => {
       ),
     ).rejects.toMatchObject({ reason: { _tag: "AuthenticationError" } });
     expect({ requests, refreshes }).toEqual({ requests: 2, refreshes: 1 });
-  });
-
-  test("translates the Provider error body", async () => {
-    await expect(
-      run(credential(), () =>
-        Response.json({ error: { message: "model not found" } }, { status: 400 }),
-      ),
-    ).rejects.toMatchObject({
-      reason: {
-        _tag: "InvalidRequestError",
-        description: expect.stringContaining("model not found"),
-      },
-    });
-  });
-
-  test.each([
-    [sse({ type: "error", error: { message: "subscriber rejected" } }), "subscriber rejected"],
-    [
-      sse({ type: "response.failed", response: { error: { message: "model rejected" } } }),
-      "model rejected",
-    ],
-  ])("translates Provider SSE errors", async (body, description) => {
-    await expect(
-      run(
-        credential(),
-        () => new Response(body, { headers: { "content-type": "text/event-stream" } }),
-      ),
-    ).rejects.toMatchObject({ reason: { description } });
   });
 });

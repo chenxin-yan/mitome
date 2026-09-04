@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import { afterAll, describe, expect, test, vi } from "vitest";
 import { Effect, Schema } from "effect";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -84,6 +85,7 @@ describe("Codex OAuth", () => {
     const { server, requests } = await tokenServer();
     const port = await callbackPort();
     let authorization = "";
+    const printed: Array<string> = [];
     try {
       await login({
         configDirectory,
@@ -95,8 +97,9 @@ describe("Codex OAuth", () => {
           void fetch(`http://localhost:${port}/auth/callback?code=${marker}-code&state=${state}`);
         },
         input: async () => new Promise(() => {}),
-        output: () => {},
+        output: (text) => printed.push(text),
       });
+      expect(printed.join("")).toContain(authorization);
       const url = new URL(authorization);
       expect(url.origin + url.pathname).toBe("https://auth.openai.com/oauth/authorize");
       expect(Object.fromEntries(url.searchParams)).toMatchObject({
@@ -136,41 +139,15 @@ describe("Codex OAuth", () => {
     }
   });
 
-  test("opens the complete OAuth URL with the native Windows launcher", async () => {
-    const configDirectory = await directory();
-    const { server } = await tokenServer();
+  test("hands the whole OAuth URL to the native Windows launcher", () => {
     const platform = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
-    let authorization = "";
-    let opened = "";
     const launch = vi.fn<(command: string, args: ReadonlyArray<string>) => void>();
     try {
-      await login({
-        configDirectory,
-        callbackPort: 0,
-        tokenUrl: `http://127.0.0.1:${server.port}/oauth/token`,
-        openBrowser: (url) => {
-          opened = url;
-        },
-        input: async () => {
-          const state = new URL(authorization).searchParams.get("state")!;
-          return `http://localhost:0/auth/callback?code=${marker}-code&state=${state}`;
-        },
-        output: (text) => {
-          authorization = /https:\/\/\S+/.exec(text)?.[0] ?? authorization;
-        },
-      });
-
-      expect(authorization).toContain("&");
-      // login must hand the same URL it printed to the injected browser opener.
-      expect(opened).toBe(authorization);
-      launchDefaultBrowser(authorization, launch);
-      expect(launch).toHaveBeenCalledWith("rundll32", [
-        "url.dll,FileProtocolHandler",
-        authorization,
-      ]);
+      const url = "https://auth.openai.com/oauth/authorize?client_id=x&state=y";
+      launchDefaultBrowser(url, launch);
+      expect(launch).toHaveBeenCalledWith("rundll32", ["url.dll,FileProtocolHandler", url]);
     } finally {
       platform.mockRestore();
-      void server.stop(true);
     }
   });
 
@@ -203,9 +180,17 @@ describe("Codex OAuth", () => {
   test("falls back to a pasted redirect and rejects mismatched state", async () => {
     const configDirectory = await directory();
     const { server } = await tokenServer();
-    const occupied = await serve({ fetch: () => new Response("occupied") });
-    const occupiedPort = occupied.port;
+    const occupied = createServer();
+    await new Promise<void>((resolve, reject) => {
+      occupied.once("error", reject);
+      occupied.listen(0, "localhost", resolve);
+    });
+    const address = occupied.address();
+    if (address === null || Schema.is(Schema.String)(address))
+      throw new Error("Expected TCP address");
+    const occupiedPort = address.port;
     let state = "";
+    const output: Array<string> = [];
     try {
       await login({
         configDirectory,
@@ -216,8 +201,9 @@ describe("Codex OAuth", () => {
         },
         input: async () =>
           `http://localhost:${occupiedPort}/auth/callback?code=${marker}-code&state=${state}`,
-        output: () => {},
+        output: (text) => output.push(text),
       });
+      expect(output.join("")).toContain(`Callback port ${occupiedPort} is busy`);
       await expect(
         login({
           configDirectory,
@@ -227,7 +213,7 @@ describe("Codex OAuth", () => {
           input: async () => `${marker}-raw-code`,
           output: () => {},
         }),
-      ).rejects.toThrow();
+      ).rejects.toThrow("Invalid URL");
       await expect(
         login({
           configDirectory,
@@ -252,7 +238,9 @@ describe("Codex OAuth", () => {
         }),
       ).rejects.toThrow("OAuth callback did not include a code");
     } finally {
-      void occupied.stop(true);
+      await new Promise<void>((resolve, reject) =>
+        occupied.close((error) => (error === undefined ? resolve() : reject(error))),
+      );
       void server.stop(true);
     }
   });

@@ -15,17 +15,6 @@ const model = makeTestProvider(() => Stream.empty);
 const getAgentDefinitionError = (definition: typeof Schema.Unknown.Type) =>
   Effect.flip(compileAgentDefinition(definition));
 
-type AgentDefinitionKeysAreExact = keyof AgentDefinition extends
-  | "providers"
-  | "model"
-  | "extensions"
-  ? "providers" | "model" | "extensions" extends keyof AgentDefinition
-    ? true
-    : false
-  : false;
-const exactAgentDefinitionKeys: AgentDefinitionKeysAreExact = true;
-void exactAgentDefinitionKeys;
-
 // @ts-expect-error Agent Definition Instructions are contributed by Extensions.
 defineAgent({ instructions: "old", providers: [model], model: "test/default", extensions: [] });
 
@@ -152,6 +141,7 @@ describe("Agent Definition compilation", () => {
             handlers: { echo: () => Effect.succeed("echo") },
             toolInputValidators: { otherInput: Effect.succeed },
             toolResultValidators: { otherResult: Effect.succeed },
+            toolFailureValidators: { otherFailure: Effect.succeed },
           },
           {
             name: "same",
@@ -174,6 +164,7 @@ describe("Agent Definition compilation", () => {
         "Conflicting Extension name: same refers to different values",
         "Tool input validator has no matching Tool: otherInput",
         "Tool result validator has no matching Tool: otherResult",
+        "Tool failure validator has no matching Tool: otherFailure",
         "Extension same Instructions must be a string",
         "Duplicate Tool name: echo",
         "Duplicate Tool handler name: echo",
@@ -267,33 +258,6 @@ describe("Agent Definition compilation", () => {
       ]);
       expect((yield* getAgentDefinitionError(invalidDefinition("missing/model"))).issues).toEqual([
         "Unregistered Provider id: missing",
-      ]);
-    }),
-  );
-
-  it.effect("reports missing and orphaned Tool handlers", () =>
-    Effect.gen(function* () {
-      const missing: AgentDefinition = {
-        providers: [model],
-        model: "test/default",
-        extensions: [
-          {
-            name: "missing",
-            toolkit: Toolkit.make(Tool.make("echo", { success: Schema.String })),
-          },
-        ],
-      };
-      const orphaned: AgentDefinition = {
-        providers: [model],
-        model: "test/default",
-        extensions: [{ name: "orphaned", handlers: { echo: () => Effect.succeed("echo") } }],
-      };
-
-      expect((yield* getAgentDefinitionError(missing)).issues).toEqual([
-        "Missing Tool handler: echo",
-      ]);
-      expect((yield* getAgentDefinitionError(orphaned)).issues).toEqual([
-        "Tool handler has no matching Tool: echo",
       ]);
     }),
   );

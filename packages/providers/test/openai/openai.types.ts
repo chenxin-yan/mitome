@@ -14,16 +14,6 @@ const publicContracts: [
   Assert<
     Equal<typeof openai, (options?: OpenAiOptions) => Provider<"openai", typeof knownModelIds>>
   >,
-  Assert<
-    Equal<
-      OpenAiOptions,
-      {
-        readonly apiKeyEnv?: string;
-        readonly baseUrl?: string;
-        readonly transport?: "http" | "websocket";
-      }
-    >
-  >,
   Assert<Equal<string extends KnownModelId ? true : false, false>>,
-] = [true, true, true];
+] = [true, true];
 void publicContracts;

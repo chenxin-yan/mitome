@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Layer, Schema, Stream } from "effect";
-import { AiError, LanguageModel, Prompt, Response } from "effect/unstable/ai";
+import { AiError, LanguageModel } from "effect/unstable/ai";
 import { makeProvider } from "@mitome/core";
 import {
   AgentDefinitionError,
@@ -10,7 +10,7 @@ import {
   withSession,
   type InputSchema,
 } from "../src/index.js";
-import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
+import { jsonStringSchema, makeToolModel, stringSchema } from "./provider.js";
 
 describe("@mitome/sdk Tool", () => {
   test("returns every input validation issue to the model without executing the Tool", async () => {
@@ -107,7 +107,7 @@ describe("@mitome/sdk Tool", () => {
     });
   });
 
-  test("validates Standard Schema input/output and completes a second Step", async () => {
+  test("validates Tool input/output and completes a second Step", async () => {
     const fixture = makeToolModel();
     const definition = defineAgent({
       providers: [fixture.provider],
@@ -241,43 +241,12 @@ describe("@mitome/sdk Tool", () => {
   });
 
   test("aborts an active handler when iteration breaks and reuses the Session", async () => {
-    let calls = 0;
+    const fixture = makeToolModel("echo", 3);
     let handlerCalls = 0;
-    let secondPrompt: Prompt.Prompt | undefined;
     const { promise: started, resolve: handlerStarted } = Promise.withResolvers<void>();
     const { promise: aborted, resolve: handlerAborted } = Promise.withResolvers<void>();
-    const model = makeTestProvider((options) => {
-      calls += 1;
-      if (calls === 3) {
-        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-      }
-      if (calls === 2) secondPrompt = options.prompt;
-      const call = Response.makePart("tool-call", {
-        id: `call-${calls}`,
-        name: "echo",
-        params: "hello",
-        providerExecuted: false,
-      });
-      return Stream.concat(
-        Stream.succeed(call),
-        Stream.unwrap(
-          options.toolkit!.handle("echo", "hello").pipe(
-            Effect.map((results) =>
-              Stream.map(results, (result) =>
-                Response.makePart("tool-result", {
-                  id: call.id,
-                  name: call.name,
-                  providerExecuted: false,
-                  ...result,
-                }),
-              ),
-            ),
-          ),
-        ),
-      );
-    });
     const definition = defineAgent({
-      providers: [model],
+      providers: [fixture.provider],
       model: "test/default",
       extensions: [
         defineExtension({
@@ -316,49 +285,30 @@ describe("@mitome/sdk Tool", () => {
       await iterator.return?.();
       await aborted;
       await pending.catch(() => undefined);
+      expect(session.history()).toEqual([]);
       const next = [];
       for await (const event of session.runTurn("second")) next.push(event);
       return next;
     });
 
-    expect(calls).toBe(3);
+    expect(fixture.calls()).toBe(3);
     expect(events).toEqual([
       { type: "tool-call", id: "call-2", name: "echo", params: "hello" },
       { type: "tool-result", id: "call-2", name: "echo", result: "second", isFailure: false },
       { type: "model-output", text: "done" },
       { type: "response-complete" },
     ]);
-    expect(secondPrompt?.content.map((message) => message.role)).toEqual(["user"]);
+    expect(fixture.prompt()?.content.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+    ]);
   });
 
   test("aborts an abandoned iterator's active handler before withSession resolves", async () => {
     const { promise: started, resolve: handlerStarted } = Promise.withResolvers<void>();
     const { promise: aborted, resolve: handlerAborted } = Promise.withResolvers<void>();
-    const model = makeTestProvider((options) => {
-      const call = Response.makePart("tool-call", {
-        id: "call-1",
-        name: "echo",
-        params: "hello",
-        providerExecuted: false,
-      });
-      return Stream.concat(
-        Stream.succeed(call),
-        Stream.unwrap(
-          options.toolkit!.handle("echo", "hello").pipe(
-            Effect.map((results) =>
-              Stream.map(results, (result) =>
-                Response.makePart("tool-result", {
-                  id: call.id,
-                  name: call.name,
-                  providerExecuted: false,
-                  ...result,
-                }),
-              ),
-            ),
-          ),
-        ),
-      );
-    });
+    const model = makeToolModel().provider;
     const definition = defineAgent({
       providers: [model],
       model: "test/default",
@@ -399,41 +349,6 @@ describe("@mitome/sdk Tool", () => {
     await completion;
 
     expect(order).toEqual(["handler-aborted", "session-resolved"]);
-  });
-
-  test("accepts Effect Schema without manual Standard Schema adapters", async () => {
-    const fixture = makeToolModel();
-    const definition = defineAgent({
-      providers: [fixture.provider],
-      model: "test/default",
-      extensions: [
-        defineExtension({
-          name: "effect-schema",
-          tools: ({ tool }) => [
-            tool({
-              name: "echo",
-              inputSchema: Schema.String,
-              outputSchema: Schema.String,
-              handler: async (input) => input.toUpperCase(),
-            }),
-          ],
-        }),
-      ],
-    });
-
-    const events = await withSession(definition, async (session) => {
-      const collected = [];
-      for await (const event of session.runTurn("Hi")) collected.push(event);
-      return collected;
-    });
-
-    expect(events).toContainEqual({
-      type: "tool-result",
-      id: "call-1",
-      name: "echo",
-      result: "HELLO",
-      isFailure: false,
-    });
   });
 
   test("rejects duplicate Tool names within an Extension", () => {

@@ -164,7 +164,7 @@ describe("TUI shell", () => {
     expect(frame).toContain("Type a message");
   });
 
-  test("maps Escape to Turn interruption and restores the message", async () => {
+  test("maps Escape to Turn interruption and returns the input to idle", async () => {
     await renderShell("cancel", [Stream.never]);
 
     setup!.mockInput.pressEnter({ meta: true });

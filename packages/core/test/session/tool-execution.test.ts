@@ -2,7 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Predicate, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import type { CompiledAgent } from "../../src/agent.js";
-import type { Extension, ToolInput, ToolInputValidator } from "../../src/extension.js";
+import type {
+  Extension,
+  ExtensionHooks,
+  ToolInput,
+  ToolInputValidator,
+} from "../../src/extension.js";
 import {
   type ApprovalRequestOutcome,
   type ToolExecution,
@@ -37,11 +42,7 @@ const request = (execution: ToolExecution, params: ToolInput, toolCallId = "call
 const makeFixture = (options?: {
   readonly needsApproval?: Tool.NeedsApproval<any>;
   readonly inputValidator?: ToolInputValidator;
-  readonly preTool?: Extension["hooks"] extends infer Hooks
-    ? Hooks extends { readonly preTool?: infer PreTool }
-      ? PreTool
-      : never
-    : never;
+  readonly preTool?: ExtensionHooks["preTool"];
 }) => {
   let handlerCalls = 0;
   let postCalls = 0;

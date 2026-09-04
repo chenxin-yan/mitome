@@ -510,6 +510,7 @@ describe("createSession Tool Turn", () => {
     Effect.gen(function* () {
       const fixture = makeToolModel();
       let validatorCalls = 0;
+      const order: Array<string> = [];
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),
         success: Schema.String,
@@ -524,13 +525,24 @@ describe("createSession Tool Turn", () => {
             name: "transform",
             hooks: {
               postTool: ({ isFailure }) =>
-                Effect.succeed({ code: isFailure ? "transformed" : "unexpected" }),
+                Effect.sync(() => {
+                  order.push("postTool");
+                  return { code: isFailure ? "transformed" : "unexpected" };
+                }),
             },
           },
           {
             name: "echo",
             toolkit: Toolkit.make(echo),
             handlers: { echo: () => Effect.fail({ code: "expected" }) },
+            toolFailureValidators: {
+              echo: (failure) =>
+                Effect.sync(() => {
+                  order.push("failureValidator");
+                  expect(failure).toEqual({ code: "transformed" });
+                  return failure;
+                }),
+            },
             toolResultValidators: {
               echo: (result) =>
                 Effect.sync(() => {
@@ -553,6 +565,7 @@ describe("createSession Tool Turn", () => {
         isFailure: true,
       });
       expect(validatorCalls).toBe(0);
+      expect(order).toEqual(["postTool", "failureValidator"]);
       expect(events.at(-1)).toEqual({ type: "response-complete" });
       expect(fixture.calls()).toBe(2);
     }),

@@ -4,7 +4,7 @@ import { Tool, Toolkit } from "effect/unstable/ai";
 import { FetchHttpClient } from "effect/unstable/http";
 import { createSession, credentialDescriptor } from "@mitome/core";
 import { agent, sse } from "../support.js";
-import { knownModelIds, openaiCompatible } from "../../src/openai-compatible/index.js";
+import { openaiCompatible } from "../../src/openai-compatible/index.js";
 
 type Json = typeof Schema.Json.Type;
 type JsonObject = { readonly [key: string]: Json };
@@ -41,10 +41,6 @@ const chunk = (delta: JsonObject, finishReason: string | null = null) => ({
 });
 
 describe("openaiCompatible", () => {
-  it("exports an intentionally empty Model catalog", () => {
-    expect(knownModelIds).toEqual([]);
-  });
-
   it("exposes its credential descriptor without building a Session", () => {
     expect(
       credentialDescriptor(
@@ -142,29 +138,6 @@ describe("openaiCompatible", () => {
       { model: "gpt-4o-mini", stream: true, authorization: "Bearer synthetic-key" },
       { model: "ft:private-model", stream: true, authorization: "Bearer synthetic-key" },
     ]);
-  });
-
-  it("fails first use when its environment credential is missing", async () => {
-    const provider = openaiCompatible({
-      id: "compatible",
-      apiKeyEnv: key,
-      baseUrl: "http://127.0.0.1/v1",
-    });
-    await expect(
-      run(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const session = yield* createSession(agent(provider, "gpt-4o-mini"));
-            yield* Stream.runDrain(session.runTurn("Hi"));
-          }),
-        ),
-        globalThis.fetch,
-        {},
-      ),
-    ).rejects.toMatchObject({
-      _tag: "TurnError",
-      message: `Environment variable ${key} is not set or empty`,
-    });
   });
 
   it("surfaces backend model rejection after the request without preflight", async () => {

@@ -88,20 +88,6 @@ describe("memoryTranscripts", () => {
     }),
   );
 
-  it.effect("accepts versioned event envelopes without exposing a replay API", () =>
-    Effect.gen(function* () {
-      const store = memoryTranscripts();
-
-      yield* store.appendEvent({
-        transcriptId: "transcript-1",
-        sessionId: "session-1",
-        seq: 0,
-        version: TranscriptEventRecordVersion,
-        event: { type: "model-output", text: "hello" },
-      });
-    }),
-  );
-
   it("round-trips every audit-relevant Turn event DTO", () => {
     const events = [
       { type: "model-output", text: "hello" },

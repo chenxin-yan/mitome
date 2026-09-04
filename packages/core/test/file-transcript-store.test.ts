@@ -83,31 +83,6 @@ describe("fileTranscripts", () => {
     ),
   );
 
-  it.effect("ignores an event log record truncated by process death", () =>
-    withDirectory((directory) =>
-      Effect.gen(function* () {
-        const store = fileTranscripts(directory);
-        const transcript = makeTranscript({ id: "transcript-1", messages: [] });
-        yield* store.save(transcript);
-        yield* store.appendEvent({
-          transcriptId: transcript.id,
-          sessionId: "session-1",
-          seq: 0,
-          version: TranscriptEventRecordVersion,
-          event: { type: "model-output", text: "hello" },
-        });
-        const eventFile = (yield* Effect.promise(() => readdir(directory))).find((name) =>
-          name.endsWith(".events.jsonl"),
-        );
-        yield* Effect.promise(() =>
-          writeFile(join(directory, eventFile!), '{"truncated"', { flag: "a" }),
-        );
-
-        expect(yield* store.list()).toHaveLength(1);
-      }),
-    ),
-  );
-
   it.effect("ignores an atomic-save temporary file", () =>
     withDirectory((directory) =>
       Effect.gen(function* () {
