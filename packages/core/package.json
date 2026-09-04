@@ -31,16 +31,15 @@
     "lint:fix": "oxlint --fix .",
     "test": "vitest run"
   },
+  "dependencies": {
+    "effect": "catalog:"
+  },
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@mitome/config": "workspace:*",
     "@types/node": "catalog:",
-    "effect": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
-  },
-  "peerDependencies": {
-    "effect": "4.0.0-rc.108"
   },
   "engines": {
     "node": ">=24"

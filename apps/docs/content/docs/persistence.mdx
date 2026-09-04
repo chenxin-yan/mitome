@@ -50,56 +50,43 @@ Each emitted Turn event is also appended as a versioned, serializable record. Th
 
 ## Custom `TranscriptStore`
 
-The store interface has exactly four Effect-returning methods:
+The Promise-first store interface has exactly four methods:
 
 ```ts
 interface TranscriptStore {
-  save(transcript: Transcript): Effect.Effect<void, StoreError>;
-  load(id: TranscriptId): Effect.Effect<Transcript, StoreError | TranscriptNotFound>;
-  list(): Effect.Effect<ReadonlyArray<TranscriptSummary>, StoreError>;
-  appendEvent(record: TranscriptEventRecord): Effect.Effect<void, StoreError>;
+  save(transcript: Transcript): Promise<void>;
+  load(id: TranscriptId): Promise<Transcript | null>;
+  list(): Promise<ReadonlyArray<TranscriptSummary>>;
+  appendEvent(record: TranscriptEventRecord): Promise<void>;
 }
 ```
 
 A database adapter can implement that interface directly. Keep driver dependencies in its own package and decode stored values with the exported schemas at the database trust boundary:
 
 ```ts
-import { Effect } from "effect";
-import {
-  StoreError,
-  TranscriptNotFound,
-  type Transcript,
-  type TranscriptEventRecord,
-  type TranscriptId,
-  type TranscriptStore,
-  type TranscriptSummary,
+import type {
+  Transcript,
+  TranscriptEventRecord,
+  TranscriptStore,
+  TranscriptSummary,
 } from "@mitome/sdk";
 
 declare const db: {
   save(value: Transcript): Promise<void>;
-  load(id: string): Promise<Transcript | undefined>;
+  load(id: string): Promise<Transcript | null>;
   list(): Promise<ReadonlyArray<TranscriptSummary>>;
   append(record: TranscriptEventRecord): Promise<void>;
 };
 
-const attempt = <A>(run: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: run,
-    catch: (cause) => new StoreError({ message: "Transcript database failed", cause }),
-  });
-
 export const transcripts: TranscriptStore = {
-  save: (value) => attempt(() => db.save(value)),
-  load: (id: TranscriptId) =>
-    attempt(() => db.load(id)).pipe(
-      Effect.flatMap((value) =>
-        value === undefined ? Effect.fail(new TranscriptNotFound({ id })) : Effect.succeed(value),
-      ),
-    ),
-  list: () => attempt(() => db.list()),
-  appendEvent: (record) => attempt(() => db.append(record)),
+  save: (value) => db.save(value),
+  load: (id) => db.load(id),
+  list: () => db.list(),
+  appendEvent: (record) => db.append(record),
 };
 ```
+
+Return `null` when `load()` misses. Mitome turns that miss into `TranscriptNotFound`; rejected store Promises become `StoreError`. Effect-native adapters instead implement the canonical Effect contract exported from `@mitome/sdk/effect`.
 
 `list()` returns `TranscriptSummary` rows with id, lineage, timestamps, message count, and a single-line preview. A production adapter owns its concurrency and transactional policy; Mitome defines concurrent resumes as independent forks rather than shared live state.
 

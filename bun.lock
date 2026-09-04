@@ -120,16 +120,15 @@
     "packages/core": {
       "name": "@mitome/core",
       "version": "0.0.0",
+      "dependencies": {
+        "effect": "4.0.0-rc.108",
+      },
       "devDependencies": {
         "@effect/vitest": "catalog:",
         "@mitome/config": "workspace:*",
         "@types/node": "catalog:",
-        "effect": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
-      },
-      "peerDependencies": {
-        "effect": "4.0.0-rc.108",
       },
     },
     "packages/create-mitome": {
@@ -151,6 +150,7 @@
       "dependencies": {
         "@effect/ai-openai": "catalog:",
         "@effect/ai-openai-compat": "catalog:",
+        "effect": "4.0.0-rc.108",
       },
       "devDependencies": {
         "@effect/vitest": "catalog:",
@@ -158,14 +158,12 @@
         "@mitome/core": "workspace:*",
         "@types/node": "catalog:",
         "@types/ws": "^8.18.1",
-        "effect": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
         "ws": "^8.21.3",
       },
       "peerDependencies": {
         "@mitome/core": "workspace:*",
-        "effect": "4.0.0-rc.108",
       },
     },
     "packages/sdk": {
@@ -173,18 +171,17 @@
       "version": "0.0.0",
       "dependencies": {
         "@standard-schema/spec": "^1.1.0",
+        "effect": "4.0.0-rc.108",
       },
       "devDependencies": {
         "@mitome/config": "workspace:*",
         "@mitome/core": "workspace:*",
         "@types/node": "catalog:",
-        "effect": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
       },
       "peerDependencies": {
         "@mitome/core": "workspace:*",
-        "effect": "4.0.0-rc.108",
       },
     },
     "packages/tui": {
@@ -193,18 +190,17 @@
       "dependencies": {
         "@opentui/core": "0.5.8",
         "@opentui/solid": "0.5.8",
+        "effect": "4.0.0-rc.108",
         "solid-js": "1.9.15",
       },
       "devDependencies": {
         "@mitome/config": "workspace:*",
         "@mitome/core": "workspace:*",
         "@types/bun": "catalog:",
-        "effect": "catalog:",
         "typescript": "catalog:",
       },
       "peerDependencies": {
         "@mitome/core": "workspace:*",
-        "effect": "4.0.0-rc.108",
       },
     },
   },

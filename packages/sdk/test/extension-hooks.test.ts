@@ -46,6 +46,11 @@ describe("@mitome/sdk Extension Hooks", () => {
         },
         stepEnd: async (_prompt, { responseParts, signal }) => {
           signals.push(signal.aborted);
+          expect(
+            responseParts.every(
+              (part) => !("~effect/ai/Content/Part" in part) && !("encodedResult" in part),
+            ),
+          ).toBe(true);
           responsePartTypes.push(responseParts.map((part) => part.type));
           log.push("sdk:step-end");
         },
@@ -101,6 +106,37 @@ describe("@mitome/sdk Extension Hooks", () => {
       result: "hello!",
       isFailure: false,
     });
+  });
+
+  test("round-trips a plain SDK Prompt through pre-Step Hooks", async () => {
+    let seen = "";
+    const agent = defineAgent({
+      providers: [
+        makeTestProvider(({ prompt }) => {
+          const message = prompt.content.at(-1);
+          const part = message?.role === "user" ? message.content[0] : undefined;
+          seen = part?.type === "text" ? part.text : "";
+          return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
+        }),
+      ],
+      model: "test/default",
+      extensions: [
+        defineExtension({
+          hooks: {
+            preStep: async (prompt) => ({
+              content: prompt.content.map((message) =>
+                message.role === "user"
+                  ? { ...message, content: [{ type: "text", text: "changed" }] }
+                  : message,
+              ),
+            }),
+          },
+        }),
+      ],
+    });
+
+    await withSession(agent, (session) => Array.fromAsync(session.runTurn("original")));
+    expect(seen).toBe("changed");
   });
 
   test("rejects invalid pre-Step output before calling the model", async () => {

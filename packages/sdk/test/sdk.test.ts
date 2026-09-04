@@ -55,7 +55,7 @@ describe("@mitome/sdk", () => {
     );
   });
 
-  test("exposes synchronous Core Session history", async () => {
+  test("exposes synchronous plain Session history", async () => {
     const definition = defineAgent({
       providers: [
         makeTestProvider(() =>
@@ -73,7 +73,9 @@ describe("@mitome/sdk", () => {
     const roles = await withSession(definition, async (session) => {
       expect(session.history()).toEqual([]);
       await Array.fromAsync(session.runTurn("Hi"));
-      return session.history().map((message) => message.role);
+      const history = session.history();
+      expect(JSON.stringify(history)).not.toContain("~effect/ai/Prompt");
+      return history.map((message) => message.role);
     });
 
     expect(roles).toEqual(["user", "assistant"]);

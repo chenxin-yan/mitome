@@ -95,7 +95,7 @@ try {
       name: "release-fixture",
       private: true,
       dependencies: { ...dependencies, effect: effectArchive },
-      overrides: dependencies,
+      overrides: { ...dependencies, effect: effectArchive },
     }),
   );
   const effectDirectory = join(temporaryDirectory, "vendor", "effect");
@@ -125,11 +125,11 @@ try {
       throw new Error(`${name} tarball retains a workspace-only dependency protocol.`);
     }
     if (["core", "sdk", "providers"].includes(name)) {
-      if (manifest.dependencies?.effect !== undefined) {
-        throw new Error(`${name} tarball installs Effect instead of requiring its peer.`);
+      if (manifest.dependencies?.effect !== effectVersion) {
+        throw new Error(`${name} tarball does not install exact Effect ${effectVersion}.`);
       }
-      if (manifest.peerDependencies?.effect !== effectVersion) {
-        throw new Error(`${name} tarball does not require exact Effect ${effectVersion}.`);
+      if (manifest.peerDependencies?.effect !== undefined) {
+        throw new Error(`${name} tarball still declares Effect as a peer dependency.`);
       }
     }
   }

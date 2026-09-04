@@ -6,10 +6,10 @@ icon: Workflow
 
 Use `@mitome/sdk/effect` when your application already owns an Effect runtime or needs Layer-based Extension composition. It is the supported Effect-native facade over Mitome's Core runtime; do not import the runtime package directly.
 
-Install Effect beside the SDK and Providers:
+The SDK installs its exact Effect RC dependency for Promise-first users. Effect-native applications must use that same pinned version to avoid runtime identity and type skew:
 
 ```sh
-npm install @mitome/sdk @mitome/providers effect
+npm install @mitome/sdk @mitome/providers effect@4.0.0-rc.108
 ```
 
 ## Scoped Session
@@ -41,7 +41,7 @@ await Effect.runPromise(program);
 
 `createSession` requires a `Scope`; closing it runs Session-end Hooks and releases Extension Resources. `session.runTurn()` is an Effect `Stream` whose typed failure channel includes busy/released Session errors, `StoreError`, and `TurnError`. Consume or interrupt that Stream exactly once per Turn.
 
-Pass `{ transcripts }` or `{ transcript }` to `createSession` using the same adapters and schemas documented under [Transcript persistence](/docs/persistence).
+Pass `{ transcripts }` or `{ transcript }` to `createSession`. The Effect surface's `TranscriptStore` is the canonical Effect-returning contract; the Promise adapter shown under [Transcript persistence](/docs/persistence) is for the root SDK entry point.
 
 ## Effect-native Extensions
 

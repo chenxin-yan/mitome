@@ -1,5 +1,9 @@
-import { Cause, Effect, Exit, Scope, Stream } from "effect";
+import { Cause, Effect, Exit, Schema, Scope, Stream } from "effect";
+import { Prompt as AiPrompt } from "effect/unstable/ai";
 import { createSession } from "@mitome/core";
+import type { FinishReason, PromptMessage, Usage } from "./models.js";
+import { toCoreTranscriptStore } from "./transcript-store.js";
+import type { TranscriptStore } from "./transcript-store.js";
 import type {
   AgentDefinition,
   AnyProvider,
@@ -7,24 +11,29 @@ import type {
   Session as CoreSession,
   Transcript,
   TranscriptId,
-  TranscriptStore,
   TurnEvent as CoreTurnEvent,
 } from "@mitome/core";
 
 type CoreApproval = Extract<CoreTurnEvent, { type: "approval-required" }>;
+type CoreResponseComplete = Extract<CoreTurnEvent, { type: "response-complete" }>;
 export type TurnEvent =
-  | Exclude<CoreTurnEvent, CoreApproval>
+  | Exclude<CoreTurnEvent, CoreApproval | CoreResponseComplete>
   | (Omit<CoreApproval, "approve" | "deny"> & {
       readonly approve: () => Promise<void>;
       readonly deny: (reason?: string) => Promise<void>;
-    });
+    })
+  | {
+      readonly type: "response-complete";
+      readonly finishReason?: FinishReason | undefined;
+      readonly usage?: Usage | undefined;
+    };
 
 export interface Session<
   Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
 > {
   /** The returned iterable is single-use; requesting a second iterator throws. */
   readonly runTurn: (message: string, options?: TurnOptions<Providers>) => AsyncIterable<TurnEvent>;
-  readonly history: CoreSession<Providers>["history"];
+  readonly history: () => ReadonlyArray<PromptMessage>;
   readonly transcript: CoreSession<Providers>["transcript"];
 }
 
@@ -44,7 +53,22 @@ class CallbackFailure {
   constructor(readonly cause: unknown) {}
 }
 
+const encodeMessages = Schema.encodeSync(Schema.Array(AiPrompt.Message));
+
 const toSdkEvent = (event: CoreTurnEvent): TurnEvent => {
+  if (event.type === "response-complete") {
+    return {
+      type: event.type,
+      finishReason: event.finishReason,
+      usage:
+        event.usage === undefined
+          ? undefined
+          : {
+              inputTokens: { ...event.usage.inputTokens },
+              outputTokens: { ...event.usage.outputTokens },
+            },
+    };
+  }
   if (event.type !== "approval-required") return event;
   return {
     ...event,
@@ -126,6 +150,8 @@ export function withSession<const Definition extends AgentDefinition, A>(
     | [options: SessionOptions, use: (session: Session<Definition["providers"]>) => Promise<A>]
 ): Promise<A> {
   const [options, use] = args.length === 1 ? [{}, args[0]] : args;
+  const transcripts =
+    options.transcripts === undefined ? undefined : toCoreTranscriptStore(options.transcripts);
 
   return Effect.runPromiseExit(
     Effect.scoped(
@@ -133,9 +159,9 @@ export function withSession<const Definition extends AgentDefinition, A>(
         const transcript =
           options.resume === undefined
             ? options.transcript
-            : yield* options.transcripts.load(options.resume);
+            : yield* toCoreTranscriptStore(options.transcripts).load(options.resume);
         const session = yield* createSession(definition, {
-          transcripts: options.transcripts,
+          transcripts,
           transcript,
         });
         const scope = yield* Effect.scope;
@@ -144,7 +170,7 @@ export function withSession<const Definition extends AgentDefinition, A>(
             use({
               runTurn: (message, turnOptions) =>
                 toAsyncIterable(session.runTurn(message, turnOptions), scope),
-              history: session.history,
+              history: () => encodeMessages(session.history()),
               transcript: session.transcript,
             }),
           catch: (cause) => new CallbackFailure(cause),
