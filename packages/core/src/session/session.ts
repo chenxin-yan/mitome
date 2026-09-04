@@ -162,12 +162,14 @@ const createSessionImpl: (
                                   }),
                                 );
                           // Commit only after the durable save: a failed save leaves the Turn
-                          // absent from history() and transcript() alike.
+                          // absent from history() and transcript() alike. Uninterruptible so an
+                          // interrupt cannot land between the store's side effect and the commit.
                           return persist.pipe(
                             Effect.map(() => {
                               history = nextHistory;
                               return { type: "response-complete", ...finish } as const;
                             }),
+                            Effect.uninterruptible,
                           );
                         }),
                       );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
 import { AiError, LanguageModel, Prompt, Response } from "effect/unstable/ai";
 import {
   type AgentDefinition,
@@ -291,6 +291,35 @@ describe("createSession", () => {
       expect(events).toEqual([{ type: "model-output", text: "hello" }]);
       expect(session.history()).toEqual([]);
       expect(session.transcript()).toEqual(before);
+    }),
+  );
+
+  it.effect("commits history when interrupted during the Transcript save", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDeterministicProvider("hello");
+      const saveStarted = yield* Deferred.make<void>();
+      const releaseSave = yield* Deferred.make<void>();
+      const store: TranscriptStore = {
+        // Simulates a store whose side effect completes after the fiber is interrupted.
+        save: () =>
+          Deferred.succeed(saveStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseSave)),
+          ),
+        appendEvent: () => Effect.void,
+        load: () => Effect.die("not used"),
+        list: () => Effect.die("not used"),
+      };
+      const session = yield* createSession(
+        { providers: [fixture.provider], model: "test/default", extensions: [] },
+        { transcripts: store },
+      );
+      const fiber = yield* Effect.forkChild(Stream.runDrain(session.runTurn("Hi")));
+      yield* Deferred.await(saveStarted);
+      const interrupt = yield* Effect.forkChild(Fiber.interrupt(fiber));
+      yield* Deferred.succeed(releaseSave, undefined);
+      yield* Fiber.join(interrupt);
+
+      expect(session.history().map((message) => message.role)).toEqual(["user"]);
     }),
   );
 
