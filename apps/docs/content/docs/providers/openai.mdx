@@ -30,6 +30,8 @@ const agent = defineAgent({
 const provider = openai({ apiKeyEnv: "MY_OPENAI_KEY", transport: "http" });
 ```
 
+The WebSocket transport reuses one connection across requests and closes it after a minute idle. A failed WebSocket request is not retried over HTTP, and an explicit `"websocket"` outside Bun or Node throws; pass `transport: "http"` for HTTP-only proxies.
+
 If the endpoint is a different service that happens to speak the OpenAI protocol, give it its own identity with [`openaiCompatible()`](/docs/providers/openai-compatible) instead of overriding `baseUrl`.
 
 ## Provide the key

@@ -1,0 +1,42 @@
+---
+title: Versioning and stability
+description: What "pre-release" means for Mitome today, which surfaces are steadier than others, and how Effect is pinned.
+icon: Tags
+---
+
+Mitome is pre-release. Every package is at version `0.x`, and anything can change between releases. This page tells you what to expect so you can decide how closely to track it.
+
+## One version for all packages
+
+`@mitome/sdk`, `@mitome/core`, `@mitome/providers`, `@mitome/tui`, `@mitome/cli`, and `create-mitome` are released together and always carry the same version number. Install them at the same version; the CLI checks that the Mitome Definition it loads was installed against the `@mitome/core` version it was built with and refuses to run otherwise (see [Configuration](/docs/configuration#selecting-a-mitome-definition)).
+
+Each release ships a changelog entry per package listing what changed.
+
+## Before 1.0
+
+Until 1.0, a release may rename or remove public functions, options, event fields, or Transcript fields without a deprecation period, and the docs describe the current release only. When a change affects stored Transcripts, the stored schema version changes with it.
+
+## Stability tiers
+
+Not every entry point moves at the same pace.
+
+| Entry point                                                    | Audience                   | Expectation                                                                                                                      |
+| -------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `@mitome/sdk`, `@mitome/sdk/extensions`, `@mitome/providers/*` | Application developers     | The primary surface. Changes are deliberate and listed in the changelog. No Effect type appears in its signatures.               |
+| `@mitome/sdk/effect`                                           | Effect-native applications | A curated facade over the same runtime with the same expectation, plus the Effect version rule below.                            |
+| `@mitome/core`                                                 | Host and Provider authors  | Runtime plumbing. It changes whenever the runtime does, with less notice; authoring against it means following releases closely. |
+| `@mitome/tui`, `@mitome/cli`                                   | Terminal users             | User-facing behavior (commands, keys, files) is listed in the changelog; internals are not a contract.                           |
+
+Anything absent from the generated [API reference](/docs/reference/api) is not public, including exports marked `@internal` such as `create-mitome/template`.
+
+## The Effect version
+
+Mitome runs on an Effect release candidate and pins its exact version as a regular dependency. If you only use the Promise SDK, you never install Effect yourself and this does not concern you.
+
+If you import `@mitome/sdk/effect` or author against `@mitome/core`, your application must use exactly the Effect version the SDK pins, or types and runtime identities will not match across the boundary. Find it with:
+
+```sh
+npm ls effect
+```
+
+and install that exact version. Each Mitome release may move the pin; check it when you upgrade. The rule is revisited when Effect 4 is stable.

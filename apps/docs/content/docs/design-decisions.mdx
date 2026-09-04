@@ -1,0 +1,23 @@
+---
+title: Design decisions
+description: Where Mitome's architecture decisions are recorded, and the ones most worth knowing as a user.
+icon: Scale
+---
+
+Mitome records architecture decisions as short, numbered documents in the repository under [`docs/adr`](https://github.com/chenxin-yan/mitome/tree/main/docs/adr). Each states one decision and its consequences; a later decision that changes it is noted in its header rather than rewriting it. The guides on this site describe what the code does; the records say why.
+
+These are the decisions you are most likely to feel as a user, one line each.
+
+| Decision                                                                                                                                                                  | What it means for you                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| [Publish a Promise-first SDK as the default surface](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0015-publish-a-promise-first-sdk-as-the-default-surface.md) | `@mitome/sdk` with `async`/`await` and `for await` is the primary way to use Mitome.                                              |
+| [Curate entry points by audience](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0047-curate-entry-points-by-audience.md)                                       | `@mitome/sdk` for applications, `@mitome/sdk/effect` for Effect applications, `@mitome/core` for Host and Provider authors.       |
+| [Keep the Promise surface Effect-free](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0045-keep-the-promise-surface-effect-free.md)                             | No Effect type appears in `@mitome/sdk` signatures; you never need to learn Effect to use it.                                     |
+| [Pin Effect as a regular dependency during RC](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0046-pin-effect-as-a-regular-dependency-during-rc.md)             | Promise users install no Effect; Effect users match the SDK's exact pin ([Versioning](/docs/versioning#the-effect-version)).      |
+| [Compose Hosts explicitly in the composition root](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0039-compose-hosts-explicitly-in-the-composition-root.md)     | Installing `@mitome/tui` does nothing until `defineMitome({ hosts: [tui()] })` declares it.                                       |
+| [Compose Transcript persistence explicitly](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0040-compose-transcript-persistence-explicitly.md)                   | Nothing is written to disk unless you pass `transcripts`.                                                                         |
+| [Persist committed history as versioned Transcripts](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0036-persist-committed-history-as-transcripts.md)           | Only completed Turns are stored; resuming forks a new Transcript rather than reattaching a Session.                               |
+| [Author Tools through a scoped Extension builder](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0043-author-tools-through-a-scoped-extension-builder.md)       | Tools are declared with `tools: ({ tool }) => [...]`, which types the Extension's Resource into every handler.                    |
+| [Model expected Tool failures as values](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0044-model-expected-tool-failures-as-values.md)                         | Return `fail({...})` for outcomes the Model should react to; a thrown error is a defect the Model sees only as an opaque failure. |
+| [Run end Hooks in reverse Definition order](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0049-run-end-hooks-in-reverse-definition-order.md)                   | `sessionEnd`, `turnEnd`, and `stepEnd` run last-Extension-first, mirroring how Resources are released.                            |
+| [Generate the API reference from TSDoc](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0048-generate-the-api-reference-from-tsdoc.md)                           | The [API reference](/docs/reference/api) is built from the source comments, so it cannot drift from the published signatures.     |

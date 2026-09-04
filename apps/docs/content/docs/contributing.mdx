@@ -1,0 +1,65 @@
+---
+title: Contributing
+description: Repository layout, toolchain, the gates a change must pass, generated artifacts, and how decisions are recorded.
+icon: GitPullRequest
+---
+
+Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxin-yan/mitome). Issues are the triage surface; open one before a large change.
+
+## Repository layout
+
+- `packages/core`, `packages/sdk`, `packages/providers`, `packages/tui`, `packages/cli`, `packages/create-mitome`: the published packages, one directory each, with tests under `test/`.
+- `apps/docs`: this site (fumadocs on TanStack Start); pages live in `apps/docs/content/docs`.
+- `docs/adr`: architecture decision records; `CONTEXT.md` at the root is the domain glossary every page and identifier follows.
+- `scripts`: repository tasks run with Bun; `tools/api-docs`: the API reference generator.
+- `.changeset`: pending release notes.
+
+## Toolchain
+
+[mise](https://mise.jdx.dev) installs the pinned Node version from `.node-version` and the Bun version from `packageManager` in `package.json`. Then:
+
+```sh
+bun install
+```
+
+Turbo runs package tasks; the root scripts below wrap it.
+
+## Gates
+
+Every change must pass, in this order:
+
+```sh
+bun run check        # lint, format check, type check
+bun run test         # every package's tests
+bun run build:docs   # builds the site; regenerates the API reference first
+```
+
+`build:docs` fails on a dangling internal link and on any exported function, class, interface, type alias, or variable without a TSDoc comment, so it is the documentation gate as well. `bun run check:fix` applies lint and format fixes.
+
+`@mitome/tui` enumerates its test files explicitly in its `test` script because `.tsx` tests need the OpenTUI preload while the Host test must run without it; add new TUI test files there or they will not run.
+
+## Generated artifacts
+
+Two artifacts are generated and git-ignored; do not edit them by hand. The third is hand-maintained and committed.
+
+| Artifact                                                                                          | Command                 | Source                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| OpenAI Model catalog and `create-mitome` Model choices (`mitome init` falls back to them offline) | `bun run hints:refresh` | [models.dev](https://models.dev); the snapshot is committed at `scripts/models-dev.snapshot.json` and `hints:generate` uses it offline.                            |
+| Codex Model catalog                                                                               | none                    | Hand-maintained in `packages/providers/src/openai-codex/models.ts` because models.dev has no record for the ChatGPT service; update it when Codex releases change. |
+| API reference (`/docs/reference/api`)                                                             | `bun run api:generate`  | TSDoc on the eight public entry points. TypeDoc runs from `tools/api-docs`, which pins TypeScript 6 because TypeScript 7 has no compiler API.                      |
+
+## Releasing
+
+Every user-visible change adds a changeset: run `bun changeset`, or write the markdown file under `.changeset` by hand. All packages share one version; the release workflow opens a version pull request from pending changesets and publishes every package when it merges.
+
+## Recording decisions
+
+An architecture decision that changes a public contract or a cross-cutting rule gets an ADR in `docs/adr`, numbered sequentially, in the style of its neighbours: the decision in prose, then consequences. A later decision that changes an earlier one adds `status: amended by ADR-NNNN` to the earlier file rather than rewriting it. Terms go in `CONTEXT.md`; use the term it defines and none of the ones it says to avoid.
+
+## Manual TUI check
+
+Automated tests cover the TUI view model and shell; before a release, also run an Agent in a real terminal and confirm: Enter inserts a newline and `Alt-Enter` sends; Model text streams before the Turn ends; `Escape` interrupts and the next Message succeeds; `Ctrl-O` lists Transcripts and `Enter` resumes one; `Ctrl-N` starts a fresh Session; `Ctrl-C` exits and restores the terminal.
+
+## Issue labels
+
+`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix` are the labels in use; a new issue starts at `needs-triage`.
