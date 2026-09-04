@@ -10,8 +10,6 @@ export interface ProviderAuthentication {
 export interface ExtensionListItem {
   readonly name: string;
   readonly version: string;
-  readonly direct: boolean;
-  readonly dependents: ReadonlyArray<string>;
 }
 
 export interface ExtensionListResult {

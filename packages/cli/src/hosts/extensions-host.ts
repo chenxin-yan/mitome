@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AnyExtension, MitomeDefinition } from "@mitome/core";
+import type { MitomeDefinition } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
 const outputPath = process.argv[2]!;
@@ -80,19 +80,10 @@ const packageVersion = async (name: string): Promise<string> => {
 
 try {
   const compiled = await effect.Effect.runPromise(core.compileAgentDefinition(definition.agent));
-  const directNames = new Set(definition.agent.extensions.map(({ name }) => name));
   const extensions = await Promise.all(
     compiled.extensions.map(async (extension) => ({
-      name: extension.name,
-      version: await packageVersion(extension.name),
-      direct: directNames.has(extension.name),
-      dependents: compiled.extensions
-        .filter((dependent) =>
-          dependent.dependencies?.some(
-            (dependency: AnyExtension) => dependency.name === extension.name,
-          ),
-        )
-        .map(({ name }) => name),
+      name: extension.name ?? "(anonymous)",
+      version: extension.name === undefined ? "unknown" : await packageVersion(extension.name),
     })),
   );
   await Bun.write(outputPath, JSON.stringify(extensions));

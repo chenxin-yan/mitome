@@ -2,7 +2,6 @@ import { Context, Effect, Exit, Layer, Predicate, Schema } from "effect";
 import { AiError, Prompt as AiPrompt, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import type { Response as AiResponse } from "effect/unstable/ai";
 import type {
-  AnyExtension,
   Extension,
   ExtensionHooks,
   ToolContribution,
@@ -24,14 +23,9 @@ export type OutputSchema<Output = unknown> =
 
 export type ModelPrompt = AiPrompt.Prompt;
 
-type ServiceValue<Service> = Service extends Context.Key<any, infer Value> ? Value : never;
-
-export interface HookContext<Resource = never, Services = never> {
+export interface HookContext<Resource = never> {
   readonly resource: Resource;
   readonly signal: AbortSignal;
-  readonly getService: <Service extends Context.Service.Any>(
-    service: Context.Service.Identifier<Service> extends Services ? Service : never,
-  ) => ServiceValue<Service>;
 }
 
 export type ResponsePart = AiResponse.AnyPart;
@@ -39,10 +33,7 @@ type ToolHookResult = ToolResultHookContext["result"];
 type UnvalidatedToolInput = Parameters<ToolInputValidator>[0];
 type StandardInputValue = Parameters<StandardSchemaV1.Props["validate"]>[0];
 
-export interface StepEndContext<Resource = never, Services = never> extends HookContext<
-  Resource,
-  Services
-> {
+export interface StepEndContext<Resource = never> extends HookContext<Resource> {
   readonly responseParts: ReadonlyArray<ResponsePart>;
 }
 
@@ -51,29 +42,20 @@ export interface ToolApprovalContext {
   readonly messages: ReadonlyArray<unknown>;
 }
 
-export interface ExtensionHooksDefinition<Resource = never, Services = never> {
-  readonly sessionStart?: (context: HookContext<Resource, Services>) => Promise<void>;
-  readonly sessionEnd?: (context: HookContext<Resource, Services>) => Promise<void>;
-  readonly turnStart?: (message: string, context: HookContext<Resource, Services>) => Promise<void>;
-  readonly turnEnd?: (message: string, context: HookContext<Resource, Services>) => Promise<void>;
-  readonly stepStart?: (
-    prompt: ModelPrompt,
-    context: HookContext<Resource, Services>,
-  ) => Promise<void>;
+export interface ExtensionHooksDefinition<Resource = never> {
+  readonly sessionStart?: (context: HookContext<Resource>) => Promise<void>;
+  readonly sessionEnd?: (context: HookContext<Resource>) => Promise<void>;
+  readonly turnStart?: (message: string, context: HookContext<Resource>) => Promise<void>;
+  readonly turnEnd?: (message: string, context: HookContext<Resource>) => Promise<void>;
+  readonly stepStart?: (prompt: ModelPrompt, context: HookContext<Resource>) => Promise<void>;
   /** Receives the Model Prompt and emitted response parts; failed Steps provide their partial parts. */
-  readonly stepEnd?: (
-    prompt: ModelPrompt,
-    context: StepEndContext<Resource, Services>,
-  ) => Promise<void>;
-  readonly preStep?: (
-    prompt: ModelPrompt,
-    context: HookContext<Resource, Services>,
-  ) => Promise<ModelPrompt>;
+  readonly stepEnd?: (prompt: ModelPrompt, context: StepEndContext<Resource>) => Promise<void>;
+  readonly preStep?: (prompt: ModelPrompt, context: HookContext<Resource>) => Promise<ModelPrompt>;
   readonly preTool?: (
-    context: ToolHookContext & HookContext<Resource, Services>,
+    context: ToolHookContext & HookContext<Resource>,
   ) => Promise<void | { readonly reason: string }>;
   readonly postTool?: (
-    context: ToolResultHookContext & HookContext<Resource, Services>,
+    context: ToolResultHookContext & HookContext<Resource>,
   ) => Promise<ToolHookResult>;
 }
 
@@ -82,39 +64,20 @@ export interface Tool<
   Output = unknown,
   Resource = never,
   Name extends string = string,
-  Dependencies extends ReadonlyArray<Context.Service.Any> = readonly [],
 > {
   readonly name: Name;
   readonly description?: string;
   readonly inputSchema: InputSchema<Input>;
   readonly outputSchema: OutputSchema<Output>;
-  readonly dependencies?: Dependencies;
   readonly needsApproval?:
     | boolean
     | ((input: Input, context: ToolApprovalContext) => boolean | Promise<boolean>);
-  readonly handler: (
-    input: Input,
-    context: HookContext<Resource, Context.Service.Identifier<Dependencies[number]>>,
-  ) => Promise<Output>;
+  readonly handler: (input: Input, context: HookContext<Resource>) => Promise<Output>;
 }
 
 export function tool<Input, Output, Resource = never, const Name extends string = string>(
-  definition: Tool<Input, Output, Resource, Name, readonly []> & {
-    readonly dependencies?: undefined;
-  },
-): Tool<Input, Output, Resource, Name, readonly []>;
-export function tool<
-  Input,
-  Output,
-  Resource = never,
-  const Name extends string = string,
-  const Dependencies extends ReadonlyArray<Context.Service.Any> = readonly [],
->(
-  definition: Tool<Input, Output, Resource, Name, Dependencies> & {
-    readonly dependencies: Dependencies;
-  },
-): Tool<Input, Output, Resource, Name, Dependencies>;
-export function tool(definition: AnyTool): AnyTool {
+  definition: Tool<Input, Output, Resource, Name>,
+): Tool<Input, Output, Resource, Name> {
   return definition;
 }
 
@@ -165,36 +128,33 @@ const validate = async <Output>(
   return result.value;
 };
 
+const ResourceService = Context.Service<any>("@mitome/sdk/resource");
+
 // Promise Hooks use an unknown error channel; Core owns lifecycle-specific error mapping.
-const promiseHook = Effect.fn("@mitome/sdk/promiseHook")(function* <A, Resource, Services>(
-  callback: (context: HookContext<Resource, Services>) => Promise<A>,
+const promiseHook = Effect.fn("@mitome/sdk/promiseHook")(function* <A, Resource>(
+  callback: (context: HookContext<Resource>) => Promise<A>,
   resource: Context.Service<Resource, Resource> | undefined,
 ) {
   // SAFETY: The public defineExtension overload only permits a missing Resource service when
   // neither setup nor any Hook/Tool declares a Resource, so callbacks cannot observe this value.
   const value = resource === undefined ? (undefined as Resource) : yield* Effect.service(resource);
-  const context = yield* Effect.context<Services>();
-  const getService = <Service extends Context.Service.Any>(service: Service) =>
-    Context.get(context, service);
   // @effect-diagnostics-next-line unknownInEffectCatch:off
   return yield* Effect.tryPromise({
-    try: (signal) => callback({ resource: value, signal, getService }),
+    try: (signal) => callback({ resource: value, signal }),
     catch: (cause) => cause,
   });
 });
 
-const adaptHooks = <Resource, Services>(
-  hooks: ExtensionHooksDefinition<Resource, Services> | undefined,
+const adaptHooks = <Resource>(
+  hooks: ExtensionHooksDefinition<Resource> | undefined,
   resource: Context.Service<Resource, Resource> | undefined,
-): ExtensionHooks<Resource | Services> | undefined => {
+): ExtensionHooks<Resource> | undefined => {
   if (hooks === undefined) return undefined;
   const adapted: {
-    -readonly [Key in keyof ExtensionHooks<Resource | Services>]?: ExtensionHooks<
-      Resource | Services
-    >[Key];
+    -readonly [Key in keyof ExtensionHooks<Resource>]?: ExtensionHooks<Resource>[Key];
   } = {};
-  const run = <A>(callback: (context: HookContext<Resource, Services>) => Promise<A>) =>
-    promiseHook<A, Resource, Services>(callback, resource);
+  const run = <A>(callback: (context: HookContext<Resource>) => Promise<A>) =>
+    promiseHook<A, Resource>(callback, resource);
   const sessionStart = hooks.sessionStart;
   if (sessionStart) adapted.sessionStart = run(sessionStart);
   const sessionEnd = hooks.sessionEnd;
@@ -231,13 +191,11 @@ type AnyTool = {
   readonly description?: string;
   readonly inputSchema: InputSchema<any>;
   readonly outputSchema: OutputSchema<any>;
-  readonly dependencies?: ReadonlyArray<Context.Service.Any>;
   readonly needsApproval?: Tool<any, any>["needsApproval"];
   readonly handler: (...args: never[]) => Promise<any>;
 };
-type RejectAny<Value> = 0 extends 1 & Value ? never : unknown;
 type ToolResource<Value extends AnyTool> = Value extends unknown
-  ? Parameters<Value["handler"]>[1] extends HookContext<infer Resource, any>
+  ? Parameters<Value["handler"]>[1] extends HookContext<infer Resource>
     ? 0 extends 1 & Resource
       ? never
       : Resource
@@ -251,43 +209,6 @@ type UnsatisfiedToolResources<Resource, Value extends AnyTool> = Value extends u
       ? never
       : ToolResource<Value>
   : never;
-type ToolDependencyServices<Value extends AnyTool> = Value extends {
-  readonly dependencies?: infer Dependencies;
-}
-  ? Dependencies extends ReadonlyArray<Context.Service.Any>
-    ? RejectAny<Dependencies> extends never
-      ? never
-      : Context.Service.Identifier<Dependencies[number]>
-    : never
-  : never;
-type ProvidedServicesOfExtension<Value> =
-  RejectAny<Value> extends never
-    ? never
-    : Value extends Extension<any, any, any, infer Provides>
-      ? RejectAny<Provides> extends never
-        ? never
-        : Context.Service.Identifier<Provides[number]>
-      : never;
-type ProvidedServices<Dependencies extends ReadonlyArray<AnyExtension>> =
-  ProvidedServicesOfExtension<Dependencies[number]>;
-type UnsatisfiedToolServices<Services, Value extends AnyTool> = Value extends unknown
-  ? [ToolDependencyServices<Value>] extends [Services]
-    ? never
-    : ToolDependencyServices<Value>
-  : never;
-type UnionToIntersection<Value> = (Value extends unknown ? (value: Value) => void : never) extends (
-  value: infer Intersection,
-) => void
-  ? Intersection
-  : never;
-type ProvidedTags<Provides extends ReadonlyArray<Context.Service.Any>> =
-  RejectAny<Provides> extends never ? readonly [] : Provides;
-type ProvidedImplementations<Provides extends ReadonlyArray<Context.Service.Any>> = [
-  ProvidedTags<Provides>[number],
-] extends [never]
-  ? unknown
-  : UnionToIntersection<ServiceValue<ProvidedTags<Provides>[number]>>;
-
 type ToolContributions<Tools extends ReadonlyArray<AnyTool>> = {
   readonly [Value in Tools[number] as Value["name"]]: ToolContribution<
     Parameters<Value["handler"]>[0],
@@ -298,77 +219,48 @@ type ToolContributions<Tools extends ReadonlyArray<AnyTool>> = {
 export interface ExtensionDefinition<
   Resource = never,
   Tools extends ReadonlyArray<AnyTool> = ReadonlyArray<Tool<any, any, Resource, string>>,
-  Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
-  Provides extends ReadonlyArray<Context.Service.Any> = readonly [],
 > {
-  readonly name: string;
-  readonly dependencies?: Dependencies;
-  readonly provides?: Provides;
+  readonly name?: string;
   readonly instructions?: string;
   readonly tools?: Tools;
-  readonly hooks?: ExtensionHooksDefinition<Resource, ProvidedServices<Dependencies>>;
+  readonly hooks?: ExtensionHooksDefinition<Resource>;
   readonly setup?: () => Promise<Resource>;
   readonly dispose?: (resource: Resource) => Promise<void>;
 }
 
 // A declared Resource without setup would hand handlers `undefined as Resource`,
 // so setup is mandatory whenever anything in the Extension declares a Resource.
-export function defineExtension<
-  Resource = never,
-  const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
-  const Provides extends ReadonlyArray<Context.Service.Any> = readonly [],
->(
-  definition: ExtensionDefinition<Resource, readonly [], Dependencies, Provides> &
-    ([Resource] extends [ProvidedImplementations<Provides>] ? unknown : never) &
-    ([Resource | ProvidedTags<Provides>[number]] extends [never]
+export function defineExtension<Resource = never>(
+  definition: ExtensionDefinition<Resource, readonly []> &
+    ([Resource] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : { readonly setup: () => Promise<Resource> }),
-): NoInfer<
-  Extension<
-    Resource | ProvidedServices<Dependencies>,
-    unknown,
-    ToolContributions<readonly []>,
-    Provides
-  >
->;
+): NoInfer<Extension<Resource, unknown, ToolContributions<readonly []>>>;
 export function defineExtension<
   Resource = never,
   const Tools extends ReadonlyArray<AnyTool> = [Resource] extends [never]
     ? readonly []
     : ReadonlyArray<Tool<any, any, Resource, string>>,
-  const Dependencies extends ReadonlyArray<AnyExtension> = readonly [],
-  const Provides extends ReadonlyArray<Context.Service.Any> = readonly [],
 >(
-  definition: ExtensionDefinition<Resource, Tools, Dependencies, Provides> & {
-    readonly tools: Tools;
-  } & ([UnsatisfiedToolResources<Resource, Tools[number]>] extends [never] ? unknown : never) &
-    ([UnsatisfiedToolServices<ProvidedServices<NoInfer<Dependencies>>, Tools[number]>] extends [
-      never,
-    ]
+  definition: ExtensionDefinition<Resource, Tools> & { readonly tools: Tools } & ([
+      UnsatisfiedToolResources<Resource, Tools[number]>,
+    ] extends [never]
       ? unknown
       : never) &
-    ([Resource] extends [ProvidedImplementations<Provides>] ? unknown : never) &
-    ([Resource | ToolResources<Tools> | ProvidedTags<Provides>[number]] extends [never]
+    ([Resource | ToolResources<Tools>] extends [never]
       ? { readonly setup?: undefined; readonly dispose?: undefined }
       : { readonly setup: () => Promise<Resource> }),
-): NoInfer<
-  Extension<Resource | ProvidedServices<Dependencies>, unknown, ToolContributions<Tools>, Provides>
->;
+): NoInfer<Extension<Resource, unknown, ToolContributions<Tools>>>;
 export function defineExtension<
   Resource = never,
   Tools extends ReadonlyArray<AnyTool> = ReadonlyArray<Tool<any, any, Resource, string>>,
-  Dependencies extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
-  Provides extends ReadonlyArray<Context.Service.Any> = ReadonlyArray<Context.Service.Any>,
 >(
-  definition: ExtensionDefinition<Resource, Tools, Dependencies, Provides>,
-): Extension<
-  Resource | ProvidedServices<Dependencies>,
-  unknown,
-  ToolContributions<Tools>,
-  Provides
-> {
+  definition: ExtensionDefinition<Resource, Tools>,
+): Extension<Resource, unknown, ToolContributions<Tools>> {
   if (definition.dispose !== undefined && definition.setup === undefined) {
-    throw new Error(`Extension "${definition.name}" declares dispose without setup`);
+    throw new Error(
+      `Extension "${definition.name ?? "<anonymous>"}" declares dispose without setup`,
+    );
   }
   const names = new Set<string>();
   const definitions = (definition.tools === undefined ? [] : definition.tools).map((tool) => {
@@ -381,10 +273,7 @@ export function defineExtension<
     };
   });
 
-  const service =
-    definition.setup === undefined
-      ? undefined
-      : Context.Service<Resource>(`@mitome/sdk/resource/${crypto.randomUUID()}`);
+  const service = definition.setup === undefined ? undefined : ResourceService;
   const hooks = adaptHooks(definition.hooks, service);
   const tools = definitions.map(({ tool, input }) => {
     const needsApproval = tool.needsApproval;
@@ -441,21 +330,12 @@ export function defineExtension<
                   : run;
               },
             ),
-            (value) => {
-              // SAFETY: the public overload verifies the setup value implements every provided Tag.
-              let context = Context.make(service, value) as Context.Context<any>;
-              for (const provided of definition.provides ?? []) {
-                context = Context.add(context, provided, value);
-              }
-              return context;
-            },
+            (value) => Context.make(service, value),
           ),
         );
 
   return {
     name: definition.name,
-    dependencies: definition.dependencies,
-    provides: definition.provides,
     instructions: definition.instructions,
     resource,
     hooks,
@@ -466,12 +346,9 @@ export function defineExtension<
       definitions.map(({ tool, input, output }) => [
         tool.name,
         (params: UnvalidatedToolInput) =>
-          promiseHook<any, Resource, ProvidedServices<Dependencies>>(async (context) => {
+          promiseHook<any, Resource>(async (context) => {
             // SAFETY: every public Tool overload fixes this erased handler to the same input/context pair.
-            const handler = tool.handler as (
-              input: any,
-              context: HookContext<any, any>,
-            ) => Promise<any>;
+            const handler = tool.handler as (input: any, context: HookContext<any>) => Promise<any>;
             return validate(output, await handler(await validate(input, params), context));
           }, service).pipe(
             Effect.tapError((cause) => Effect.logWarning(`SDK Tool "${tool.name}" failed`, cause)),

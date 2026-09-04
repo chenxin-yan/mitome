@@ -17,10 +17,7 @@ export const runExtensionList = Effect.fn("@mitome/cli/runExtensionList")(functi
   const result = yield* childHost.inspectExtensions(path);
   if (result.exitCode !== 0) return result.exitCode;
   for (const extension of result.extensions) {
-    const provenance = extension.direct
-      ? "direct"
-      : `dependency of ${extension.dependents.join(", ")}`;
-    yield* Console.log(`${extension.name}\t${extension.version}\t${provenance}`);
+    yield* Console.log(`${extension.name}\t${extension.version}`);
   }
   return 0 satisfies ExitCode;
 });

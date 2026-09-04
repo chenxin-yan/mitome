@@ -60,8 +60,6 @@ const ExtensionListFromJson = Schema.fromJsonString(
     Schema.Struct({
       name: Schema.String,
       version: Schema.String,
-      direct: Schema.Boolean,
-      dependents: Schema.Array(Schema.String),
     }),
   ),
 );

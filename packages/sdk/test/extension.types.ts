@@ -1,8 +1,7 @@
 // oxlint-disable-next-line jsdoc/check-tag-names
 /** @effect-diagnostics missingEffectContext:skip-file */
-import { Context, Effect, Layer, Schema } from "effect";
+import { Schema } from "effect";
 import type { ExtensionHooks, Provider } from "@mitome/core";
-import { defineExtension as defineEffectExtension } from "../src/effect.js";
 import {
   defineAgent,
   defineExtension,
@@ -26,14 +25,6 @@ type ContributionsOf<Value> = Value extends import("@mitome/core").Extension<
   infer Contributions extends import("@mitome/core").ToolContributions
 >
   ? Contributions
-  : never;
-type ProvidesOf<Value> = Value extends import("@mitome/core").Extension<
-  any,
-  any,
-  any,
-  infer Provides extends ReadonlyArray<Context.Service.Any>
->
-  ? Provides
   : never;
 
 const formatInputSchema = Schema.Struct({ value: Schema.Finite });
@@ -273,88 +264,3 @@ export type SdkExtensionTupleIsPreserved = Expect<
     ]
   >
 >;
-
-class EffectService extends Context.Service<EffectService, { readonly value: string }>()(
-  "@mitome/sdk/test/EffectService",
-) {}
-class SdkService extends Context.Service<SdkService, { readonly count: number }>()(
-  "@mitome/sdk/test/SdkService",
-) {}
-class MissingService extends Context.Service<MissingService, { readonly missing: true }>()(
-  "@mitome/sdk/test/MissingService",
-) {}
-
-const effectServiceLayer = Layer.succeed(EffectService, { value: "effect" });
-const effectProvider = defineEffectExtension<
-  typeof effectServiceLayer,
-  readonly [],
-  readonly [typeof EffectService]
->({
-  name: "effect-provider",
-  resource: effectServiceLayer,
-  provides: [EffectService],
-});
-
-defineExtension({
-  name: "sdk-effect-dependent",
-  dependencies: [effectProvider],
-  tools: [
-    tool({
-      name: "read-effect-service",
-      dependencies: [EffectService],
-      inputSchema: Schema.String,
-      outputSchema: Schema.String,
-      handler: async (_input, { getService }) => {
-        const value: string = getService(EffectService).value;
-        return value;
-      },
-    }),
-  ],
-  hooks: {
-    sessionStart: async ({ getService }) => {
-      const value: string = getService(EffectService).value;
-      void value;
-      // @ts-expect-error Hooks cannot access services not provided by declared dependencies.
-      getService(MissingService);
-    },
-  },
-});
-
-const uncoveredTool = tool({
-  name: "uncovered-service",
-  dependencies: [MissingService],
-  inputSchema: Schema.String,
-  outputSchema: Schema.String,
-  handler: async (_input, { getService }) => String(getService(MissingService).missing),
-});
-
-// @ts-expect-error Tool service dependencies must be provided by an Extension dependency.
-defineExtension({
-  name: "uncovered-tool-service",
-  dependencies: [effectProvider],
-  tools: [uncoveredTool],
-});
-
-const sdkProvider = defineExtension({
-  name: "sdk-provider",
-  provides: [SdkService],
-  tools: [],
-  setup: async () => ({ count: 1 }),
-});
-export type SdkProvidedServicesAreInferred = Expect<
-  Equal<ProvidesOf<typeof sdkProvider>, readonly [typeof SdkService]>
->;
-
-defineEffectExtension({
-  name: "effect-sdk-dependent",
-  dependencies: [sdkProvider],
-  hooks: { sessionStart: Effect.asVoid(SdkService) },
-});
-
-// @ts-expect-error setup must implement the intersection of all published service Tags.
-defineExtension({
-  name: "invalid-sdk-provider",
-  provides: [SdkService, EffectService],
-  tools: [],
-  setup: async () => ({ count: 1 }),
-});

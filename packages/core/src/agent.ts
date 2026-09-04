@@ -1,4 +1,4 @@
-import { Context, Effect, Predicate, Schema } from "effect";
+import { Effect, Predicate, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 import type {
   AnyExtension,
@@ -97,112 +97,46 @@ const compileExtensions = (
     return { extensions, tools, handlers, instructions, requiredHandlerNames };
   }
 
-  const graphIssues: Array<string> = [];
-  const encountered: Array<AnyExtension> = [];
   const discovered = new WeakSet<object>();
   const extensionsByName = new Map<string, AnyExtension>();
   const conflictingNames = new Set<string>();
-  const hasName = (value: typeof Schema.Unknown.Type): value is { readonly name: string } =>
-    Predicate.isObject(value) && Predicate.isString(value.name);
-
-  // ponytail: recursive discover/visit overflow the call stack on dependency
-  // chains thousands deep; switch to an explicit stack if generated graphs need it.
-  const discover = (value: typeof Schema.Unknown.Type, location: string): void => {
-    if (!hasName(value)) {
-      graphIssues.push(`${location} must be an object with a string name`);
-      return;
+  for (const [index, value] of extensionValues.entries()) {
+    if (
+      !Predicate.isObject(value) ||
+      (value.name !== undefined && !Predicate.isString(value.name))
+    ) {
+      issues.push(`Extension at index ${index} must be an object with an optional string name`);
+      continue;
     }
-    if (discovered.has(value)) return;
+    if (discovered.has(value)) continue;
     discovered.add(value);
 
-    // SAFETY: hasName established the runtime identity required for graph validation below.
+    // SAFETY: runtime shape validation above established the optional identity field.
     const extension = value as AnyExtension;
-    encountered.push(extension);
-    const existing = extensionsByName.get(extension.name);
-    if (existing === undefined) {
-      extensionsByName.set(extension.name, extension);
-    } else if (existing !== extension && !conflictingNames.has(extension.name)) {
-      conflictingNames.add(extension.name);
-      graphIssues.push(`Conflicting Extension name: ${extension.name} refers to different values`);
-    }
-
-    if (extension.dependencies === undefined) return;
-    if (!Array.isArray(extension.dependencies)) {
-      graphIssues.push(`Extension ${extension.name} Dependencies must be an array`);
-      return;
-    }
-    for (const [index, dependency] of extension.dependencies.entries()) {
-      discover(dependency, `Extension dependency ${extension.name}[${index}]`);
-    }
-  };
-
-  for (const [index, value] of extensionValues.entries()) {
-    discover(value, `Extension at index ${index}`);
-  }
-
-  const states = new Map<AnyExtension, "visiting" | "visited">();
-  const stack: Array<AnyExtension> = [];
-  const cycles = new Set<string>();
-  const visit = (extension: AnyExtension): void => {
-    const state = states.get(extension);
-    if (state === "visited") return;
-    if (state === "visiting") {
-      const start = stack.indexOf(extension);
-      const path = [...stack.slice(start), extension].map(({ name }) => name).join(" -> ");
-      if (!cycles.has(path)) {
-        cycles.add(path);
-        graphIssues.push(`Extension dependency cycle: ${path}`);
-      }
-      return;
-    }
-
-    states.set(extension, "visiting");
-    stack.push(extension);
-    if (Array.isArray(extension.dependencies)) {
-      for (const dependency of extension.dependencies) {
-        if (!hasName(dependency)) continue;
-        const canonical = extensionsByName.get(dependency.name);
-        if (canonical !== undefined) visit(canonical);
+    if (extension.name !== undefined) {
+      const existing = extensionsByName.get(extension.name);
+      if (existing === undefined) {
+        extensionsByName.set(extension.name, extension);
+      } else if (!conflictingNames.has(extension.name)) {
+        conflictingNames.add(extension.name);
+        issues.push(`Conflicting Extension name: ${extension.name} refers to different values`);
       }
     }
-    stack.pop();
-    states.set(extension, "visited");
     extensions.push(extension);
-  };
-
-  for (const value of extensionValues) {
-    if (!hasName(value)) continue;
-    const canonical = extensionsByName.get(value.name);
-    if (canonical !== undefined) visit(canonical);
   }
-  issues.push(...graphIssues);
 
-  // Invalid graphs still validate every distinct value so one compilation reports
-  // graph and contribution problems together. Successful graphs compile in resolved order.
-  for (const extension of graphIssues.length === 0 ? extensions : encountered) {
-    if (extension.provides !== undefined) {
-      if (!Array.isArray(extension.provides)) {
-        issues.push(`Extension ${extension.name} Provides must be an array`);
-      } else {
-        for (const [index, service] of extension.provides.entries()) {
-          if (!Context.isKey(service)) {
-            issues.push(`Extension ${extension.name} Provides[${index}] must be a Context Key`);
-          }
-        }
-      }
-    }
-
+  for (const extension of extensions) {
+    const label =
+      extension.name === undefined ? "Anonymous Extension" : `Extension ${extension.name}`;
     if (extension.instructions !== undefined && !Predicate.isString(extension.instructions)) {
-      issues.push(`Extension ${extension.name} Instructions must be a string`);
+      issues.push(`${label} Instructions must be a string`);
     }
     if (Predicate.isString(extension.instructions) && extension.instructions.length > 0) {
       instructions.push(extension.instructions);
     }
 
     for (const tool of Object.values(extension.toolkit?.tools ?? {})) {
-      if (tools.has(tool.name)) {
-        issues.push(`Duplicate Tool name: ${tool.name}`);
-      }
+      if (tools.has(tool.name)) issues.push(`Duplicate Tool name: ${tool.name}`);
       tools.set(tool.name, {
         tool,
         owner: extension,
@@ -233,9 +167,7 @@ const compileExtensions = (
     }
 
     for (const [name, handler] of Object.entries(extension.handlers ?? {})) {
-      if (handlers.has(name)) {
-        issues.push(`Duplicate Tool handler name: ${name}`);
-      }
+      if (handlers.has(name)) issues.push(`Duplicate Tool handler name: ${name}`);
       handlers.set(name, handler);
     }
   }

@@ -45,7 +45,7 @@ Pass `{ transcripts }` or `{ transcript }` to `createSession` using the same ada
 
 ## Effect-native Extensions
 
-The Effect facade exports `defineExtension` for definitions whose `resource` is a `Layer`, whose Hooks are Effects, and whose Tool handlers use Effect services. Dependency Resources are built dependency-first; only tags named by `provides` are visible to dependents. Use `Layer.scoped` or `Effect.acquireRelease` for external clients so cleanup follows the Session scope.
+The Effect facade exports `defineExtension` for definitions whose `resource` is a `Layer`, whose Hooks are Effects, and whose Tool handlers use Effect services. Each Extension owns its Resource; put Tools and Hooks that share Session state in one Extension. Extensions are acquired in Agent Definition order. Use `Layer.scoped` or `Effect.acquireRelease` for external clients so cleanup follows the Session scope.
 
 Choose this surface for Effect-native service graphs, typed error channels, and Stream composition. Choose the [Promise-first SDK](/docs/sdk) for ordinary application code and Promise Tool handlers; both surfaces run the same Session behavior and may contribute Extensions to one Agent Definition.
 
