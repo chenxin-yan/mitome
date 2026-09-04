@@ -1,6 +1,7 @@
 ---
 "@mitome/cli": patch
 "@mitome/sdk": patch
+"@mitome/core": patch
 ---
 
-Fail loud instead of hanging or collapsing errors: `mitome auth login` now detects piped stdin without silently hanging on an open, silent pipe; the auth host distinguishes missing/non-OAuth providers, broken capability modules, and protocol violations; SDK schema validation reports every issue with its path; and rejected approval predicates are logged before denying.
+Report distinct CLI authentication errors for unavailable OAuth Providers, capability modules missing `authenticate`, and invalid authentication operations or configuration. SDK schema validation reports every issue with its available path. Failed `needsApproval` predicates log a warning and require approval rather than allowing the Tool to run automatically.

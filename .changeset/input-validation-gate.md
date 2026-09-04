@@ -1,5 +1,6 @@
 ---
 "@mitome/core": patch
+"@mitome/sdk": patch
 ---
 
-A failing Tool input validator now blocks execution and fails the Turn with `TurnError: Tool input validation failed`. Previously the failure only forced an approval prompt when a `needsApproval` predicate existed, and was silently ignored otherwise, letting the handler run with unvalidated params.
+Tool input validation failures return an `execution-denied` result to the Model before `preTool`, approval, or the handler runs, with reason `Tool input validation failed: <issues>`. The Turn continues; validator defects instead fail it with `TurnError`.

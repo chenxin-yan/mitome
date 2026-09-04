@@ -1,7 +1,6 @@
 ---
 "@mitome/core": minor
 "@mitome/sdk": minor
-"create-mitome": minor
 ---
 
-Make Hosts, Extensions, and Tools optional with empty defaults, and move `withSession` options before its callback.
+Make Agent Definition `extensions` and SDK Extension `tools` optional with empty defaults. Move `withSession` options before its callback: use `withSession(agent, options, use)` or `withSession(agent, use)`.

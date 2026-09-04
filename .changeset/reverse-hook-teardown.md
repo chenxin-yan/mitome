@@ -4,4 +4,4 @@
 "@mitome/tui": patch
 ---
 
-End Hooks now run in reverse Agent Definition order, and a failed Transcript save leaves the Turn out of in-memory history as well as the store.
+Run end Hooks (`sessionEnd`, `turnEnd`, `stepEnd`) in reverse Agent Definition order, including cleanup after interrupted or failed starts. Commit a Turn to `history()` and `transcript()` only after the configured Transcript save succeeds; a failed save leaves it out of both.
