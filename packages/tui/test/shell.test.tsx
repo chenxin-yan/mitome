@@ -6,6 +6,7 @@ import { Shell } from "../src/shell.js";
 import type { SessionManager } from "../src/session-manager.js";
 import { makeSessionViewModel } from "../src/view-model.js";
 import type { SessionViewModel } from "../src/view-model.js";
+import { scriptedSession } from "./support/scripted-session.js";
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined;
 let viewModel: SessionViewModel | undefined;
@@ -20,15 +21,7 @@ const renderShell = async (
   streams: ReadonlyArray<Stream.Stream<TurnEvent, never>> = [],
   manager: SessionManager = { transcripts: undefined, open: () => Effect.die("not used") },
 ) => {
-  let next = 0;
-  viewModel = makeSessionViewModel(
-    {
-      runTurn: () => streams[next++] ?? Stream.empty,
-      history: () => [],
-      close: Effect.void,
-    },
-    manager,
-  );
+  viewModel = makeSessionViewModel(scriptedSession(streams), manager);
   setup = await testRender(() => <Shell message={message} viewModel={viewModel!} />, {
     width: 70,
     height: 16,
@@ -122,11 +115,7 @@ describe("TUI shell", () => {
       transcripts,
       open: (transcriptId) => {
         opened.push(transcriptId);
-        return Effect.succeed({
-          runTurn: () => Stream.empty,
-          history: () => [],
-          close: Effect.void,
-        });
+        return Effect.succeed(scriptedSession([]));
       },
     });
 
@@ -164,12 +153,7 @@ describe("TUI shell", () => {
   test("starts a new Session with Ctrl-N", async () => {
     await renderShell("", [], {
       transcripts: undefined,
-      open: () =>
-        Effect.succeed({
-          runTurn: () => Stream.empty,
-          history: () => [],
-          close: Effect.void,
-        }),
+      open: () => Effect.succeed(scriptedSession([])),
     });
 
     setup!.mockInput.pressKey("n", { ctrl: true });

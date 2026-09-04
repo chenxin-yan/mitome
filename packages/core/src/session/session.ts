@@ -151,11 +151,6 @@ const createSessionImpl: (
                         hookTurnError("Turn end Hook failed"),
                         Effect.flatMap(() => {
                           const { type: _type, history: nextHistory, ...finish } = event;
-                          // Commit the turn in-memory before persisting: a failed save surfaces
-                          // StoreError without un-committing the turn, so a retry never reruns the
-                          // model or turn-end hook side effects against stale history. The stored
-                          // snapshot is then stale until the caller re-saves session.transcript().
-                          history = nextHistory;
                           const persist =
                             sessionOptions.transcripts === undefined
                               ? Effect.void
@@ -166,8 +161,15 @@ const createSessionImpl: (
                                     messages: nextHistory.content,
                                   }),
                                 );
+                          // Commit only after the durable save: a failed save leaves the Turn
+                          // absent from history() and transcript() alike. Uninterruptible so an
+                          // interrupt cannot land between the store's side effect and the commit.
                           return persist.pipe(
-                            Effect.map(() => ({ type: "response-complete", ...finish }) as const),
+                            Effect.map(() => {
+                              history = nextHistory;
+                              return { type: "response-complete", ...finish } as const;
+                            }),
+                            Effect.uninterruptible,
                           );
                         }),
                       );

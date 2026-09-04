@@ -1,3 +1,9 @@
+/**
+ * Scaffold plumbing shared with `mitome init`. Not a supported API: it carries no stability
+ * guarantee and may change in any release.
+ *
+ * @internal
+ */
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
