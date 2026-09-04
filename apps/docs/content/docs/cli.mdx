@@ -14,7 +14,7 @@ npm install -g @mitome/cli
 
 ```sh
 mitome init
-mitome [prompt] [--print|-p] [--use <path>]
+mitome [message] [--print|-p] [--use <path>]
 mitome install [--use <path>]
 mitome auth login [--use <path>]
 mitome auth logout [--use <path>]
@@ -33,9 +33,9 @@ Before loading a selected Definition, Agent commands reconcile its `package.json
 
 A Mitome Definition is executable TypeScript, not data. The CLI imports it and its Hosts in a disposable Child Host process, resolving dependencies beside the selected module. Run only Definitions you trust: they have the Child Host process's filesystem, network, environment, and Credential access.
 
-`-p` forces one-shot output. Non-TTY stdout also falls back to one-shot so scripts cannot hang, and requires a prompt. Without `-p`, a supported interactive Host declared in the Definition drives the Session. Installing a Host package alone changes nothing.
+`-p` forces one-shot output. Non-TTY stdout also falls back to one-shot so scripts cannot hang, and requires a message. Without `-p`, a supported interactive Host declared in the Definition drives the Session. Installing a Host package alone changes nothing.
 
-The built-in one-shot Host and current TUI auto-approve Tool calls after Extension policy Hooks pass. Applications needing human Approval decisions should drive `session.prompt()` through a custom Host and resolve each `approval-required` event explicitly.
+The built-in one-shot Host and current TUI auto-approve Tool calls after Extension policy Hooks pass. Applications needing human Approval decisions should drive `session.runTurn()` through a custom Host and resolve each `approval-required` event explicitly.
 
 ## Credentials
 

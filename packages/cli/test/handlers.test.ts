@@ -12,7 +12,7 @@ import { ChildHost, type ProviderAuthentication } from "../src/child-host-servic
 import { runAuth } from "../src/commands/auth.ts";
 import { updateConfigEnv } from "../src/config.ts";
 import { runInit } from "../src/commands/init.ts";
-import { runInstall, runPrompt } from "../src/commands/run.ts";
+import { runInstall, runMessage } from "../src/commands/run.ts";
 import { Prompter, type PromptChoice } from "../src/prompter.ts";
 
 type PromptAnswer =
@@ -24,7 +24,7 @@ type PromptAnswer =
 type ChildHostCalls = {
   readonly runHost: Array<{
     readonly path: string;
-    readonly prompt: string | undefined;
+    readonly message: string | undefined;
     readonly mode: "auto" | "print";
   }>;
   readonly install: Array<string>;
@@ -82,9 +82,9 @@ const fakeChildHost = (
   return {
     calls,
     layer: Layer.succeed(ChildHost, {
-      runHost: (path, prompt, mode) =>
+      runHost: (path, message, mode) =>
         Effect.sync(() => {
-          calls.runHost.push({ path, prompt, mode });
+          calls.runHost.push({ path, message, mode });
           return options.runExitCode ?? 0;
         }),
       install: (path) =>
@@ -190,29 +190,29 @@ describe("CLI handlers", () => {
       );
       const childHost = fakeChildHost({ runExitCode: 23 });
       const exit = yield* Effect.exit(
-        runPrompt({ print: false, prompt: Option.some("hello"), use: Option.none() }).pipe(
+        runMessage({ print: false, message: Option.some("hello"), use: Option.none() }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
 
       expect(exit).toEqual(Exit.succeed(23));
       expect(childHost.calls.install).toEqual([]);
-      expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello", mode: "print" }]);
+      expect(childHost.calls.runHost).toEqual([{ path, message: "hello", mode: "print" }]);
     }),
   );
 
-  it.effect("rejects a missing forced-print prompt before selecting an Agent Definition", () =>
+  it.effect("rejects a missing forced-print message before selecting an Agent Definition", () =>
     Effect.gen(function* () {
       const childHost = fakeChildHost();
       const missing = join(yield* Effect.promise(temporaryDirectory), "missing.ts");
       const exit = yield* Effect.exit(
-        runPrompt({ print: true, prompt: Option.none(), use: Option.some(missing) }).pipe(
+        runMessage({ print: true, message: Option.none(), use: Option.some(missing) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
 
       expect(exitCode(exit)).toBe(1);
-      expect((yield* TestConsole.errorLines).join("\n")).toContain("Missing argument prompt");
+      expect((yield* TestConsole.errorLines).join("\n")).toContain("Missing argument message");
       expect(childHost.calls.install).toEqual([]);
       expect(childHost.calls.runHost).toEqual([]);
     }),
@@ -224,14 +224,14 @@ describe("CLI handlers", () => {
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
       const childHost = fakeChildHost({ installRuntime: true });
       const exit = yield* Effect.exit(
-        runPrompt({ print: false, prompt: Option.some("hello"), use: Option.some(path) }).pipe(
+        runMessage({ print: false, message: Option.some("hello"), use: Option.some(path) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
 
       expect(exit).toEqual(Exit.succeed(0));
       expect(childHost.calls.install).toEqual([path]);
-      expect(childHost.calls.runHost).toEqual([{ path, prompt: "hello", mode: "print" }]);
+      expect(childHost.calls.runHost).toEqual([{ path, message: "hello", mode: "print" }]);
       expect(yield* TestConsole.logLines).toContain("Installing Mitome Definition dependencies...");
     }),
   );
@@ -242,7 +242,7 @@ describe("CLI handlers", () => {
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
       const childHost = fakeChildHost({ installExitCode: 17 });
       const exit = yield* Effect.exit(
-        runPrompt({ print: false, prompt: Option.some("hello"), use: Option.some(path) }).pipe(
+        runMessage({ print: false, message: Option.some("hello"), use: Option.some(path) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
@@ -281,7 +281,7 @@ describe("CLI handlers", () => {
         yield* Effect.promise(() => writeFile(packagePath, contents));
         const beforeErrors = (yield* TestConsole.errorLines).length;
         const exit = yield* Effect.exit(
-          runPrompt({ print: false, prompt: Option.some("hello"), use: Option.some(path) }).pipe(
+          runMessage({ print: false, message: Option.some("hello"), use: Option.some(path) }).pipe(
             Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
           ),
         );

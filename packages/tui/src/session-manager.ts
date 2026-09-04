@@ -11,7 +11,7 @@ import type {
 } from "@mitome/core";
 import { Effect, Exit, Scope } from "effect";
 
-export interface SessionResource extends Pick<Session, "prompt" | "history"> {
+export interface SessionResource extends Pick<Session, "runTurn" | "history"> {
   readonly close: Effect.Effect<void>;
 }
 

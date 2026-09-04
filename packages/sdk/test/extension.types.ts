@@ -9,9 +9,11 @@ import {
   tool,
   type ExtensionHooksDefinition,
   type ToolInputValidator,
+  type ModelPrompt,
 } from "../src/index.js";
 
 export type PublicToolInputValidator = ToolInputValidator;
+export type PublicModelPrompt = ModelPrompt;
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
@@ -82,7 +84,7 @@ defineExtension({
   name: "invalid-prompt",
   tools: [],
   hooks: {
-    // @ts-expect-error preStep must return the canonical Prompt type.
+    // @ts-expect-error preStep must return the canonical Model Prompt type.
     preStep: async () => undefined,
   },
 });

@@ -8,8 +8,8 @@ import type { MitomeDefinition, TurnEvent } from "@mitome/core";
 const definitionPath = process.argv[1]!;
 const mode = process.argv[2];
 if (mode !== "auto" && mode !== "print") throw new Error("Invalid Child Host mode.");
-// Absent when no prompt was given; an explicitly empty prompt arrives as "".
-const prompt: string | undefined = process.argv[3];
+// Absent when no message was given; an explicitly empty message arrives as "".
+const message: string | undefined = process.argv[3];
 // SAFETY: Dynamic import namespaces expose their module's default export at `.default`.
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
@@ -65,7 +65,7 @@ if (mode === "auto" && interactiveHost !== undefined) {
   if (reason === undefined) {
     await interactiveHost.run({
       agent: loaded.agent,
-      prompt: prompt ?? "",
+      message: message ?? "",
       transcripts: loaded.transcripts,
     });
     process.exit(0);
@@ -73,11 +73,11 @@ if (mode === "auto" && interactiveHost !== undefined) {
   process.stderr.write(`${reason}; falling back to one-shot output.\n`);
 }
 
-// One-shot has nothing to run without a prompt; an explicitly empty prompt is
+// One-shot has nothing to run without a message; an explicitly empty message is
 // still a valid Session input.
-if (prompt === undefined) {
+if (message === undefined) {
   process.stderr.write(
-    "Missing argument prompt (one-shot output needs a prompt; interactive Sessions need a TTY without --print)\n",
+    "Missing argument message (one-shot output needs a message; interactive Sessions need a TTY without --print)\n",
   );
   process.exit(1);
 }
@@ -143,10 +143,10 @@ const program = Effect.scoped(
   Effect.gen(function* () {
     const session = yield* core.createHostSession({
       agent: loaded.agent,
-      prompt,
+      message,
       transcripts: loaded.transcripts,
     });
-    yield* Stream.runForEach(session.prompt(prompt), (event) =>
+    yield* Stream.runForEach(session.runTurn(message), (event) =>
       Effect.gen(function* () {
         render(event);
         if (event.type === "approval-required") yield* event.approve();

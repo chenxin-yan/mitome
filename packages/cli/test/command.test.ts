@@ -36,9 +36,10 @@ describe("mitome command", () => {
     Effect.gen(function* () {
       const helpExit = yield* Effect.exit(runCli(["--help"]));
       expect(helpExit).toEqual(expect.objectContaining({ _tag: "Success" }));
-      expect(yield* TestConsole.logLines).toEqual(
-        expect.arrayContaining([expect.stringContaining("mitome")]),
+      expect((yield* TestConsole.logLines).join("\n")).toEqual(
+        expect.stringContaining("Mitome Definition"),
       );
+      expect((yield* TestConsole.logLines).join("\n")).toEqual(expect.stringContaining("message"));
 
       const loginHelpExit = yield* Effect.exit(runCli(["auth", "login", "--help"]));
       expect(loginHelpExit).toEqual(expect.objectContaining({ _tag: "Success" }));

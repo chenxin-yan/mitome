@@ -79,7 +79,7 @@ describe("TranscriptSchema", () => {
         ],
       };
       const session = yield* createSession(definition);
-      yield* Stream.runDrain(session.prompt("Hi"));
+      yield* Stream.runDrain(session.runTurn("Hi"));
 
       const originalPrompt = Prompt.fromMessages(session.history());
       const transcript = makeTranscript({

@@ -7,7 +7,7 @@ import { runAuth } from "./commands/auth.js";
 import { runAdd, runRemove } from "./commands/dependencies.js";
 import { runExtensionList } from "./commands/extensions.js";
 import { runInit } from "./commands/init.js";
-import { runInstall, runPrompt } from "./commands/run.js";
+import { runInstall, runMessage } from "./commands/run.js";
 import { Prompter } from "./prompter.js";
 import { fail, type ExitCode } from "./support.js";
 
@@ -15,11 +15,11 @@ const useExitCode = <A extends ExitCode, E, R>(effect: Effect.Effect<A, E, R>) =
   effect.pipe(Effect.tap((exitCode) => Effect.sync(() => (process.exitCode = exitCode))));
 
 const useFlag = Flag.string("use").pipe(
-  Flag.withDescription("Path to an Agent Definition module or directory"),
+  Flag.withDescription("Path to a Mitome Definition module or directory"),
   Flag.optional,
 );
-const promptArgument = Argument.string("prompt").pipe(
-  Argument.withDescription("Prompt to send to the Agent"),
+const messageArgument = Argument.string("message").pipe(
+  Argument.withDescription("Message to send to the Agent"),
   Argument.optional,
 );
 const printFlag = Flag.boolean("print").pipe(
@@ -38,12 +38,12 @@ const addCommand = Command.make(
   "add",
   { ...definitionCommandConfig, package: packageArgument },
   (options) => useExitCode(runAdd(options)),
-).pipe(Command.withDescription("Add an Extension to the Agent Definition"));
+).pipe(Command.withDescription("Add an Extension to the Mitome Definition"));
 const removeCommand = Command.make(
   "remove",
   { ...definitionCommandConfig, package: packageArgument },
   (options) => useExitCode(runRemove(options)),
-).pipe(Command.withDescription("Remove an Extension from the Agent Definition"));
+).pipe(Command.withDescription("Remove an Extension from the Mitome Definition"));
 const extensionListCommand = Command.make("list", definitionCommandConfig, (options) =>
   useExitCode(runExtensionList(options)),
 ).pipe(Command.withDescription("List resolved Extensions"));
@@ -55,20 +55,20 @@ const extensionCommand = Command.make("ext", {}, () =>
 );
 const installCommand = Command.make("install", definitionCommandConfig, (options) =>
   useExitCode(runInstall(options)),
-).pipe(Command.withDescription("Install Agent Definition dependencies"));
+).pipe(Command.withDescription("Install Mitome Definition dependencies"));
 const initCommand = Command.make("init", {}, () => useExitCode(runInit())).pipe(
-  Command.withDescription("Create a default Agent Definition"),
+  Command.withDescription("Create a default Mitome Definition"),
 );
 const loginCommand = Command.make("login", definitionCommandConfig, ({ use }) =>
   useExitCode(runAuth("login", use)),
-).pipe(Command.withDescription("Authenticate the Agent Definition's Providers"));
+).pipe(Command.withDescription("Authenticate the Mitome Definition's Providers"));
 const logoutCommand = Command.make("logout", definitionCommandConfig, ({ use }) =>
   useExitCode(runAuth("logout", use)),
 ).pipe(Command.withDescription("Remove stored Provider Credentials"));
 const authCommand = Command.make("auth", {}, () =>
   fail("Usage: mitome auth <login|logout> [--use <path>]"),
 ).pipe(
-  Command.withDescription("Manage Agent Definition authentication"),
+  Command.withDescription("Manage Mitome Definition authentication"),
   Command.withSubcommands([loginCommand, logoutCommand]),
 );
 
@@ -76,12 +76,12 @@ const command = Command.make(
   "mitome",
   {
     print: printFlag,
-    prompt: promptArgument,
+    message: messageArgument,
     use: useFlag,
   },
-  (options) => useExitCode(runPrompt(options)),
+  (options) => useExitCode(runMessage(options)),
 ).pipe(
-  Command.withDescription("Run an Agent Definition"),
+  Command.withDescription("Run a Mitome Definition"),
   Command.withSubcommands([
     addCommand,
     removeCommand,

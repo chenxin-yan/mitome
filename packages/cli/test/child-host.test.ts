@@ -25,7 +25,7 @@ test("runEmbeddedHost forwards dispatch inputs", async () => {
   await mkdir(dirname(definition), { recursive: true });
 
   const source =
-    "console.log(JSON.stringify({ path: process.argv[1], mode: process.argv[2], prompt: process.argv[3] ?? null }));";
+    "console.log(JSON.stringify({ path: process.argv[1], mode: process.argv[2], message: process.argv[3] ?? null }));";
   const driver = [
     `import { runEmbeddedHost } from ${JSON.stringify(childHostModule)};`,
     `process.exitCode = await runEmbeddedHost(${JSON.stringify(source)}, ${JSON.stringify(definition)}, undefined, "auto");`,
@@ -42,6 +42,6 @@ test("runEmbeddedHost forwards dispatch inputs", async () => {
   expect(JSON.parse(stdout)).toStrictEqual({
     path: definition,
     mode: "auto",
-    prompt: null,
+    message: null,
   });
 });

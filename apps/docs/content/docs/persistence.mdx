@@ -34,7 +34,7 @@ const transcripts = memoryTranscripts();
 const parentId = await withSession(
   agent,
   async (session) => {
-    await Array.fromAsync(session.prompt("Remember that my project is blue."));
+    await Array.fromAsync(session.runTurn("Remember that my project is blue."));
     return session.transcript().id;
   },
   { transcripts },
@@ -43,7 +43,7 @@ const parentId = await withSession(
 await withSession(
   agent,
   async (session) => {
-    await Array.fromAsync(session.prompt("What color is my project?"));
+    await Array.fromAsync(session.runTurn("What color is my project?"));
   },
   { transcripts, resume: parentId },
 );

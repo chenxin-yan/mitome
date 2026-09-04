@@ -30,7 +30,7 @@ describe("@mitome/sdk", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(definition);
-          return yield* Stream.runDrain(session.prompt("Hi"));
+          return yield* Stream.runDrain(session.runTurn("Hi"));
         }),
       ),
     );
@@ -75,14 +75,14 @@ describe("@mitome/sdk", () => {
 
     const roles = await withSession(definition, async (session) => {
       expect(session.history()).toEqual([]);
-      await Array.fromAsync(session.prompt("Hi"));
+      await Array.fromAsync(session.runTurn("Hi"));
       return session.history().map((message) => message.role);
     });
 
     expect(roles).toEqual(["user", "assistant"]);
   });
 
-  test("prompt() iterable throws on a second iteration instead of re-running the Turn", async () => {
+  test("runTurn() iterable throws on a second iteration instead of re-running the Turn", async () => {
     const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
     const definition = defineAgent({
       providers: [fixture.provider],
@@ -91,7 +91,7 @@ describe("@mitome/sdk", () => {
     });
 
     await withSession(definition, async (session) => {
-      const iterable = session.prompt("Hi");
+      const iterable = session.runTurn("Hi");
       await Array.fromAsync(iterable);
       expect(() => iterable[Symbol.asyncIterator]()).toThrowError("single-use");
     });
@@ -112,8 +112,8 @@ describe("@mitome/sdk", () => {
     });
 
     const output = await withSession(definition, async (session) => {
-      const defaults = await Array.fromAsync(session.prompt("one"));
-      const override = await Array.fromAsync(session.prompt("two", { model: "second/private" }));
+      const defaults = await Array.fromAsync(session.runTurn("one"));
+      const override = await Array.fromAsync(session.runTurn("two", { model: "second/private" }));
       return [defaults[0], override[0]];
     });
 
@@ -136,7 +136,7 @@ describe("@mitome/sdk", () => {
 
     try {
       await withSession(definition, async (session) => {
-        await Array.fromAsync(session.prompt("Hi"));
+        await Array.fromAsync(session.runTurn("Hi"));
         throw new MyError("expected");
       });
     } catch (error) {
@@ -158,7 +158,7 @@ describe("@mitome/sdk", () => {
 
     try {
       await withSession(definition, async (session) => {
-        for await (const _event of session.prompt("Hi")) {
+        for await (const _event of session.runTurn("Hi")) {
           // The stream fails before producing an event.
         }
       });
@@ -189,7 +189,7 @@ describe("@mitome/sdk", () => {
     });
 
     const events = await withSession(definition, (session) =>
-      Array.fromAsync(session.prompt("Hi")),
+      Array.fromAsync(session.runTurn("Hi")),
     );
 
     expect(events).toEqual([
@@ -208,7 +208,7 @@ describe("@mitome/sdk", () => {
     let iterable!: AsyncIterable<unknown>;
 
     await withSession(definition, async (session) => {
-      iterable = session.prompt("late");
+      iterable = session.runTurn("late");
     });
 
     let iterator!: AsyncIterator<unknown>;
@@ -231,7 +231,7 @@ describe("@mitome/sdk", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
-      for await (const event of session.prompt("Hi")) {
+      for await (const event of session.runTurn("Hi")) {
         collected.push(event);
       }
       return collected;

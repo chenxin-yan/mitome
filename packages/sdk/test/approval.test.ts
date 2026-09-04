@@ -85,7 +85,7 @@ describe("@mitome/sdk Tool Approval", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
-      for await (const event of session.prompt("Hi")) {
+      for await (const event of session.runTurn("Hi")) {
         collected.push(event);
         if (event.type === "approval-required") {
           await event.deny("declined");
@@ -136,7 +136,7 @@ describe("@mitome/sdk Tool Approval", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
-      for await (const event of session.prompt("Hi")) {
+      for await (const event of session.runTurn("Hi")) {
         collected.push(event);
         if (event.type === "approval-required") await event.approve();
       }
@@ -181,7 +181,7 @@ describe("@mitome/sdk Tool Approval", () => {
     });
 
     await withSession(definition, async (session) => {
-      for await (const event of session.prompt("Hi")) {
+      for await (const event of session.runTurn("Hi")) {
         if (event.type === "approval-required") {
           approvalParams = event.params;
           await event.approve();
@@ -220,7 +220,7 @@ describe("@mitome/sdk Tool Approval", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
-      for await (const event of session.prompt("Hi")) {
+      for await (const event of session.runTurn("Hi")) {
         collected.push(event);
         if (event.type === "approval-required") await event.approve();
       }
@@ -264,7 +264,7 @@ describe("@mitome/sdk Tool Approval", () => {
     });
 
     const events = await withSession(definition, async (session) => {
-      const iterator = session.prompt("first")[Symbol.asyncIterator]();
+      const iterator = session.runTurn("first")[Symbol.asyncIterator]();
       await iterator.next();
       const pending = await iterator.next();
       if (pending.done || pending.value.type !== "approval-required")
@@ -276,7 +276,7 @@ describe("@mitome/sdk Tool Approval", () => {
       });
 
       const next = [];
-      for await (const event of session.prompt("second")) next.push(event);
+      for await (const event of session.runTurn("second")) next.push(event);
       return next;
     });
 

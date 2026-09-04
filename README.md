@@ -17,7 +17,7 @@ const agent = defineAgent({
 });
 
 await withSession(agent, async (session) => {
-  for await (const event of session.prompt("Write a haiku about trees.")) {
+  for await (const event of session.runTurn("Write a haiku about trees.")) {
     if (event.type === "model-output") process.stdout.write(event.text);
   }
 });

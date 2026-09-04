@@ -46,17 +46,17 @@ Tool input and output are validated. `inputSchema` may be an Effect Schema or a 
 
 Every Promise Hook receives a context containing `resource`, `signal`, and `getService`. Hooks run in deterministic dependency-first, declaration-stable order; teardown is reversed.
 
-| Hook                         | Contract                                                                                              |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `sessionStart(context)`      | Observe Session startup after Resources are acquired.                                                 |
-| `sessionEnd(context)`        | Observe Session shutdown before Resources are disposed.                                               |
-| `turnStart(text, context)`   | Observe the user text at the start of a Turn.                                                         |
-| `turnEnd(text, context)`     | Observe successful Turn completion.                                                                   |
-| `stepStart(prompt, context)` | Observe the model prompt before one Step.                                                             |
-| `stepEnd(prompt, context)`   | Observe emitted `responseParts`; failed Steps include partial parts.                                  |
-| `preStep(prompt, context)`   | Return the prompt to send, transformed or unchanged.                                                  |
-| `preTool(context)`           | Observe a decoded Tool call; return `{ reason }` to veto it or nothing to continue.                   |
-| `postTool(context)`          | Observe and return the Tool result, transformed or unchanged; `isFailure` identifies failed handlers. |
+| Hook                          | Contract                                                                                              |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `sessionStart(context)`       | Observe Session startup after Resources are acquired.                                                 |
+| `sessionEnd(context)`         | Observe Session shutdown before Resources are disposed.                                               |
+| `turnStart(message, context)` | Observe the Message at the start of a Turn.                                                           |
+| `turnEnd(message, context)`   | Observe successful Turn completion.                                                                   |
+| `stepStart(prompt, context)`  | Observe the Model Prompt before one Step.                                                             |
+| `stepEnd(prompt, context)`    | Observe emitted `responseParts`; failed Steps include partial parts.                                  |
+| `preStep(prompt, context)`    | Return the Model Prompt to send, transformed or unchanged.                                            |
+| `preTool(context)`            | Observe a decoded Tool call; return `{ reason }` to veto it or nothing to continue.                   |
+| `postTool(context)`           | Observe and return the Tool result, transformed or unchanged; `isFailure` identifies failed handlers. |
 
 A Hook rejection fails the Turn with `TurnError`. `preTool` is policy before execution, while Approval is a separate Host decision after policy. Do not use one as a substitute for the other.
 

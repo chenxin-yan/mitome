@@ -24,7 +24,7 @@ export class ChildHost extends Context.Service<
   {
     readonly runHost: (
       path: string,
-      prompt: string | undefined,
+      message: string | undefined,
       mode: "auto" | "print",
     ) => Effect.Effect<ExitCode, CliError>;
     readonly install: (path: string) => Effect.Effect<ExitCode, CliError>;

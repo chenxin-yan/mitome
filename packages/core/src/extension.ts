@@ -18,8 +18,8 @@ export interface ToolResultHookContext extends ToolHookContext {
 export interface ExtensionHooks<Resource = never> {
   readonly sessionStart?: Effect.Effect<void, unknown, Resource>;
   readonly sessionEnd?: Effect.Effect<void, unknown, Resource>;
-  readonly turnStart?: (text: string) => Effect.Effect<void, unknown, Resource>;
-  readonly turnEnd?: (text: string) => Effect.Effect<void, unknown, Resource>;
+  readonly turnStart?: (message: string) => Effect.Effect<void, unknown, Resource>;
+  readonly turnEnd?: (message: string) => Effect.Effect<void, unknown, Resource>;
   readonly stepStart?: (prompt: Prompt.Prompt) => Effect.Effect<void, unknown, Resource>;
   /** Receives the model prompt and emitted response parts; failed Steps provide their partial parts. */
   readonly stepEnd?: (

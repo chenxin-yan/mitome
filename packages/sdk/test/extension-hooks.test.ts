@@ -199,7 +199,7 @@ describe("@mitome/sdk Extension Hooks", () => {
 
     const events = await withSession(
       defineAgent({ providers: [model], model: "test/default", extensions: [core, sdk] }),
-      (session) => Array.fromAsync(session.prompt("Hi")),
+      (session) => Array.fromAsync(session.runTurn("Hi")),
     );
 
     expect(log).toEqual([
@@ -258,7 +258,7 @@ describe("@mitome/sdk Extension Hooks", () => {
     });
 
     await expect(
-      withSession(agent, (session) => Array.fromAsync(session.prompt("Hi"))),
+      withSession(agent, (session) => Array.fromAsync(session.runTurn("Hi"))),
     ).rejects.toMatchObject({ _tag: "TurnError", message: "Pre-Step Hook failed" });
     expect(modelCalls).toBe(0);
   });
@@ -292,7 +292,7 @@ describe("@mitome/sdk Extension Hooks", () => {
     });
 
     await withSession(agent, async (session) => {
-      const iterator = session.prompt("Hi")[Symbol.asyncIterator]();
+      const iterator = session.runTurn("Hi")[Symbol.asyncIterator]();
       const next = iterator.next();
       await hookStarted;
       await iterator.return?.();
@@ -345,7 +345,7 @@ describe("@mitome/sdk Extension Hooks", () => {
     });
 
     await withSession(agent, async (session) => {
-      const iterator = session.prompt("Hi")[Symbol.asyncIterator]();
+      const iterator = session.runTurn("Hi")[Symbol.asyncIterator]();
       expect(await iterator.next()).toMatchObject({ value: { type: "model-output" } });
       await hookStarted;
       await iterator.return?.();
@@ -373,7 +373,7 @@ describe("@mitome/sdk Extension Hooks", () => {
     });
 
     await expect(
-      withSession(agent, (session) => Array.fromAsync(session.prompt("Hi"))),
+      withSession(agent, (session) => Array.fromAsync(session.runTurn("Hi"))),
     ).rejects.toMatchObject({ _tag: "TurnError", cause: original });
   });
 
@@ -407,7 +407,7 @@ describe("@mitome/sdk Extension Hooks", () => {
         }),
       ],
     });
-    const events = await withSession(failing, (session) => Array.fromAsync(session.prompt("Hi")));
+    const events = await withSession(failing, (session) => Array.fromAsync(session.runTurn("Hi")));
     expect(events.find((event) => event.type === "tool-result")).toMatchObject({
       type: "tool-result",
       isFailure: true,
@@ -434,7 +434,7 @@ describe("@mitome/sdk Extension Hooks", () => {
       ],
     });
     await expect(
-      withSession(invalid, (session) => Array.fromAsync(session.prompt("Hi"))),
+      withSession(invalid, (session) => Array.fromAsync(session.runTurn("Hi"))),
     ).rejects.toMatchObject({ _tag: "TurnError" });
   });
 });

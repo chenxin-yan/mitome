@@ -37,7 +37,7 @@ test("snapshots and resumes prior context through the public SDK", async () => {
   const parentId = await withSession(
     definition,
     async (session) => {
-      await Array.fromAsync(session.prompt("first"));
+      await Array.fromAsync(session.runTurn("first"));
       return session.transcript().id;
     },
     { transcripts: store },
@@ -45,7 +45,7 @@ test("snapshots and resumes prior context through the public SDK", async () => {
   const child = await withSession(
     definition,
     async (session) => {
-      await Array.fromAsync(session.prompt("second"));
+      await Array.fromAsync(session.runTurn("second"));
       return session.transcript();
     },
     { transcripts: store, resume: parentId },
@@ -63,7 +63,7 @@ test("two resumes create independent child Transcripts with parent provenance", 
   const parentId = await withSession(
     definition,
     async (session) => {
-      await Array.fromAsync(session.prompt("parent"));
+      await Array.fromAsync(session.runTurn("parent"));
       return session.transcript().id;
     },
     { transcripts: store },
@@ -73,7 +73,7 @@ test("two resumes create independent child Transcripts with parent provenance", 
     withSession(
       definition,
       async (session) => {
-        await Array.fromAsync(session.prompt(text));
+        await Array.fromAsync(session.runTurn(text));
         return session.transcript();
       },
       { transcripts: store, resume: parentId },
@@ -108,7 +108,7 @@ test("a hand-constructed Transcript seeds a Session", async () => {
   const transcript = await withSession(
     definition,
     async (session) => {
-      await Array.fromAsync(session.prompt("continue"));
+      await Array.fromAsync(session.runTurn("continue"));
       return session.transcript();
     },
     { transcript: synthetic },
@@ -133,12 +133,12 @@ test("a failed save surfaces StoreError but keeps the completed turn committed",
   await withSession(
     definition,
     async (session) => {
-      await expect(Array.fromAsync(session.prompt("first"))).rejects.toBeInstanceOf(StoreError);
+      await expect(Array.fromAsync(session.runTurn("first"))).rejects.toBeInstanceOf(StoreError);
       expect(session.transcript().messages.map((message) => message.role)).toEqual([
         "user",
         "assistant",
       ]);
-      await expect(Array.fromAsync(session.prompt("second"))).rejects.toBeInstanceOf(StoreError);
+      await expect(Array.fromAsync(session.runTurn("second"))).rejects.toBeInstanceOf(StoreError);
     },
     { transcripts: failing },
   );
@@ -164,10 +164,10 @@ test("failed and interrupted Turns leave stored Transcripts unchanged", async ()
   const transcriptId = await withSession(
     definition,
     async (session) => {
-      await Array.fromAsync(session.prompt("saved"));
+      await Array.fromAsync(session.runTurn("saved"));
       const before = await Effect.runPromise(store.load(session.transcript().id));
 
-      await expect(Array.fromAsync(session.prompt("failed"))).rejects.toBeInstanceOf(TurnError);
+      await expect(Array.fromAsync(session.runTurn("failed"))).rejects.toBeInstanceOf(TurnError);
       expect(await Effect.runPromise(store.load(before.id))).toEqual(before);
       return before.id;
     },
@@ -178,7 +178,7 @@ test("failed and interrupted Turns leave stored Transcripts unchanged", async ()
   await withSession(
     definition,
     async (session) => {
-      const iterator = session.prompt("interrupted")[Symbol.asyncIterator]();
+      const iterator = session.runTurn("interrupted")[Symbol.asyncIterator]();
       await iterator.next();
       await iterator.return?.();
     },

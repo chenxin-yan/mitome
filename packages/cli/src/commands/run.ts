@@ -14,20 +14,20 @@ export const reconcileDefinition = Effect.fn("@mitome/cli/reconcileDefinition")(
   return exitCode;
 });
 
-export const runPrompt = Effect.fn("@mitome/cli/runPrompt")(function* ({
+export const runMessage = Effect.fn("@mitome/cli/runMessage")(function* ({
   print,
-  prompt,
+  message,
   use,
 }: {
   readonly print: boolean;
-  readonly prompt: Option.Option<string>;
+  readonly message: Option.Option<string>;
   readonly use: Option.Option<string>;
 }) {
-  const promptValue = Option.getOrUndefined(prompt);
+  const messageValue = Option.getOrUndefined(message);
   const forcePrint = print || process.stdout.isTTY !== true;
-  if (forcePrint && promptValue === undefined) {
+  if (forcePrint && messageValue === undefined) {
     return yield* fail(
-      "Missing argument prompt (one-shot output needs a prompt; interactive Sessions need a TTY without --print)",
+      "Missing argument message (one-shot output needs a message; interactive Sessions need a TTY without --print)",
     );
   }
 
@@ -35,7 +35,7 @@ export const runPrompt = Effect.fn("@mitome/cli/runPrompt")(function* ({
   const path = yield* attempt(() => definitionPath(use));
   const installExitCode = yield* reconcileDefinition(path);
   if (installExitCode !== 0) return installExitCode;
-  return yield* childHost.runHost(path, promptValue, forcePrint ? "print" : "auto");
+  return yield* childHost.runHost(path, messageValue, forcePrint ? "print" : "auto");
 });
 
 export const runInstall = Effect.fn("@mitome/cli/runInstall")(function* ({

@@ -19,6 +19,6 @@ export const tui = (): Host => ({
     const manager = makeSessionManager(context);
     const session = await Effect.runPromise(manager.open());
     const viewModel = makeSessionViewModel(session, manager);
-    await runShell(viewModel, context.prompt);
+    await runShell(viewModel, context.message);
   },
 });

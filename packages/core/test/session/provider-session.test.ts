@@ -31,9 +31,9 @@ describe("Provider-backed Sessions", () => {
         }),
       );
 
-      const defaultEvents = yield* Stream.runCollect(session.prompt("one"));
+      const defaultEvents = yield* Stream.runCollect(session.runTurn("one"));
       const overrideEvents = yield* Stream.runCollect(
-        session.prompt("two", { model: "second/private/path" }),
+        session.runTurn("two", { model: "second/private/path" }),
       );
 
       expect(defaultEvents[0]).toEqual({ type: "model-output", text: "first/default" });
@@ -68,7 +68,7 @@ describe("Provider-backed Sessions", () => {
 
       // SAFETY: this test deliberately bypasses the compile-time Provider-id constraint.
       const error = yield* Effect.flip(
-        Stream.runDrain(session.prompt("bad", { model: "missing/model" } as never)),
+        Stream.runDrain(session.runTurn("bad", { model: "missing/model" } as never)),
       );
 
       expect(error).toMatchObject({
@@ -78,7 +78,7 @@ describe("Provider-backed Sessions", () => {
       expect(turnStarts).toBe(0);
       expect(session.history()).toEqual([]);
 
-      yield* Stream.runDrain(session.prompt("good"));
+      yield* Stream.runDrain(session.runTurn("good"));
       expect(turnStarts).toBe(1);
       expect(session.history().map((message) => message.role)).toEqual(["user"]);
     }),
@@ -138,7 +138,7 @@ describe("Provider-backed Sessions", () => {
         }),
       );
 
-      yield* Stream.runDrain(session.prompt("go", { model: "tools/selected" }));
+      yield* Stream.runDrain(session.runTurn("go", { model: "tools/selected" }));
 
       expect(calls).toBe(2);
       expect(selected).toEqual(["selected"]);
@@ -179,9 +179,9 @@ describe("Provider-backed Sessions", () => {
             }),
           );
           expect(builds).toBe(0);
-          yield* Stream.runDrain(session.prompt("first"));
-          yield* Stream.runDrain(session.prompt("again"));
-          yield* Stream.runDrain(session.prompt("other", { model: "counting/two" }));
+          yield* Stream.runDrain(session.runTurn("first"));
+          yield* Stream.runDrain(session.runTurn("again"));
+          yield* Stream.runDrain(session.runTurn("other", { model: "counting/two" }));
           expect(provisioned).toEqual(["one", "two"]);
           expect(builds).toBe(2);
           expect(releases).toBe(0);

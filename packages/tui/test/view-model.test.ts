@@ -21,7 +21,7 @@ const scriptedSession = (
 ): SessionResource => {
   let next = 0;
   return {
-    prompt: () => scripts[next++] ?? Stream.empty,
+    runTurn: () => scripts[next++] ?? Stream.empty,
     history: () => [],
     close: Effect.void,
   };
@@ -70,7 +70,7 @@ describe("session view model", () => {
 
     expect(observed.some((state) => state.activeTurn?.response === "hel")).toBe(true);
     expect(viewModel.getState().turns[0]).toEqual({
-      prompt: "first\nline",
+      message: "first\nline",
       response: "hello",
       activities: ["Tool lookup started", "Tool lookup auto-approved", "Tool lookup completed"],
     });
@@ -106,7 +106,7 @@ describe("session view model", () => {
     await waitFor(() => viewModel.getState().phase === "idle");
 
     expect(viewModel.getState().turns).toEqual([
-      { prompt: "cancel me", response: "done", activities: [] },
+      { message: "cancel me", response: "done", activities: [] },
     ]);
     await viewModel.dispose();
   });
@@ -134,7 +134,7 @@ describe("session view model", () => {
     expect(viewModel.submit("next")).toBe(true);
     await waitFor(() => viewModel.getState().phase === "idle");
     expect(viewModel.getState().turns).toEqual([
-      { prompt: "next", response: "recovered", activities: [] },
+      { message: "next", response: "recovered", activities: [] },
     ]);
     await viewModel.dispose();
   });
@@ -170,7 +170,7 @@ describe("session view model", () => {
 
             expect(session.history()).toHaveLength(1);
             expect(viewModel.getState().turns).toEqual([
-              { prompt: "persist me", response: "kept", activities: [] },
+              { message: "persist me", response: "kept", activities: [] },
             ]);
             expect(viewModel.getState().notice).toContain("save failed");
             await viewModel.dispose();
@@ -251,7 +251,7 @@ describe("session view model", () => {
     const transcripts = memoryTranscripts();
     const manager = makeSessionManager({
       agent: { providers: [provider], model: "test/default", extensions: [] },
-      prompt: "",
+      message: "",
       transcripts,
     });
     const initial = await Effect.runPromise(manager.open());

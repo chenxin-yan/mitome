@@ -16,10 +16,10 @@ const definition = defineAgent({
 });
 
 void withSession(definition, async (session) => {
-  session.prompt("known", { model: "first/known" });
-  session.prompt("private", { model: "second/private" });
+  session.runTurn("known", { model: "first/known" });
+  session.runTurn("private", { model: "second/private" });
   // @ts-expect-error Promise SDK selections must use a registered Provider prefix.
-  session.prompt("invalid", { model: "missing/model" });
+  session.runTurn("invalid", { model: "missing/model" });
 });
 
 declare const store: TranscriptStore;

@@ -22,7 +22,7 @@ export type OutputSchema<Output = unknown> =
   | StandardSchemaV1<unknown, Output>
   | EffectSchema<Output>;
 
-export type Prompt = AiPrompt.Prompt;
+export type ModelPrompt = AiPrompt.Prompt;
 
 type ServiceValue<Service> = Service extends Context.Key<any, infer Value> ? Value : never;
 
@@ -54,12 +54,21 @@ export interface ToolApprovalContext {
 export interface ExtensionHooksDefinition<Resource = never, Services = never> {
   readonly sessionStart?: (context: HookContext<Resource, Services>) => Promise<void>;
   readonly sessionEnd?: (context: HookContext<Resource, Services>) => Promise<void>;
-  readonly turnStart?: (text: string, context: HookContext<Resource, Services>) => Promise<void>;
-  readonly turnEnd?: (text: string, context: HookContext<Resource, Services>) => Promise<void>;
-  readonly stepStart?: (prompt: Prompt, context: HookContext<Resource, Services>) => Promise<void>;
-  /** Receives the model prompt and emitted response parts; failed Steps provide their partial parts. */
-  readonly stepEnd?: (prompt: Prompt, context: StepEndContext<Resource, Services>) => Promise<void>;
-  readonly preStep?: (prompt: Prompt, context: HookContext<Resource, Services>) => Promise<Prompt>;
+  readonly turnStart?: (message: string, context: HookContext<Resource, Services>) => Promise<void>;
+  readonly turnEnd?: (message: string, context: HookContext<Resource, Services>) => Promise<void>;
+  readonly stepStart?: (
+    prompt: ModelPrompt,
+    context: HookContext<Resource, Services>,
+  ) => Promise<void>;
+  /** Receives the Model Prompt and emitted response parts; failed Steps provide their partial parts. */
+  readonly stepEnd?: (
+    prompt: ModelPrompt,
+    context: StepEndContext<Resource, Services>,
+  ) => Promise<void>;
+  readonly preStep?: (
+    prompt: ModelPrompt,
+    context: HookContext<Resource, Services>,
+  ) => Promise<ModelPrompt>;
   readonly preTool?: (
     context: ToolHookContext & HookContext<Resource, Services>,
   ) => Promise<void | { readonly reason: string }>;
@@ -191,9 +200,9 @@ const adaptHooks = <Resource, Services>(
   const sessionEnd = hooks.sessionEnd;
   if (sessionEnd) adapted.sessionEnd = run(sessionEnd);
   const turnStart = hooks.turnStart;
-  if (turnStart) adapted.turnStart = (text) => run((context) => turnStart(text, context));
+  if (turnStart) adapted.turnStart = (message) => run((context) => turnStart(message, context));
   const turnEnd = hooks.turnEnd;
-  if (turnEnd) adapted.turnEnd = (text) => run((context) => turnEnd(text, context));
+  if (turnEnd) adapted.turnEnd = (message) => run((context) => turnEnd(message, context));
   const stepStart = hooks.stepStart;
   if (stepStart) adapted.stepStart = (prompt) => run((context) => stepStart(prompt, context));
   const stepEnd = hooks.stepEnd;

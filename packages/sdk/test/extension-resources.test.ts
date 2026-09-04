@@ -41,7 +41,7 @@ describe("@mitome/sdk Extension resources", () => {
         model: "test/default",
         extensions: [extension("first"), extension("second"), extension("third")],
       }),
-      (session) => Array.fromAsync(session.prompt("Hi")),
+      (session) => Array.fromAsync(session.runTurn("Hi")),
     );
 
     expect(log).toEqual([
@@ -168,7 +168,7 @@ describe("@mitome/sdk Extension resources", () => {
         model: "test/default",
         extensions: [alpha, beta],
       }),
-      (session) => Array.fromAsync(session.prompt("Hi")),
+      (session) => Array.fromAsync(session.runTurn("Hi")),
     );
 
     expect(log).toEqual(["hook:beta:true", "tool:alpha:1"]);
@@ -228,7 +228,7 @@ describe("@mitome/sdk Extension resources", () => {
         model: "test/default",
         extensions: [extension],
       }),
-      (session) => Array.fromAsync(session.prompt("Hi")),
+      (session) => Array.fromAsync(session.runTurn("Hi")),
     );
 
     expect(log).toEqual([
@@ -329,14 +329,14 @@ describe("@mitome/sdk Extension resources", () => {
     });
 
     const events = await withSession(definition, async (session) => {
-      const iterator = session.prompt("first")[Symbol.asyncIterator]();
+      const iterator = session.runTurn("first")[Symbol.asyncIterator]();
       await iterator.next();
       const pending = iterator.next();
       await handlerStarted;
       await iterator.return?.();
       await handlerAborted;
       await pending.catch(() => undefined);
-      return Array.fromAsync(session.prompt("second"));
+      return Array.fromAsync(session.runTurn("second"));
     });
 
     expect(events.at(-1)).toEqual({ type: "response-complete" });
@@ -450,7 +450,7 @@ describe("@mitome/sdk Extension resources", () => {
 
     const events = await withSession(
       defineAgent({ providers: [model], model: "test/default", extensions: [native] }),
-      (session) => Array.fromAsync(session.prompt("Hi")),
+      (session) => Array.fromAsync(session.runTurn("Hi")),
     );
 
     expect(events).toContainEqual({
@@ -484,7 +484,7 @@ describe("@mitome/sdk Extension resources", () => {
         Effect.scoped(
           Effect.gen(function* () {
             const session = yield* createSession(definition);
-            yield* Stream.runDrain(session.prompt("Hi"));
+            yield* Stream.runDrain(session.runTurn("Hi"));
           }),
         ),
       ),

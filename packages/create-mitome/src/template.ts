@@ -100,8 +100,8 @@ const gitignoreSource = "node_modules/\n";
 const readmeSource = (flavor: Flavor): string => {
   const embed =
     flavor === "promise"
-      ? `import mitome from "./index.js";\nimport { withSession } from "@mitome/sdk";\n\nawait withSession(mitome.agent, async (session) => {\n  for await (const event of session.prompt("Hi")) console.log(event);\n});`
-      : `import { Effect, Stream } from "effect";\nimport mitome from "./index.js";\nimport { createSession } from "@mitome/sdk/effect";\n\nawait Effect.runPromise(\n  Effect.scoped(\n    Effect.gen(function* () {\n      const session = yield* createSession(mitome.agent);\n      yield* Stream.runForEach(session.prompt("Hi"), (event) => Effect.log(event));\n    }),\n  ),\n);`;
+      ? `import mitome from "./index.js";\nimport { withSession } from "@mitome/sdk";\n\nawait withSession(mitome.agent, async (session) => {\n  for await (const event of session.runTurn("Hi")) console.log(event);\n});`
+      : `import { Effect, Stream } from "effect";\nimport mitome from "./index.js";\nimport { createSession } from "@mitome/sdk/effect";\n\nawait Effect.runPromise(\n  Effect.scoped(\n    Effect.gen(function* () {\n      const session = yield* createSession(mitome.agent);\n      yield* Stream.runForEach(session.runTurn("Hi"), (event) => Effect.log(event));\n    }),\n  ),\n);`;
   return `# Mitome Agent\n\n## Next steps\n\n\`\`\`sh\nnpm install\nnpm install -g @mitome/cli\nmitome auth login --use .\nmitome "hi" --use .\n\`\`\`\n\n## Embed the Agent\n\n\`\`\`ts\n${embed}\n\`\`\`\n`;
 };
 
