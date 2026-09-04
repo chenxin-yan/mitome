@@ -1,10 +1,10 @@
 ---
 title: "Quickstart: embed"
-description: Install the SDK, define an OpenAI Agent, and stream your first Turn from your own code.
+description: Install the SDK, define an Agent, and stream your first Turn from your own code.
 icon: Braces
 ---
 
-You need an OpenAI API key and Node.js 24 or later (or Bun).
+You need a Credential for one of the [Providers](/docs/providers) and Node.js 24 or later (or Bun). This page uses OpenAI as its example.
 
 ## 1. Install
 
@@ -12,9 +12,9 @@ You need an OpenAI API key and Node.js 24 or later (or Bun).
 npm install @mitome/sdk @mitome/providers
 ```
 
-## 2. Provide the API key
+## 2. Provide the Credential
 
-The OpenAI Provider reads `OPENAI_API_KEY` from the process environment:
+Each Provider documents its own Credential. The OpenAI Provider reads `OPENAI_API_KEY` from the process environment:
 
 ```sh
 export OPENAI_API_KEY=sk-...
@@ -44,6 +44,8 @@ await withSession(agent, async (session) => {
 ```
 
 `defineAgent` declares the Agent: its Providers and its Default Model as a `provider/model` id. `withSession` opens a [Session](/docs/concepts#session), runs your callback, and releases the Session afterwards, including when the callback throws. `session.runTurn()` returns an async iterable of [Turn](/docs/concepts#turn) events; `model-output` carries streamed text.
+
+To use another Provider, change the import and the `model` prefix; the Session code stays the same.
 
 ## 4. Run it
 

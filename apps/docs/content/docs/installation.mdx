@@ -29,7 +29,7 @@ Run Agents from a terminal:
 npm install -g @mitome/cli
 ```
 
-The Provider package has no root import. Import the Provider you use from its own path: `@mitome/providers/openai`, `@mitome/providers/openai-compatible`, or `@mitome/providers/openai-codex`.
+The Provider package has no root import. Import the Provider you use from its own path, such as `@mitome/providers/openai`; [Providers](/docs/providers) lists every path.
 
 Applications that already run on Effect must install the exact `effect` version `@mitome/sdk` pins, to avoid two copies of the runtime. Check it with `npm ls effect` after installing the SDK, then install exactly that version; see [Effect-native API](/docs/effect#install).
 
@@ -41,7 +41,7 @@ Both scaffolders generate the same Agent Definition. They differ in where it liv
 
 **`npm create mitome <directory>`** creates a standalone project you own and version: `package.json`, `index.ts`, `instructions.md`, `tsconfig.json`, `.gitignore`, and a `README.md`. It also asks whether you want the Promise-first or the Effect-native flavor. Run it from the CLI with `mitome "hi" --use <directory>`, or import its `index.ts` into your application.
 
-The generated `index.ts` for the OpenAI Provider looks like this:
+With the OpenAI Provider chosen, the generated `index.ts` looks like this:
 
 ```ts
 import { defineAgent, defineMitome, fileTranscripts } from "@mitome/sdk";

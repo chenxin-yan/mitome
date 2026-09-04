@@ -40,11 +40,11 @@ Both paths use the same Agent Definition. An Agent Definition written for the te
 
 ## Packages by audience
 
-| You are                        | Install                                 | Import from                               |
-| ------------------------------ | --------------------------------------- | ----------------------------------------- |
-| Building an application        | `@mitome/sdk`, `@mitome/providers`      | `@mitome/sdk`, `@mitome/providers/openai` |
-| Using an Agent from a terminal | `@mitome/cli`, optionally `@mitome/tui` | the generated `index.ts`                  |
-| Authoring an Extension         | `@mitome/sdk`                           | `@mitome/sdk`                             |
-| Authoring a Host or Provider   | `@mitome/core`                          | `@mitome/core`                            |
+| You are                        | Install                                 | Import from                                                  |
+| ------------------------------ | --------------------------------------- | ------------------------------------------------------------ |
+| Building an application        | `@mitome/sdk`, `@mitome/providers`      | `@mitome/sdk`, the Provider's path under `@mitome/providers` |
+| Using an Agent from a terminal | `@mitome/cli`, optionally `@mitome/tui` | the generated `index.ts`                                     |
+| Authoring an Extension         | `@mitome/sdk`                           | `@mitome/sdk`                                                |
+| Authoring a Host or Provider   | `@mitome/core`                          | `@mitome/core`                                               |
 
 Applications that already run on Effect can use `@mitome/sdk/effect`, a curated Effect-native facade over the same runtime; see [Effect-native API](/docs/effect). Requirements and install commands are on the [Installation](/docs/installation) page.

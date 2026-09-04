@@ -1,10 +1,10 @@
 ---
 title: "Quickstart: terminal"
-description: Install the CLI, create an OpenAI Agent, run your first Turn, and open the interactive terminal UI.
+description: Install the CLI, create an Agent, run your first Turn, and open the interactive terminal UI.
 icon: Play
 ---
 
-You need an OpenAI API key and Node.js 22.14 or later. The `mitome` command is a compiled binary; you do not install Bun.
+You need a Credential for one of the [Providers](/docs/providers) and Node.js 22.14 or later. This page uses OpenAI as its example. The `mitome` command is a compiled binary; you do not install Bun.
 
 ## 1. Install the CLI
 
@@ -18,7 +18,7 @@ npm install -g @mitome/cli
 mitome init
 ```
 
-Choose **OpenAI API** and a Model, then paste your API key at the masked prompt. The command writes `index.ts`, `AGENTS.md`, and `package.json` into the Mitome config directory (`~/.config/mitome` on Linux and macOS; see [Configuration](/docs/configuration) for every platform), installs the dependencies, and stores the key in `<config-dir>/.env`. Nothing you already have there is overwritten.
+Choose a Provider and a Model, then authenticate: API-key Providers ask for the key at a masked prompt; OAuth Providers open a browser login. The command writes `index.ts`, `AGENTS.md`, and `package.json` into the Mitome config directory (`~/.config/mitome` on Linux and macOS; see [Configuration](/docs/configuration) for every platform), installs the dependencies, and stores the key in `<config-dir>/.env`. Nothing you already have there is overwritten.
 
 ## 3. Run a Turn
 
@@ -50,6 +50,7 @@ export default defineMitome({
 ```
 
 - `defineAgent` declares the Agent itself: its Providers, its Default Model as a `provider/model` id, and its Extensions. This value is what an application embeds.
+- `openai()` is the Provider chosen during `mitome init`. Pick another and the import path and the `model` prefix change; nothing else does. [Providers](/docs/providers) lists them.
 - `defineMitome` is the composition root the CLI loads: it pairs that Agent with the Hosts that run it and the store that persists its Transcripts.
 - `instructionFiles` is a first-party Extension that reads `AGENTS.md` next to the Mitome Definition module, plus any `AGENTS.md` in the directories from the Git root down to your current directory (only the current directory when there is no Git root), and adds the text to the Agent's Instructions. Edit `<config-dir>/AGENTS.md` to change how the Agent behaves.
 - `fileTranscripts()` saves each completed Turn under `<config-dir>/transcripts`. Remove the line to keep nothing on disk.
