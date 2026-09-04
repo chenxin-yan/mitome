@@ -155,24 +155,14 @@ export const makeSessionViewModel = (
       const turn = state.activeTurn;
       const interrupted =
         run.interrupted || (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause));
+      // History advances only after the Transcript save succeeds, so a longer
+      // history means the Turn is committed everywhere, whatever the exit says.
       const committed = session.history().length > run.historyLength;
-      if (
-        turn !== undefined &&
-        (committed || (!interrupted && Exit.isSuccess(exit) && completed))
-      ) {
+      if (turn !== undefined && committed) {
         publish({
           phase: "idle",
           turns: [...state.turns, turn],
-          // The turn is committed to history before the Transcript save runs
-          // and response-complete is only emitted after the save succeeds. An
-          // interrupt before completion may therefore have cut the save short;
-          // only a late interrupt after completion is safe to silence.
-          notice:
-            !completed && interrupted
-              ? "Turn interrupted; the Transcript may not have saved."
-              : Exit.isFailure(exit) && !interrupted
-                ? Cause.pretty(exit.cause)
-                : undefined,
+          notice: Exit.isFailure(exit) && !interrupted ? Cause.pretty(exit.cause) : undefined,
         });
         return;
       }

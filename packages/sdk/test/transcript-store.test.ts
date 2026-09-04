@@ -129,7 +129,7 @@ test("a hand-constructed Transcript seeds a Session", async () => {
   expect(transcript.parentTranscriptId).toBe("synthetic");
 });
 
-test("a failed save surfaces StoreError but keeps the completed turn committed", async () => {
+test("a failed save surfaces StoreError and leaves the turn uncommitted", async () => {
   const store = memoryTranscripts();
   const failing = {
     ...store,
@@ -143,14 +143,11 @@ test("a failed save surfaces StoreError but keeps the completed turn committed",
 
   await withSession(definition, { transcripts: failing }, async (session) => {
     await expect(Array.fromAsync(session.runTurn("first"))).rejects.toBeInstanceOf(StoreError);
-    expect(session.transcript().messages.map((message) => message.role)).toEqual([
-      "user",
-      "assistant",
-    ]);
+    expect(session.transcript().messages).toEqual([]);
     await expect(Array.fromAsync(session.runTurn("second"))).rejects.toBeInstanceOf(StoreError);
   });
 
-  expect(roles).toEqual([["user"], ["user", "assistant", "user"]]);
+  expect(roles).toEqual([["user"], ["user"]]);
 });
 
 test("failed and interrupted Turns leave stored Transcripts unchanged", async () => {

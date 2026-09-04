@@ -61,7 +61,7 @@ const toolModel = () => {
 
 describe("Extension Hooks", () => {
   it.effect(
-    "runs notification Hooks in Agent Definition order and passes transformed prompts onward",
+    "runs start Hooks in Agent Definition order, end Hooks reversed, and passes transformed prompts onward",
     () =>
       Effect.gen(function* () {
         const log: Array<string> = [];
@@ -103,12 +103,12 @@ describe("Extension Hooks", () => {
           "second:step-start",
           "first:pre-step:false",
           "second:pre-step:true",
-          "first:step-end",
           "second:step-end",
-          "first:turn-end",
+          "first:step-end",
           "second:turn-end",
-          "first:session-end",
+          "first:turn-end",
           "second:session-end",
+          "first:session-end",
         ]);
         expect(JSON.stringify(modelPrompt)).toContain("marker");
       }),
@@ -464,7 +464,7 @@ describe("Extension Hooks", () => {
           ],
         }),
       );
-      expect(sessionLog).toEqual(["first", "second"]);
+      expect(sessionLog).toEqual(["second", "first"]);
 
       const turnLog: Array<string> = [];
       const failingModel = makeTestProvider(() =>
@@ -497,7 +497,7 @@ describe("Extension Hooks", () => {
         ],
       });
       yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
-      expect(turnLog).toEqual(["step:first", "step:second", "turn:first", "turn:second"]);
+      expect(turnLog).toEqual(["step:second", "step:first", "turn:second", "turn:first"]);
     }),
   );
 

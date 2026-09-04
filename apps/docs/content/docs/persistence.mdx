@@ -44,7 +44,7 @@ You may instead seed a Session with a `Transcript` returned by `session.transcri
 
 ## Commit boundary
 
-Only a completed Turn updates its Transcript. Failed or interrupted Turns remain absent. Resuming never reattaches a live Session: Extension Resources are acquired again, a new Session and Transcript id are created, and any pending Approval from the old process is gone.
+Only a completed Turn updates its Transcript. Failed or interrupted Turns remain absent. A `StoreError` from `save` fails the Turn the same way: it is absent from `history()` and `transcript()`, and re-sending the message re-runs the Model and turn-end Hooks. Resuming never reattaches a live Session: Extension Resources are acquired again, a new Session and Transcript id are created, and any pending Approval from the old process is gone.
 
 Each emitted Turn event is also appended as a versioned, serializable record. This event log is **write-only observability data**: it may end midway through an interrupted Turn and is never replayed to rebuild a Session. The Transcript is the sole resume mechanism.
 

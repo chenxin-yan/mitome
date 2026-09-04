@@ -65,6 +65,10 @@ const runEndHooks = (
     if (firstFailure !== undefined) return yield* Effect.fail(firstFailure.failure);
   });
 
+/**
+ * Start Hooks run in Agent Definition order; end Hooks run in reverse, mirroring how the
+ * Session scope releases Extension Resources.
+ */
 export const beginHookPhase: (
   extensions: ReadonlyArray<AnyExtension>,
   getStart: (extension: AnyExtension) => Effect.Effect<void, unknown> | undefined,
@@ -81,15 +85,16 @@ export const beginHookPhase: (
     });
     yield* start.pipe(
       Effect.onError(() =>
-        runCleanupHooks(extensions.slice(0, started), getEnd, endFailureMessage),
+        runCleanupHooks(extensions.slice(0, started).toReversed(), getEnd, endFailureMessage),
       ),
     );
 
+    const teardown = extensions.toReversed();
     const progress = { dispatched: 0 };
     return {
-      end: runEndHooks(extensions, getEnd, progress, endFailureMessage),
+      end: runEndHooks(teardown, getEnd, progress, endFailureMessage),
       cleanup: Effect.suspend(() =>
-        runCleanupHooks(extensions.slice(progress.dispatched), getEnd, endFailureMessage),
+        runCleanupHooks(teardown.slice(progress.dispatched), getEnd, endFailureMessage),
       ),
     };
   },

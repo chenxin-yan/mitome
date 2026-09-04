@@ -6,6 +6,7 @@ import { LanguageModel, Response } from "effect/unstable/ai";
 import { makeSessionManager } from "../src/session-manager.js";
 import type { SessionManager, SessionResource } from "../src/session-manager.js";
 import { makeSessionViewModel } from "../src/view-model.js";
+import { scriptedSession } from "./support/scripted-session.js";
 import type { SessionState } from "../src/view-model.js";
 
 const waitFor = async (predicate: () => boolean, attempts = 100): Promise<void> => {
@@ -14,17 +15,6 @@ const waitFor = async (predicate: () => boolean, attempts = 100): Promise<void> 
     await Bun.sleep(1);
   }
   throw new Error("Timed out waiting for session state");
-};
-
-const scriptedSession = (
-  scripts: ReadonlyArray<Stream.Stream<TurnEvent, never>>,
-): SessionResource => {
-  let next = 0;
-  return {
-    runTurn: () => scripts[next++] ?? Stream.empty,
-    history: () => [],
-    close: Effect.void,
-  };
 };
 
 const stubManager: SessionManager = {
@@ -139,7 +129,7 @@ describe("session view model", () => {
     await viewModel.dispose();
   });
 
-  test("keeps a committed Turn visible when transcript persistence fails", async () => {
+  test("drops the Turn and reports the failure when transcript persistence fails", async () => {
     const unsupported = () => Effect.die("not used");
     const provider = makeProvider("test", [] as const, undefined, () =>
       Layer.succeed(LanguageModel.LanguageModel, {
@@ -168,10 +158,8 @@ describe("session view model", () => {
             viewModel.submit("persist me");
             await waitFor(() => viewModel.getState().phase === "idle");
 
-            expect(session.history()).toHaveLength(1);
-            expect(viewModel.getState().turns).toEqual([
-              { message: "persist me", response: "kept", activities: [] },
-            ]);
+            expect(session.history()).toHaveLength(0);
+            expect(viewModel.getState().turns).toEqual([]);
             expect(viewModel.getState().notice).toContain("save failed");
             await viewModel.dispose();
           });
