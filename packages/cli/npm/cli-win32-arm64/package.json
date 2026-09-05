@@ -1,6 +1,6 @@
 {
   "name": "@mitome/cli-win32-arm64",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The mitome CLI binary for win32-arm64",
   "license": "MIT",
   "repository": {
