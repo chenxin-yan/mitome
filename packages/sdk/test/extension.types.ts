@@ -9,10 +9,10 @@ import {
   ok,
   type ExtensionHooksDefinition,
   type ToolBuilder,
-  type Prompt,
 } from "../src/index.js";
 
-export type PublicPrompt = Prompt;
+import { defineAgent as defineEffectAgent } from "../src/effect.js";
+import { instructionFiles, instructions } from "../src/extensions/index.js";
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
@@ -258,3 +258,10 @@ export type SdkExtensionTupleIsPreserved = Expect<
     ]
   >
 >;
+
+void defineAgent({ providers: [model], model: "test/default", extensions: [instructions("x")] });
+void defineEffectAgent({
+  providers: [model],
+  model: "test/default",
+  extensions: [instructionFiles()],
+});

@@ -158,6 +158,7 @@ describe("@mitome/sdk Tool Approval", () => {
     const fixture = approvalModel();
     let approvalParams: unknown;
     let handlerInput: unknown;
+    let handlerCalls = 0;
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -171,45 +172,8 @@ describe("@mitome/sdk Tool Approval", () => {
               outputSchema: schema,
               needsApproval: true,
               handler: async (input) => {
-                handlerInput = input;
-                return input;
-              },
-            }),
-          ],
-        }),
-      ],
-    });
-
-    await withSession(definition, async (session) => {
-      for await (const event of session.runTurn("Hi")) {
-        if (event.type === "approval-required") {
-          approvalParams = event.params;
-          await event.approve();
-        }
-      }
-    });
-
-    expect(approvalParams).toEqual({ action: "delete", destructive: true });
-    expect(handlerInput).toEqual(approvalParams);
-  });
-
-  test("approves through the streamed SDK event and completes the Turn", async () => {
-    const fixture = approvalModel();
-    let handlerCalls = 0;
-    const definition = defineAgent({
-      providers: [fixture.provider],
-      model: "test/default",
-      extensions: [
-        defineExtension({
-          name: "dangerous",
-          tools: ({ tool }) => [
-            tool({
-              name: "dangerous",
-              inputSchema: schema,
-              outputSchema: schema,
-              needsApproval: true,
-              handler: async (input) => {
                 handlerCalls += 1;
+                handlerInput = input;
                 return input;
               },
             }),
@@ -222,11 +186,16 @@ describe("@mitome/sdk Tool Approval", () => {
       const collected = [];
       for await (const event of session.runTurn("Hi")) {
         collected.push(event);
-        if (event.type === "approval-required") await event.approve();
+        if (event.type === "approval-required") {
+          approvalParams = event.params;
+          await event.approve();
+        }
       }
       return collected;
     });
 
+    expect(approvalParams).toEqual({ action: "delete", destructive: true });
+    expect(handlerInput).toEqual(approvalParams);
     expect(handlerCalls).toBe(1);
     expect(events).toContainEqual({
       type: "tool-result",

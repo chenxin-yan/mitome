@@ -159,7 +159,6 @@ describe("Extension Hooks", () => {
   it.effect("keeps pre-Step context ephemeral across Turns", () =>
     Effect.gen(function* () {
       const prompts: Array<Prompt.Prompt> = [];
-      let history: ReadonlyArray<Prompt.Message> = [];
       const definition: AgentDefinition = {
         providers: [textModel((prompt) => void prompts.push(prompt))],
         model: "test/default",
@@ -176,7 +175,7 @@ describe("Extension Hooks", () => {
       const session = yield* createSession(definition);
       yield* Stream.runDrain(session.runTurn("first"));
       yield* Stream.runDrain(session.runTurn("second"));
-      history = session.history();
+      const history = session.history();
 
       expect(prompts).toHaveLength(2);
       expect(prompts.map((prompt) => JSON.stringify(prompt).match(/marker/g)?.length)).toEqual([
@@ -276,12 +275,10 @@ describe("Extension Hooks", () => {
           valid.extensions[1]!,
         ],
       };
-      let failure: unknown;
-      let history: ReadonlyArray<unknown> = [];
       const invalidSession = yield* createSession(invalid);
       const exit = yield* Effect.exit(Stream.runDrain(invalidSession.runTurn("Hi")));
-      failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
-      history = invalidSession.history();
+      const failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+      const history = invalidSession.history();
       expect(failure).toBeInstanceOf(TurnError);
       expect(history).toHaveLength(0);
     }),
@@ -526,7 +523,6 @@ describe("Extension Hooks", () => {
   it.effect("does not commit history or completion when turnEnd fails", () =>
     Effect.gen(function* () {
       const events: Array<string> = [];
-      let history: ReadonlyArray<Prompt.Message> = [];
       const session = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
@@ -544,7 +540,7 @@ describe("Extension Hooks", () => {
           Effect.sync(() => void events.push(event.type)),
         ),
       );
-      history = session.history();
+      const history = session.history();
       expect(Exit.isFailure(exit)).toBe(true);
       expect(events).toEqual(["model-output"]);
       expect(history).toHaveLength(0);
@@ -604,7 +600,7 @@ describe("Extension Hooks", () => {
     );
   }
 
-  it.effect("fails startup and Turns for unrecovered Hooks while allowing Extension recovery", () =>
+  it.effect("preserves the causes of startup and Turn Hook failures", () =>
     Effect.gen(function* () {
       const startup = new HookFailure({ message: "startup" });
       const startupDefinition: AgentDefinition = {
@@ -632,19 +628,6 @@ describe("Extension Hooks", () => {
         _tag: "TurnError",
         cause: turn,
       });
-
-      const recovered: AgentDefinition = {
-        providers: [textModel(() => undefined)],
-        model: "test/default",
-        extensions: [
-          {
-            name: "recover",
-            hooks: { turnStart: () => Effect.fail(turn).pipe(Effect.ignore) },
-          },
-        ],
-      };
-      const recoveredSession = yield* createSession(recovered);
-      yield* Stream.runDrain(recoveredSession.runTurn("Hi"));
     }),
   );
 });

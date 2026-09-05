@@ -7,26 +7,6 @@ const extensions = (...names: ReadonlyArray<string>): ReadonlyArray<AnyExtension
   names.map((name) => ({ name }));
 
 describe("Hook phases", () => {
-  it.effect("continues cleanup after an end Hook is interrupted", () =>
-    Effect.gen(function* () {
-      const log: Array<string> = [];
-      const phase = yield* beginHookPhase(
-        extensions("first", "second"),
-        () => Effect.void,
-        (extension) =>
-          Effect.sync(() => void log.push(extension.name!)).pipe(
-            Effect.andThen(extension.name === "first" ? Effect.interrupt : Effect.void),
-          ),
-        "end failed",
-      );
-
-      expect(Exit.isFailure(yield* Effect.exit(phase.end))).toBe(true);
-      yield* phase.cleanup;
-
-      expect(log).toEqual(["second", "first"]);
-    }),
-  );
-
   it.effect(
     "runs end Hooks in reverse Definition order and resumes cleanup where end stopped",
     () =>

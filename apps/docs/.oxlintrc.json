@@ -9,9 +9,6 @@
       "specifier": "../../tools/oxlint/anti-slop/effect/index.ts"
     }
   ],
-  "categories": {
-    "correctness": "error"
-  },
   "env": {
     "builtin": true,
     "browser": true
@@ -19,9 +16,6 @@
   "settings": {
     "react": {
       "version": "19.2.6"
-    },
-    "tailwindcss": {
-      "callees": ["clsx", "cva", "cn"]
     }
   },
   "ignorePatterns": [

@@ -335,6 +335,9 @@ describe("@mitome/sdk Extension Hooks", () => {
     });
     await expect(
       withSession(invalid, (session) => Array.fromAsync(session.runTurn("Hi"))),
-    ).rejects.toMatchObject({ _tag: "TurnError" });
+    ).rejects.toMatchObject({
+      _tag: "TurnError",
+      message: expect.stringContaining("Post-Tool result validation failed"),
+    });
   });
 });

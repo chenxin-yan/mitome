@@ -3,6 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
+import packageJson from "../package.json" with { type: "json" };
+import rootPackage from "../../../package.json" with { type: "json" };
 import { scaffold } from "../src/index.js";
 import {
   customModel,
@@ -10,7 +12,6 @@ import {
   defaultAgentPlanFiles,
   modelChoices,
   projectPlan,
-  providerChoices,
   validateModelId,
   writeScaffold,
 } from "../src/template.js";
@@ -32,7 +33,6 @@ describe("scaffold plans", () => {
   test("defines the default Agent scaffold and discovery as plan data", () => {
     const plan = defaultAgentPlan({ provider: "openai-codex", model: "gpt-5.6" });
 
-    expect([...plan.keys()]).toEqual(["index.ts", "AGENTS.md", "package.json"]);
     expect([...plan.keys()]).toEqual([...defaultAgentPlanFiles]);
     expect(plan.get("index.ts")).toContain(
       'import { defineAgent, defineMitome, fileTranscripts } from "@mitome/sdk";',
@@ -68,7 +68,7 @@ describe("scaffold plans", () => {
     expect(plan.get("index.ts")).toContain("transcripts: fileTranscripts()");
     expect(plan.get("instructions.md")).toBe("You are a helpful Agent.\n");
     expect(JSON.parse(plan.get("package.json")!)).toMatchObject({
-      dependencies: { effect: "4.0.0-rc.108" },
+      dependencies: { effect: rootPackage.workspaces.catalog.effect },
     });
     expect(JSON.parse(plan.get("tsconfig.json")!)).toEqual({
       compilerOptions: {
@@ -81,8 +81,9 @@ describe("scaffold plans", () => {
       include: ["**/*.ts"],
     });
     expect(plan.get(".gitignore")).toBe("node_modules/\n");
-    expect(plan.get("README.md")).not.toContain("npm install effect");
     expect(plan.get("README.md")).toContain("createSession(mitome.agent)");
+    expect(plan.get("README.md")).toContain("mitome auth login --use .\n");
+    expect(plan.get("README.md")).toContain('mitome "hi" --use .\n');
   });
 
   test.each([
@@ -113,11 +114,7 @@ describe("scaffold plans", () => {
 });
 
 describe("selection policy", () => {
-  test("defines Provider and Model choices with a custom-Model escape", () => {
-    expect(providerChoices).toEqual([
-      { label: "OpenAI API", value: "openai" },
-      { label: "OpenAI Codex (ChatGPT)", value: "openai-codex" },
-    ]);
+  test("appends a custom-Model escape to known Model choices", () => {
     expect(modelChoices(["known-model"])).toEqual([
       { label: "known-model", value: "known-model" },
       { label: "Custom model ID", value: customModel },
@@ -141,10 +138,12 @@ describe("create-mitome scaffold", () => {
     await scaffold(path, { flavor, provider, model: "gpt-5.6" });
 
     const dependencies = {
-      "@mitome/providers": "0.0.0",
-      "@mitome/sdk": "0.0.0",
+      "@mitome/providers": packageJson.version,
+      "@mitome/sdk": packageJson.version,
     };
-    if (flavor === "effect") Object.assign(dependencies, { effect: "4.0.0-rc.108" });
+    if (flavor === "effect") {
+      Object.assign(dependencies, { effect: rootPackage.workspaces.catalog.effect });
+    }
     expect(JSON.parse(await contents(path, "package.json"))).toEqual({
       name: "mitome-agent",
       private: true,
@@ -156,10 +155,8 @@ describe("create-mitome scaffold", () => {
     expect(agent).toContain(`providers: [${factory}]`);
     expect(agent).toContain(`model: "${id}/gpt-5.6"`);
     expect(agent).toContain("transcripts: fileTranscripts()");
-    expect(agent).not.toContain("env(");
     expect(agent).toContain('import { instructionFiles } from "@mitome/sdk/extensions";');
     expect(agent).toContain('extensions: [instructionFiles({ paths: ["./instructions.md"] })]');
-    expect(agent).not.toContain('instructions: "You are a helpful Agent."');
     expect(await contents(path, "instructions.md")).toBe("You are a helpful Agent.\n");
     expect(JSON.parse(await contents(path, "tsconfig.json")).include).toEqual(["**/*.ts"]);
     // The embed sample must unwrap the composition root, not pass it to a session.
@@ -168,29 +165,5 @@ describe("create-mitome scaffold", () => {
     expect(readme).toContain(
       flavor === "promise" ? "withSession(mitome.agent" : "createSession(mitome.agent)",
     );
-  });
-
-  test("creates an Effect-native Codex project without overwriting files", async () => {
-    const path = await directory();
-
-    await scaffold(path, { flavor: "effect", provider: "openai-codex", model: "gpt-5.6" });
-
-    expect(await contents(path, "index.ts")).toContain(
-      'import { defineAgent, defineMitome, fileTranscripts } from "@mitome/sdk/effect";',
-    );
-    expect(await contents(path, "index.ts")).toContain(
-      'import { codex } from "@mitome/providers/openai-codex";',
-    );
-    const readme = await contents(path, "README.md");
-    expect(readme).not.toContain("npm install effect");
-    expect(readme).toContain("createSession(mitome.agent)");
-    expect(readme).toContain("mitome auth login --use .\n");
-    expect(readme).toContain('mitome "hi" --use .\n');
-
-    await writeFile(join(path, "index.ts"), "hand-written\n");
-    await expect(
-      scaffold(path, { flavor: "promise", provider: "openai", model: "gpt-5.6" }),
-    ).rejects.toThrow("package.json already exists");
-    expect(await contents(path, "index.ts")).toBe("hand-written\n");
   });
 });

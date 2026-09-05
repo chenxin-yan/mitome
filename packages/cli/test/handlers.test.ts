@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Layer, Option, Runtime } from "effect";
 import { TestConsole } from "effect/testing";
-import { afterEach, beforeEach, vi } from "vitest";
+import { afterEach, beforeEach } from "vitest";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
 
 import { ChildHost, type ProviderAuthentication } from "../src/child-host-service.ts";
@@ -57,7 +57,6 @@ const definition = async (path: string, runtime = true): Promise<string> => {
       JSON.stringify({
         name: "@mitome/core",
         version: corePackage.version,
-        exports: { "./package.json": "./package.json" },
       }),
     );
   }
@@ -162,19 +161,9 @@ const exitCode = <A, E>(exit: Exit.Exit<A, E>): number => {
 beforeEach(async () => {
   previousMitomeHome = process.env.MITOME_HOME;
   process.env.MITOME_HOME = await temporaryDirectory();
-  vi.stubGlobal("Bun", {
-    resolveSync: (_specifier: string, directory: string) => {
-      const path = join(directory, "node_modules", "@mitome", "core", "package.json");
-      if (!existsSync(path)) throw new Error("not found");
-      return path;
-    },
-    file: (path: string) => ({ text: () => readFile(path, "utf8") }),
-  });
 });
 
 afterEach(async () => {
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
   if (previousMitomeHome === undefined) delete process.env.MITOME_HOME;
   else process.env.MITOME_HOME = previousMitomeHome;
   await Promise.all(
@@ -190,7 +179,7 @@ describe("CLI handlers", () => {
       );
       const childHost = fakeChildHost({ runExitCode: 23 });
       const exit = yield* Effect.exit(
-        runMessage({ print: false, message: Option.some("hello"), use: Option.none() }).pipe(
+        runMessage({ print: true, message: Option.some("hello"), use: Option.none() }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
@@ -224,7 +213,7 @@ describe("CLI handlers", () => {
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
       const childHost = fakeChildHost({ installRuntime: true });
       const exit = yield* Effect.exit(
-        runMessage({ print: false, message: Option.some("hello"), use: Option.some(path) }).pipe(
+        runMessage({ print: true, message: Option.some("hello"), use: Option.some(path) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );

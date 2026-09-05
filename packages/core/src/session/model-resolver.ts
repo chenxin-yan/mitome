@@ -43,8 +43,7 @@ export const makeModelResolver = (
         });
       }
 
-      const cacheKey = qualifiedModelId;
-      const cached = models.get(cacheKey);
+      const cached = models.get(qualifiedModelId);
       if (cached !== undefined) return cached;
 
       // SAFETY: compileAgentDefinition rejects providers without Core metadata before creating a Session.
@@ -61,7 +60,7 @@ export const makeModelResolver = (
             context,
             model: Context.get(context, LanguageModel.LanguageModel),
           };
-          models.set(cacheKey, selected);
+          models.set(qualifiedModelId, selected);
           return selected;
         }),
       );

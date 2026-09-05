@@ -53,6 +53,16 @@ describe("Codex SSE decoder", () => {
       }),
       description: "Codex stream ended before a terminal response event",
     },
+    {
+      name: "provider error event",
+      body: sse({ type: "error", error: { message: "subscriber rejected" } }),
+      description: "subscriber rejected",
+    },
+    {
+      name: "failed response event",
+      body: sse({ type: "response.failed", response: { error: { message: "model rejected" } } }),
+      description: "model rejected",
+    },
   ])("rejects $name", async ({ body, description }) => {
     await expect(decode(body)).rejects.toMatchObject({ reason: { description } });
   });

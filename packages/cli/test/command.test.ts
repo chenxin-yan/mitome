@@ -54,10 +54,11 @@ describe("mitome command", () => {
         `mitome v${cliPackage.version}`,
       ]);
 
+      const beforeCompletions = (yield* TestConsole.logLines).length;
       const completionsExit = yield* Effect.exit(runCli(["--completions", "bash"]));
       expect(completionsExit).toEqual(expect.objectContaining({ _tag: "Success" }));
-      expect(yield* TestConsole.logLines).toEqual(
-        expect.arrayContaining([expect.stringContaining("mitome")]),
+      expect((yield* TestConsole.logLines).slice(beforeCompletions).join("\n")).toContain(
+        "_mitome",
       );
     }).pipe(Effect.provide(services)),
   );

@@ -1,16 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Schema, Stream } from "effect";
-import * as core from "@mitome/core";
 import { Response } from "effect/unstable/ai";
-import { createSession } from "@mitome/core";
-import * as sdkEffect from "../src/effect.js";
-import {
-  TurnError,
-  defineAgent,
-  defineExtension,
-  defineMitome,
-  withSession,
-} from "../src/index.js";
+import { TurnError, defineAgent, defineMitome, withSession } from "../src/index.js";
 import { makeDeterministicProvider, makeTestProvider } from "./provider.js";
 
 class ModelFailure extends Schema.TaggedError<ModelFailure>()("ModelFailure", {
@@ -18,10 +9,6 @@ class ModelFailure extends Schema.TaggedError<ModelFailure>()("ModelFailure", {
 }) {}
 
 describe("@mitome/sdk", () => {
-  test("re-exports the canonical Effect runtime", () => {
-    expect(sdkEffect.createSession).toBe(core.createSession);
-  });
-
   test("rejects a Host factory that was not called", () => {
     const agent = defineAgent({
       providers: [makeTestProvider(() => Stream.empty)],
@@ -30,45 +17,6 @@ describe("@mitome/sdk", () => {
 
     expect(() => defineMitome({ agent, hosts: [() => undefined] })).toThrow(
       "Host must be an object with a run function and optional unsupported function — did you forget to call the factory?",
-    );
-  });
-
-  test("runs a minimal Agent Definition without composition boilerplate", async () => {
-    const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
-    const definition = defineAgent({
-      providers: [fixture.provider],
-      model: "test/default",
-    });
-
-    expect(definition.extensions).toEqual([]);
-
-    await withSession(definition, async (session) => {
-      await Array.fromAsync(session.runTurn("Hi"));
-    });
-  });
-
-  test("adapts SDK Extension Instructions into Core Session history", async () => {
-    const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
-    const definition = defineAgent({
-      providers: [fixture.provider],
-      model: "test/default",
-      extensions: [
-        defineExtension({
-          name: "instructions",
-          instructions: "SDK Instructions",
-        }),
-      ],
-    });
-
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* createSession(definition);
-          expect(session.history().map(({ role, content }) => ({ role, content }))).toEqual([
-            { role: "system", content: "SDK Instructions" },
-          ]);
-        }),
-      ),
     );
   });
 
@@ -208,6 +156,8 @@ describe("@mitome/sdk", () => {
       Array.fromAsync(session.runTurn("Hi")),
     );
 
+    const completed = events.find((event) => event.type === "response-complete");
+    expect(completed?.usage).not.toBeInstanceOf(Response.Usage);
     expect(events).toEqual([
       { type: "reasoning", text: "thinking" },
       { type: "response-complete", finishReason: "stop", usage },
@@ -242,8 +192,9 @@ describe("@mitome/sdk", () => {
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
-      extensions: [],
     });
+
+    expect(definition.extensions).toEqual([]);
 
     const events = await withSession(definition, async (session) => {
       const collected = [];

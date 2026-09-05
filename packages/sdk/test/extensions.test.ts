@@ -7,8 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { createSession, makeProvider } from "@mitome/core";
-import { defineAgent as definePromiseAgent } from "../src/index.js";
-import { defineAgent as defineEffectAgent } from "../src/effect.js";
+import { defineExtension } from "../src/index.js";
 import { instructionFiles, instructions } from "../src/extensions/index.js";
 
 const cwd = process.cwd();
@@ -38,23 +37,6 @@ const provider = () =>
   );
 
 describe("@mitome/sdk/extensions", () => {
-  test("uses inline Instructions as the Session system message", async () => {
-    const history = await Effect.runPromise(
-      Effect.scoped(
-        Effect.map(
-          createSession({
-            providers: [provider()],
-            model: "test/default",
-            extensions: [instructions("Be helpful.")],
-          }),
-          (session) => session.history(),
-        ),
-      ),
-    );
-
-    expect(history).toMatchObject([{ role: "system", content: "Be helpful." }]);
-  });
-
   test("composes multiple unnamed instruction Extensions", async () => {
     const history = await Effect.runPromise(
       Effect.scoped(
@@ -65,6 +47,7 @@ describe("@mitome/sdk/extensions", () => {
             extensions: [
               instructions("First."),
               instructions("Second."),
+              defineExtension({ instructions: "Third." }),
               instructionFiles({ paths: ["./fixtures/instructions.md"] }),
               instructionFiles({ paths: ["./fixtures/instructions.md"] }),
             ],
@@ -77,7 +60,8 @@ describe("@mitome/sdk/extensions", () => {
     expect(history).toMatchObject([
       {
         role: "system",
-        content: "First.\n\nSecond.\n\nSibling instructions.\n\n\nSibling instructions.\n",
+        content:
+          "First.\n\nSecond.\n\nThird.\n\nSibling instructions.\n\n\nSibling instructions.\n",
       },
     ]);
   });
@@ -158,21 +142,5 @@ describe("@mitome/sdk/extensions", () => {
     expect(() => instructionFiles({ discover: [".."] })).toThrow(
       "Discovered instruction file must be a bare filename: ..",
     );
-  });
-
-  test("accepts Extensions from both SDK definition surfaces", () => {
-    const promiseDefinition = definePromiseAgent({
-      providers: [provider()],
-      model: "test/default",
-      extensions: [instructions("Promise SDK")],
-    });
-    const effectDefinition = defineEffectAgent({
-      providers: [provider()],
-      model: "test/default",
-      extensions: [instructionFiles({ paths: ["./fixtures/instructions.md"] })],
-    });
-
-    expect(promiseDefinition.extensions[0].instructions).toBe("Promise SDK");
-    expect(effectDefinition.extensions[0].instructions).toBe("Sibling instructions.\n");
   });
 });

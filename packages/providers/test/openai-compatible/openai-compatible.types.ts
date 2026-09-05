@@ -1,8 +1,5 @@
 import type { Provider } from "@mitome/core";
-import {
-  openaiCompatible,
-  type OpenAiCompatibleOptions,
-} from "../../src/openai-compatible/index.js";
+import { openaiCompatible } from "../../src/openai-compatible/index.js";
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
@@ -14,12 +11,7 @@ const provider = openaiCompatible({
   apiKeyEnv: "ACME_API_KEY",
 });
 const contract: Assert<Equal<typeof provider, Provider<"acme", readonly []>>> = true;
-const options: OpenAiCompatibleOptions<"acme"> = {
-  id: "acme",
-  baseUrl: "http://localhost:1234/v1",
-};
 void contract;
-void options;
 
 // @ts-expect-error A compatible endpoint requires its base URL.
 openaiCompatible({ id: "missing-base" });

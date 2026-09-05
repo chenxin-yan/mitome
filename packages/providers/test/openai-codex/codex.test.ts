@@ -169,7 +169,7 @@ describe("Codex SSE", () => {
         },
       ]);
     } finally {
-      void server.stop(true);
+      await server.stop(true);
     }
   });
 

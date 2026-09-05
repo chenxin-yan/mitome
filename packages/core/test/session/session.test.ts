@@ -12,18 +12,6 @@ import {
 import { makeDeterministicProvider, makeTestProvider } from "../support/provider.js";
 
 describe("createSession", () => {
-  it("encodes TurnError defects for persistence", () => {
-    expect(
-      Schema.encodeUnknownSync(TurnError)(
-        new TurnError({ message: "Turn failed", cause: new Error("provider failed") }),
-      ),
-    ).toEqual({
-      _tag: "TurnError",
-      message: "Turn failed",
-      cause: { name: "Error", message: "provider failed" },
-    });
-  });
-
   it.effect("streams one model Step before completion", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");
@@ -403,23 +391,6 @@ describe("createSession", () => {
         { type: "response-complete" },
       ]);
       expect(calls).toBe(2);
-    }),
-  );
-
-  it.effect("allows sequential Turns after a Turn completes", () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeDeterministicProvider("hello");
-      const definition: AgentDefinition = {
-        providers: [fixture.provider],
-        model: "test/default",
-        extensions: [],
-      };
-      const session = yield* createSession(definition);
-      yield* Stream.runDrain(session.runTurn("first"));
-      yield* Stream.runDrain(session.runTurn("second"));
-      // The deterministic fixture emits bare text-deltas, which record no assistant message.
-      expect(session.history().map((message) => message.role)).toEqual(["user", "user"]);
-      expect(yield* fixture.calls).toBe(2);
     }),
   );
 

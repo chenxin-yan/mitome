@@ -176,7 +176,6 @@ export const fileTranscripts = (
             updatedAt: stored.updatedAt,
             ...summarizeTranscript(stored.transcript),
           });
-          continue;
         }
       }
       return summaries.sort((left, right) => left.id.localeCompare(right.id));

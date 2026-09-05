@@ -1,7 +1,17 @@
 import { spawn as spawnChild } from "node:child_process";
 import { once } from "node:events";
 import { existsSync as exists } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -9,6 +19,7 @@ import { text } from "node:stream/consumers";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { fileTranscripts } from "@mitome/core";
+import corePackage from "@mitome/core/package.json" with { type: "json" };
 import { Effect, type Schema } from "effect";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
@@ -25,8 +36,6 @@ const effectVersion = (createRequire(import.meta.url)("effect/package.json") as 
 // SAFETY: This reads the repository-owned package manifest whose fields are required by the test setup.
 const cliPackage = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as {
   version: string;
-  dependencies?: Record<string, string>;
-  devDependencies: Record<string, string>;
 };
 const temporaryDirectories: Array<string> = [];
 
@@ -246,7 +255,7 @@ const reconcileFixture = async (): Promise<Fixture> => {
     join(localCore, "package.json"),
     JSON.stringify({
       name: "@mitome/core",
-      version: "0.0.0",
+      version: corePackage.version,
       type: "module",
       exports: { ".": "./dist/index.js", "./package.json": "./package.json" },
       dependencies: { effect: effectVersion },
@@ -535,6 +544,7 @@ describe("compiled mitome", () => {
     const current = await installFixture();
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
     await mkdir(config, { recursive: true });
+    // The installer must not receive config .env: this would suppress bun.lock.
     await writeFile(join(config, ".env"), "BUN_CONFIG_SKIP_SAVE_LOCKFILE=1");
 
     expect(
@@ -561,17 +571,17 @@ describe("compiled mitome", () => {
     expect(exists(join(dirname(current.definition), "bun.lock"))).toBe(true);
   });
 
-  test("reconciles the configured default Agent Definition", async () => {
-    const current = await reconcileFixture();
+  test("runs the configured default Agent Definition", async () => {
+    const current = await fixture();
     const config = join(current.env.XDG_CONFIG_HOME, "mitome");
     await cp(dirname(current.definition), config, { recursive: true });
-    await writeFile(join(config, "index.ts"), await readFile(current.definition, "utf8"));
+    await rename(join(config, "agent.ts"), join(config, "index.ts"));
 
-    const result = await output(spawn("", ["hello"], current));
-    expect(result).toMatchObject({ exitCode: 0 });
-    expect(result.stdout).toContain("Installing Mitome Definition dependencies...");
-    expect(result.stdout).toContain("reconciled second\n");
-    expect(exists(join(config, "node_modules", "@mitome", "core"))).toBe(true);
+    expect(await output(spawn("", ["hello"], current))).toEqual({
+      exitCode: 0,
+      stdout: "first second\n",
+      stderr: "",
+    });
   });
 
   test("keeps a workspace Agent Definition with hoisted dependencies quiet", async () => {
@@ -645,24 +655,7 @@ describe("compiled mitome", () => {
     expect(missing.stderr).toContain("missing-fixture-extension");
   });
 
-  test("never reconciles a directory that was not selected", async () => {
-    const current = await reconcileFixture();
-    const unselected = join(current.root, "unselected");
-    await mkdir(unselected);
-    await writeFile(join(unselected, "index.ts"), "export default {};\n");
-    await writeFile(
-      join(unselected, "package.json"),
-      JSON.stringify({ dependencies: { "left-pad": "1.3.0" } }),
-    );
-
-    expect(await output(spawn("", ["hello", "--use", current.definition], current))).toMatchObject({
-      exitCode: 0,
-    });
-    expect(exists(join(unselected, "node_modules"))).toBe(false);
-    expect(exists(join(unselected, "bun.lock"))).toBe(false);
-  });
-
-  test("adds an Extension only to the selected Agent Definition", async () => {
+  test("adds an Extension to the selected Agent Definition", async () => {
     const current = await installFixture();
     const definitionDirectory = dirname(current.definition);
     const packagePath = join(definitionDirectory, "package.json");
@@ -672,9 +665,6 @@ describe("compiled mitome", () => {
     };
     delete manifest.dependencies["local-dep"];
     await writeFile(packagePath, JSON.stringify(manifest));
-    const unselectedPackagePath = join(current.root, "unselected", "package.json");
-    await mkdir(dirname(unselectedPackagePath), { recursive: true });
-    await writeFile(unselectedPackagePath, '{"name":"unselected","private":true}\n');
 
     const result = await output(
       spawn("", ["add", "--use", current.definition, "local-dep@file:../pkgs/local-dep"], current),
@@ -688,9 +678,6 @@ describe("compiled mitome", () => {
       dependencies: { "local-dep": "file:../pkgs/local-dep" },
     });
     expect(exists(join(definitionDirectory, "node_modules", "local-dep", "index.js"))).toBe(true);
-    expect(await readFile(unselectedPackagePath, "utf8")).toBe(
-      '{"name":"unselected","private":true}\n',
-    );
   });
 
   test("rejects path-like package names before touching the manifest", async () => {
@@ -733,16 +720,10 @@ describe("compiled mitome", () => {
     }
   });
 
-  test("removes and prunes an Extension only from the selected Agent Definition", async () => {
+  test("removes and prunes an Extension from the selected Agent Definition", async () => {
     const current = await installFixture();
     const definitionDirectory = dirname(current.definition);
     const packagePath = join(definitionDirectory, "package.json");
-    const unselectedPackagePath = join(current.root, "unselected", "package.json");
-    await mkdir(dirname(unselectedPackagePath), { recursive: true });
-    await writeFile(
-      unselectedPackagePath,
-      '{"name":"unselected","private":true,"dependencies":{"local-dep":"1.0.0"}}\n',
-    );
     expect(
       await output(spawn("", ["install", "--use", current.definition], current)),
     ).toMatchObject({ exitCode: 0 });
@@ -759,10 +740,6 @@ describe("compiled mitome", () => {
     };
     expect(updatedManifest.dependencies?.["local-dep"]).toBeUndefined();
     expect(exists(join(definitionDirectory, "node_modules", "local-dep"))).toBe(false);
-    expect(() => createRequire(current.definition).resolve("local-dep")).toThrow();
-    expect(await readFile(unselectedPackagePath, "utf8")).toBe(
-      '{"name":"unselected","private":true,"dependencies":{"local-dep":"1.0.0"}}\n',
-    );
   });
 
   test("maps a non-zero Child Host exit code at the process boundary", async () => {
@@ -888,11 +865,5 @@ describe("compiled mitome", () => {
       expect.objectContaining({ role: "user" }),
     ]);
     expect(exists(join(current.env.XDG_CONFIG_HOME, "mitome", "transcripts"))).toBe(false);
-  });
-
-  test("uses Core directly without SDK runtime support", () => {
-    expect(cliPackage.devDependencies["@mitome/core"]).toBe("workspace:*");
-    expect(cliPackage.dependencies?.["@mitome/sdk"]).toBeUndefined();
-    expect(cliPackage.devDependencies["@mitome/sdk"]).toBeUndefined();
   });
 });

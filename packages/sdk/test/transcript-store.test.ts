@@ -78,6 +78,7 @@ test("snapshots and resumes prior context through the public SDK", async () => {
   expect(child.id).not.toBe(parentId);
   expect(child.parentTranscriptId).toBe(parentId);
   expect(await store.load(child.id)).toEqual(child);
+  expect(await store.load("missing")).toBeNull();
 });
 
 test("two resumes create independent child Transcripts with parent provenance", async () => {
