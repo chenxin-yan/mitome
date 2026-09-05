@@ -54,7 +54,7 @@
     },
     "packages/cli": {
       "name": "@mitome/cli",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "bin": {
         "mitome": "./scripts/mitome.mjs",
       },
@@ -83,35 +83,35 @@
     },
     "packages/cli/npm/cli-darwin-arm64": {
       "name": "@mitome/cli-darwin-arm64",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "packages/cli/npm/cli-darwin-x64": {
       "name": "@mitome/cli-darwin-x64",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "packages/cli/npm/cli-linux-arm64": {
       "name": "@mitome/cli-linux-arm64",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "packages/cli/npm/cli-linux-arm64-musl": {
       "name": "@mitome/cli-linux-arm64-musl",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "packages/cli/npm/cli-linux-x64": {
       "name": "@mitome/cli-linux-x64",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "packages/cli/npm/cli-linux-x64-musl": {
       "name": "@mitome/cli-linux-x64-musl",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "packages/cli/npm/cli-win32-arm64": {
       "name": "@mitome/cli-win32-arm64",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "packages/cli/npm/cli-win32-x64": {
       "name": "@mitome/cli-win32-x64",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "packages/config": {
       "name": "@mitome/config",
@@ -119,9 +119,9 @@
     },
     "packages/core": {
       "name": "@mitome/core",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
-        "effect": "4.0.0-rc.108",
+        "effect": "catalog:",
       },
       "devDependencies": {
         "@effect/vitest": "catalog:",
@@ -133,7 +133,7 @@
     },
     "packages/create-mitome": {
       "name": "create-mitome",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "bin": {
         "create-mitome": "./dist/index.js",
       },
@@ -146,11 +146,11 @@
     },
     "packages/providers": {
       "name": "@mitome/providers",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@effect/ai-openai": "catalog:",
         "@effect/ai-openai-compat": "catalog:",
-        "effect": "4.0.0-rc.108",
+        "effect": "catalog:",
       },
       "devDependencies": {
         "@effect/vitest": "catalog:",
@@ -168,10 +168,10 @@
     },
     "packages/sdk": {
       "name": "@mitome/sdk",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@standard-schema/spec": "^1.1.0",
-        "effect": "4.0.0-rc.108",
+        "effect": "catalog:",
       },
       "devDependencies": {
         "@mitome/config": "workspace:*",
@@ -186,11 +186,11 @@
     },
     "packages/tui": {
       "name": "@mitome/tui",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@opentui/core": "0.5.8",
         "@opentui/solid": "0.5.8",
-        "effect": "4.0.0-rc.108",
+        "effect": "catalog:",
         "solid-js": "1.9.15",
       },
       "devDependencies": {
