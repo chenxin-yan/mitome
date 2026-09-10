@@ -29,6 +29,7 @@ const definitionWith = (run: Parameters<typeof makeTestProvider>[0]) =>
 
 test("adapts Promise Transcript store misses and rejections to tagged Core errors", async () => {
   const definition = definitionWith(() => textResponse("done"));
+
   const methods = {
     save: async () => undefined,
     list: async () => [],
@@ -56,20 +57,25 @@ test("adapts Promise Transcript store misses and rejections to tagged Core error
 test("snapshots and resumes prior context through the public SDK", async () => {
   const store = memoryTranscripts();
   const prompts: Array<ReadonlyArray<string>> = [];
+
   const definition = definitionWith(({ prompt }) => {
     prompts.push(prompt.content.map((message) => message.role));
+
     return textResponse("hello");
   });
 
   const parentId = await withSession(definition, { transcripts: store }, async (session) => {
     await Array.fromAsync(session.runTurn("first"));
+
     return session.transcript().id;
   });
+
   const child = await withSession(
     definition,
     { transcripts: store, resume: parentId },
     async (session) => {
       await Array.fromAsync(session.runTurn("second"));
+
       return session.transcript();
     },
   );
@@ -84,16 +90,20 @@ test("snapshots and resumes prior context through the public SDK", async () => {
 test("two resumes create independent child Transcripts with parent provenance", async () => {
   const store = memoryTranscripts();
   const definition = definitionWith(() => textResponse("done"));
+
   const parentId = await withSession(definition, { transcripts: store }, async (session) => {
     await Array.fromAsync(session.runTurn("parent"));
+
     return session.transcript().id;
   });
 
   const resume = (text: string) =>
     withSession(definition, { transcripts: store, resume: parentId }, async (session) => {
       await Array.fromAsync(session.runTurn(text));
+
       return session.transcript();
     });
+
   const [first, second] = await Promise.all([resume("first fork"), resume("second fork")]);
 
   expect(first.id).not.toBe(second.id);
@@ -115,14 +125,18 @@ test("a hand-constructed Transcript seeds a Session", async () => {
     id: "synthetic",
     messages: [{ role: "user", content: [{ type: "text", text: "seed context" }] }],
   };
+
   let roles: ReadonlyArray<string> = [];
+
   const definition = definitionWith(({ prompt }) => {
     roles = prompt.content.map((message) => message.role);
+
     return textResponse("done");
   });
 
   const transcript = await withSession(definition, { transcript: synthetic }, async (session) => {
     await Array.fromAsync(session.runTurn("continue"));
+
     return session.transcript();
   });
 
@@ -132,13 +146,17 @@ test("a hand-constructed Transcript seeds a Session", async () => {
 
 test("a failed save surfaces StoreError and leaves the turn uncommitted", async () => {
   const store = memoryTranscripts();
+
   const failing = {
     ...store,
     save: () => Promise.reject(new StoreError({ message: "disk full" })),
   };
+
   const roles: Array<ReadonlyArray<string>> = [];
+
   const definition = definitionWith(({ prompt }) => {
     roles.push(prompt.content.map((message) => message.role));
+
     return textResponse("done");
   });
 
@@ -154,27 +172,34 @@ test("a failed save surfaces StoreError and leaves the turn uncommitted", async 
 test("failed and interrupted Turns leave stored Transcripts unchanged", async () => {
   const store = memoryTranscripts();
   let calls = 0;
+
   const definition = definitionWith(() => {
     calls += 1;
+
     if (calls === 2) return Stream.fail(new Error("failed"));
+
     if (calls === 3) {
       return Stream.concat(
         Stream.succeed(Response.makePart("text-delta", { id: "partial", delta: "partial" })),
         Stream.never,
       );
     }
+
     return textResponse("saved");
   });
 
   const transcriptId = await withSession(definition, { transcripts: store }, async (session) => {
     await Array.fromAsync(session.runTurn("saved"));
     const before = await store.load(session.transcript().id);
+
     if (before === null) throw new Error("expected stored Transcript");
 
     await expect(Array.fromAsync(session.runTurn("failed"))).rejects.toBeInstanceOf(TurnError);
     expect(await store.load(before.id)).toEqual(before);
+
     return before.id;
   });
+
   const summariesBefore = await store.list();
 
   await withSession(definition, { transcripts: store, resume: transcriptId }, async (session) => {

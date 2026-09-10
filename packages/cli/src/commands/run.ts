@@ -7,10 +7,13 @@ export const reconcileDefinition = Effect.fn("@mitome/cli/reconcileDefinition")(
   path: string,
 ) {
   const childHost = yield* ChildHost;
+
   if (!(yield* attempt(() => definitionNeedsReconcile(path)))) return 0 satisfies ExitCode;
   yield* Console.log("Installing Mitome Definition dependencies...");
   const exitCode = yield* childHost.install(path);
+
   if (exitCode === 0) yield* attempt(() => checkRuntime(path));
+
   return exitCode;
 });
 
@@ -25,6 +28,7 @@ export const runMessage = Effect.fn("@mitome/cli/runMessage")(function* ({
 }) {
   const messageValue = Option.getOrUndefined(message);
   const forcePrint = print || process.stdout.isTTY !== true;
+
   if (forcePrint && messageValue === undefined) {
     return yield* fail(
       "Missing argument message (one-shot output needs a message; interactive Sessions need a TTY without --print)",
@@ -34,7 +38,9 @@ export const runMessage = Effect.fn("@mitome/cli/runMessage")(function* ({
   const childHost = yield* ChildHost;
   const path = yield* attempt(() => definitionPath(use));
   const installExitCode = yield* reconcileDefinition(path);
+
   if (installExitCode !== 0) return installExitCode;
+
   return yield* childHost.runHost(path, messageValue, forcePrint ? "print" : "auto");
 });
 
@@ -45,5 +51,6 @@ export const runInstall = Effect.fn("@mitome/cli/runInstall")(function* ({
 }) {
   const childHost = yield* ChildHost;
   const path = yield* attempt(() => definitionPath(use));
+
   return yield* childHost.install(path);
 });

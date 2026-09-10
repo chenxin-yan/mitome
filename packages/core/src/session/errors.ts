@@ -66,6 +66,7 @@ export const hookAiError = (method: string, message: string) =>
       : AiError.isAiErrorReason(cause)
         ? cause
         : new AiError.UnknownError({ description: describeFailure(message, cause) });
+
     return AiError.make({ module: coreModuleName, method, reason });
   });
 

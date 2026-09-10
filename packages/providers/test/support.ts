@@ -39,40 +39,52 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
     void (async () => {
       try {
         const chunks: Array<Uint8Array> = [];
+
         for await (const chunk of incoming) chunks.push(chunk);
         const body = Buffer.concat(chunks);
+
         const init =
           body.length === 0
             ? { method: incoming.method ?? "GET", headers: headers(incoming.headers) }
             : { method: incoming.method ?? "GET", headers: headers(incoming.headers), body };
+
         const request = new Request(`http://${incoming.headers.host}${incoming.url}`, init);
         const response = await fetch(request);
         outgoing.writeHead(response.status, Object.fromEntries(response.headers));
+
         if (response.body === null) {
           outgoing.end();
+
           return;
         }
+
         const reader = response.body.getReader();
+
         for (;;) {
           const { done, value } = await reader.read();
+
           if (done) break;
           outgoing.write(value);
         }
+
         outgoing.end();
       } catch {
         outgoing.writeHead(500).end();
       }
     })();
   });
+
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
+
   return {
     // SAFETY: a successfully listening TCP server returns AddressInfo rather than null or a pipe name.
     port: (server.address() as AddressInfo).port,
     stop: (closeActiveConnections = false) => {
       if (closeActiveConnections) server.closeAllConnections();
+
       return new Promise((resolve, reject) =>
         server.close((error) => (error === undefined ? resolve() : reject(error))),
       );
@@ -82,6 +94,7 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
 
 export const spawnRuntime = (args: ReadonlyArray<string>) => {
   const child = spawn(process.execPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+
   return {
     exited: new Promise<number>((resolve, reject) => {
       child.once("error", reject);

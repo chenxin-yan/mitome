@@ -50,6 +50,7 @@ export const defineMitome = <const Agent extends AgentDefinition>(
   },
 ): MitomeDefinition<Agent> => {
   const hosts = definition.hosts === undefined ? [] : definition.hosts;
+
   if (
     hosts.some(
       (host) =>
@@ -62,8 +63,10 @@ export const defineMitome = <const Agent extends AgentDefinition>(
       "Host must be an object with a run function and optional unsupported function — did you forget to call the factory?",
     );
   }
+
   if (hosts.length > 1) {
     throw new Error("Mitome Definition must declare at most one Host.");
   }
+
   return { ...definition, hosts };
 };

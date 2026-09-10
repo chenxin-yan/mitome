@@ -20,7 +20,9 @@ const readConfigEnv = async (path: string): Promise<string> => {
 
 export const requireConfigDirectory = (): string => {
   const directory = configDirectory();
+
   if (directory === undefined) throw new Error(configDirectoryMessage);
+
   return directory;
 };
 
@@ -30,6 +32,7 @@ const writeConfigEnv = async (contents: string): Promise<void> => {
   await chmod(directory, 0o700);
   const temporary = await mkdtemp(join(directory, ".env-"));
   const file = join(temporary, "value");
+
   try {
     await writeFile(file, contents, { mode: 0o600 });
     await rename(file, join(directory, ".env"));
@@ -41,7 +44,9 @@ const writeConfigEnv = async (contents: string): Promise<void> => {
 const configEnvLines = async (): Promise<Array<string>> => {
   const contents = await readConfigEnv(join(requireConfigDirectory(), ".env"));
   const lines = contents === "" ? [] : contents.split(/\r?\n/);
+
   if (lines.at(-1) === "") lines.pop();
+
   return lines;
 };
 
@@ -55,6 +60,7 @@ export const updateConfigEnv = async (name: string, value: string): Promise<void
       `${name} contains characters Bun cannot store in .env ('#', '$', quotes, edge whitespace, or newlines); set the environment variable directly instead.`,
     );
   }
+
   const lines = await configEnvLines();
   await writeConfigEnv(
     [...lines.filter((line) => configEnvName(line) !== name), `${name}=${value}`].join("\n") + "\n",
@@ -64,6 +70,7 @@ export const updateConfigEnv = async (name: string, value: string): Promise<void
 export const removeConfigEnv = async (name: string): Promise<void> => {
   const lines = await configEnvLines();
   const kept = lines.filter((line) => configEnvName(line) !== name);
+
   if (kept.length === lines.length) return;
   await writeConfigEnv(kept.length === 0 ? "" : kept.join("\n") + "\n");
 };

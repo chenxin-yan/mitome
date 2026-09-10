@@ -7,13 +7,18 @@ import type { Prompt, PromptMessage, TranscriptStore } from "../src/index.js";
 // SAFETY: This compile-only fixture is never executed; it only supplies the nominal service
 // required to exercise Session's provider/model type constraints.
 const layer = Layer.succeed(LanguageModel.LanguageModel, {} as LanguageModel.Service);
+
 const first = makeProvider("first", ["known"] as const, undefined, () => layer);
+
 const second = makeProvider("second", [] as const, undefined, () => layer);
+
 const definition = defineAgent({
   providers: [first, second] as const,
   model: "first/known",
 });
+
 const noExtensions: readonly [] = definition.extensions;
+
 void noExtensions;
 
 void withSession(definition, async (session) => {
@@ -26,11 +31,16 @@ void withSession(definition, async (session) => {
 });
 
 declare const store: TranscriptStore;
+
 const transcript = { schemaVersion: 1 as const, id: "seed", messages: [] };
+
 void withSession(definition, { transcripts: store, resume: "seed" }, async () => undefined);
+
 void withSession(definition, { transcript }, async () => undefined);
+
 // @ts-expect-error resume needs a TranscriptStore from which to load the seed.
 void withSession(definition, { resume: "seed" }, async () => undefined);
+
 void withSession(
   definition,
   // @ts-expect-error direct Transcript seeds and stored resume identities are mutually exclusive.
@@ -46,6 +56,8 @@ const invalidUserPrompt = {
     },
   ],
 } as const;
+
 // @ts-expect-error User Messages cannot contain Tool result parts.
 const prompt: Prompt = invalidUserPrompt;
+
 void prompt;

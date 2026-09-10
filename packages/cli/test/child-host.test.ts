@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
 
 const childHostModule = resolve(dirname(fileURLToPath(import.meta.url)), "../src/child-host.ts");
+
 const temporaryDirectories: Array<string> = [];
 
 afterEach(async () => {
@@ -26,14 +27,17 @@ test("runEmbeddedHost forwards dispatch inputs", async () => {
 
   const source =
     "console.log(JSON.stringify({ path: process.argv[1], mode: process.argv[2], message: process.argv[3] ?? null }));";
+
   const driver = [
     `import { runEmbeddedHost } from ${JSON.stringify(childHostModule)};`,
     `process.exitCode = await runEmbeddedHost(${JSON.stringify(source)}, ${JSON.stringify(definition)}, undefined, "auto");`,
   ].join("\n");
+
   const child = spawn("bun", ["--no-env-file", "--eval", driver], {
     env: { ...process.env, HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "xdg") },
     stdio: ["ignore", "pipe", "pipe"],
   });
+
   const [stdout, stderr] = await Promise.all([text(child.stdout), text(child.stderr)]);
   const exitCode = await new Promise((done) => child.once("exit", done));
 

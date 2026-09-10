@@ -12,6 +12,7 @@ import {
 const approvalModel = () => {
   let calls = 0;
   let prompt: unknown;
+
   const provider = makeProvider("test", [] as const, undefined, () =>
     Layer.effect(
       LanguageModel.LanguageModel,
@@ -19,6 +20,7 @@ const approvalModel = () => {
         generateText: () => Effect.succeed([]),
         streamText: (options) => {
           calls += 1;
+
           if (calls === 1) {
             return Stream.succeed({
               type: "tool-call" as const,
@@ -27,12 +29,15 @@ const approvalModel = () => {
               params: { action: "delete" },
             });
           }
+
           prompt = options.prompt;
+
           return Stream.succeed({ type: "text-delta" as const, id: "done", delta: "continued" });
         },
       }),
     ),
   );
+
   return { provider, calls: () => calls, prompt: () => prompt };
 };
 
@@ -41,18 +46,23 @@ const start = (definition: AgentDefinition) =>
     let pending!: Extract<TurnEvent, { readonly type: "approval-required" }>;
     const announced = yield* Deferred.make<void>();
     const events: Array<TurnEvent> = [];
+
     const turn = yield* Effect.forkChild(
       Effect.gen(function* () {
         const session = yield* createSession(definition);
         yield* Stream.runForEach(session.runTurn("Hi"), (event) => {
           events.push(event);
+
           if (event.type !== "approval-required") return Effect.void;
           pending = event;
+
           return Deferred.succeed(announced, undefined);
         });
       }),
     );
+
     yield* Deferred.await(announced);
+
     return { events, pending, turn };
   });
 
@@ -63,11 +73,13 @@ const definition = (preTool?: PreTool, needsApproval: Tool.Any["needsApproval"] 
   let handlerCalls = 0;
   let postCalls = 0;
   let preToolCalls = 0;
+
   const dangerous = Tool.make("dangerous", {
     parameters: Schema.Struct({ action: Schema.String }),
     success: Schema.String,
     needsApproval,
   });
+
   return {
     fixture,
     counts: () => ({ handlerCalls, postCalls, preToolCalls }),
@@ -82,6 +94,7 @@ const definition = (preTool?: PreTool, needsApproval: Tool.Any["needsApproval"] 
             dangerous: () =>
               Effect.sync(() => {
                 handlerCalls += 1;
+
                 return "executed";
               }),
           },
@@ -93,6 +106,7 @@ const definition = (preTool?: PreTool, needsApproval: Tool.Any["needsApproval"] 
             postTool: (context) =>
               Effect.sync(() => {
                 postCalls += 1;
+
                 return context.result;
               }),
           },

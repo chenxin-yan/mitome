@@ -38,6 +38,7 @@ export const streamText = (
       }),
       HttpClientRequest.bodyJsonUnsafe(requestFor(model, options, sessionId)),
     );
+
     const response = HttpClient.execute(request).pipe(
       Effect.mapError(httpError),
       Effect.flatMap((response) => {
@@ -47,6 +48,7 @@ export const streamText = (
         ) {
           return Effect.succeed(response);
         }
+
         // The backend's error detail ("model not found", quota) beats a bare status.
         return response.text.pipe(
           Effect.orElseSucceed(() => ""),
@@ -70,6 +72,7 @@ export const streamText = (
         schedule: requestRetrySchedule,
       }),
     );
+
     return response.pipe(
       Effect.flatMap((response) => {
         if (response.status === 401) {
@@ -80,19 +83,23 @@ export const streamText = (
             Effect.flatMap((next) => execute(store, next, true)),
           );
         }
+
         return Effect.succeed(
           HttpClientResponse.stream(Effect.succeed(response)).pipe(Stream.mapError(httpError)),
         );
       }),
     );
   };
+
   return Stream.unwrap(
     Effect.gen(function* () {
       const store = yield* CredentialStore;
       const current = yield* store.loadCredential.pipe(Effect.mapError(credentialError));
+
       const credential = (yield* isExpired(current))
         ? yield* store.refreshCredential(undefined, true).pipe(Effect.mapError(credentialError))
         : current;
+
       return yield* execute(store, credential, false);
     }),
   ).pipe(decodeStream);

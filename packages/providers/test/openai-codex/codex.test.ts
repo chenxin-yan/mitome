@@ -11,15 +11,19 @@ import { writeCredential as writeCredentialEffect } from "../../src/openai-codex
 import { codex } from "../../src/openai-codex/index.js";
 
 type JsonObject = { readonly [key: string]: typeof Schema.Json.Type };
+
 const JsonObject = Schema.Record(Schema.String, Schema.Json);
 
 const directories: Array<string> = [];
+
 const writeCredential = (
   configDirectory: string,
   value: Parameters<typeof writeCredentialEffect>[1],
 ) => Effect.runPromise(writeCredentialEffect(configDirectory, value));
+
 const jwt = (accountId: string) =>
   `header.${Buffer.from(JSON.stringify({ chatgpt_account_id: accountId })).toString("base64url")}.signature`;
+
 const credential = (
   access = "synthetic-access",
   refresh = "synthetic-refresh",
@@ -43,6 +47,7 @@ const directory = async (value = credential()) => {
   const configDirectory = await mkdtemp(join(tmpdir(), "mitome-codex-sse-"));
   directories.push(configDirectory);
   await writeCredential(configDirectory, value);
+
   return configDirectory;
 };
 
@@ -55,6 +60,7 @@ describe("Codex SSE", () => {
     const configDirectory = await directory();
     let release!: () => void;
     const released = new Promise<void>((resolve) => (release = resolve));
+
     const server = await serve({
       fetch() {
         const added = sse({
@@ -62,11 +68,13 @@ describe("Codex SSE", () => {
           output_index: 0,
           item: { type: "message", id: "msg-1" },
         });
+
         return new Response(
           new ReadableStream<Uint8Array>({
             async start(controller) {
               const enqueue = (value: string) =>
                 controller.enqueue(new TextEncoder().encode(value));
+
               enqueue(sse({ type: "response.created" }));
               enqueue(sse({ type: "response.in_progress" }));
               enqueue(
@@ -130,10 +138,12 @@ describe("Codex SSE", () => {
         );
       },
     });
+
     try {
       const events: Array<unknown> = [];
       let firstOutput!: () => void;
       const output = new Promise<void>((resolve) => (firstOutput = resolve));
+
       const turn = Effect.runPromise(
         Effect.scoped(
           Effect.gen(function* () {
@@ -146,15 +156,18 @@ describe("Codex SSE", () => {
                 "future-private-model",
               ),
             );
+
             yield* Stream.runForEach(session.runTurn("Hi"), (event) =>
               Effect.sync(() => {
                 events.push(event);
+
                 if (event.type === "model-output") firstOutput();
               }),
             );
           }),
         ),
       );
+
       await output;
       expect(events).toEqual([{ type: "model-output", text: "hel" }]);
       release();
@@ -176,9 +189,11 @@ describe("Codex SSE", () => {
   test("replays encrypted reasoning before the paired Tool call on the next Step", async () => {
     const configDirectory = await directory();
     const requests: Array<JsonObject> = [];
+
     const server = await serve({
       async fetch(request) {
         requests.push(Schema.decodeUnknownSync(JsonObject)(await request.json()));
+
         if (requests.length === 1) {
           return new Response(
             sse({
@@ -215,6 +230,7 @@ describe("Codex SSE", () => {
             { headers: { "content-type": "text/event-stream" } },
           );
         }
+
         return new Response(
           sse({
             type: "response.output_item.added",
@@ -232,10 +248,12 @@ describe("Codex SSE", () => {
         );
       },
     });
+
     const echo = Tool.make("echo", {
       parameters: Schema.Struct({ text: Schema.String }),
       success: Schema.String,
     });
+
     try {
       const result = await Effect.runPromise(
         Effect.scoped(
@@ -259,7 +277,9 @@ describe("Codex SSE", () => {
                 ],
               ),
             );
+
             const events = yield* Stream.runCollect(session.runTurn("Hi"));
+
             return { events: [...events], history: session.history() };
           }),
         ),
@@ -295,10 +315,12 @@ describe("Codex SSE", () => {
         { type: "function_call_output", call_id: "call-1", output: '"hello"' },
       ]);
       const assistant = result.history.find((message) => message.role === "assistant");
+
       const reasoning =
         assistant?.role === "assistant"
           ? assistant.content.find((part) => part.type === "reasoning")
           : undefined;
+
       expect(reasoning).toMatchObject({
         text: "Checked the repository.",
         options: {
@@ -314,9 +336,11 @@ describe("Codex SSE", () => {
     const refresh = "synthetic-refresh-secret";
     const configDirectory = await directory(credential("expired-access", refresh, 1));
     let requests = 0;
+
     const server = await serve({
       fetch() {
         requests += 1;
+
         return Response.json(
           {
             error: "invalid_grant",
@@ -326,6 +350,7 @@ describe("Codex SSE", () => {
         );
       },
     });
+
     try {
       const error = await Effect.runPromise(
         Effect.scoped(
@@ -340,6 +365,7 @@ describe("Codex SSE", () => {
                 "future-private-model",
               ),
             );
+
             return yield* Effect.flip(Stream.runDrain(session.runTurn("Hi")));
           }),
         ),
@@ -350,6 +376,7 @@ describe("Codex SSE", () => {
       expect(error.message).toContain("HTTP 400; invalid_grant");
       expect(error.message).not.toContain(refresh);
       expect(AiError.isAiError(error.cause)).toBe(true);
+
       if (!AiError.isAiError(error.cause)) throw new Error("Expected an AiError cause");
       expect(error.cause.reason).toMatchObject({
         _tag: "AuthenticationError",
@@ -368,26 +395,35 @@ describe("Codex SSE", () => {
     let arrivals = 0;
     let releaseBarrier!: () => void;
     const barrier = new Promise<void>((resolve) => (releaseBarrier = resolve));
+
     const tokenServer = await serve({
       async fetch(request) {
         if (new URL(request.url).pathname === "/barrier") {
           arrivals += 1;
+
           if (arrivals === 2) releaseBarrier();
           await barrier;
+
           return new Response("go");
         }
+
         const refresh = Schema.decodeUnknownSync(Schema.String)(
           (await request.formData()).get("refresh_token"),
         );
+
         refreshes.push(refresh);
         await setTimeout(6_000);
+
         if (refresh !== "shared-refresh") return new Response("stale refresh", { status: 400 });
+
         return tokenResponse("race-account", "race-refresh");
       },
     });
+
     const server = await serve({
       fetch(request) {
         expect(request.headers.get("authorization")).toBe(`Bearer ${jwt("race-account")}`);
+
         return new Response(
           sse({ type: "response.output_item.added", output_index: 0, item: { type: "message" } }) +
             sse({ type: "response.output_item.done", output_index: 0, item: { type: "message" } }) +
@@ -396,19 +432,24 @@ describe("Codex SSE", () => {
         );
       },
     });
+
     const source = new URL("../../dist/openai-codex/index.js", import.meta.url).href;
     const core = new URL("../../node_modules/@mitome/core/dist/index.js", import.meta.url).href;
+
     const child = () =>
       spawnRuntime([
         "-e",
         `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const provider = codex(${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ providers: [provider], model: "openai-codex/gpt-5.4", extensions: [] }); yield* Stream.runDrain(session.runTurn("Hi")); })));`,
       ]);
+
     try {
       const children = [child(), child()];
       const exits = await Promise.all(children.map((process) => process.exited));
+
       if (exits.some((code) => code !== 0)) {
         for (const failed of children) console.error(await new Response(failed.stderr).text());
       }
+
       expect(exits).toEqual([0, 0]);
       expect(refreshes).toEqual(["shared-refresh"]);
       expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toMatchObject({

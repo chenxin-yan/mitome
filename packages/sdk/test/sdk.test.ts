@@ -40,6 +40,7 @@ describe("@mitome/sdk", () => {
       await Array.fromAsync(session.runTurn("Hi"));
       const history = session.history();
       expect(JSON.stringify(history)).not.toContain("~effect/ai/Prompt");
+
       return history.map((message) => message.role);
     });
 
@@ -48,6 +49,7 @@ describe("@mitome/sdk", () => {
 
   test("runTurn() iterable throws on a second iteration instead of re-running the Turn", async () => {
     const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
+
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -67,8 +69,10 @@ describe("@mitome/sdk", () => {
         () => Stream.succeed(Response.makePart("text-delta", { id: output, delta: output })),
         id,
       );
+
     const first = provider("first", "default");
     const second = provider("second", "override");
+
     const definition = defineAgent({
       providers: [first, second] as const,
       model: "first/default",
@@ -78,6 +82,7 @@ describe("@mitome/sdk", () => {
     const output = await withSession(definition, async (session) => {
       const defaults = await Array.fromAsync(session.runTurn("one"));
       const override = await Array.fromAsync(session.runTurn("two", { model: "second/private" }));
+
       return [defaults[0], override[0]];
     });
 
@@ -91,11 +96,13 @@ describe("@mitome/sdk", () => {
     class MyError extends Error {}
 
     const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
+
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
       extensions: [],
     });
+
     let caught: unknown;
 
     try {
@@ -113,11 +120,13 @@ describe("@mitome/sdk", () => {
 
   test("throws tagged Turn errors with their original cause", async () => {
     const cause = new ModelFailure({ message: "model failed" });
+
     const definition = defineAgent({
       providers: [makeTestProvider(() => Stream.fail(cause))],
       model: "test/default",
       extensions: [],
     });
+
     let caught: unknown;
 
     try {
@@ -139,6 +148,7 @@ describe("@mitome/sdk", () => {
       inputTokens: { total: 3 },
       outputTokens: { total: 2, reasoning: 1 },
     });
+
     const definition = defineAgent({
       providers: [
         makeTestProvider(() =>
@@ -166,11 +176,13 @@ describe("@mitome/sdk", () => {
 
   test("starts post-scope iteration with SessionReleasedError", async () => {
     const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
+
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
       extensions: [],
     });
+
     let iterable!: AsyncIterable<unknown>;
 
     await withSession(definition, async (session) => {
@@ -189,6 +201,7 @@ describe("@mitome/sdk", () => {
 
   test("brackets a typed, terminating Turn stream", async () => {
     const fixture = await Effect.runPromise(makeDeterministicProvider("hello"));
+
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -198,9 +211,11 @@ describe("@mitome/sdk", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
+
       for await (const event of session.runTurn("Hi")) {
         collected.push(event);
       }
+
       return collected;
     });
 

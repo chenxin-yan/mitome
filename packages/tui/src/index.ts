@@ -22,11 +22,13 @@ export const tui = (): Host => ({
     // must not load in non-TTY contexts (see host.test.ts). The local modules
     // stay dynamic to satisfy oxlint's no-service-constructor-imports.
     await import("@opentui/solid/preload");
+
     const [{ runShell }, { makeSessionManager }, { makeSessionViewModel }] = await Promise.all([
       import("./shell.jsx"),
       import("./session-manager.js"),
       import("./view-model.js"),
     ]);
+
     const manager = makeSessionManager(context);
     const session = await Effect.runPromise(manager.open());
     const viewModel = makeSessionViewModel(session, manager);

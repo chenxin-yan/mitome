@@ -74,16 +74,19 @@ const modelOutputEventDto = Schema.Struct({
   type: Schema.Literal("model-output"),
   text: Schema.String,
 });
+
 const reasoningEventDto = Schema.Struct({
   type: Schema.Literal("reasoning"),
   text: Schema.String,
 });
+
 const toolCallEventDto = Schema.Struct({
   type: Schema.Literal("tool-call"),
   id: Schema.String,
   name: Schema.String,
   params: Schema.Json,
 });
+
 const toolResultEventDto = Schema.Struct({
   type: Schema.Literal("tool-result"),
   id: Schema.String,
@@ -91,6 +94,7 @@ const toolResultEventDto = Schema.Struct({
   result: Schema.Json,
   isFailure: Schema.Boolean,
 });
+
 const approvalRequiredEventDto = Schema.Struct({
   type: Schema.Literal("approval-required"),
   approvalId: Schema.String,
@@ -98,6 +102,7 @@ const approvalRequiredEventDto = Schema.Struct({
   name: Schema.String,
   params: Schema.Json,
 });
+
 const approvalResolvedEventDto = Schema.Struct({
   type: Schema.Literal("approval-resolved"),
   approvalId: Schema.String,
@@ -105,6 +110,7 @@ const approvalResolvedEventDto = Schema.Struct({
   approved: Schema.Boolean,
   reason: Schema.optional(Schema.String),
 });
+
 const responseCompleteEventDto = Schema.Struct({
   type: Schema.Literal("response-complete"),
   finishReason: Schema.optional(Response.FinishReason),
@@ -121,6 +127,7 @@ export const TurnEventDtoSchema = Schema.Union([
   approvalResolvedEventDto,
   responseCompleteEventDto,
 ]);
+
 /**
  * Serializable form of a Turn event. Approval callbacks are dropped, `approval-resolved` records
  * each decision, and Tool params or results that are not JSON become `null`.
@@ -189,6 +196,7 @@ export const turnEventToDto = (event: PersistedTurnEvent): TurnEventDto => {
   if (event.type === "tool-call") {
     return { ...event, params: Schema.is(Schema.Json)(event.params) ? event.params : null };
   }
+
   if (event.type === "tool-result") {
     return {
       type: event.type,
@@ -198,6 +206,7 @@ export const turnEventToDto = (event: PersistedTurnEvent): TurnEventDto => {
       isFailure: event.isFailure,
     };
   }
+
   if (event.type === "approval-required") {
     return {
       type: event.type,
@@ -207,5 +216,6 @@ export const turnEventToDto = (event: PersistedTurnEvent): TurnEventDto => {
       params: Schema.is(Schema.Json)(event.params) ? event.params : null,
     };
   }
+
   return event;
 };

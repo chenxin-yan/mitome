@@ -50,6 +50,7 @@ interface ActiveRun {
 const bounded = <T>(work: Promise<T>): Promise<T | undefined> => {
   let cancel!: () => void;
   void work.catch(() => undefined);
+
   return Promise.race([
     work,
     new Promise<undefined>((resolve) => {
@@ -73,6 +74,7 @@ const activity = (event: TurnEvent): string | undefined => {
       return undefined;
     default:
       event satisfies never;
+
       return undefined;
   }
 };
@@ -96,12 +98,15 @@ export const makeSessionViewModel = (
 
   const publish = (next: SessionState): void => {
     state = next;
+
     for (const listener of listeners) listener(state);
   };
 
   const handleEvent = (event: TurnEvent, complete: () => void): Effect.Effect<void, unknown> => {
     const current = state.activeTurn;
+
     if (current === undefined) return Effect.void;
+
     if (event.type === "model-output") {
       publish({
         ...state,
@@ -109,6 +114,7 @@ export const makeSessionViewModel = (
       });
     } else {
       const nextActivity = activity(event);
+
       if (nextActivity !== undefined) {
         publish({
           ...state,
@@ -119,7 +125,9 @@ export const makeSessionViewModel = (
         });
       }
     }
+
     if (event.type === "response-complete") complete();
+
     return event.type === "approval-required" ? event.approve() : Effect.void;
   };
 
@@ -127,6 +135,7 @@ export const makeSessionViewModel = (
     if (disposed || state.phase !== "idle" || state.picker !== undefined || text.trim() === "") {
       return false;
     }
+
     publish({
       ...state,
       phase: "running",
@@ -135,6 +144,7 @@ export const makeSessionViewModel = (
     });
     let completed = false;
     const historyLength = session.history().length;
+
     const fiber = Effect.runFork(
       Stream.runForEach(session.runTurn(text), (event) =>
         handleEvent(event, () => {
@@ -142,30 +152,37 @@ export const makeSessionViewModel = (
         }),
       ),
     );
+
     const run: ActiveRun = {
       fiber,
       historyLength,
       completed: () => completed,
       interrupted: false,
     };
+
     active = run;
     void Effect.runPromise(Fiber.await(fiber)).then((exit) => {
       if (disposed || active !== run) return;
       active = undefined;
       const turn = state.activeTurn;
+
       const interrupted =
         run.interrupted || (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause));
+
       // History advances only after the Transcript save succeeds, so a longer
       // history means the Turn is committed everywhere, whatever the exit says.
       const committed = session.history().length > run.historyLength;
+
       if (turn !== undefined && committed) {
         publish({
           phase: "idle",
           turns: [...state.turns, turn],
           notice: Exit.isFailure(exit) && !interrupted ? Cause.pretty(exit.cause) : undefined,
         });
+
         return;
       }
+
       publish({
         phase: "idle",
         turns: state.turns,
@@ -176,6 +193,7 @@ export const makeSessionViewModel = (
             : "Turn ended before completing.",
       });
     });
+
     return true;
   };
 
@@ -188,21 +206,27 @@ export const makeSessionViewModel = (
       // bound as other cleanup, then abandon the switch so idle is reachable.
       const abandon = abandonSwitch;
       setTimeout(() => abandon?.(), 1_000);
+
       return true;
     }
+
     if (active === undefined || state.phase !== "running" || active.completed()) return false;
     active.interrupted = true;
     publish({ ...state, phase: "interrupting" });
     Effect.runFork(Fiber.interrupt(active.fiber));
+
     return true;
   };
 
   const openTranscriptPicker = (): boolean => {
     if (disposed || state.phase !== "idle" || state.picker !== undefined) return false;
+
     if (manager.transcripts === undefined) {
       publish({ ...state, notice: "Transcript persistence is not configured." });
+
       return true;
     }
+
     const request = ++pickerRequest;
     publish({
       ...state,
@@ -211,14 +235,17 @@ export const makeSessionViewModel = (
     });
     void Effect.runPromiseExit(manager.transcripts.list()).then((exit) => {
       if (disposed || request !== pickerRequest) return;
+
       if (Exit.isFailure(exit)) {
         publish({
           ...state,
           picker: undefined,
           notice: `Could not list Transcripts: ${Cause.pretty(exit.cause)}`,
         });
+
         return;
       }
+
       publish({
         ...state,
         picker: {
@@ -230,6 +257,7 @@ export const makeSessionViewModel = (
         },
       });
     });
+
     return true;
   };
 
@@ -237,14 +265,17 @@ export const makeSessionViewModel = (
     if (state.picker === undefined || state.phase !== "idle") return false;
     pickerRequest += 1;
     publish({ ...state, picker: undefined });
+
     return true;
   };
 
   const moveTranscriptSelection = (offset: number): boolean => {
     const picker = state.picker;
+
     if (picker === undefined || picker.loading || picker.summaries.length === 0) return false;
     const selected = Math.max(0, Math.min(picker.summaries.length - 1, picker.selected + offset));
     publish({ ...state, picker: { ...picker, selected } });
+
     return true;
   };
 
@@ -256,6 +287,7 @@ export const makeSessionViewModel = (
     const fiber = Effect.runFork(manager.open(transcriptId));
     switchFiber = fiber;
     const settled = Effect.runPromise(Fiber.await(fiber));
+
     const operation = (async () => {
       const opened = await Promise.race([
         settled,
@@ -263,15 +295,19 @@ export const makeSessionViewModel = (
           abandonSwitch = () => resolve(undefined);
         }),
       ]);
+
       switchFiber = undefined;
       abandonSwitch = undefined;
+
       if (opened === undefined) {
         // Abandoned uninterruptible open. No Session can leak: once interrupt
         // was requested the Fiber's exit is Interrupted, and manager.open
         // releases anything it acquired via its own onError scope close.
         publish({ ...state, phase: "idle", notice: "Session start did not cancel in time." });
+
         return;
       }
+
       if (Exit.isFailure(opened)) {
         publish({
           ...state,
@@ -280,13 +316,18 @@ export const makeSessionViewModel = (
             ? "Session start cancelled."
             : `Could not start Session: ${Cause.pretty(opened.cause)}`,
         });
+
         return;
       }
+
       const next = opened.value;
+
       if (isDisposed()) {
         await Effect.runPromiseExit(next.close);
+
         return;
       }
+
       session = next;
       const closed = await bounded(Effect.runPromiseExit(previous.close));
       publish({
@@ -300,14 +341,18 @@ export const makeSessionViewModel = (
               : notice,
       });
     })();
+
     switching = operation;
+
     return true;
   };
 
   const resumeTranscript = (): boolean => {
     const picker = state.picker;
     const summary = picker?.summaries[picker.selected];
+
     if (picker === undefined || picker.loading || summary === undefined) return false;
+
     return replaceSession(summary.id, "Transcript resumed in a new Session.");
   };
 
@@ -316,6 +361,7 @@ export const makeSessionViewModel = (
     subscribe: (listener) => {
       listeners.add(listener);
       listener(state);
+
       return () => listeners.delete(listener);
     },
     submit,
@@ -330,9 +376,11 @@ export const makeSessionViewModel = (
       const running = active;
       active = undefined;
       listeners.clear();
+
       if (running !== undefined) {
         await bounded(Effect.runPromise(Fiber.interrupt(running.fiber)));
       }
+
       if (switching !== undefined) await bounded(switching);
       await bounded(Effect.runPromise(session.close));
     },

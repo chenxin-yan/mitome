@@ -4,6 +4,7 @@ import { decodeStream } from "../../src/openai-codex/sse.js";
 import { sse } from "../support.js";
 
 const encoder = new TextEncoder();
+
 const decode = (...chunks: ReadonlyArray<string>) =>
   Effect.runPromise(
     Stream.runCollect(

@@ -16,8 +16,10 @@ const TranscriptPicker = (props: { readonly picker: TranscriptPickerState }) => 
   let list: ScrollBoxRenderable | undefined;
   createEffect(() => {
     const selected = props.picker.selected;
+
     if (!props.picker.loading) list?.scrollChildIntoView(`transcript-${selected}`);
   });
+
   return (
     <box flexDirection="column" gap={1} flexGrow={1}>
       <text>Transcripts</text>
@@ -63,7 +65,9 @@ export const Shell = (props: {
       key.preventDefault();
       key.stopPropagation();
     };
+
     const picker = state().picker;
+
     if (picker !== undefined) {
       if (key.name === "escape" || key.name === "esc") {
         if (props.viewModel.closeTranscriptPicker()) stop();
@@ -74,16 +78,22 @@ export const Shell = (props: {
       } else if (key.name === "return" || key.name === "enter") {
         if (props.viewModel.resumeTranscript()) stop();
       }
+
       return;
     }
+
     if (key.ctrl && key.name.toLowerCase() === "o") {
       if (props.viewModel.openTranscriptPicker()) stop();
+
       return;
     }
+
     if (key.ctrl && key.name.toLowerCase() === "n") {
       if (props.viewModel.newSession()) stop();
+
       return;
     }
+
     if ((key.name === "escape" || key.name === "esc") && props.viewModel.interrupt()) stop();
   });
 

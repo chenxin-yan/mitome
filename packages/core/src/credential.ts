@@ -8,6 +8,7 @@ export const CredentialDescriptorSchema = Schema.Union([
   Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/)),
   Schema.Struct({ capability: Schema.Struct({ module: Schema.String }) }),
 ]);
+
 /** An environment variable name, or a reference to the module exporting an `AuthCapability`. */
 export type CredentialDescriptor = typeof CredentialDescriptorSchema.Type;
 

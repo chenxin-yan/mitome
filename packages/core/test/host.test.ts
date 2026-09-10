@@ -3,6 +3,7 @@ import { defineMitome, memoryTranscripts, type AgentDefinition, type Host } from
 
 // SAFETY: defineMitome only stores the Agent Definition; this unit test never compiles it.
 const agent = {} as AgentDefinition;
+
 const host: Host = {
   run: async () => undefined,
 };

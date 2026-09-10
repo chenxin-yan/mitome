@@ -10,6 +10,7 @@ export const transformPrompt: (
 ) => Effect.Effect<Prompt.Prompt, unknown> = Effect.fn("@mitome/core/transformPrompt")(
   function* (extensions, contexts, prompt) {
     let current = prompt;
+
     for (const extension of extensions) {
       current = yield* provideExtension(
         extension,
@@ -17,6 +18,7 @@ export const transformPrompt: (
         extension.hooks?.preStep?.(current) ?? Effect.succeed(current),
       );
     }
+
     return current;
   },
 );
@@ -49,10 +51,12 @@ const runEndHooks = (
   Effect.gen(function* () {
     // Boxed so "no failure yet" is distinguishable from a failure value of undefined.
     let firstFailure: { readonly failure: unknown } | undefined = undefined;
+
     for (const extension of extensions) {
       // Interruption must continue with later cleanup, not invoke the active Hook twice.
       progress.dispatched += 1;
       const hook = getHook(extension) ?? Effect.void;
+
       if (firstFailure === undefined) {
         firstFailure = yield* hook.pipe(
           Effect.as(undefined),
@@ -62,6 +66,7 @@ const runEndHooks = (
         yield* hook.pipe(Effect.catch((failure) => Effect.logWarning(failureMessage, failure)));
       }
     }
+
     if (firstFailure !== undefined) return yield* Effect.fail(firstFailure.failure);
   });
 
@@ -77,12 +82,14 @@ export const beginHookPhase: (
 ) => Effect.Effect<HookPhase, unknown> = Effect.fn("@mitome/core/beginHookPhase")(
   function* (extensions, getStart, getEnd, endFailureMessage) {
     let started = 0;
+
     const start = Effect.gen(function* () {
       for (const extension of extensions) {
         yield* getStart(extension) ?? Effect.void;
         started += 1;
       }
     });
+
     yield* start.pipe(
       Effect.onError(() =>
         runCleanupHooks(extensions.slice(0, started).toReversed(), getEnd, endFailureMessage),
@@ -91,6 +98,7 @@ export const beginHookPhase: (
 
     const teardown = extensions.toReversed();
     const progress = { dispatched: 0 };
+
     return {
       end: runEndHooks(teardown, getEnd, progress, endFailureMessage),
       cleanup: Effect.suspend(() =>

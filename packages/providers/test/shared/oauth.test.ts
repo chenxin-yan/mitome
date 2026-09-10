@@ -16,13 +16,16 @@ describe("OAuth token exchange", () => {
       let url = "";
       let contentType: string | undefined;
       let body = "";
+
       const client = HttpClient.make((request, resolved) => {
         method = request.method;
         url = resolved.toString();
         contentType = request.headers["content-type"];
+
         if (Predicate.isTagged(request.body, "Uint8Array")) {
           body = new TextDecoder().decode(request.body.body);
         }
+
         return Effect.succeed(
           HttpClientResponse.fromWeb(
             request,
@@ -69,6 +72,7 @@ describe("OAuth token exchange", () => {
           ),
         ),
       );
+
       const error = yield* Effect.flip(
         provideClient(
           exchangeToken("https://auth.test/token", {
@@ -90,6 +94,7 @@ describe("OAuth token exchange", () => {
     Effect.gen(function* () {
       const prefix = "x".repeat(500);
       const secret = "secret-crossing-the-boundary";
+
       const client = HttpClient.make((request) =>
         Effect.succeed(
           HttpClientResponse.fromWeb(
@@ -103,6 +108,7 @@ describe("OAuth token exchange", () => {
           ),
         ),
       );
+
       const error = yield* Effect.flip(
         provideClient(exchangeToken("https://auth.test/token", { refresh_token: secret }), client),
       );
@@ -122,9 +128,11 @@ describe("OAuth token exchange", () => {
           ),
         ),
       );
+
       const error = yield* Effect.flip(
         provideClient(exchangeToken("https://auth.test/token", {}), client),
       );
+
       expect(error.message).toBe("OAuth token exchange returned an invalid response.");
     }),
   );
@@ -141,10 +149,12 @@ describe("OAuth token exchange", () => {
           ),
         ),
       );
+
       const fiber = yield* Effect.forkChild(
         Effect.flip(provideClient(exchangeToken("https://auth.test/token", {}), client)),
         { startImmediately: true },
       );
+
       yield* TestClock.adjust("15 seconds");
       expect((yield* Fiber.join(fiber))._tag).toBe("TimeoutError");
     }),

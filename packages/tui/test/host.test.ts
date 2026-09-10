@@ -5,6 +5,7 @@ describe("TUI Host", () => {
   test("requires an interactive terminal", () => {
     const originalIn = process.stdin.isTTY;
     const originalOut = process.stdout.isTTY;
+
     try {
       process.stdin.isTTY = true;
       process.stdout.isTTY = true;
@@ -19,6 +20,7 @@ describe("TUI Host", () => {
 
   test("loads its Solid preload before rendering", async () => {
     const entry = new URL("../src/index.ts", import.meta.url).href;
+
     const source = `
       const [{ tui }, { makeProvider }, { Effect, Layer, Stream }, { LanguageModel }] = await Promise.all([
         import(${JSON.stringify(entry)}),
@@ -40,6 +42,7 @@ describe("TUI Host", () => {
       });
       console.log("DYNAMIC_PRELOAD_OK");
     `;
+
     const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", source], {
       stdout: "pipe",
       stderr: "pipe",
@@ -47,17 +50,22 @@ describe("TUI Host", () => {
 
     let interrupt: ReturnType<typeof setTimeout> | undefined;
     const hardKill = setTimeout(() => child.kill("SIGKILL"), 20_000);
+
     const exited = child.exited.finally(() => {
       clearTimeout(hardKill);
+
       if (interrupt !== undefined) clearTimeout(interrupt);
     });
+
     let stdout = "";
     const decoder = new TextDecoder();
+
     for await (const chunk of child.stdout) {
       stdout += decoder.decode(chunk, { stream: true });
       // First output proves renderer startup; repeating SIGINT can race terminal teardown.
       interrupt ??= setTimeout(() => child.kill("SIGINT"), 500);
     }
+
     const [exitCode, stderr] = await Promise.all([exited, new Response(child.stderr).text()]);
 
     expect(stderr).toBe("");

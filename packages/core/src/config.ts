@@ -12,9 +12,11 @@ export const configDirectory = (
   platform: string = process.platform,
 ): string | undefined => {
   if (env.MITOME_HOME) return env.MITOME_HOME;
+
   const root =
     env.XDG_CONFIG_HOME ||
     (platform === "win32" ? env.APPDATA : env.HOME && join(env.HOME, ".config"));
+
   return root ? join(root, "mitome") : undefined;
 };
 

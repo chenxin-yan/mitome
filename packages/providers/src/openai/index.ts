@@ -27,6 +27,7 @@ export const openai = (options: OpenAiOptions = {}) => {
   const apiKeyEnv = options.apiKeyEnv ?? "OPENAI_API_KEY";
   const baseUrl = (options.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
   const client = apiKeyClientLayer(apiKeyEnv, baseUrl, OpenAiClient.layer);
+
   return makeProvider("openai", knownModelIds, apiKeyEnv, (model) =>
     transportLayer(options.transport, OpenAiLanguageModel.layer({ model }), client),
   );

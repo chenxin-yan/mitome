@@ -18,8 +18,10 @@ describe("TranscriptSchema", () => {
     Effect.gen(function* () {
       let calls = 0;
       const metadata = { openai: { itemId: "reasoning-1", encryptedContent: "encrypted" } };
+
       const provider = makeTestProvider((options) => {
         calls += 1;
+
         if (calls === 2) {
           return Stream.succeed(
             Response.makePart("text", {
@@ -28,6 +30,7 @@ describe("TranscriptSchema", () => {
             }),
           );
         }
+
         const call = Response.makePart("tool-call", {
           id: "call-1",
           name: "echo",
@@ -35,6 +38,7 @@ describe("TranscriptSchema", () => {
           providerExecuted: false,
           metadata: { openai: { callId: "provider-call-1" } },
         });
+
         return Stream.concat(
           Stream.fromIterable([
             Response.makePart("reasoning-start", { id: "reasoning-1", metadata }),
@@ -62,10 +66,12 @@ describe("TranscriptSchema", () => {
           ),
         );
       });
+
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),
         success: Schema.Struct({ echoed: Schema.String }),
       });
+
       const definition: AgentDefinition = {
         providers: [provider],
         model: "test/default",
@@ -78,16 +84,20 @@ describe("TranscriptSchema", () => {
           }),
         ],
       };
+
       const session = yield* createSession(definition);
       yield* Stream.runDrain(session.runTurn("Hi"));
 
       const originalPrompt = Prompt.fromMessages(session.history());
+
       const transcript = makeTranscript({
         id: "transcript-1",
         parentTranscriptId: "transcript-parent",
         messages: session.history(),
       });
+
       const encoded = yield* Schema.encodeEffect(TranscriptSchema)(transcript);
+
       const decoded = yield* Schema.decodeUnknownEffect(TranscriptSchema)(
         JSON.parse(JSON.stringify(encoded)),
       );
@@ -121,6 +131,7 @@ describe("TranscriptSchema", () => {
     const encoded = Schema.encodeSync(TranscriptSchema)(
       makeTranscript({ id: "transcript-text-parts", messages: prompt.content }),
     );
+
     const decoded = Schema.decodeSync(TranscriptSchema)(encoded);
 
     expect(promptFromTranscript(decoded).content[0]).toMatchObject({

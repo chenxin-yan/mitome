@@ -12,6 +12,7 @@ const stubLayer = Layer.succeed(
 describe("makeProvider", () => {
   it("rejects Provider ids that cannot form a Qualified Model id", () => {
     const invalidIds: ReadonlyArray<string> = ["", "invalid/id"];
+
     for (const id of invalidIds) {
       expect(() => makeProvider(id, [], undefined, () => stubLayer)).toThrowError(
         "Provider id must be non-empty and contain no '/'",

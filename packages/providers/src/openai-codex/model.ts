@@ -16,19 +16,23 @@ export const codexLayer = (
   Layer.unwrap(
     Effect.gen(function* () {
       const configDirectory = options.configDirectory ?? processConfigDirectory();
+
       if (configDirectory === undefined) {
         return yield* Effect.fail(
           `${configDirectoryMessage} Required to locate Codex credentials.`,
         );
       }
+
       const baseUrl = (options.baseUrl ?? "https://chatgpt.com/backend-api").replace(/\/+$/, "");
       const tokenUrl = options.tokenUrl ?? oauth.tokenUrl;
+
       return Layer.effect(
         LanguageModel.LanguageModel,
         Effect.gen(function* () {
           const sessionId = crypto.randomUUID();
           const httpClient = yield* HttpClient.HttpClient;
           const credentialStore = yield* CredentialStore;
+
           const requestStream = (
             providerOptions: LanguageModel.ProviderOptions,
           ): Stream.Stream<Response.StreamPartEncoded, AiError.AiError> =>
@@ -36,7 +40,9 @@ export const codexLayer = (
               Stream.provideService(HttpClient.HttpClient, httpClient),
               Stream.provideService(CredentialStore, credentialStore),
             );
+
           yield* credentialStore.loadCredential.pipe(Effect.mapError(credentialError));
+
           return yield* LanguageModel.make({
             streamText: requestStream,
             generateText: (providerOptions) =>
@@ -46,11 +52,15 @@ export const codexLayer = (
                   // move stream→generate projection into Core if a second Provider needs them.
                   const textDeltas: Array<string> = [];
                   const toolCalls: Array<Response.ToolCallPartEncoded> = [];
+
                   for (const part of parts) {
                     if (part.type === "text-delta") textDeltas.push(part.delta);
+
                     if (part.type === "tool-call") toolCalls.push(part);
                   }
+
                   const text = textDeltas.join("");
+
                   return [
                     ...(text === "" ? [] : [Response.makePart("text", { text })]),
                     ...toolCalls,

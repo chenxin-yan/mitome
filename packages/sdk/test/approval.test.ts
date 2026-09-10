@@ -32,6 +32,7 @@ const defaultingSchema: InputSchema<{
 
 const approvalModel = () => {
   let calls = 0;
+
   return {
     provider: makeProvider("test", [] as const, undefined, () =>
       Layer.effect(
@@ -40,6 +41,7 @@ const approvalModel = () => {
           generateText: () => Effect.succeed([]),
           streamText: () => {
             calls += 1;
+
             if (calls === 1) {
               return Stream.succeed({
                 type: "tool-call" as const,
@@ -48,6 +50,7 @@ const approvalModel = () => {
                 params: { action: "delete" },
               });
             }
+
             return Stream.succeed({ type: "text-delta" as const, id: "done", delta: "reused" });
           },
         }),
@@ -61,6 +64,7 @@ describe("@mitome/sdk Tool Approval", () => {
   test("adapts a rejected async predicate fail-closed and exposes Promise decisions", async () => {
     const fixture = approvalModel();
     let handlerCalls = 0;
+
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -75,6 +79,7 @@ describe("@mitome/sdk Tool Approval", () => {
               needsApproval: async () => Promise.reject(new Error("predicate failed")),
               handler: async (input) => {
                 handlerCalls += 1;
+
                 return input;
               },
             }),
@@ -85,13 +90,16 @@ describe("@mitome/sdk Tool Approval", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
+
       for await (const event of session.runTurn("Hi")) {
         collected.push(event);
+
         if (event.type === "approval-required") {
           await event.deny("declined");
           await expect(event.approve()).rejects.toMatchObject({ _tag: "ApprovalResolutionError" });
         }
       }
+
       return collected;
     });
 
@@ -109,6 +117,7 @@ describe("@mitome/sdk Tool Approval", () => {
     const fixture = approvalModel();
     let handlerCalls = 0;
     let seen: unknown;
+
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -122,10 +131,12 @@ describe("@mitome/sdk Tool Approval", () => {
               outputSchema: schema,
               needsApproval: async (input) => {
                 seen = input;
+
                 return input.action === "delete";
               },
               handler: async (input) => {
                 handlerCalls += 1;
+
                 return input;
               },
             }),
@@ -136,10 +147,13 @@ describe("@mitome/sdk Tool Approval", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
+
       for await (const event of session.runTurn("Hi")) {
         collected.push(event);
+
         if (event.type === "approval-required") await event.approve();
       }
+
       return collected;
     });
 
@@ -159,6 +173,7 @@ describe("@mitome/sdk Tool Approval", () => {
     let approvalParams: unknown;
     let handlerInput: unknown;
     let handlerCalls = 0;
+
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -174,6 +189,7 @@ describe("@mitome/sdk Tool Approval", () => {
               handler: async (input) => {
                 handlerCalls += 1;
                 handlerInput = input;
+
                 return input;
               },
             }),
@@ -184,13 +200,16 @@ describe("@mitome/sdk Tool Approval", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
+
       for await (const event of session.runTurn("Hi")) {
         collected.push(event);
+
         if (event.type === "approval-required") {
           approvalParams = event.params;
           await event.approve();
         }
       }
+
       return collected;
     });
 
@@ -210,6 +229,7 @@ describe("@mitome/sdk Tool Approval", () => {
   test("interrupts a pending approval and reuses the Session", async () => {
     const fixture = approvalModel();
     let handlerCalls = 0;
+
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -224,6 +244,7 @@ describe("@mitome/sdk Tool Approval", () => {
               needsApproval: true,
               handler: async (input) => {
                 handlerCalls += 1;
+
                 return input;
               },
             }),
@@ -236,6 +257,7 @@ describe("@mitome/sdk Tool Approval", () => {
       const iterator = session.runTurn("first")[Symbol.asyncIterator]();
       await iterator.next();
       const pending = await iterator.next();
+
       if (pending.done || pending.value.type !== "approval-required")
         throw new Error("missing approval");
       await iterator.return?.();
@@ -245,7 +267,9 @@ describe("@mitome/sdk Tool Approval", () => {
       });
 
       const next = [];
+
       for await (const event of session.runTurn("second")) next.push(event);
+
       return next;
     });
 

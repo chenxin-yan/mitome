@@ -65,8 +65,11 @@ const refreshCredential = (
   modifyCredential(configDirectory, provider, (stored) =>
     Effect.gen(function* () {
       const current = yield* credentialFrom(stored);
+
       if (failedAccess !== undefined && current.access !== failedAccess) return [current, current];
+
       if (expiredOnly && !(yield* isExpired(current))) return [current, current];
+
       const next = yield* token(tokenUrl, {
         grant_type: "refresh_token",
         refresh_token: current.refresh,
@@ -81,6 +84,7 @@ const refreshCredential = (
             : error,
         ),
       );
+
       return [next, next];
     }),
   );
@@ -93,6 +97,7 @@ export const fsCredentialStoreLayer = (
     CredentialStore,
     Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
+
       return {
         loadCredential: loadCredential(configDirectory),
         refreshCredential: (failedAccess, expiredOnly) =>

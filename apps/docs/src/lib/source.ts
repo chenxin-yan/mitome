@@ -15,12 +15,15 @@ export function markdownPathToSlugs(segs: string[]) {
   const out = segs.map((segment, index) =>
     index === segs.length - 1 ? segment.replace(/\.md$/, "") : segment,
   );
+
   if (out.length === 1 && out[0] === "index") out.pop();
+
   return out;
 }
 
 export function slugsToMarkdownPath(slugs: string[]) {
   const segments = [...slugs];
+
   if (segments.length === 0) {
     segments.push("index.md");
   } else {

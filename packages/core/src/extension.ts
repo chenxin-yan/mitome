@@ -4,6 +4,7 @@ import type { Response } from "effect/unstable/ai";
 
 /** Decoded parameters of any Tool call. */
 export type ToolInput = Tool.Parameters<Tool.Any>;
+
 /** Result value of any Tool handler. */
 export type ToolOutput = Tool.HandlerResult<Tool.Any>["result"];
 
@@ -56,8 +57,10 @@ export interface ExtensionHooks<Resource = never> {
 
 /** Decodes raw Tool params before Hooks, approval predicates, and handlers see them. */
 export type ToolInputValidator = (input: ToolInput) => Effect.Effect<ToolInput, unknown>;
+
 /** Revalidates a successful Tool result, including after `postTool` transforms. */
 export type ToolResultValidator = (result: ToolOutput) => Effect.Effect<ToolOutput, unknown>;
+
 /** Revalidates an expected failure value, including after `postTool` transforms. */
 export type ToolFailureValidator = (failure: ToolOutput) => Effect.Effect<ToolOutput, unknown>;
 
@@ -72,7 +75,9 @@ export interface ToolContribution<Input = ToolInput, Output = ToolOutput, Failur
 export type ToolContributions = Readonly<
   Record<string, ToolContribution<unknown, unknown, unknown>>
 >;
+
 type EmptyToolContributions = Readonly<Record<never, never>>;
+
 type ToolkitContributions<Tools extends Record<string, Tool.Any>> = {
   readonly [Name in keyof Tools]: ToolContribution<
     Tool.Parameters<Tools[Name]>,
@@ -80,6 +85,7 @@ type ToolkitContributions<Tools extends Record<string, Tool.Any>> = {
     Tool.Failure<Tools[Name]>
   >;
 };
+
 declare const ExtensionContributionsTypeId: unique symbol;
 
 /**
@@ -124,6 +130,7 @@ export interface Extension<
 export type AnyExtension = Extension<any, unknown, any> | Extension<never, any, any>;
 
 type RejectAny<Value> = 0 extends 1 & Value ? never : unknown;
+
 type ServiceCoverage<Tools extends Record<string, Tool.Any>, Services> = [
   Tool.HandlerServices<Tools[keyof Tools]> | Tool.ResultDecodingServices<Tools[keyof Tools]>,
 ] extends [Services]
@@ -253,6 +260,7 @@ export const provideExtension = <A, E>(
   effect: Effect.Effect<A, E, any>,
 ): Effect.Effect<A, E> => {
   const context = contexts.get(extension);
+
   // SAFETY: providing the extension's compiled context removes its erased service requirement.
   return (context === undefined ? effect : Effect.provide(effect, context)) as Effect.Effect<A, E>;
 };

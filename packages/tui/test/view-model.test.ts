@@ -14,6 +14,7 @@ const waitFor = async (predicate: () => boolean, attempts = 100): Promise<void> 
     if (predicate()) return;
     await Bun.sleep(1);
   }
+
   throw new Error("Timed out waiting for session state");
 };
 
@@ -25,6 +26,7 @@ const stubManager: SessionManager = {
 describe("session view model", () => {
   test("streams output, shows tool activity, auto-approves, and supports multiple Turns", async () => {
     let approvals = 0;
+
     const approval: TurnEvent = {
       type: "approval-required",
       approvalId: "approval-1",
@@ -34,6 +36,7 @@ describe("session view model", () => {
       approve: () => Effect.sync(() => void approvals++),
       deny: () => Effect.void,
     };
+
     const session = scriptedSession([
       Stream.make(
         { type: "model-output", text: "hel" },
@@ -51,6 +54,7 @@ describe("session view model", () => {
       ),
       Stream.make({ type: "model-output", text: "again" }, { type: "response-complete" }),
     ]);
+
     const viewModel = makeSessionViewModel(session, stubManager);
     const observed: Array<SessionState> = [];
     viewModel.subscribe((state) => observed.push(state));
@@ -74,19 +78,23 @@ describe("session view model", () => {
 
   test("rejects interruption after completion and commits the Turn", async () => {
     let finish!: () => void;
+
     const finished = new Promise<void>((resolve) => {
       finish = resolve;
     });
+
     const events: [TurnEvent, TurnEvent] = [
       { type: "model-output", text: "done" },
       { type: "response-complete" },
     ];
+
     const session = scriptedSession([
       Stream.concat(
         Stream.fromIterable(events),
         Stream.fromEffectDrain(Effect.promise(() => finished)),
       ),
     ]);
+
     const viewModel = makeSessionViewModel(session, stubManager);
 
     expect(viewModel.submit("cancel me")).toBe(true);
@@ -109,6 +117,7 @@ describe("session view model", () => {
       ),
       Stream.make({ type: "model-output", text: "recovered" }, { type: "response-complete" }),
     ]);
+
     const viewModel = makeSessionViewModel(session, stubManager);
 
     expect(viewModel.submit("cancel me")).toBe(true);
@@ -131,6 +140,7 @@ describe("session view model", () => {
 
   test("drops the Turn and reports the failure when transcript persistence fails", async () => {
     const unsupported = () => Effect.die("not used");
+
     const provider = makeProvider("test", [] as const, undefined, () =>
       Layer.succeed(LanguageModel.LanguageModel, {
         generateText: unsupported,
@@ -139,6 +149,7 @@ describe("session view model", () => {
           Stream.succeed(Response.makePart("text-delta", { id: "saved", delta: "kept" })),
       }),
     );
+
     const store: TranscriptStore = {
       save: () => Effect.fail(new StoreError({ message: "save failed" })),
       appendEvent: () => Effect.void,
@@ -153,6 +164,7 @@ describe("session view model", () => {
             { providers: [provider], model: "test/default", extensions: [] },
             { transcripts: store },
           );
+
           const viewModel = makeSessionViewModel({ ...session, close: Effect.void }, stubManager);
           yield* Effect.promise(async () => {
             viewModel.submit("persist me");
@@ -171,20 +183,24 @@ describe("session view model", () => {
   test("drives a real Session across interruption and later Turns", async () => {
     let calls = 0;
     const unsupported = () => Effect.die("not used");
+
     const provider = makeProvider("test", [] as const, undefined, () =>
       Layer.succeed(LanguageModel.LanguageModel, {
         generateText: unsupported,
         generateObject: unsupported,
         streamText: () => {
           calls += 1;
+
           const output = Match.value(calls).pipe(
             Match.when(1, () => "partial"),
             Match.when(2, () => "recovered"),
             Match.orElse(() => "again"),
           );
+
           const part = Stream.succeed(
             Response.makePart("text-delta", { id: String(calls), delta: output }),
           );
+
           return calls === 1 ? Stream.concat(part, Stream.never) : part;
         },
       }),
@@ -198,6 +214,7 @@ describe("session view model", () => {
             model: "test/default",
             extensions: [],
           });
+
           const viewModel = makeSessionViewModel({ ...session, close: Effect.void }, stubManager);
           yield* Effect.promise(async () => {
             viewModel.submit("discarded");
@@ -225,12 +242,14 @@ describe("session view model", () => {
   test("lists, resumes, and starts new Sessions without changing prior Transcripts", async () => {
     const seenPrompts: Array<string> = [];
     const unsupported = () => Effect.die("not used");
+
     const provider = makeProvider("test", [] as const, undefined, () =>
       Layer.succeed(LanguageModel.LanguageModel, {
         generateText: unsupported,
         generateObject: unsupported,
         streamText: (options: { readonly prompt: unknown }) => {
           seenPrompts.push(JSON.stringify(options.prompt));
+
           return Stream.succeed(
             Response.makePart("text-delta", {
               id: String(seenPrompts.length),
@@ -240,12 +259,15 @@ describe("session view model", () => {
         },
       }),
     );
+
     const transcripts = memoryTranscripts();
+
     const manager = makeSessionManager({
       agent: { providers: [provider], model: "test/default", extensions: [] },
       message: "",
       transcripts,
     });
+
     const initial = await Effect.runPromise(manager.open());
     const viewModel = makeSessionViewModel(initial, manager);
 
@@ -288,10 +310,12 @@ describe("session view model", () => {
 
   test("remains usable when closing the previous Session defects", async () => {
     let nextCloses = 0;
+
     const initial = {
       ...scriptedSession([]),
       close: Effect.die(new Error("release failed")),
     };
+
     const next = {
       ...scriptedSession([
         Stream.make({ type: "model-output", text: "ready" }, { type: "response-complete" }),
@@ -300,6 +324,7 @@ describe("session view model", () => {
         nextCloses += 1;
       }),
     };
+
     const viewModel = makeSessionViewModel(initial, {
       transcripts: undefined,
       open: () => Effect.succeed(next),
@@ -318,6 +343,7 @@ describe("session view model", () => {
 
   test("does not touch Transcript storage when none is configured", async () => {
     const session = scriptedSession([]);
+
     const viewModel = makeSessionViewModel(session, {
       transcripts: undefined,
       open: () => Effect.die("not used"),
@@ -331,6 +357,7 @@ describe("session view model", () => {
 
   test("surfaces Transcript list failures and clears the picker", async () => {
     const unused = () => Effect.die("not used");
+
     const viewModel = makeSessionViewModel(scriptedSession([]), {
       transcripts: {
         list: () => Effect.fail(new StoreError({ message: "list failed" })),
@@ -362,10 +389,13 @@ describe("session view model", () => {
 
   test("drops a stale Transcript list response after the picker closes", async () => {
     let resolveList!: (summaries: ReadonlyArray<TranscriptSummary>) => void;
+
     const pending = new Promise<ReadonlyArray<TranscriptSummary>>((resolve) => {
       resolveList = resolve;
     });
+
     const unused = () => Effect.die("not used");
+
     const viewModel = makeSessionViewModel(scriptedSession([]), {
       transcripts: {
         list: () => Effect.promise(() => pending),
@@ -394,6 +424,7 @@ describe("session view model", () => {
 
   test("returns to idle when the previous Session close hangs", async () => {
     const initial = { ...scriptedSession([]), close: Effect.never };
+
     const viewModel = makeSessionViewModel(initial, {
       transcripts: undefined,
       open: () => Effect.succeed(scriptedSession([])),
@@ -446,21 +477,26 @@ describe("session view model", () => {
 
   test("closes a Session opened mid-switch when disposed first", async () => {
     let releaseOpen!: () => void;
+
     const gate = new Promise<void>((resolve) => {
       releaseOpen = resolve;
     });
+
     let nextCloses = 0;
+
     const next: SessionResource = {
       ...scriptedSession([]),
       close: Effect.sync(() => {
         nextCloses += 1;
       }),
     };
+
     const viewModel = makeSessionViewModel(scriptedSession([]), {
       transcripts: undefined,
       open: () =>
         Effect.promise(async () => {
           await gate;
+
           return next;
         }),
     });

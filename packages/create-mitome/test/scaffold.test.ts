@@ -17,9 +17,11 @@ import {
 } from "../src/template.js";
 
 const directories: Array<string> = [];
+
 const directory = async () => {
   const path = await mkdtemp(join(tmpdir(), "create-mitome-"));
   directories.push(path);
+
   return path;
 };
 
@@ -141,9 +143,11 @@ describe("create-mitome scaffold", () => {
       "@mitome/providers": packageJson.version,
       "@mitome/sdk": packageJson.version,
     };
+
     if (flavor === "effect") {
       Object.assign(dependencies, { effect: rootPackage.workspaces.catalog.effect });
     }
+
     expect(JSON.parse(await contents(path, "package.json"))).toEqual({
       name: "mitome-agent",
       private: true,

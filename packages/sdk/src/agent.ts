@@ -68,6 +68,7 @@ export function defineAgent<
 export function defineAgent(definition: typeof Schema.Unknown.Type): never {
   // SAFETY: overload resolution validates every public call before this erased implementation.
   const { tools, ...agent } = definition as RuntimeAgentDefinition;
+
   // SAFETY: overloads validate public inputs and expose the precise tuple after this root Tool Extension is appended.
   return defineCoreAgent({
     ...agent,

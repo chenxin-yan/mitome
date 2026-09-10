@@ -4,6 +4,7 @@ import { Sse } from "effect/unstable/encoding";
 import { invalidOutput, providerError } from "./request.js";
 
 type Call = { readonly id: string; readonly name: string; arguments: string };
+
 type StreamState = {
   readonly parser: Sse.Parser;
   readonly calls: Map<string, Call>;
@@ -13,16 +14,21 @@ type StreamState = {
 };
 
 type Json = typeof Schema.Json.Type;
+
 type JsonInput = Json | undefined;
+
 const Event = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json));
+
 const EventKey = Schema.Struct({
   output_index: Schema.optional(Schema.Finite),
   item_id: Schema.optional(Schema.String),
 });
+
 const ErrorEvent = Schema.Struct({
   error: Schema.optional(Schema.Struct({ message: Schema.optional(Schema.String) })),
   message: Schema.optional(Schema.String),
 });
+
 const FailedEvent = Schema.Struct({
   response: Schema.optional(
     Schema.Struct({
@@ -30,16 +36,20 @@ const FailedEvent = Schema.Struct({
     }),
   ),
 });
+
 const ItemType = Schema.Struct({ type: Schema.String });
+
 const FunctionCallAddedItem = Schema.Struct({
   call_id: Schema.optional(Schema.String),
   id: Schema.optional(Schema.String),
   name: Schema.String,
 });
+
 const FunctionCallDoneItem = Schema.Struct({
   id: Schema.optional(Schema.String),
   arguments: Schema.optional(Schema.String),
 });
+
 const ReasoningItem = Schema.Struct({
   id: Schema.String,
   encrypted_content: Schema.optional(Schema.NullOr(Schema.String)),
@@ -47,8 +57,11 @@ const ReasoningItem = Schema.Struct({
     Schema.Struct({ type: Schema.Literal("summary_text"), text: Schema.String }),
   ),
 });
+
 const Delta = Schema.Struct({ delta: Schema.String });
+
 const FinalArguments = Schema.Struct({ arguments: Schema.String });
+
 const TerminalEvent = Schema.Struct({
   response: Schema.optional(
     Schema.NullOr(
@@ -81,7 +94,9 @@ const decode = <S extends Schema.ConstraintDecoder<unknown>>(
   onFailure: () => AiError.AiError,
 ) => {
   const result = Schema.decodeUnknownResult(schema)(input);
+
   if (Result.isFailure(result)) throw onFailure();
+
   return result.success;
 };
 
@@ -90,6 +105,7 @@ const decode = <S extends Schema.ConstraintDecoder<unknown>>(
 // key present on every per-item event — matching Pi's reference transport.
 const itemKey = (event: Json) => {
   const decoded = decode(EventKey, event, () => invalidOutput("Codex sent malformed item keys"));
+
   return decoded.output_index === undefined
     ? (decoded.item_id ?? "output")
     : String(decoded.output_index);
@@ -98,6 +114,7 @@ const itemKey = (event: Json) => {
 // Item type drives dispatch only; unknown/malformed items are ignored.
 const outputItemType = (item: JsonInput): string | undefined => {
   const result = Schema.decodeUnknownResult(ItemType)(item);
+
   return Result.isFailure(result) ? undefined : result.success.type;
 };
 
@@ -107,24 +124,32 @@ const decodeOutputItemAdded = (
   key: string,
 ): Array<Response.StreamPartEncoded> => {
   const itemType = outputItemType(item);
+
   if (itemType === "message") {
     state.textIds.add(key);
+
     return [Response.makePart("text-start", { id: key })];
   }
+
   if (itemType === "function_call") {
     const added = decode(FunctionCallAddedItem, item, () =>
       invalidOutput("Codex sent an incomplete Tool call"),
     );
+
     const id = added.call_id ?? added.id;
+
     if (id === undefined) throw invalidOutput("Codex sent an incomplete Tool call");
     const call = { id, name: added.name, arguments: "" };
     state.calls.set(key, call);
+
     // Argument deltas may arrive keyed by item_id instead of output_index.
     if (added.id !== undefined) state.calls.set(added.id, call);
+
     return [
       Response.makePart("tool-params-start", { id, name: added.name, providerExecuted: false }),
     ];
   }
+
   return [];
 };
 
@@ -134,42 +159,54 @@ const decodeOutputItemDone = (
   key: string,
 ): Array<Response.StreamPartEncoded> => {
   const itemType = outputItemType(item);
+
   if (itemType === "message") {
     return state.textIds.delete(key) ? [Response.makePart("text-end", { id: key })] : [];
   }
+
   if (itemType === "reasoning") {
     const reasoning = decode(ReasoningItem, item, () =>
       invalidOutput("Codex sent incomplete reasoning"),
     );
+
     const id = `${reasoning.id}:0`;
     const text = reasoning.summary.map(({ text }) => text).join("\n");
+
     const openai =
       reasoning.encrypted_content == null
         ? { itemId: reasoning.id }
         : { itemId: reasoning.id, encryptedContent: reasoning.encrypted_content };
+
     const metadata = { openai };
+
     return [
       Response.makePart("reasoning-start", { id, metadata }),
       ...(text === "" ? [] : [Response.makePart("reasoning-delta", { id, delta: text })]),
       Response.makePart("reasoning-end", { id, metadata }),
     ];
   }
+
   if (itemType === "function_call") {
     const done = decode(FunctionCallDoneItem, item, () =>
       invalidOutput("Codex completed an unknown Tool call"),
     );
+
     const call = state.calls.get(key) ?? state.calls.get(done.id ?? "");
+
     if (call === undefined) throw invalidOutput("Codex completed an unknown Tool call");
     const arguments_ = done.arguments ?? call.arguments;
     let params: Json;
+
     try {
       // SAFETY: JSON.parse output is Json by construction.
       params = Tool.unsafeSecureJsonParse(arguments_ || "{}") as Json;
     } catch {
       throw invalidOutput(`Invalid JSON arguments for Tool ${call.name}`);
     }
+
     state.calls.delete(key);
     state.sawToolCall = true;
+
     return [
       Response.makePart("tool-params-end", { id: call.id }),
       Response.makePart("tool-call", {
@@ -180,6 +217,7 @@ const decodeOutputItemDone = (
       }),
     ];
   }
+
   return [];
 };
 
@@ -188,11 +226,13 @@ const decodeOutputItemDone = (
 const inputUsage = (total: number | undefined, cached: number | undefined) => {
   if (total === undefined) return cached === undefined ? {} : { cacheRead: cached };
   const base = { total, uncached: total - (cached ?? 0) };
+
   return cached === undefined ? base : { ...base, cacheRead: cached };
 };
 
 const outputUsage = (total: number | undefined, reasoning: number | undefined) => {
   if (total === undefined) return reasoning === undefined ? {} : { reasoning };
+
   return reasoning === undefined ? { total } : { total, reasoning };
 };
 
@@ -200,10 +240,12 @@ const finishPart = (state: StreamState, event: Json): Response.StreamPartEncoded
   const decoded = decode(TerminalEvent, event, () =>
     invalidOutput("Codex sent a malformed terminal event"),
   );
+
   const reason = decoded.response?.incomplete_details?.reason;
   const usage = decoded.response?.usage;
   const cached = usage?.input_tokens_details?.cached_tokens;
   const reasoning = usage?.output_tokens_details?.reasoning_tokens;
+
   return Response.makePart("finish", {
     reason:
       reason === undefined
@@ -228,54 +270,75 @@ const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPar
   // A non-string type is an unknown event: skipped below, like every malformed item.
   const rawType = event.type;
   const type = Predicate.isString(rawType) ? rawType : undefined;
+
   if (type === "error") {
     const decoded = decode(ErrorEvent, event, () => providerError("Codex provider error"));
     throw providerError(decoded.error?.message ?? decoded.message ?? "Codex provider error");
   }
+
   if (type === "response.failed") {
     const decoded = decode(FailedEvent, event, () => providerError("Codex response failed"));
     throw providerError(decoded.response?.error?.message ?? "Codex response failed");
   }
+
   if (type === "response.done" || type === "response.completed" || type === "response.incomplete") {
     state.terminal = true;
+
     return [finishPart(state, event)];
   }
+
   const key = itemKey(event);
+
   if (type === "response.output_item.added") {
     return decodeOutputItemAdded(state, event.item, key);
   }
+
   if (type === "response.output_text.delta") {
     const decoded = decode(Delta, event, () =>
       invalidOutput("Codex sent text without a message item"),
     );
+
     if (!state.textIds.has(key)) throw invalidOutput("Codex sent text without a message item");
+
     return [Response.makePart("text-delta", { id: key, delta: decoded.delta })];
   }
+
   if (type === "response.function_call_arguments.delta") {
     const decoded = decode(Delta, event, () =>
       invalidOutput("Codex sent arguments without a Tool call"),
     );
+
     const call = state.calls.get(key);
+
     if (call === undefined) throw invalidOutput("Codex sent arguments without a Tool call");
     call.arguments += decoded.delta;
+
     return [Response.makePart("tool-params-delta", { id: call.id, delta: decoded.delta })];
   }
+
   if (type === "response.function_call_arguments.done") {
     const decoded = decode(FinalArguments, event, () =>
       invalidOutput("Codex sent final arguments without a Tool call"),
     );
+
     const call = state.calls.get(key);
+
     if (call === undefined) throw invalidOutput("Codex sent final arguments without a Tool call");
     const arguments_ = decoded.arguments;
+
     const delta = arguments_.startsWith(call.arguments)
       ? arguments_.slice(call.arguments.length)
       : "";
+
     call.arguments = arguments_;
+
     return delta === "" ? [] : [Response.makePart("tool-params-delta", { id: call.id, delta })];
   }
+
   if (type === "response.output_item.done") {
     return decodeOutputItemDone(state, event.item, key);
   }
+
   return [];
 };
 
@@ -285,6 +348,7 @@ export const decodeStream = <R>(
   // Suspend so a re-run (e.g. a future retry) gets fresh parser/terminal state.
   Stream.suspend(() => {
     const events: Array<string> = [];
+
     const state: StreamState = {
       parser: Sse.makeParser((event: Sse.AnyEvent) => {
         if (Predicate.isTagged(event, "Event")) events.push(event.data);
@@ -294,6 +358,7 @@ export const decodeStream = <R>(
       terminal: false,
       sawToolCall: false,
     };
+
     return stream.pipe(
       Stream.decodeText,
       Stream.mapAccumArrayEffect(
@@ -302,6 +367,7 @@ export const decodeStream = <R>(
           Effect.try({
             try: () => {
               for (const value of chunk) current.parser.feed(value);
+
               return [
                 current,
                 events.splice(0).flatMap((event) => decodeEvent(current, event)),

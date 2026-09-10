@@ -30,8 +30,11 @@ const errorMessage = (error: Error | ErrorDetails): string => {
       : error instanceof Error
         ? error.message
         : safeJson(error);
+
   const cause = error.cause;
+
   if (cause === undefined) return head;
+
   return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause) : safeJson(cause)}`;
 };
 
@@ -40,6 +43,7 @@ export const attempt = <A>(promise: () => Promise<A>) =>
     try: promise,
     catch: (error) => {
       if (!(error instanceof Object)) return new CliError(String(error));
+
       return new CliError(errorMessage(error));
     },
   }).pipe(Effect.tapError((error) => Console.error(error.message)));

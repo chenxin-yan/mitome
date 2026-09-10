@@ -8,29 +8,35 @@ export type TranscriptId = string;
 export const TranscriptSchemaVersion = 1 as const;
 
 const options = Schema.optional(Prompt.ProviderOptions);
+
 const textPart = Schema.Struct({
   type: Schema.Literal("text"),
   text: Schema.String,
   options,
 });
+
 const reasoningPart = Schema.Struct({
   type: Schema.Literal("reasoning"),
   text: Schema.String,
   options,
 });
+
 const urlString = Schema.String.check(
   Schema.makeFilter((value) => (URL.canParse(value) ? undefined : "Expected an absolute URL")),
 );
+
 const base64String = Schema.String.check(
   Schema.makeFilter((value) =>
     Result.isSuccess(Encoding.decodeBase64(value)) ? undefined : "Expected a base64 string",
   ),
 );
+
 const fileData = Schema.Union([
   Schema.Struct({ encoding: Schema.Literal("string"), value: Schema.String }),
   Schema.Struct({ encoding: Schema.Literal("base64"), value: base64String }),
   Schema.Struct({ encoding: Schema.Literal("url"), value: urlString }),
 ]);
+
 const filePart = Schema.Struct({
   type: Schema.Literal("file"),
   mediaType: Schema.String,
@@ -38,6 +44,7 @@ const filePart = Schema.Struct({
   data: fileData,
   options,
 });
+
 const toolCallPart = Schema.Struct({
   type: Schema.Literal("tool-call"),
   id: Schema.String,
@@ -46,6 +53,7 @@ const toolCallPart = Schema.Struct({
   providerExecuted: Schema.optional(Schema.Boolean),
   options,
 });
+
 const toolResultPart = Schema.Struct({
   type: Schema.Literal("tool-result"),
   id: Schema.String,
@@ -55,6 +63,7 @@ const toolResultPart = Schema.Struct({
   providerExecuted: Schema.optional(Schema.Boolean),
   options,
 });
+
 const toolApprovalResponsePart = Schema.Struct({
   type: Schema.Literal("tool-approval-response"),
   approvalId: Schema.String,
@@ -62,13 +71,16 @@ const toolApprovalResponsePart = Schema.Struct({
   reason: Schema.optional(Schema.String),
   options,
 });
+
 const toolApprovalRequestPart = Schema.Struct({
   type: Schema.Literal("tool-approval-request"),
   approvalId: Schema.String,
   toolCallId: Schema.String,
   options,
 });
+
 const userPart = Schema.Union([textPart, filePart]);
+
 const assistantPart = Schema.Union([
   textPart,
   reasoningPart,
@@ -77,6 +89,7 @@ const assistantPart = Schema.Union([
   toolResultPart,
   toolApprovalRequestPart,
 ]);
+
 const toolPart = Schema.Union([toolResultPart, toolApprovalResponsePart]);
 
 /** Schema of one committed Message; file data is stored as a string, base64, or URL. */
@@ -116,6 +129,7 @@ export const TranscriptSchema = Schema.Struct({
 
 /** One committed Message of a Transcript. */
 export type TranscriptMessage = typeof TranscriptMessageSchema.Type;
+
 /**
  * The durable, ordered record of a Session's committed Messages. It may outlive the Session and
  * seed new ones; a resumed Session gets a new id with `parentTranscriptId` pointing at its seed.
@@ -131,13 +145,18 @@ export interface MakeTranscriptOptions {
 }
 
 const encodeMessage = Schema.encodeSync(Prompt.Message);
+
 const encodeUserMessageParts = Schema.encodeSync(Schema.Array(Prompt.UserMessagePart));
+
 const encodeAssistantMessageParts = Schema.encodeSync(Schema.Array(Prompt.AssistantMessagePart));
+
 const encodeToolMessageParts = Schema.encodeSync(Schema.Array(Prompt.ToolMessagePart));
 
 const fileDataFromPrompt = (data: string | Uint8Array | URL) => {
   if (Predicate.isString(data)) return { encoding: "string", value: data } as const;
+
   if (data instanceof URL) return { encoding: "url", value: data.href } as const;
+
   return {
     encoding: "base64",
     value: Schema.encodeSync(Schema.Uint8ArrayFromBase64)(data),
@@ -146,12 +165,15 @@ const fileDataFromPrompt = (data: string | Uint8Array | URL) => {
 
 const messageFromPrompt = (message: Prompt.Message) => {
   const encoded = encodeMessage(message);
+
   if (message.role === "system") return encoded;
+
   const content = Match.value(message).pipe(
     Match.when({ role: "user" }, ({ content }) => encodeUserMessageParts(content)),
     Match.when({ role: "assistant" }, ({ content }) => encodeAssistantMessageParts(content)),
     Match.orElse(({ content }) => encodeToolMessageParts(content)),
   );
+
   return {
     ...encoded,
     content: content.map((part) =>
@@ -185,6 +207,7 @@ const fileDataToPrompt = (data: typeof fileData.Type): string | Uint8Array | URL
 
 const messageToPrompt = (message: TranscriptMessage) => {
   if (message.role === "system") return message;
+
   return {
     ...message,
     content: message.content.map((part) =>

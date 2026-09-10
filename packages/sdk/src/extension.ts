@@ -25,6 +25,7 @@ interface EffectSchema<Output> {
 
 /** Any Standard Schema v1 validator, such as a zod v4, valibot, or ArkType schema. */
 export type StandardSchema<Input = unknown, Output = Input> = StandardSchemaV1<Input, Output>;
+
 /**
  * Schema for Tool input: a Standard Schema that also emits JSON Schema (zod v4 does), or an
  * Effect Schema. The Model needs the JSON Schema; the validator decodes what it sends back.
@@ -32,6 +33,7 @@ export type StandardSchema<Input = unknown, Output = Input> = StandardSchemaV1<I
 export type InputSchema<Input = unknown> =
   | (StandardSchemaV1<unknown, Input> & StandardJSONSchemaV1<unknown, Input>)
   | EffectSchema<Input>;
+
 /** Schema for a Tool's output or expected failure; validation only, no JSON Schema needed. */
 export type OutputSchema<Output = unknown> =
   | StandardSchemaV1<unknown, Output>
@@ -46,6 +48,7 @@ export interface HookContext<Resource = never> {
 }
 
 type UnvalidatedToolInput = Parameters<CoreToolInputValidator>[0];
+
 type StandardInputValue = Parameters<StandardSchemaV1.Props["validate"]>[0];
 
 /** The Tool call a `preTool` Hook observes: its name and decoded input. */
@@ -126,6 +129,7 @@ export interface ToolFailure<Failure> {
 
 /** Wraps a Tool result as an expected success; required when the Tool declares a `failureSchema`. */
 export const ok = <const Output>(value: Output): ToolSuccess<Output> => ({ ok: true, value });
+
 /**
  * Wraps an expected failure the Model should see and react to; it is validated against
  * `failureSchema`. Throwing instead is a defect and yields an opaque failed result.
@@ -214,15 +218,19 @@ const standardInput = <Input>(schema: InputSchema<Input>): StandardInput<Input> 
     // SAFETY: Schema.isSchema established the full Effect Schema protocol; the public structural
     // view fixes the same decoded Input and excludes service requirements.
     const effectSchema = schema as Schema.Codec<Input, unknown, never, never>;
+
     return Schema.toStandardJSONSchemaV1(Schema.toStandardSchemaV1(effectSchema))["~standard"];
   }
+
   // SAFETY: the Effect branch returned above, leaving the Standard Schema union member.
   const standard = (
     schema as StandardSchemaV1<unknown, Input> & StandardJSONSchemaV1<unknown, Input>
   )["~standard"];
+
   if (!("validate" in standard) || !("jsonSchema" in standard)) {
     throw new Error("Tool input schema must provide validation and JSON Schema");
   }
+
   return standard;
 };
 
@@ -233,13 +241,17 @@ const standardOutput = <Output>(
     // SAFETY: Schema.isSchema established the full Effect Schema protocol; the public structural
     // view fixes the same decoded Output and excludes service requirements.
     const effectSchema = schema as Schema.Codec<Output, unknown, never, never>;
+
     return Schema.toStandardSchemaV1(effectSchema)["~standard"];
   }
+
   // SAFETY: the Effect branch returned above, leaving the Standard Schema union member.
   const standard = (schema as StandardSchemaV1<unknown, Output>)["~standard"];
+
   if (!("validate" in standard)) {
     throw new Error("Tool output schema must provide validation");
   }
+
   return standard;
 };
 
@@ -251,15 +263,19 @@ const validate = async <Output>(
   value: StandardInputValue,
 ): Promise<Output> => {
   const result = await standard.validate(value);
+
   if (result.issues) {
     const details = result.issues
       .map(({ message, path }) => {
         const location = path?.map(formatPathPart).join(".");
+
         return location ? `${location}: ${message}` : message;
       })
       .join("; ");
+
     throw new Error(details || "Schema validation failed");
   }
+
   return result.value;
 };
 
@@ -273,6 +289,7 @@ const promiseHook = Effect.fn("@mitome/sdk/promiseHook")(function* <A, Resource>
   // SAFETY: The public defineExtension overload only permits a missing Resource service when
   // neither setup nor any Hook/Tool declares a Resource, so callbacks cannot observe this value.
   const value = resource === undefined ? (undefined as Resource) : yield* Effect.service(resource);
+
   // @effect-diagnostics-next-line unknownInEffectCatch:off
   return yield* Effect.tryPromise({
     try: (signal) => callback({ resource: value, signal }),
@@ -284,6 +301,7 @@ const toPrompt: (prompt: AiPrompt.Prompt) => Prompt = Schema.encodeSync(AiPrompt
 
 const toResponsePart = (responsePart: AiResponse.AnyPart): ResponsePart => {
   const { ["~effect/ai/Content/Part"]: _, ...part } = responsePart;
+
   if (part.type === "finish") {
     return {
       ...part,
@@ -293,10 +311,13 @@ const toResponsePart = (responsePart: AiResponse.AnyPart): ResponsePart => {
       },
     };
   }
+
   if (part.type === "tool-result") {
     const { encodedResult: _, ...toolResult } = part;
+
     return toolResult;
   }
+
   return part;
 };
 
@@ -305,23 +326,32 @@ const adaptHooks = <Resource>(
   resource: Context.Service<Resource, Resource> | undefined,
 ): ExtensionHooks<Resource> | undefined => {
   if (hooks === undefined) return undefined;
+
   const adapted: {
     -readonly [Key in keyof ExtensionHooks<Resource>]?: ExtensionHooks<Resource>[Key];
   } = {};
+
   const run = <A>(callback: (context: HookContext<Resource>) => Promise<A>) =>
     promiseHook<A, Resource>(callback, resource);
+
   const sessionStart = hooks.sessionStart;
+
   if (sessionStart) adapted.sessionStart = run(sessionStart);
   const sessionEnd = hooks.sessionEnd;
+
   if (sessionEnd) adapted.sessionEnd = run(sessionEnd);
   const turnStart = hooks.turnStart;
+
   if (turnStart) adapted.turnStart = (message) => run((context) => turnStart(message, context));
   const turnEnd = hooks.turnEnd;
+
   if (turnEnd) adapted.turnEnd = (message) => run((context) => turnEnd(message, context));
   const stepStart = hooks.stepStart;
+
   if (stepStart)
     adapted.stepStart = (prompt) => run((context) => stepStart(toPrompt(prompt), context));
   const stepEnd = hooks.stepEnd;
+
   if (stepEnd)
     adapted.stepEnd = (prompt, responseParts) =>
       run((context) =>
@@ -331,19 +361,23 @@ const adaptHooks = <Resource>(
         }),
       );
   const preStep = hooks.preStep;
+
   if (preStep)
     adapted.preStep = (prompt) =>
       run((context) => preStep(toPrompt(prompt), context)).pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(AiPrompt.Prompt)),
       );
   const preTool = hooks.preTool;
+
   if (preTool)
     adapted.preTool = (context) =>
       run((resourceContext) => preTool({ ...context, ...resourceContext }));
   const postTool = hooks.postTool;
+
   if (postTool)
     adapted.postTool = (context) =>
       run((resourceContext) => postTool({ ...context, ...resourceContext }));
+
   return adapted;
 };
 
@@ -365,6 +399,7 @@ export type AnyTool = {
   /** Erased handler; see `Tool.handler` for the contract. */
   readonly handler: (...args: never[]) => Promise<any>;
 };
+
 type ToolTypes<Value extends AnyTool> = NonNullable<Value[typeof ToolTypeId]>;
 
 /** Tool name to `ToolContribution` map derived from the Tools a builder returned. */
@@ -431,12 +466,15 @@ export function defineExtension<
       `Extension "${definition.name ?? "<anonymous>"}" declares dispose without setup`,
     );
   }
+
   const names = new Set<string>();
+
   const definitions = (
     definition.tools === undefined ? [] : definition.tools({ tool: toolBuilder })
   ).map((tool) => {
     if (names.has(tool.name)) throw new Error(`Duplicate Tool name: ${tool.name}`);
     names.add(tool.name);
+
     return {
       tool,
       input: standardInput(tool.inputSchema),
@@ -447,8 +485,10 @@ export function defineExtension<
 
   const service = definition.setup === undefined ? undefined : ResourceService;
   const hooks = adaptHooks(definition.hooks, service);
+
   const tools = definitions.map(({ tool, input }) => {
     const needsApproval = tool.needsApproval;
+
     return AiTool.dynamic(tool.name, {
       description: tool.description,
       parameters: input.jsonSchema.input({ target: "draft-2020-12" }),
@@ -461,6 +501,7 @@ export function defineExtension<
         : needsApproval,
     });
   });
+
   const validators = (
     pick: (
       definition: (typeof definitions)[number],
@@ -469,6 +510,7 @@ export function defineExtension<
     Object.fromEntries(
       definitions.flatMap((definition) => {
         const schema = pick(definition);
+
         return schema === undefined
           ? []
           : [
@@ -484,6 +526,7 @@ export function defineExtension<
             ];
       }),
     );
+
   const toolInputValidators = validators(({ input }) => input);
   const toolResultValidators = validators(({ output }) => output);
   const toolFailureValidators = validators(({ failure }) => failure);
@@ -502,6 +545,7 @@ export function defineExtension<
               (value, exit) => {
                 if (definition.dispose === undefined) return Effect.void;
                 const run = Effect.promise(() => definition.dispose!(value));
+
                 // On failure exits a disposer defect would replace the primary
                 // cause; log it instead so the original tagged error survives.
                 return Exit.isFailure(exit)
@@ -534,12 +578,15 @@ export function defineExtension<
             // SAFETY: ToolBuilder fixes this erased handler to the same input/context pair.
             const handler = tool.handler as (input: any, context: HookContext<any>) => Promise<any>;
             const result = await handler(await validate(input, params), context);
+
             if (failure !== undefined) {
               if (result.ok) {
                 return { ok: true as const, value: await validate(output!, result.value) };
               }
+
               return { ok: false as const, error: await validate(failure, result.error) };
             }
+
             return output === undefined ? result : validate(output, result);
           }, service).pipe(
             Effect.tapError((cause) => Effect.logWarning(`SDK Tool "${tool.name}" failed`, cause)),

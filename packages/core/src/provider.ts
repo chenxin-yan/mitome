@@ -54,6 +54,7 @@ export const makeProvider = <const Id extends string, const ModelIds extends Rea
   if (id.length === 0 || id.includes("/")) {
     throw new TypeError("Provider id must be non-empty and contain no '/'");
   }
+
   if (Predicate.isString(credential) && !Schema.is(CredentialDescriptorSchema)(credential)) {
     throw new TypeError("Provider credential must be a valid environment variable name");
   }
@@ -61,6 +62,7 @@ export const makeProvider = <const Id extends string, const ModelIds extends Rea
   const provider: Provider<Id, ModelIds> = { [ProviderTypeId]: ProviderTypeId, id, modelIds };
   Object.defineProperty(provider, ProviderTypeId, { enumerable: false });
   providerMetadata.set(provider, { credential, provision });
+
   return provider;
 };
 
@@ -85,7 +87,9 @@ export const parseQualifiedModelId = (
 ): { readonly providerId: string; readonly modelId: string } | undefined => {
   if (!Predicate.isString(qualifiedModelId)) return undefined;
   const separator = qualifiedModelId.indexOf("/");
+
   if (separator <= 0 || separator === qualifiedModelId.length - 1) return undefined;
+
   return {
     providerId: qualifiedModelId.slice(0, separator),
     modelId: qualifiedModelId.slice(separator + 1),

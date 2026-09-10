@@ -23,14 +23,17 @@ export class Prompter extends Context.Service<
     Prompter,
     Effect.gen(function* () {
       let stdinEnded = false;
+
       const markStdinEnded = () => {
         stdinEnded = true;
       };
+
       process.stdin.once("end", markStdinEnded);
       yield* Effect.addFinalizer(() => Effect.sync(() => process.stdin.off("end", markStdinEnded)));
 
       let stdinTrackingStarted = false;
       const terminal = yield* BunTerminal.make();
+
       const context = Context.add(
         yield* Effect.context<Prompt.Environment>(),
         Terminal.Terminal,
@@ -44,6 +47,7 @@ export class Prompter extends Context.Service<
             // Bun never sets readableEnded; a passive listener starts EOF detection without consuming input.
             process.stdin.once("readable", () => {});
           }
+
           return process.stdin.isTTY === true || process.stdin.readableLength > 0 || !stdinEnded;
         }),
         select: <A>(options: {

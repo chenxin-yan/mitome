@@ -9,6 +9,7 @@ const textLayer = (output: string, capture: (prompt: Prompt.Prompt) => void = ()
     LanguageModel.LanguageModel,
     testLanguageModel(({ prompt }) => {
       capture(prompt);
+
       return Stream.succeed(Response.makePart("text-delta", { id: output, delta: output }));
     }),
   );
@@ -17,12 +18,15 @@ describe("Provider-backed Sessions", () => {
   it.effect("uses the Default Model and a per-Turn override with shared history", () =>
     Effect.gen(function* () {
       const prompts: Array<Prompt.Prompt> = [];
+
       const first = makeProvider("first", ["default"] as const, undefined, (modelId) =>
         textLayer(`first/${modelId}`, (prompt) => prompts.push(prompt)),
       );
+
       const second = makeProvider("second", ["alternate"] as const, undefined, (modelId) =>
         textLayer(`second/${modelId}`, (prompt) => prompts.push(prompt)),
       );
+
       const session = yield* createSession(
         defineAgent({
           providers: [first, second] as const,
@@ -32,6 +36,7 @@ describe("Provider-backed Sessions", () => {
       );
 
       const defaultEvents = yield* Stream.runCollect(session.runTurn("one"));
+
       const overrideEvents = yield* Stream.runCollect(
         session.runTurn("two", { model: "second/private/path" }),
       );
@@ -48,9 +53,11 @@ describe("Provider-backed Sessions", () => {
   it.effect("rejects an unregistered selection before Turn Hooks and remains reusable", () =>
     Effect.gen(function* () {
       let turnStarts = 0;
+
       const provider = makeProvider("registered", [] as const, undefined, (modelId) =>
         textLayer(modelId),
       );
+
       const session = yield* createSession(
         defineAgent({
           providers: [provider] as const,
@@ -88,21 +95,26 @@ describe("Provider-backed Sessions", () => {
     Effect.gen(function* () {
       const selected: Array<string> = [];
       let calls = 0;
+
       const provider = makeProvider("tools", [] as const, undefined, (modelId) => {
         selected.push(modelId);
+
         return Layer.succeed(
           LanguageModel.LanguageModel,
           testLanguageModel((options) => {
             calls += 1;
+
             if (calls === 2) {
               return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
             }
+
             const call = Response.makePart("tool-call", {
               id: "call",
               name: "echo",
               params: {},
               providerExecuted: false,
             });
+
             return Stream.concat(
               Stream.succeed(call),
               Stream.unwrap(
@@ -123,7 +135,9 @@ describe("Provider-backed Sessions", () => {
           }),
         );
       });
+
       const echo = Tool.make("echo", { success: Schema.String });
+
       const session = yield* createSession(
         defineAgent({
           providers: [provider] as const,
@@ -150,13 +164,16 @@ describe("Provider-backed Sessions", () => {
       const provisioned: Array<string> = [];
       let builds = 0;
       let releases = 0;
+
       const counting = makeProvider("counting", [] as const, undefined, (modelId) => {
         provisioned.push(modelId);
+
         return Layer.effect(
           LanguageModel.LanguageModel,
           Effect.acquireRelease(
             Effect.sync(() => {
               builds += 1;
+
               return testLanguageModel(() =>
                 Stream.succeed(Response.makePart("text-delta", { id: modelId, delta: modelId })),
               );
@@ -165,6 +182,7 @@ describe("Provider-backed Sessions", () => {
           ),
         );
       });
+
       const unused = makeProvider("unused", [] as const, undefined, () => {
         throw new Error("unused Provider was provisioned");
       });
@@ -178,6 +196,7 @@ describe("Provider-backed Sessions", () => {
               extensions: [],
             }),
           );
+
           expect(builds).toBe(0);
           yield* Stream.runDrain(session.runTurn("first"));
           yield* Stream.runDrain(session.runTurn("again"));

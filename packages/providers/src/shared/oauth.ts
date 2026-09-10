@@ -64,9 +64,11 @@ const OAuthErrorResponse = Schema.Struct({
 
 const redactFormValues = (value: string, form: Record<string, string>): string => {
   let redacted = value;
+
   for (const submitted of Object.values(form)) {
     if (submitted !== "") redacted = redacted.replaceAll(submitted, "[redacted]");
   }
+
   return redacted.slice(0, 512);
 };
 
@@ -77,26 +79,32 @@ export const exchangeToken = (
   Effect.gen(function* () {
     const request = HttpClientRequest.post(tokenUrl).pipe(HttpClientRequest.bodyUrlParams(form));
     const response = yield* HttpClient.execute(request);
+
     if (response.status < 200 || response.status >= 300) {
       const failure = yield* response.json.pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(OAuthErrorResponse)),
         Effect.orElseSucceed(() => ({ error: undefined, error_description: undefined })),
       );
+
       const code = failure.error === undefined ? undefined : redactFormValues(failure.error, form);
+
       const description =
         failure.error_description === undefined
           ? undefined
           : redactFormValues(failure.error_description, form);
+
       const detail =
         code === undefined
           ? description
           : description === undefined
             ? code
             : `${code}: ${description}`;
+
       return yield* new OAuthTokenError({
         message: `OAuth token exchange failed (HTTP ${response.status}${detail === undefined ? "" : `; ${detail}`}).`,
       });
     }
+
     const body = yield* response.json.pipe(
       Effect.mapError(
         () => new OAuthTokenError({ message: "OAuth token exchange body was not valid JSON." }),
@@ -112,6 +120,7 @@ export const exchangeToken = (
         ),
       ),
     );
+
     return {
       access: body.access_token,
       refresh: body.refresh_token,
@@ -133,6 +142,7 @@ type Authorization = {
 
 const parseAuthorizationInput = (input: string): Authorization => {
   const url = new URL(input);
+
   return {
     code: url.searchParams.get("code") ?? undefined,
     state: url.searchParams.get("state") ?? undefined,
@@ -141,9 +151,11 @@ const parseAuthorizationInput = (input: string): Authorization => {
 
 const validateAuthorization = (authorization: Authorization, state: string): string => {
   if (authorization.state !== state) throw new Error("OAuth callback state did not match.");
+
   if (authorization.code === undefined || authorization.code === "") {
     throw new Error("OAuth callback did not include a code.");
   }
+
   return authorization.code;
 };
 
@@ -171,6 +183,7 @@ export const launchDefaultBrowser = (
     Match.when("win32", () => "rundll32"),
     Match.orElse(() => "xdg-open"),
   );
+
   const args = process.platform === "win32" ? ["url.dll,FileProtocolHandler", url] : [url];
   launch(command, args);
 };
@@ -198,25 +211,32 @@ export const authorize = async (
 
   const callback = Promise.withResolvers<Authorization>();
   let server: Server | undefined;
+
   try {
     try {
       const callbackServer = createServer((request, response) => {
         const url = new URL(request.url ?? "/", redirectUri);
+
         if (url.pathname !== config.callbackPath) return response.writeHead(404).end("Not found");
         const received = parseAuthorizationInput(url.toString());
+
         // A stray or mismatched callback must not abort a login in progress.
         if (received.state !== state) return response.writeHead(400).end("Authentication failed.");
+
         try {
           validateAuthorization(received, state);
           callback.resolve(received);
+
           return response.end("Authentication complete. You can close this page.");
         } catch (error) {
           // Same-state but no code (e.g. the user cancelled): this is our flow
           // failing authoritatively, so surface it instead of waiting forever.
           callback.reject(error instanceof Error ? error : new Error("OAuth callback failed."));
+
           return response.writeHead(400).end("Authentication failed.");
         }
       });
+
       server = callbackServer;
       await new Promise<void>((resolve, reject) => {
         callbackServer.once("error", reject);
@@ -232,8 +252,10 @@ export const authorize = async (
     options.output(
       `Open this URL to authenticate:\n${authorization.toString()}\nPaste the redirect URL: `,
     );
+
     const openBrowser =
       options.openBrowser === undefined ? launchDefaultBrowser : options.openBrowser;
+
     if (openBrowser !== false) {
       try {
         await Promise.resolve(openBrowser(authorization.toString()));
@@ -241,17 +263,23 @@ export const authorize = async (
         // No browser opener (headless host): the printed URL and paste flow remain.
       }
     }
+
     const manual = options.input().then((input) => {
       if (input === undefined) throw new Error("OAuth input closed.");
+
       return parseAuthorizationInput(input);
     });
+
     // The pasted-input branch can lose the race to the callback; a late Enter
     // press must not become an unhandled rejection after login already succeeded.
     manual.catch(() => {});
+
     const received = await (server === undefined
       ? manual
       : Promise.race([callback.promise, manual]));
+
     const code = validateAuthorization(received, state);
+
     return await Effect.runPromise(
       exchangeToken(options.tokenUrl ?? config.tokenUrl, {
         grant_type: "authorization_code",

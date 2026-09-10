@@ -13,6 +13,7 @@ type TestModelStream = Stream.Stream<Response.AnyPart, object, object>;
 export const stringSchema: StandardSchema<unknown, string> = Schema.toStandardSchemaV1(
   Schema.String,
 );
+
 export const jsonStringSchema: InputSchema<string> = Schema.String;
 
 // Deliberately raw Service fake (bypasses LanguageModel.make's tool-call pipeline)
@@ -37,18 +38,23 @@ export const makeTestProvider = (
 export const makeToolModel = (name = "echo", doneAt = 2) => {
   let calls = 0;
   let secondPrompt: Prompt.Prompt | undefined;
+
   const provider = makeTestProvider((options) => {
     calls += 1;
+
     if (calls === doneAt) {
       secondPrompt = options.prompt;
+
       return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
     }
+
     const call = Response.makePart("tool-call", {
       id: `call-${calls}`,
       name,
       params: "hello",
       providerExecuted: false,
     });
+
     return Stream.concat(
       Stream.succeed(call),
       Stream.unwrap(
@@ -67,6 +73,7 @@ export const makeToolModel = (name = "echo", doneAt = 2) => {
       ),
     );
   });
+
   return { provider, calls: () => calls, prompt: () => secondPrompt };
 };
 
@@ -74,6 +81,7 @@ export const makeDeterministicProvider = (output: string) =>
   Effect.gen(function* () {
     const calls = yield* Ref.make(0);
     const released = yield* Ref.make(false);
+
     const layer = Layer.effect(
       LanguageModel.LanguageModel,
       Effect.acquireRelease(

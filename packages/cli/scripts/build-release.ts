@@ -18,6 +18,7 @@ const targets = {
 for (const [target, packageName] of Object.entries(targets)) {
   const executable = target.startsWith("bun-windows-") ? "mitome.exe" : "mitome";
   const artifact = join(packageDirectory, "npm", packageName, "bin", executable);
+
   const child = Bun.spawn(
     [
       process.execPath,
@@ -30,6 +31,7 @@ for (const [target, packageName] of Object.entries(targets)) {
     ],
     { cwd: packageDirectory, stdout: "inherit", stderr: "inherit" },
   );
+
   if ((await child.exited) !== 0) throw new Error(`Build failed for ${target}`);
 }
 

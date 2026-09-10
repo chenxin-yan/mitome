@@ -9,6 +9,7 @@ export const scriptedSession = (
 ): SessionResource => {
   let next = 0;
   const history: Array<Prompt.Message> = [];
+
   return {
     runTurn: () =>
       (scripts[next++] ?? Stream.empty).pipe(

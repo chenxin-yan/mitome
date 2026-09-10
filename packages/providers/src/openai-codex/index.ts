@@ -12,7 +12,9 @@ import { knownModelIds } from "./models.js";
 import { type CodexOptions } from "./types.js";
 
 export { login, logout } from "./login.js";
+
 export { knownModelIds, type KnownModelId } from "./models.js";
+
 export type { CodexOptions, LoginOptions, LogoutOptions, OAuthCredential } from "./types.js";
 
 /** Creates the configured ChatGPT Codex Provider. */
@@ -25,7 +27,9 @@ export const codex = (options: CodexOptions = {}) =>
 export const authenticate: AuthCapability["authenticate"] = async (options) => {
   if (options.operation === "logout") {
     await logout(options);
+
     return;
   }
+
   await login(options);
 };

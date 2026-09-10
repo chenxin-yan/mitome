@@ -13,16 +13,20 @@ import {
 import type { TranscriptStore, TranscriptSummary } from "./transcript-store.js";
 
 const StoredTranscriptFileVersion = 1 as const;
+
 const StoredTranscriptFileSchema = Schema.Struct({
   fileVersion: Schema.Literal(StoredTranscriptFileVersion),
   transcript: TranscriptSchema,
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+
 type StoredTranscriptFile = typeof StoredTranscriptFileSchema.Type;
 
 const transcriptSuffix = ".transcript.json";
+
 const eventsSuffix = ".events.jsonl";
+
 const temporaryPrefix = ".transcript-";
 
 const encodeId = (id: TranscriptId): string => Buffer.from(id, "utf16le").toString("base64url");
@@ -65,7 +69,9 @@ const idFromFileName = (
   Effect.try({
     try: () => {
       const id = Buffer.from(name.slice(0, -suffix.length), "base64url").toString("utf16le");
+
       if (fileName(id, suffix) !== name) throw new Error("Non-canonical file name");
+
       return id;
     },
     catch: (cause) => storeError(`Invalid Transcript store file name: ${path}.`, cause),
@@ -76,11 +82,13 @@ const readStoredTranscript = (
   id: TranscriptId,
 ): Effect.Effect<StoredTranscriptFile, StoreError | TranscriptNotFound> => {
   const path = join(directory, fileName(id, transcriptSuffix));
+
   return Effect.tryPromise({
     try: () => readFile(path, "utf8"),
     catch: (cause) => {
       // SAFETY: Node filesystem promises reject with errno-bearing Error objects.
       const error = cause as NodeJS.ErrnoException;
+
       return error.code === "ENOENT"
         ? new TranscriptNotFound({ id })
         : storeError(`Transcript store could not read ${path}.`, cause);
@@ -107,9 +115,11 @@ const validateTranscriptId = (
 
 const defaultTranscriptDirectory = (): string => {
   const home = configDirectory();
+
   if (home === undefined) {
     throw new Error(`Cannot configure file Transcript persistence. ${configDirectoryMessage}`);
   }
+
   return join(home, "transcripts");
 };
 
@@ -122,16 +132,20 @@ export const fileTranscripts = (
       yield* ensureDirectory(directory);
       const path = join(directory, fileName(transcript.id, transcriptSuffix));
       const previous = yield* readStoredTranscriptIfPresent(directory, transcript.id);
+
       if (previous !== undefined) {
         yield* validateTranscriptId(path, transcript.id, previous.transcript.id);
       }
+
       const now = new Date().toISOString();
+
       const stored: StoredTranscriptFile = {
         fileVersion: StoredTranscriptFileVersion,
         transcript,
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
       };
+
       const encoded = Schema.encodeUnknownSync(StoredTranscriptFileSchema)(stored);
       const temporary = join(directory, `${temporaryPrefix}${process.pid}-${crypto.randomUUID()}`);
       yield* attempt("write", temporary, () =>
@@ -150,24 +164,32 @@ export const fileTranscripts = (
       const path = join(directory, fileName(id, transcriptSuffix));
       const stored = yield* readStoredTranscript(directory, id);
       yield* validateTranscriptId(path, id, stored.transcript.id);
+
       return stored.transcript;
     }),
   list: () =>
     Effect.gen(function* () {
       yield* ensureDirectory(directory);
+
       const entries = yield* attempt("list directory", directory, () =>
         readdir(directory, { withFileTypes: true }),
       );
+
       const summaries: Array<TranscriptSummary> = [];
+
       for (const entry of entries) {
         const path = join(directory, entry.name);
+
         if (!entry.isFile() || entry.name.startsWith(temporaryPrefix)) continue;
+
         if (entry.name.endsWith(transcriptSuffix)) {
           const id = yield* idFromFileName(entry.name, transcriptSuffix, path);
+
           const stored = yield* decodeStoredTranscript(
             path,
             yield* attempt("read", path, () => readFile(path, "utf8")),
           );
+
           yield* validateTranscriptId(path, id, stored.transcript.id);
           summaries.push({
             id,
@@ -178,6 +200,7 @@ export const fileTranscripts = (
           });
         }
       }
+
       return summaries.sort((left, right) => left.id.localeCompare(right.id));
     }),
   appendEvent: (record) =>

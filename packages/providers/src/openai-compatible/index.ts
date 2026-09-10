@@ -11,6 +11,7 @@ import { apiKeyClientLayer } from "../shared/api-key-client.js";
 
 /** Empty: compatible endpoints share no catalog, so every endpoint-native Model id is accepted as-is. */
 export const knownModelIds = [] as const;
+
 /** Never inhabited; see `knownModelIds`. */
 export type KnownModelId = (typeof knownModelIds)[number];
 
@@ -31,6 +32,7 @@ export const openaiCompatible = <const Id extends string>(
   },
 ) => {
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
+
   return makeProvider(options.id, knownModelIds, options.apiKeyEnv, (model) =>
     OpenAiLanguageModel.layer({ model }).pipe(
       Layer.provide(apiKeyClientLayer(options.apiKeyEnv, baseUrl, OpenAiClient.layer)),

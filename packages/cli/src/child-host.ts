@@ -22,13 +22,17 @@ import authHost from "./hosts/auth-host.ts" with { type: "text" };
 import extensionsHost from "./hosts/extensions-host.ts" with { type: "text" };
 
 const hostSource: string = definitionHost;
+
 const authHostSource: string = authHost;
+
 const extensionsHostSource: string = extensionsHost;
+
 // process.execPath is the compiled mitome binary; BUN_BE_BUN re-executes it as plain Bun.
 const childEnv = { ...process.env, BUN_BE_BUN: "1" };
 
 const configEnvFlag = (): string => {
   const directory = configDirectory();
+
   return directory === undefined ? "--no-env-file" : `--env-file=${join(directory, ".env")}`;
 };
 
@@ -51,10 +55,13 @@ const ProviderAuthenticationSchema = Schema.Struct({
   id: Schema.String.check(Schema.isNonEmpty()),
   credential: CredentialDescriptorSchema,
 });
+
 const ProviderAuthenticationsFromJson = Schema.fromJsonString(
   Schema.Array(ProviderAuthenticationSchema),
 );
+
 const ExportNamesFromJson = Schema.fromJsonString(Schema.Array(Schema.String));
+
 const ExtensionListFromJson = Schema.fromJsonString(
   Schema.Array(
     Schema.Struct({
@@ -74,6 +81,7 @@ const install = async (path: string): Promise<ExitCode> => {
     stdout: "inherit",
     stderr: "inherit",
   });
+
   return child.exited;
 };
 
@@ -85,6 +93,7 @@ const removeDependency = async (path: string, packageName: string): Promise<Exit
     stdout: "inherit",
     stderr: "inherit",
   });
+
   return child.exited;
 };
 
@@ -109,17 +118,21 @@ const runJsonHost = async (
 ): Promise<{ readonly exitCode: ExitCode; readonly output: string }> => {
   const directory = await mkdtemp(join(tmpdir(), prefix));
   const output = join(directory, "output.json");
+
   try {
     const spawnOptions = {
       env: childEnv,
       stdout: "ignore" as const,
       stderr: options.stderr,
     };
+
     const child =
       options.timeout === undefined
         ? Bun.spawn([...command, output], spawnOptions)
         : Bun.spawn([...command, output], { ...spawnOptions, timeout: options.timeout });
+
     const exitCode = await child.exited;
+
     return {
       exitCode,
       output: exitCode === 0 ? await readFile(output, "utf8") : "",
@@ -134,13 +147,16 @@ const listExports = async (
   directory: string,
 ): Promise<ReadonlyArray<string>> => {
   const moduleUrl = pathToFileURL(Bun.resolveSync(packageName, directory)).href;
+
   // The names travel via file rather than stdout: importing the package may print.
   const result = await runJsonHost(
     "mitome-exports-",
     [process.execPath, "--no-env-file", "--eval", exportProbeSource, moduleUrl],
     { stderr: "ignore", timeout: 5000 },
   );
+
   if (result.exitCode !== 0) throw new Error(`Could not inspect ${packageName} exports.`);
+
   return Schema.decodeSync(ExportNamesFromJson)(result.output);
 };
 
@@ -151,7 +167,9 @@ const inspectExtensions = async (path: string): Promise<ExtensionListResult> => 
     // Importing and compiling an Agent Definition may take substantially longer than an export probe.
     { stderr: "inherit", timeout: 30_000 },
   );
+
   if (result.exitCode !== 0) return { exitCode: result.exitCode, extensions: [] };
+
   return {
     exitCode: result.exitCode,
     extensions: Schema.decodeSync(ExtensionListFromJson)(result.output),
@@ -175,15 +193,19 @@ export const runEmbeddedHost = async (
   // The message argument is omitted entirely when absent so the child can tell
   // "no message given" apart from an explicitly empty message.
   const arguments_ = [process.execPath, configEnvFlag(), "--eval", source, path, mode];
+
   if (message !== undefined) arguments_.push(message);
+
   const child = Bun.spawn(arguments_, {
     env: childEnv,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
   });
+
   const forwardSigint = () => child.kill("SIGINT");
   process.once("SIGINT", forwardSigint);
+
   try {
     return await child.exited;
   } finally {
@@ -201,13 +223,17 @@ const inspectProviderAuthentication = async (
     [process.execPath, "--no-env-file", "--eval", authHostSource, path],
     { stderr: "inherit" },
   );
+
   if (result.exitCode !== 0) throw new Error("Could not inspect Agent Definition authentication.");
+
   const authentication = Schema.decodeResult(ProviderAuthenticationsFromJson, {
     onExcessProperty: "error",
   })(result.output);
+
   if (Result.isFailure(authentication)) {
     throw new Error("Agent Definition returned invalid Provider authentication metadata.");
   }
+
   return authentication.success;
 };
 
@@ -235,5 +261,6 @@ const runOAuthAuth = async (
       stderr: "inherit",
     },
   );
+
   if ((await child.exited) !== 0) throw new Error("Provider authentication failed.");
 };
