@@ -1,4 +1,4 @@
-import { Cause, Deferred, Effect, Predicate, Schema, Stream } from "effect";
+import { Cause, Data, Deferred, Effect, Predicate, Schema, Stream } from "effect";
 import { AiError, Tool, Toolkit } from "effect/unstable/ai";
 import type { CompiledAgent, CompiledTool } from "../agent.js";
 import type {
@@ -25,6 +25,8 @@ export type ApprovalRequestOutcome =
       readonly params: ToolInput;
       readonly awaitDecision: Effect.Effect<ApprovalDecision>;
     };
+
+const ApprovalRequest = Data.taggedEnum<ApprovalRequestOutcome>();
 
 export interface ApprovalGate {
   readonly request: (
@@ -65,6 +67,8 @@ type PreparedCall =
       readonly message: string;
       readonly cause: unknown;
     };
+
+const PreparedCall = Data.taggedEnum<PreparedCall>();
 
 type ToolPipeline = {
   readonly compiled: CompiledTool;
@@ -249,18 +253,17 @@ export const makeToolExecution = (
                         }),
                   ),
                 );
-          if (input._tag === "InputFailure") {
-            return { _tag: "InputFailure", pipeline, params, reason: input.reason };
+          if (Predicate.isTagged(input, "InputFailure")) {
+            return PreparedCall.InputFailure({ pipeline, params, reason: input.reason });
           }
-          if (input._tag === "Failure") {
-            return {
-              _tag: "TurnFailure",
+          if (Predicate.isTagged(input, "Failure")) {
+            return PreparedCall.TurnFailure({
               pipeline,
               params,
               method: tool.name,
               message: "Tool input validator failed",
               cause: input.cause,
-            };
+            });
           }
           const preTool = yield* runPreTool(tool.name, input.value).pipe(
             Effect.map((veto) => ({ _tag: "Ready" as const, veto })),
@@ -271,21 +274,19 @@ export const makeToolExecution = (
                 : Effect.succeed({ _tag: "Failure" as const, cause: Cause.squash(cause) }),
             ),
           );
-          return preTool._tag === "Failure"
-            ? {
-                _tag: "TurnFailure",
+          return Predicate.isTagged(preTool, "Failure")
+            ? PreparedCall.TurnFailure({
                 pipeline,
                 params: input.value,
                 method: "preTool",
                 message: "Pre-Tool Hook failed",
                 cause: preTool.cause,
-              }
-            : {
-                _tag: "Ready",
+              })
+            : PreparedCall.Ready({
                 pipeline,
                 params: input.value,
                 veto: preTool.veto,
-              };
+              });
         });
 
       const tools = Object.fromEntries(
@@ -298,8 +299,8 @@ export const makeToolExecution = (
               Effect.gen(function* () {
                 const prepared = yield* prepare(pipeline, params);
                 preparedCalls.set(context.toolCallId, prepared);
-                if (prepared._tag === "InputFailure") return false;
-                if (prepared._tag === "TurnFailure") return true;
+                if (Predicate.isTagged(prepared, "InputFailure")) return false;
+                if (Predicate.isTagged(prepared, "TurnFailure")) return true;
                 if (prepared.veto !== undefined) return true;
                 if (needsApproval === undefined || Predicate.isBoolean(needsApproval)) {
                   return needsApproval ?? false;
@@ -354,24 +355,25 @@ export const makeToolExecution = (
           const prepared = preparedCalls.get(part.toolCallId);
           if (prepared?._tag === "InputFailure") {
             preparedCalls.delete(part.toolCallId);
-            return { _tag: "Failure", message: prepared.reason, cause: prepared.reason };
+            return ApprovalRequest.Failure({
+              message: prepared.reason,
+              cause: prepared.reason,
+            });
           }
           if (prepared?._tag === "TurnFailure") {
             preparedCalls.delete(part.toolCallId);
-            return {
-              _tag: "Failure",
+            return ApprovalRequest.Failure({
               message: prepared.message,
               cause: prepared.cause,
-            };
+            });
           }
           if (prepared?.veto !== undefined) {
             preparedCalls.delete(part.toolCallId);
-            return { _tag: "Veto", reason: prepared.veto };
+            return ApprovalRequest.Veto({ reason: prepared.veto });
           }
           const deferred = yield* Deferred.make<ApprovalDecision>();
           pendingApprovals.set(part.approvalId, deferred);
-          return {
-            _tag: "Pending",
+          return ApprovalRequest.Pending({
             approvalId: part.approvalId,
             toolCallId: part.toolCallId,
             name: call.name,
@@ -389,7 +391,7 @@ export const makeToolExecution = (
                 }).pipe(Effect.asVoid),
               ),
             ),
-          } satisfies ApprovalRequestOutcome;
+          });
         },
       );
 

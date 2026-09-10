@@ -1,4 +1,4 @@
-import { Encoding, Predicate, Result, Schema } from "effect";
+import { Encoding, Match, Predicate, Result, Schema } from "effect";
 import { Prompt } from "effect/unstable/ai";
 
 /** Identifies a Transcript; a UUID when Mitome generates it. */
@@ -147,12 +147,11 @@ const fileDataFromPrompt = (data: string | Uint8Array | URL) => {
 const messageFromPrompt = (message: Prompt.Message) => {
   const encoded = encodeMessage(message);
   if (message.role === "system") return encoded;
-  const content =
-    message.role === "user"
-      ? encodeUserMessageParts(message.content)
-      : message.role === "assistant"
-        ? encodeAssistantMessageParts(message.content)
-        : encodeToolMessageParts(message.content);
+  const content = Match.value(message).pipe(
+    Match.when({ role: "user" }, ({ content }) => encodeUserMessageParts(content)),
+    Match.when({ role: "assistant" }, ({ content }) => encodeAssistantMessageParts(content)),
+    Match.orElse(({ content }) => encodeToolMessageParts(content)),
+  );
   return {
     ...encoded,
     content: content.map((part) =>

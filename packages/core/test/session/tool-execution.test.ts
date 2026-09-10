@@ -18,7 +18,9 @@ const pending = (
   outcome: ApprovalRequestOutcome,
 ): Extract<ApprovalRequestOutcome, { readonly _tag: "Pending" }> => {
   expect(outcome._tag).toBe("Pending");
-  if (outcome._tag !== "Pending") throw new Error("Expected a pending Approval request");
+  if (!Predicate.isTagged(outcome, "Pending")) {
+    throw new Error("Expected a pending Approval request");
+  }
   return outcome;
 };
 
