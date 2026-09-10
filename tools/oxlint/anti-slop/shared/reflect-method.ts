@@ -1,7 +1,6 @@
-import { defineRule } from "@oxlint/plugins";
-import type { ESTree, SourceCode } from "@oxlint/plugins";
+import { resolveVariable } from "./scope.ts";
 
-import { resolveVariable } from "./ast.ts";
+import type { ESTree, SourceCode } from "@oxlint/plugins";
 
 function isGlobalReflect(sourceCode: SourceCode, expression: ESTree.Expression): boolean {
   if (expression.type !== "Identifier" || expression.name !== "Reflect") return false;
@@ -11,7 +10,7 @@ function isGlobalReflect(sourceCode: SourceCode, expression: ESTree.Expression):
 }
 
 /** Reports whether a call target names one method on the global Reflect object. */
-function isGlobalReflectMethodCall(
+export function isGlobalReflectMethodCall(
   sourceCode: SourceCode,
   callee: ESTree.Expression,
   methodName: string,
@@ -23,28 +22,3 @@ function isGlobalReflectMethodCall(
     ? property.type === "Literal" && property.value === methodName
     : property.type === "Identifier" && property.name === methodName;
 }
-
-/** Builds a rule banning one global Reflect method call. */
-export const reflectMethodRule = (
-  method: string,
-  messageId: string,
-  description: string,
-  message: string,
-) =>
-  defineRule({
-    meta: {
-      type: "problem",
-      docs: { description },
-      messages: { [messageId]: message },
-    },
-    createOnce(context) {
-      return {
-        CallExpression(node) {
-          if (node.callee.type === "Super" || node.callee.type === "V8IntrinsicExpression") return;
-          if (isGlobalReflectMethodCall(context.sourceCode, node.callee, method)) {
-            context.report({ node, messageId });
-          }
-        },
-      };
-    },
-  });

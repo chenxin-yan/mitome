@@ -2,27 +2,18 @@ import { defineRule } from "@oxlint/plugins";
 import type { ESTree } from "@oxlint/plugins";
 
 import {
-  functionSignatureVisitor,
-  parameterAnnotation,
-  type ParameterOwner,
-} from "../shared/ast.ts";
-
-type Parameter = ESTree.ParamPattern;
-
-function parameterName(parameter: Parameter, sourceText: string): string {
-  if (parameter.type === "TSParameterProperty") {
-    return parameterName(parameter.parameter, sourceText);
-  }
-  if (parameter.type === "AssignmentPattern") {
-    return parameterName(parameter.left, sourceText);
-  }
-  if (parameter.type === "RestElement") {
-    return parameterName(parameter.argument, sourceText);
-  }
-  return parameter.type === "Identifier"
-    ? parameter.name
-    : sourceText.replace(/\s*:\s*unknown\s*$/u, "");
-}
+  containsUnknownType,
+  functionParameterBindingName,
+  functionParameterTypeAnnotation,
+} from "../shared/function-parameters.ts";
+type ParameterOwner =
+  | ESTree.ArrowFunctionExpression
+  | ESTree.Function
+  | ESTree.TSCallSignatureDeclaration
+  | ESTree.TSConstructSignatureDeclaration
+  | ESTree.TSConstructorType
+  | ESTree.TSFunctionType
+  | ESTree.TSMethodSignature;
 
 /** Disallow unknown inputs except explicitly named error-cause enrichment. */
 export const noUnknownParametersRule = defineRule({
@@ -40,9 +31,10 @@ export const noUnknownParametersRule = defineRule({
   createOnce(context) {
     const checkParameters = (node: ParameterOwner) => {
       for (const parameter of node.params) {
-        const annotation = parameterAnnotation(parameter);
-        if (annotation?.typeAnnotation.type !== "TSUnknownKeyword") continue;
-        const name = parameterName(parameter, context.sourceCode.getText(parameter));
+        const annotation = functionParameterTypeAnnotation(parameter);
+        if (annotation === null || annotation === undefined) continue;
+        if (!containsUnknownType(annotation.typeAnnotation)) continue;
+        const name = functionParameterBindingName(parameter, context.sourceCode);
         if (name === "cause") continue;
         context.report({
           node: annotation.typeAnnotation,
@@ -52,6 +44,17 @@ export const noUnknownParametersRule = defineRule({
       }
     };
 
-    return functionSignatureVisitor(checkParameters);
+    return {
+      ArrowFunctionExpression: checkParameters,
+      FunctionDeclaration: checkParameters,
+      FunctionExpression: checkParameters,
+      TSCallSignatureDeclaration: checkParameters,
+      TSConstructSignatureDeclaration: checkParameters,
+      TSConstructorType: checkParameters,
+      TSDeclareFunction: checkParameters,
+      TSEmptyBodyFunctionExpression: checkParameters,
+      TSFunctionType: checkParameters,
+      TSMethodSignature: checkParameters,
+    };
   },
 });

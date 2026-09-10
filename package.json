@@ -32,6 +32,7 @@
     "check:fix": "turbo run lint:fix && turbo run //#fmt:fix",
     "check:types": "tsc",
     "test": "turbo run test",
+    "test:anti-slop": "find tools/oxlint/anti-slop -name '*.test.ts' -type f -print0 | sort -z | xargs -0 -n1 node --experimental-strip-types",
     "dev:docs": "turbo run dev --filter=@mitome/docs",
     "dev:cli": "bun scripts/dev-cli.ts",
     "build": "turbo run build",

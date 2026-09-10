@@ -3,12 +3,19 @@ import { defineRule } from "@oxlint/plugins";
 import type { ESTree } from "@oxlint/plugins";
 
 import {
-  collectTypeAliases,
-  functionSignatureVisitor,
-  referencedAliasName,
-  type ParameterOwner,
-} from "../shared/ast.ts";
-import { lexicalTypeParameterNames } from "../shared/lexical-type-parameters.ts";
+  createTypeAliasEnvironment,
+  resolvedTypeMatches,
+  type TypeAliasEnvironment,
+} from "../shared/type-alias-resolution.ts";
+
+type FunctionWithReturnType =
+  | ESTree.ArrowFunctionExpression
+  | ESTree.Function
+  | ESTree.TSCallSignatureDeclaration
+  | ESTree.TSConstructSignatureDeclaration
+  | ESTree.TSConstructorType
+  | ESTree.TSFunctionType
+  | ESTree.TSMethodSignature;
 
 /** Ban function contracts that return unknown instead of a parsed domain type. */
 export const noUnknownReturnsRule = defineRule({
@@ -24,63 +31,52 @@ export const noUnknownReturnsRule = defineRule({
     },
   },
   createOnce(context) {
-    let aliases = new Map<string, ESTree.TSTypeAliasDeclaration>();
+    let environment: TypeAliasEnvironment | null = null;
 
-    const resolvesToUnknown = (
-      type: ESTree.TSType,
-      shadowedAliases: ReadonlySet<string>,
-      visited = new Set<string>(),
-    ): boolean => {
-      if (type.type === "TSUnknownKeyword") return true;
-      if (type.type === "TSParenthesizedType") {
-        return resolvesToUnknown(type.typeAnnotation, shadowedAliases, visited);
-      }
-      if (type.type === "TSUnionType") {
-        return type.types.some((member) =>
-          resolvesToUnknown(member, shadowedAliases, visited),
-        );
-      }
-      if (
-        type.type === "TSTypeReference" &&
-        type.typeName.type === "Identifier" &&
-        (type.typeName.name === "Promise" || type.typeName.name === "PromiseLike")
-      ) {
-        const value = type.typeArguments?.params[0];
-        return value !== undefined && resolvesToUnknown(value, shadowedAliases, visited);
-      }
-      const name = referencedAliasName(type);
-      if (name === null || visited.has(name) || shadowedAliases.has(name)) return false;
-      const alias = aliases.get(name);
-      if (
-        alias === undefined ||
-        (alias.typeParameters !== null && alias.typeParameters !== undefined)
-      ) {
-        return false;
-      }
-      const nextVisited = new Set(visited);
-      nextVisited.add(name);
-      return resolvesToUnknown(alias.typeAnnotation, shadowedAliases, nextVisited);
-    };
+    const resolvesToUnknown = (type: ESTree.TSType): boolean =>
+      environment !== null &&
+      resolvedTypeMatches(type, environment, (resolved, matches) => {
+        if (resolved.type === "TSUnknownKeyword") return true;
+        if (resolved.type === "TSParenthesizedType") {
+          return matches(resolved.typeAnnotation);
+        }
+        if (resolved.type === "TSUnionType") return resolved.types.some(matches);
+        if (
+          resolved.type !== "TSTypeReference" ||
+          resolved.typeName.type !== "Identifier" ||
+          (resolved.typeName.name !== "Promise" &&
+            resolved.typeName.name !== "PromiseLike")
+        ) {
+          return false;
+        }
+        const value = resolved.typeArguments?.params[0];
+        return value !== undefined && matches(value);
+      });
 
-    const checkReturnType = (node: ParameterOwner) => {
+    const checkReturnType = (node: FunctionWithReturnType) => {
       const annotation = node.returnType;
       if (annotation === null || annotation === undefined) return;
-      if (
-        !resolvesToUnknown(
-          annotation.typeAnnotation,
-          lexicalTypeParameterNames(node, context.sourceCode.visitorKeys),
-        )
-      ) {
-        return;
-      }
+      if (!resolvesToUnknown(annotation.typeAnnotation)) return;
       context.report({ node: annotation.typeAnnotation, messageId: "unknownReturn" });
     };
 
     return {
       Program(node) {
-        aliases = collectTypeAliases(node);
+        environment = createTypeAliasEnvironment(
+          node,
+          context.sourceCode.visitorKeys,
+        );
       },
-      ...functionSignatureVisitor(checkReturnType),
+      ArrowFunctionExpression: checkReturnType,
+      FunctionDeclaration: checkReturnType,
+      FunctionExpression: checkReturnType,
+      TSCallSignatureDeclaration: checkReturnType,
+      TSConstructSignatureDeclaration: checkReturnType,
+      TSConstructorType: checkReturnType,
+      TSDeclareFunction: checkReturnType,
+      TSEmptyBodyFunctionExpression: checkReturnType,
+      TSFunctionType: checkReturnType,
+      TSMethodSignature: checkReturnType,
     };
   },
 });
