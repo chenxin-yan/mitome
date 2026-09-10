@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Predicate } from "effect";
 import { TestClock } from "effect/testing";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { exchangeToken } from "../../src/shared/oauth.js";
@@ -20,7 +20,7 @@ describe("OAuth token exchange", () => {
         method = request.method;
         url = resolved.toString();
         contentType = request.headers["content-type"];
-        if (request.body._tag === "Uint8Array") {
+        if (Predicate.isTagged(request.body, "Uint8Array")) {
           body = new TextDecoder().decode(request.body.body);
         }
         return Effect.succeed(

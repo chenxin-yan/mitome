@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { Cause, Clock, Data, Effect, Schema } from "effect";
+import { Cause, Clock, Data, Effect, Match, Schema } from "effect";
 import {
   FetchHttpClient,
   HttpClient,
@@ -166,8 +166,11 @@ export const launchDefaultBrowser = (
   url: string,
   launch: (command: string, args: ReadonlyArray<string>) => void = nativeBrowserLauncher,
 ): void => {
-  const command =
-    process.platform === "darwin" ? "open" : process.platform === "win32" ? "rundll32" : "xdg-open";
+  const command = Match.value(process.platform).pipe(
+    Match.when("darwin", () => "open"),
+    Match.when("win32", () => "rundll32"),
+    Match.orElse(() => "xdg-open"),
+  );
   const args = process.platform === "win32" ? ["url.dll,FileProtocolHandler", url] : [url];
   launch(command, args);
 };

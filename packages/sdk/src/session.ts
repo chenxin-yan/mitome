@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Schema, Scope, Stream } from "effect";
+import { Cause, Effect, Exit, Predicate, Schema, Scope, Stream } from "effect";
 import { Prompt as AiPrompt } from "effect/unstable/ai";
 import { createSession } from "@mitome/core";
 import type { FinishReason, PromptMessage, Usage } from "./models.js";
@@ -118,7 +118,7 @@ const toAsyncIterable = (
       iterated = true;
       const reader = Stream.toReadableStream(stream).getReader();
       const cancel = () => reader.cancel().catch(() => undefined);
-      if (scope.state._tag !== "Closed") {
+      if (!Predicate.isTagged(scope.state, "Closed")) {
         Effect.runSync(Scope.addFinalizer(scope, Effect.promise(cancel)));
       }
       let done = false;
