@@ -44,13 +44,16 @@ export const codexLayer = (
                 Effect.map((parts) => {
                   // ponytail: new Core part types (for example reasoning) are silently dropped;
                   // move stream→generate projection into Core if a second Provider needs them.
-                  const text = [...parts]
-                    .filter((part) => part.type === "text-delta")
-                    .map((part) => part.delta)
-                    .join("");
+                  const textDeltas: Array<string> = [];
+                  const toolCalls: Array<Response.ToolCallPartEncoded> = [];
+                  for (const part of parts) {
+                    if (part.type === "text-delta") textDeltas.push(part.delta);
+                    if (part.type === "tool-call") toolCalls.push(part);
+                  }
+                  const text = textDeltas.join("");
                   return [
                     ...(text === "" ? [] : [Response.makePart("text", { text })]),
-                    ...[...parts].filter((part) => part.type === "tool-call"),
+                    ...toolCalls,
                   ];
                 }),
               ),
