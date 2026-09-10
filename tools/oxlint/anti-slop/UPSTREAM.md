@@ -16,6 +16,7 @@ The generic and Effect entry points register every rule from the adopted revisio
 - `no-runtime-typeof` rejects every runtime `typeof`, including undefined existence probes and checks inside type guards. It has no `allowInTypeGuards` option.
 - `no-unknown-parameters` exempts only parameters named `cause`; type-predicate subjects remain rejected.
 - `no-manual-tagged-construction` is disabled only for test files because matcher expectation objects such as `toMatchObject({ _tag: "Failure" })` are assertions, not domain construction. Other Effect rules remain enabled in tests.
+- `rules/require-readable-spacing-cli.test.ts` spawns the repository's `node_modules/.bin/oxlint` instead of upstream's `pnpm exec oxlint`; this repository uses Bun, so `pnpm` is not available.
 - The dictionary helper explicitly falls back to `null` after safe-array analysis so it typechecks with this repository's `noUncheckedIndexedAccess` setting; runtime behavior is unchanged.
 
 The previous local `shared/ast.ts`, Reflect rule factory, and renamed shape-rule export were dropped in favor of upstream's layout. All callers moved together, the registered rule names are unchanged, and no duplicate helper implementations remain.
