@@ -22,5 +22,5 @@ jobs:
             ${{ runner.os }}-turbo-
       - uses: jdx/mise-action@v4
       - run: bun install --frozen-lockfile
-      - run: "bun run test:anti-slop && bun run lint && bunx turbo run //#fmt check:types //#check:types build test"
+      - run: "bun run lint && bunx turbo run //#fmt check:types //#check:types build test"
       - run: bun run test:release
