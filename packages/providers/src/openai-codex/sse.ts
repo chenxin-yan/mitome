@@ -287,7 +287,7 @@ export const decodeStream = <R>(
     const events: Array<string> = [];
     const state: StreamState = {
       parser: Sse.makeParser((event: Sse.AnyEvent) => {
-        if (event._tag === "Event") events.push(event.data);
+        if (Predicate.isTagged(event, "Event")) events.push(event.data);
       }),
       calls: new Map(),
       textIds: new Set(),

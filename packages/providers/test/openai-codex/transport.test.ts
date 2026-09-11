@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { Effect, Layer, Schema, Stream } from "effect";
+import { Effect, Layer, Predicate, Schema, Stream } from "effect";
 import { LanguageModel, Prompt } from "effect/unstable/ai";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http";
 import {
@@ -135,12 +135,11 @@ describe("Codex transport", () => {
       | undefined;
 
     await run(credential(), (outgoing, url) => {
-      const body =
-        outgoing.body._tag === "Uint8Array"
-          ? Schema.decodeUnknownSync(
-              Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)),
-            )(new TextDecoder().decode(outgoing.body.body))
-          : {};
+      const body = Predicate.isTagged(outgoing.body, "Uint8Array")
+        ? Schema.decodeUnknownSync(
+            Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)),
+          )(new TextDecoder().decode(outgoing.body.body))
+        : {};
       request = { method: outgoing.method, url: url.toString(), headers: outgoing.headers, body };
       return completed();
     });

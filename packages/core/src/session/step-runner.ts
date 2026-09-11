@@ -1,4 +1,4 @@
-import { Effect, Schema, Stream } from "effect";
+import { Effect, Predicate, Schema, Stream } from "effect";
 import { Prompt } from "effect/unstable/ai";
 import type { Response, Tool } from "effect/unstable/ai";
 import type { CompiledAgent } from "../agent.js";
@@ -39,10 +39,10 @@ export const makeStepRunner = (
     Stream.unwrap(
       toolExecution.approval.request(part, call).pipe(
         Effect.map((outcome) => {
-          if (outcome._tag === "Failure") {
+          if (Predicate.isTagged(outcome, "Failure")) {
             return Stream.fail(new TurnError({ message: outcome.message, cause: outcome.cause }));
           }
-          if (outcome._tag === "Veto") {
+          if (Predicate.isTagged(outcome, "Veto")) {
             record(
               Prompt.toolApprovalResponsePart({
                 approvalId: part.approvalId,

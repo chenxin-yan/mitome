@@ -64,9 +64,14 @@ const discoveredPaths = (names: ReadonlyArray<string>): ReadonlyArray<string> =>
       throw new Error(`Discovered instruction file must be a bare filename: ${name}`);
     }
   }
-  return discoveryDirectories().flatMap((directory) =>
-    names.map((name) => resolve(directory, name)).filter(existsSync),
-  );
+  const paths: Array<string> = [];
+  for (const directory of discoveryDirectories()) {
+    for (const name of names) {
+      const path = resolve(directory, name);
+      if (existsSync(path)) paths.push(path);
+    }
+  }
+  return paths;
 };
 
 /**

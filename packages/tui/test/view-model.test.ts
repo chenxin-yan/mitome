@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createSession, makeProvider, memoryTranscripts, StoreError } from "@mitome/core";
 import type { TranscriptStore, TranscriptSummary, TurnEvent } from "@mitome/core";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Match, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { makeSessionManager } from "../src/session-manager.js";
 import type { SessionManager, SessionResource } from "../src/session-manager.js";
@@ -177,7 +177,11 @@ describe("session view model", () => {
         generateObject: unsupported,
         streamText: () => {
           calls += 1;
-          const output = calls === 1 ? "partial" : calls === 2 ? "recovered" : "again";
+          const output = Match.value(calls).pipe(
+            Match.when(1, () => "partial"),
+            Match.when(2, () => "recovered"),
+            Match.orElse(() => "again"),
+          );
           const part = Stream.succeed(
             Response.makePart("text-delta", { id: String(calls), delta: output }),
           );

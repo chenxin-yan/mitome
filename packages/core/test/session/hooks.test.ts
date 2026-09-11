@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Match } from "effect";
 import type { AnyExtension } from "../../src/extension.js";
 import { beginHookPhase } from "../../src/session/hooks.js";
 
@@ -57,11 +57,11 @@ describe("Hook phases", () => {
         (extension) =>
           Effect.sync(() => void log.push(extension.name!)).pipe(
             Effect.andThen(
-              extension.name === "first"
-                ? Effect.fail(first)
-                : extension.name === "second"
-                  ? Effect.fail(second)
-                  : Effect.void,
+              Match.value(extension.name).pipe(
+                Match.when("first", () => Effect.fail(first)),
+                Match.when("second", () => Effect.fail(second)),
+                Match.orElse(() => Effect.void),
+              ),
             ),
           ),
         "end failed",

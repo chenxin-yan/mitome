@@ -1,5 +1,6 @@
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { render, useKeyboard } from "@opentui/solid";
+import { Match } from "effect";
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import type { SessionTurn, SessionViewModel, TranscriptPickerState } from "./view-model.js";
 
@@ -119,15 +120,12 @@ export const Shell = (props: {
           }}
           id="message"
           initialValue={initialMessage()}
-          placeholder={
-            state().phase === "idle"
-              ? "Type a message"
-              : state().phase === "interrupting"
-                ? "Interrupting…"
-                : state().phase === "switching"
-                  ? "Starting Session…"
-                  : "Turn running…"
-          }
+          placeholder={Match.value(state().phase).pipe(
+            Match.when("idle", () => "Type a message"),
+            Match.when("interrupting", () => "Interrupting…"),
+            Match.when("switching", () => "Starting Session…"),
+            Match.orElse(() => "Turn running…"),
+          )}
           onSubmit={submit}
         />
       </box>

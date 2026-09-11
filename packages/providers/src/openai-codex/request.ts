@@ -1,4 +1,4 @@
-import { Result, Schema } from "effect";
+import { Match, Predicate, Result, Schema } from "effect";
 import { AiError, LanguageModel, Tool } from "effect/unstable/ai";
 import { HttpClientError } from "effect/unstable/http";
 import { type CredentialError } from "./credential-store.js";
@@ -25,29 +25,25 @@ const authenticationError = (
 
 export const httpError = (error: HttpClientError.HttpClientError) => {
   const reason = error.reason;
-  return reason._tag === "TransportError" ||
-    reason._tag === "EncodeError" ||
-    reason._tag === "InvalidUrlError"
+  return Predicate.isTagged(reason, "TransportError") ||
+    Predicate.isTagged(reason, "EncodeError") ||
+    Predicate.isTagged(reason, "InvalidUrlError")
     ? makeError(AiError.NetworkError.fromRequestError(reason))
     : providerError(error.message);
 };
 
 export const credentialError = (error: CredentialError) => {
   if (HttpClientError.isHttpClientError(error)) return httpError(error);
-  switch (error._tag) {
-    case "CredentialUnavailableError":
-      return authenticationError("MissingKey", error.message);
-    case "OAuthTokenError":
-      return authenticationError("ExpiredKey", error.message);
-    case "OAuthCredentialError":
-      return authenticationError("Unknown", error.message);
-    case "CredentialStoreError":
-      return providerError(`${error.message}${error.code === undefined ? "" : ` (${error.code})`}`);
-    case "TimeoutError":
-      return providerError("OAuth token exchange timed out");
-    default:
-      return error satisfies never;
-  }
+  return Match.value(error).pipe(
+    Match.tagsExhaustive({
+      CredentialUnavailableError: (error) => authenticationError("MissingKey", error.message),
+      OAuthTokenError: (error) => authenticationError("ExpiredKey", error.message),
+      OAuthCredentialError: (error) => authenticationError("Unknown", error.message),
+      CredentialStoreError: (error) =>
+        providerError(`${error.message}${error.code === undefined ? "" : ` (${error.code})`}`),
+      TimeoutError: () => providerError("OAuth token exchange timed out"),
+    }),
+  );
 };
 
 const ReasoningOptions = Schema.Struct({
