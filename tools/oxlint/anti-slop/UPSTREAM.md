@@ -5,6 +5,8 @@ This directory vendors source from [dmmulroy/anti-slop](https://github.com/dmmul
 - Merge base: `6d538555cb151d4121ed51a27db81890eacf8ae9`
 - Adopted upstream revision: `c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b`
 
+To update, install upstream's `install-anti-slop` skill (`npx skills add dmmulroy/anti-slop`) and follow its update procedure, or three-way merge from the adopted revision by hand. Keep the deviations below and re-run `bun run test:anti-slop`.
+
 ## Adopted changes
 
 The update adopts the incoming generic and Effect rule implementations and their adjacent tests, including the array pipeline, reducer accumulator, readable spacing, Effect tag, and Effect match rules. It also adopts upstream's lexical scope and type-alias resolution, safety-comment ownership, known-value analysis, and borrowed static `.shape` member exemption. The readable-spacing implementation retains its source notice in `vendor/eslint-stylistic/`.

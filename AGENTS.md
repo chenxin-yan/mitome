@@ -1,8 +1,5 @@
 ## Agent skills
 
-- Use the project-local `install-anti-slop` skill and `tools/oxlint/anti-slop/UPSTREAM.md` to maintain the vendored rules.
-- Enabling new anti-slop rules requires owner approval.
-
 ### Issue tracker
 
 Issues are tracked in GitHub Issues for `chenxin-yan/mitome`; external pull requests are not a triage surface. See `docs/agents/issue-tracker.md`.
