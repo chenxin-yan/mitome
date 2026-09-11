@@ -23,7 +23,6 @@ export const Route = createFileRoute("/docs/$")({
     const slugs = params._splat?.split("/") ?? [];
     const data = await serverLoader({ data: slugs });
     await clientLoader.preload(data.path);
-
     return data;
   },
 });
@@ -34,7 +33,6 @@ const serverLoader = createServerFn({
   .validator((slugs: string[]) => slugs)
   .handler(async ({ data: slugs }) => {
     const page = source.getPage(slugs);
-
     if (!page) throw notFound();
 
     return {

@@ -18,17 +18,14 @@ const useFlag = Flag.string("use").pipe(
   Flag.withDescription("Path to a Mitome Definition module or directory"),
   Flag.optional,
 );
-
 const messageArgument = Argument.string("message").pipe(
   Argument.withDescription("Message to send to the Agent"),
   Argument.optional,
 );
-
 const printFlag = Flag.boolean("print").pipe(
   Flag.withAlias("p"),
   Flag.withDescription("Force one-shot output"),
 );
-
 const packageArgument = Argument.string("package").pipe(
   Argument.withDescription("Extension package to add or remove"),
 );
@@ -42,40 +39,32 @@ const addCommand = Command.make(
   { ...definitionCommandConfig, package: packageArgument },
   (options) => useExitCode(runAdd(options)),
 ).pipe(Command.withDescription("Add an Extension to the Mitome Definition"));
-
 const removeCommand = Command.make(
   "remove",
   { ...definitionCommandConfig, package: packageArgument },
   (options) => useExitCode(runRemove(options)),
 ).pipe(Command.withDescription("Remove an Extension from the Mitome Definition"));
-
 const extensionListCommand = Command.make("list", definitionCommandConfig, (options) =>
   useExitCode(runExtensionList(options)),
 ).pipe(Command.withDescription("List resolved Extensions"));
-
 const extensionCommand = Command.make("ext", {}, () =>
   fail("Usage: mitome ext list [--use <path>]"),
 ).pipe(
   Command.withDescription("Inspect resolved Extensions"),
   Command.withSubcommands([extensionListCommand]),
 );
-
 const installCommand = Command.make("install", definitionCommandConfig, (options) =>
   useExitCode(runInstall(options)),
 ).pipe(Command.withDescription("Install Mitome Definition dependencies"));
-
 const initCommand = Command.make("init", {}, () => useExitCode(runInit())).pipe(
   Command.withDescription("Create a default Mitome Definition"),
 );
-
 const loginCommand = Command.make("login", definitionCommandConfig, ({ use }) =>
   useExitCode(runAuth("login", use)),
 ).pipe(Command.withDescription("Authenticate the Mitome Definition's Providers"));
-
 const logoutCommand = Command.make("logout", definitionCommandConfig, ({ use }) =>
   useExitCode(runAuth("logout", use)),
 ).pipe(Command.withDescription("Remove stored Provider Credentials"));
-
 const authCommand = Command.make("auth", {}, () =>
   fail("Usage: mitome auth <login|logout> [--use <path>]"),
 ).pipe(

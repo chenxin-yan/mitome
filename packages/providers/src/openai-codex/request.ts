@@ -20,13 +20,11 @@ const authenticationError = (
   // Upstream's auth reason has a fixed API-key message getter; an own property
   // shadows it while keeping its taxonomy, naming the Codex login remedy.
   Object.defineProperty(reason, "message", { value: description });
-
   return makeError(reason);
 };
 
 export const httpError = (error: HttpClientError.HttpClientError) => {
   const reason = error.reason;
-
   return Predicate.isTagged(reason, "TransportError") ||
     Predicate.isTagged(reason, "EncodeError") ||
     Predicate.isTagged(reason, "InvalidUrlError")
@@ -36,7 +34,6 @@ export const httpError = (error: HttpClientError.HttpClientError) => {
 
 export const credentialError = (error: CredentialError) => {
   if (HttpClientError.isHttpClientError(error)) return httpError(error);
-
   return Match.value(error).pipe(
     Match.tagsExhaustive({
       CredentialUnavailableError: (error) => authenticationError("MissingKey", error.message),
@@ -71,10 +68,8 @@ export const requestFor = (
 ) => {
   const system = options.prompt.content.find((message) => message.role === "system");
   const input: Array<typeof Schema.Json.Type> = [];
-
   for (const message of options.prompt.content) {
     if (message.role === "system") continue;
-
     if (message.role === "tool") {
       for (const part of message.content) {
         if (part.type === "tool-result") {
@@ -85,24 +80,18 @@ export const requestFor = (
           });
         }
       }
-
       continue;
     }
-
     const content = contentFor(message.content);
-
     if (message.role === "assistant") {
       let contentPending = content !== "";
-
       for (const part of message.content) {
         if (part.type === "text" && contentPending) {
           input.push({ role: "assistant", content });
           contentPending = false;
         }
-
         if (part.type === "reasoning") {
           const decoded = Schema.decodeUnknownResult(ReasoningOptions)(part.options.openai);
-
           if (Result.isSuccess(decoded)) {
             input.push({
               type: "reasoning",
@@ -112,7 +101,6 @@ export const requestFor = (
             });
           }
         }
-
         if (part.type === "tool-call") {
           input.push({
             type: "function_call",
@@ -122,13 +110,10 @@ export const requestFor = (
           });
         }
       }
-
       continue;
     }
-
     input.push({ role: "user", content });
   }
-
   const request = {
     model,
     store: false,
@@ -141,9 +126,7 @@ export const requestFor = (
     tool_choice: "auto",
     parallel_tool_calls: true,
   };
-
   if (options.tools.length === 0) return request;
-
   return {
     ...request,
     tools: options.tools.map((tool) => ({

@@ -7,26 +7,21 @@ import { agent, sse } from "../support.js";
 import { openaiCompatible } from "../../src/openai-compatible/index.js";
 
 type Json = typeof Schema.Json.Type;
-
 type JsonObject = { readonly [key: string]: Json };
-
 interface ToolMessage {
   readonly role: string;
   readonly tool_call_id?: string;
   readonly content?: Json;
 }
-
 interface FollowUpRequest {
   readonly messages?: ReadonlyArray<ToolMessage>;
 }
 
 const key = "MITOME_OPENAI_COMPATIBLE_TEST_KEY";
-
 const fakeFetch =
   (handle: (request: Request) => Response | Promise<Response>): typeof globalThis.fetch =>
   async (input, init) =>
     handle(new Request(input, init));
-
 const run = <A, E>(
   effect: Effect.Effect<A, E>,
   fetch: typeof globalThis.fetch = globalThis.fetch,
@@ -38,7 +33,6 @@ const run = <A, E>(
       Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config)),
     ),
   );
-
 const chunk = (delta: JsonObject, finishReason: string | null = null) => ({
   id: "chatcmpl-test",
   model: "gpt-4o-mini",
@@ -68,12 +62,10 @@ describe("openaiCompatible", () => {
       readonly stream: boolean;
       readonly authorization: string | null;
     }> = [];
-
     let releaseSecond!: () => void;
     const secondReleased = new Promise<void>((resolve) => (releaseSecond = resolve));
     let firstChunk!: () => void;
     const firstChunkSent = new Promise<void>((resolve) => (firstChunk = resolve));
-
     const fetch = fakeFetch(async (request) => {
       expect(new URL(request.url).pathname).toBe("/v1/chat/completions");
       // SAFETY: this controlled client request is emitted from the compatible request schema.
@@ -83,7 +75,6 @@ describe("openaiCompatible", () => {
         stream: body.stream,
         authorization: request.headers.get("authorization"),
       });
-
       return new Response(
         new ReadableStream<Uint8Array>({
           async start(controller) {
@@ -106,11 +97,9 @@ describe("openaiCompatible", () => {
       // Trailing slash pins baseUrl normalization.
       baseUrl: "https://test.invalid/v1/",
     });
-
     const events: Array<unknown> = [];
     let firstOutput!: () => void;
     const output = new Promise<void>((resolve) => (firstOutput = resolve));
-
     const turn = run(
       Effect.scoped(
         Effect.gen(function* () {
@@ -118,7 +107,6 @@ describe("openaiCompatible", () => {
           yield* Stream.runForEach(session.runTurn("Hi"), (event) =>
             Effect.sync(() => {
               events.push(event);
-
               if (event.type === "model-output") firstOutput();
             }),
           );
@@ -126,7 +114,6 @@ describe("openaiCompatible", () => {
       ),
       fetch,
     );
-
     await firstChunkSent;
     await output;
     expect(events).toEqual([{ type: "model-output", text: "hel" }]);
@@ -155,30 +142,24 @@ describe("openaiCompatible", () => {
 
   it("surfaces backend model rejection after the request without preflight", async () => {
     let requests = 0;
-
     const fetch = fakeFetch(async () => {
       requests += 1;
-
       return Response.json({ error: { message: "model not found" } }, { status: 404 });
     });
-
     const provider = openaiCompatible({
       id: "compatible",
       apiKeyEnv: key,
       baseUrl: "https://test.invalid/v1",
     });
-
     const exit = await run(
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(agent(provider, "future-private-model"));
-
           return yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
         }),
       ),
       fetch,
     );
-
     expect(Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty)).toMatchObject({
       _tag: "TurnError",
       cause: { reason: { _tag: "InvalidRequestError" } },
@@ -189,19 +170,15 @@ describe("openaiCompatible", () => {
   it("maps tool calls through the Core Tool loop", async () => {
     let calls = 0;
     let followUp: FollowUpRequest = {};
-
     const fetch = fakeFetch(async (request) => {
       // SAFETY: this controlled client request is emitted from the compatible request schema.
       const body = (await request.json()) as {
         readonly tools?: ReadonlyArray<Json>;
         readonly messages?: ReadonlyArray<ToolMessage>;
       };
-
       calls += 1;
-
       if (calls === 1) {
         expect(body.tools).toHaveLength(1);
-
         return new Response(
           sse(
             chunk({
@@ -225,25 +202,20 @@ describe("openaiCompatible", () => {
           { headers: { "content-type": "text/event-stream" } },
         );
       }
-
       followUp = body;
-
       return new Response(sse(chunk({ content: "done" }, "stop")) + sse("[DONE]"), {
         headers: { "content-type": "text/event-stream" },
       });
     });
-
     const echo = Tool.make("echo", {
       parameters: Schema.Struct({ text: Schema.String }),
       success: Schema.String,
     });
-
     const provider = openaiCompatible({
       id: "compatible",
       apiKeyEnv: key,
       baseUrl: "https://test.invalid/v1",
     });
-
     const definition = agent(provider, "gpt-4o-mini", [
       {
         name: "echo",
@@ -254,18 +226,15 @@ describe("openaiCompatible", () => {
         },
       },
     ]);
-
     const events = await run(
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(definition);
-
           return yield* Stream.runCollect(session.runTurn("Hi"));
         }),
       ),
       fetch,
     );
-
     expect([...events]).toEqual([
       { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
       { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },

@@ -14,9 +14,7 @@ import type {
 } from "@mitome/core";
 
 type CoreApproval = Extract<CoreTurnEvent, { type: "approval-required" }>;
-
 type CoreResponseComplete = Extract<CoreTurnEvent, { type: "response-complete" }>;
-
 /**
  * One event from `Session.runTurn`: `model-output` and `reasoning` text, `tool-call` and
  * `tool-result` activity, `approval-required` with Promise-returning decisions, and a final
@@ -89,9 +87,7 @@ const toSdkEvent = (event: CoreTurnEvent): TurnEvent => {
             },
     };
   }
-
   if (event.type !== "approval-required") return event;
-
   return {
     ...event,
     approve: () => Effect.runPromise(event.approve()),
@@ -112,7 +108,6 @@ const toAsyncIterable = (
 ): AsyncIterable<TurnEvent> => {
   // Single-use guard: a second iteration would silently re-run the paid Turn.
   let iterated = false;
-
   return {
     [Symbol.asyncIterator]() {
       if (iterated) {
@@ -120,30 +115,22 @@ const toAsyncIterable = (
           "session.runTurn() returns a single-use iterable; call runTurn() again to run a new Turn",
         );
       }
-
       iterated = true;
       const reader = Stream.toReadableStream(stream).getReader();
       const cancel = () => reader.cancel().catch(() => undefined);
-
       if (!Predicate.isTagged(scope.state, "Closed")) {
         Effect.runSync(Scope.addFinalizer(scope, Effect.promise(cancel)));
       }
-
       let done = false;
-
       return {
         async next(): Promise<IteratorResult<TurnEvent>> {
           if (done) return { done: true, value: undefined };
-
           try {
             const result = await reader.read();
-
             if (result.done) {
               done = true;
-
               return { done: true, value: undefined };
             }
-
             return { done: false, value: toSdkEvent(result.value) };
           } catch (error) {
             done = true;
@@ -153,7 +140,6 @@ const toAsyncIterable = (
         async return(): Promise<IteratorResult<TurnEvent>> {
           done = true;
           await cancel();
-
           return { done: true, value: undefined };
         },
         async throw(cause: unknown): Promise<IteratorResult<TurnEvent>> {
@@ -188,7 +174,6 @@ export function withSession<const Definition extends AgentDefinition, A>(
     | [options: SessionOptions, use: (session: Session<Definition["providers"]>) => Promise<A>]
 ): Promise<A> {
   const [options, use] = args.length === 1 ? [{}, args[0]] : args;
-
   const transcripts =
     options.transcripts === undefined ? undefined : toCoreTranscriptStore(options.transcripts);
 
@@ -199,14 +184,11 @@ export function withSession<const Definition extends AgentDefinition, A>(
           options.resume === undefined
             ? options.transcript
             : yield* toCoreTranscriptStore(options.transcripts).load(options.resume);
-
         const session = yield* createSession(definition, {
           transcripts,
           transcript,
         });
-
         const scope = yield* Effect.scope;
-
         return yield* Effect.tryPromise({
           try: () =>
             use({
@@ -222,7 +204,6 @@ export function withSession<const Definition extends AgentDefinition, A>(
   ).then((exit) => {
     if (Exit.isSuccess(exit)) return exit.value;
     const failure = Cause.squash(exit.cause);
-
     if (failure instanceof CallbackFailure) throw failure.cause;
     throw failure;
   });

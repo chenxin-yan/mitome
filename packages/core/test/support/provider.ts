@@ -15,7 +15,6 @@ export const testLanguageModel = (
   streamText: (options: TestModelOptions) => TestModelStream,
 ): LanguageModel.Service => {
   const unsupported = () => Effect.die("Only streamText is supported by this test model");
-
   return {
     generateText: unsupported,
     generateObject: unsupported,
@@ -53,7 +52,6 @@ export const makeStreamingTestProvider = (
 export const makeDeterministicProvider = (output: string) =>
   Effect.gen(function* () {
     const calls = yield* Ref.make(0);
-
     const provider = makeTestProvider(() =>
       Stream.fromEffect(Ref.update(calls, (count) => count + 1)).pipe(
         Stream.map(() => Response.makePart("text-delta", { id: "deterministic", delta: output })),

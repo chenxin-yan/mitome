@@ -9,7 +9,6 @@ import { join } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
 
 export type Flavor = "promise" | "effect";
-
 export type Provider = "openai" | "openai-codex";
 
 export interface ScaffoldOptions {
@@ -41,7 +40,6 @@ export const modelChoices = (
 
 export const validateModelId = (model: string): string | undefined => {
   const trimmed = model.trim();
-
   return trimmed === "" ? undefined : trimmed;
 };
 
@@ -50,14 +48,11 @@ const definitionSource = (
   instructionFilesOptions: string,
 ): string => {
   const sdk = flavor === "effect" ? "@mitome/sdk/effect" : "@mitome/sdk";
-
   const providerImport =
     provider === "openai"
       ? 'import { openai } from "@mitome/providers/openai";'
       : 'import { codex } from "@mitome/providers/openai-codex";';
-
   const providerFactory = provider === "openai" ? "openai()" : "codex()";
-
   return `import { defineAgent, defineMitome, fileTranscripts } from ${JSON.stringify(sdk)};\nimport { instructionFiles } from "@mitome/sdk/extensions";\n${providerImport}\n\nconst agent = defineAgent({\n  providers: [${providerFactory}],\n  model: ${JSON.stringify(`${provider}/${model}`)},\n  extensions: [instructionFiles(${instructionFilesOptions})],\n});\n\nexport default defineMitome({\n  agent,\n  transcripts: fileTranscripts(),\n});\n`;
 };
 
@@ -77,9 +72,7 @@ const agentPackageSource = (flavor: Flavor = "promise"): string => {
     "@mitome/providers": packageJson.version,
     "@mitome/sdk": packageJson.version,
   };
-
   if (flavor === "effect") Object.assign(dependencies, { effect: "4.0.0-rc.108" });
-
   return `${JSON.stringify(
     {
       name: "mitome-agent",
@@ -115,7 +108,6 @@ const readmeSource = (flavor: Flavor): string => {
     flavor === "promise"
       ? `import mitome from "./index.js";\nimport { withSession } from "@mitome/sdk";\n\nawait withSession(mitome.agent, async (session) => {\n  for await (const event of session.runTurn("Hi")) console.log(event);\n});`
       : `import { Effect, Stream } from "effect";\nimport mitome from "./index.js";\nimport { createSession } from "@mitome/sdk/effect";\n\nawait Effect.runPromise(\n  Effect.scoped(\n    Effect.gen(function* () {\n      const session = yield* createSession(mitome.agent);\n      yield* Stream.runForEach(session.runTurn("Hi"), (event) => Effect.log(event));\n    }),\n  ),\n);`;
-
   return `# Mitome Agent\n\n## Next steps\n\n\`\`\`sh\nnpm install\nnpm install -g @mitome/cli\nmitome auth login --use .\nmitome "hi" --use .\n\`\`\`\n\n## Embed the Agent\n\n\`\`\`ts\n${embed}\n\`\`\`\n`;
 };
 
@@ -143,7 +135,6 @@ export const projectPlan = (options: ScaffoldOptions): FileMap =>
 export const ensureEmpty = async (directory: string, files: Iterable<string>): Promise<void> => {
   for (const file of files) {
     const path = join(directory, file);
-
     const exists = await stat(path).then(
       () => true,
       (error: NodeJS.ErrnoException) => {
@@ -151,7 +142,6 @@ export const ensureEmpty = async (directory: string, files: Iterable<string>): P
         throw error;
       },
     );
-
     if (exists) throw new Error(`${path} already exists`);
   }
 };

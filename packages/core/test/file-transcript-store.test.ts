@@ -25,7 +25,6 @@ describe("fileTranscripts", () => {
     for (const name of ["MITOME_HOME", "XDG_CONFIG_HOME", "APPDATA", "HOME"]) {
       vi.stubEnv(name, "");
     }
-
     try {
       expect(() => fileTranscripts()).toThrow(
         "Set MITOME_HOME, XDG_CONFIG_HOME, APPDATA (on Windows), or HOME.",
@@ -39,14 +38,12 @@ describe("fileTranscripts", () => {
     withDirectory((directory) =>
       Effect.gen(function* () {
         const writer = fileTranscripts(directory);
-
         const transcript = makeTranscript({
           id: "transcript-1",
           messages: Prompt.make([
             Prompt.makeMessage("user", { content: [Prompt.textPart({ text: "hello" })] }),
           ]).content,
         });
-
         yield* writer.appendEvent({
           transcriptId: transcript.id,
           sessionId: "session-1",
@@ -71,7 +68,6 @@ describe("fileTranscripts", () => {
         const eventFile = (yield* Effect.promise(() => readdir(directory))).find((name) =>
           name.endsWith(".events.jsonl"),
         );
-
         expect(eventFile).toBeDefined();
         expect(
           JSON.parse(
@@ -125,7 +121,6 @@ describe("fileTranscripts", () => {
       Effect.gen(function* () {
         const store = fileTranscripts(directory);
         const ids = ["\ud800", "�"];
-
         for (const id of ids) {
           const transcript = makeTranscript({ id, messages: [] });
           yield* store.save(transcript);

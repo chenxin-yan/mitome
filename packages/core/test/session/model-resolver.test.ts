@@ -19,11 +19,9 @@ describe("ModelResolver", () => {
   it.effect("translates Provider provision failures", () =>
     Effect.gen(function* () {
       const failure = new Error("provision failed");
-
       const provider = makeProvider("test", [] as const, undefined, () => {
         throw failure;
       });
-
       const resolver = makeModelResolver(new Map([[provider.id, provider]]), yield* Effect.scope);
 
       expect(yield* Effect.flip(resolver.resolve("test/model"))).toMatchObject({

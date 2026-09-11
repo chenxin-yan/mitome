@@ -12,11 +12,9 @@ const run = async (command: ReadonlyArray<string>): Promise<void> => {
     stdout: "inherit",
     stderr: "inherit",
   });
-
   if ((await child.exited) !== 0)
     throw new Error(`${command.join(" ")} failed in ${toolDirectory}`);
 };
 
 await run(["bun", "install", "--frozen-lockfile"]);
-
 await run(["bun", "run", "generate"]);

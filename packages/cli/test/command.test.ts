@@ -10,7 +10,6 @@ import { runCli } from "../src/index.ts";
 import { Prompter } from "../src/prompter.ts";
 
 const unused = Effect.die("Command handler unexpectedly ran");
-
 const services = Layer.mergeAll(
   BunServices.layer,
   TestConsole.layer,

@@ -10,20 +10,16 @@ import { agent, sse } from "../support.js";
 import { openai } from "../../src/openai/index.js";
 
 type Json = typeof Schema.Json.Type;
-
 type JsonObject = { readonly [key: string]: Json };
-
 interface FollowUpRequest {
   readonly input?: ReadonlyArray<JsonObject>;
 }
 
 const key = "MITOME_OPENAI_TEST_KEY";
-
 const fakeFetch =
   (handle: (request: Request) => Response | Promise<Response>): typeof globalThis.fetch =>
   async (input, init) =>
     handle(new Request(input, init));
-
 const run = <A, E>(
   effect: Effect.Effect<A, E>,
   fetch: typeof globalThis.fetch = globalThis.fetch,
@@ -35,7 +31,6 @@ const run = <A, E>(
       Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config)),
     ),
   );
-
 const response = (id: string, output: ReadonlyArray<Json> = []) => ({
   id,
   object: "response",
@@ -43,7 +38,6 @@ const response = (id: string, output: ReadonlyArray<Json> = []) => ({
   created_at: 1,
   output,
 });
-
 const message = (id: string, text: string, status: "in_progress" | "completed") => ({
   id,
   type: "message",
@@ -51,12 +45,10 @@ const message = (id: string, text: string, status: "in_progress" | "completed") 
   status,
   content: text === "" ? [] : [{ type: "output_text", text, annotations: [] }],
 });
-
 const event = (type: string, data: JsonObject = {}) => ({
   type,
   ...data,
 });
-
 /** SSE frames for one output item: created → added → deltas → done → completed. */
 const itemStream = (
   respId: string,
@@ -66,7 +58,6 @@ const itemStream = (
   done: JsonObject,
 ): ReadonlyArray<string> => {
   let seq = 0;
-
   return [
     event("response.created", {
       sequence_number: ++seq,
@@ -97,7 +88,6 @@ const itemStream = (
     }),
   ].map(sse);
 };
-
 const textStream = (respId: string, msgId: string, deltas: ReadonlyArray<string>) =>
   itemStream(
     respId,
@@ -120,38 +110,31 @@ describe("openai", () => {
       readonly stream: boolean;
       readonly authorization: string | null;
     }> = [];
-
     let releaseSecond!: () => void;
     const secondReleased = new Promise<void>((resolve) => (releaseSecond = resolve));
     let firstChunk!: () => void;
     const firstChunkSent = new Promise<void>((resolve) => (firstChunk = resolve));
-
     const fetch = fakeFetch(async (request) => {
       expect(new URL(request.url).pathname).toBe("/v1/responses");
-
       // SAFETY: this controlled client request is emitted from the OpenAI request schema.
       const body = (await request.json()) as {
         model: string;
         stream: boolean;
       };
-
       requests.push({
         model: body.model,
         stream: body.stream,
         authorization: request.headers.get("authorization"),
       });
       const frames = textStream("resp-1", "msg-1", ["hel", "lo"]);
-
       return new Response(
         new ReadableStream<Uint8Array>({
           async start(controller) {
             const enqueue = (value: string) => controller.enqueue(new TextEncoder().encode(value));
-
             // frames[0..2]: created, item added, first delta.
             for (const frame of frames.slice(0, 3)) enqueue(frame);
             firstChunk();
             await secondReleased;
-
             for (const frame of frames.slice(3)) enqueue(frame);
             controller.close();
           },
@@ -165,11 +148,9 @@ describe("openai", () => {
       baseUrl: "https://test.invalid/v1/",
       transport: "http",
     });
-
     const events: Array<unknown> = [];
     let firstOutput!: () => void;
     const output = new Promise<void>((resolve) => (firstOutput = resolve));
-
     const turn = run(
       Effect.scoped(
         Effect.gen(function* () {
@@ -177,7 +158,6 @@ describe("openai", () => {
           yield* Stream.runForEach(session.runTurn("Hi"), (item) =>
             Effect.sync(() => {
               events.push(item);
-
               if (item.type === "model-output") firstOutput();
             }),
           );
@@ -185,7 +165,6 @@ describe("openai", () => {
       ),
       fetch,
     );
-
     await firstChunkSent;
     await output;
     expect(events).toEqual([{ type: "model-output", text: "hel" }]);
@@ -208,7 +187,6 @@ describe("openai", () => {
   it("rejects explicit WebSocket outside Bun and Node when selected", async () => {
     const nodeProcess = globalThis.process;
     vi.stubGlobal("process", undefined);
-
     try {
       const provider = openai({ apiKeyEnv: key, transport: "websocket" });
       await expect(
@@ -250,30 +228,24 @@ describe("openai", () => {
 
   it("surfaces backend model rejection after the request without preflight", async () => {
     let requests = 0;
-
     const fetch = fakeFetch(() => {
       requests += 1;
-
       return Response.json({ error: { message: "model not found" } }, { status: 404 });
     });
-
     const provider = openai({
       apiKeyEnv: key,
       baseUrl: "https://test.invalid/v1",
       transport: "http",
     });
-
     const exit = await run(
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(agent(provider, "future-private-model"));
-
           return yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
         }),
       ),
       fetch,
     );
-
     expect(Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty)).toMatchObject({
       _tag: "TurnError",
       cause: { reason: { _tag: "InvalidRequestError" } },
@@ -286,19 +258,16 @@ describe("openai", () => {
     let httpRequests = 0;
     const authorizations: Array<string | null> = [];
     const frames: Array<JsonObject> = [];
-
     const streamEvents = (...stream: ReadonlyArray<string>): ReadonlyArray<JsonObject> =>
       stream.map((frame) =>
         Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)))(
           frame.slice("data: ".length),
         ),
       );
-
     const server = createServer((_request, response) => {
       httpRequests += 1;
       response.writeHead(500).end("WebSocket upgrade required");
     });
-
     const webSocketServer = new WebSocketServer({ server, path: "/v1/responses" });
     webSocketServer.on("connection", (socket, request) => {
       upgrades += 1;
@@ -306,13 +275,10 @@ describe("openai", () => {
       socket.on("message", (raw) => {
         // SAFETY: ws message payloads are binary-compatible with ArrayBuffer when not a Buffer.
         const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
-
         const frame = Schema.decodeUnknownSync(
           Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)),
         )(bytes.toString());
-
         frames.push(frame);
-
         if (frames.length === 1) {
           const functionCall = {
             type: "function_call",
@@ -322,7 +288,6 @@ describe("openai", () => {
             arguments: '{"text":"hello"}',
             status: "completed",
           };
-
           for (const event of streamEvents(
             ...itemStream(
               "resp-tool",
@@ -333,10 +298,8 @@ describe("openai", () => {
             ),
           ))
             socket.send(JSON.stringify(event));
-
           return;
         }
-
         for (const event of streamEvents(...textStream("resp-done", "msg-done", ["done"])))
           socket.send(JSON.stringify(event));
       });
@@ -345,13 +308,11 @@ describe("openai", () => {
       server.once("error", reject);
       server.listen(0, "127.0.0.1", resolve);
     });
-
     try {
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),
         success: Schema.String,
       });
-
       const events = await run(
         Effect.scoped(
           Effect.gen(function* () {
@@ -360,7 +321,6 @@ describe("openai", () => {
               // SAFETY: the successfully listening TCP server has an AddressInfo address.
               baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
             });
-
             const session = yield* createSession(
               agent(provider, "gpt-5.6", [
                 {
@@ -373,12 +333,10 @@ describe("openai", () => {
                 },
               ]),
             );
-
             return yield* Stream.runCollect(session.runTurn("Hi"));
           }),
         ),
       );
-
       expect([...events]).toEqual([
         { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
         {
@@ -416,19 +374,15 @@ describe("openai", () => {
   it("maps Responses function calls through the Core Tool loop", async () => {
     let calls = 0;
     let followUp: FollowUpRequest = {};
-
     const fetch = fakeFetch(async (request) => {
       // SAFETY: this controlled client request is emitted from the OpenAI request schema.
       const body = (await request.json()) as {
         readonly tools?: ReadonlyArray<Json>;
         readonly input?: ReadonlyArray<JsonObject>;
       };
-
       calls += 1;
-
       if (calls === 1) {
         expect(body.tools).toHaveLength(1);
-
         const functionCall = {
           type: "function_call",
           id: "fc-1",
@@ -437,7 +391,6 @@ describe("openai", () => {
           arguments: '{"text":"hello"}',
           status: "completed",
         };
-
         return new Response(
           itemStream(
             "resp-tool",
@@ -449,25 +402,20 @@ describe("openai", () => {
           { headers: { "content-type": "text/event-stream" } },
         );
       }
-
       followUp = body;
-
       return new Response(textStream("resp-done", "msg-done", ["done"]).join(""), {
         headers: { "content-type": "text/event-stream" },
       });
     });
-
     const echo = Tool.make("echo", {
       parameters: Schema.Struct({ text: Schema.String }),
       success: Schema.String,
     });
-
     const provider = openai({
       apiKeyEnv: key,
       baseUrl: "https://test.invalid/v1",
       transport: "http",
     });
-
     const definition = agent(provider, "gpt-5.6", [
       {
         name: "echo",
@@ -478,18 +426,15 @@ describe("openai", () => {
         },
       },
     ]);
-
     const events = await run(
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* createSession(definition);
-
           return yield* Stream.runCollect(session.runTurn("Hi"));
         }),
       ),
       fetch,
     );
-
     expect([...events]).toEqual([
       { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
       {

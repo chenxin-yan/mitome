@@ -11,19 +11,16 @@ import { defineExtension } from "../src/index.js";
 import { instructionFiles, instructions } from "../src/extensions/index.js";
 
 const cwd = process.cwd();
-
 const temporaryDirectories: Array<string> = [];
 
 afterEach(() => {
   process.chdir(cwd);
-
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true });
 });
 
 const temporaryDirectory = (): string => {
   const directory = mkdtempSync(join(tmpdir(), "mitome-extensions-"));
   temporaryDirectories.push(directory);
-
   return directory;
 };
 

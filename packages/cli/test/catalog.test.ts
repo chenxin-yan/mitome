@@ -5,7 +5,6 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { modelCatalog } from "../src/catalog.ts";
 
 const fallback = ["fallback-openai"];
-
 const payload = {
   openai: {
     models: {
@@ -15,13 +14,11 @@ const payload = {
     },
   },
 };
-
 const directories: Array<string> = [];
 
 const directory = async (): Promise<string> => {
   const path = await mkdtemp(join(tmpdir(), "mitome-catalog-"));
   directories.push(path);
-
   return path;
 };
 
@@ -76,7 +73,6 @@ describe("models.dev catalog", () => {
 
   test("filters malformed models without rejecting the models.dev response", async () => {
     const path = await directory();
-
     const fetch = vi.fn(
       async () =>
         new Response(

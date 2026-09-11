@@ -12,7 +12,6 @@ describe("Hook phases", () => {
     () =>
       Effect.gen(function* () {
         const log: Array<string> = [];
-
         const phase = yield* beginHookPhase(
           extensions("first", "second", "third"),
           () => Effect.void,
@@ -33,7 +32,6 @@ describe("Hook phases", () => {
   it.effect("ends only the started Extensions, in reverse order, when a start Hook fails", () =>
     Effect.gen(function* () {
       const log: Array<string> = [];
-
       const exit = yield* Effect.exit(
         beginHookPhase(
           extensions("first", "second", "third"),
@@ -53,7 +51,6 @@ describe("Hook phases", () => {
       const first = new Error("first");
       const second = new Error("second");
       const log: Array<string> = [];
-
       const phase = yield* beginHookPhase(
         extensions("first", "second", "third"),
         () => Effect.void,

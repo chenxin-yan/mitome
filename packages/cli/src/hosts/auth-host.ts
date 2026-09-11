@@ -7,24 +7,16 @@ import { pathToFileURL } from "node:url";
 import type { AuthCapability, MitomeDefinition } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
-
 const outputPath = process.argv[2]!;
-
 const operation = process.argv[3];
-
 const authConfigDirectory = process.argv[4];
-
 const selectedProviderId = process.argv[5];
-
 const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
-
 const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath).href);
-
 // SAFETY: Dynamic import namespaces expose their module's default export at `.default`.
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
 ).default;
-
 interface DefinitionCandidate {
   readonly agent?: { readonly providers?: ReadonlyArray<object> };
 }
@@ -34,18 +26,14 @@ const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefiniti
   value.agent instanceof Object &&
   "providers" in value.agent &&
   Array.isArray(value.agent.providers);
-
 if (!(loaded instanceof Object)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
-
 if (!isMitomeDefinition(loaded)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
-
 const authentication = loaded.agent.providers.flatMap((provider) => {
   const credential = core.credentialDescriptor(provider);
-
   return credential === undefined ? [] : [{ id: provider.id, credential }];
 });
 
@@ -59,34 +47,27 @@ if (operation === undefined) {
   ) {
     throw new Error("Invalid Provider authentication host operation or configuration.");
   }
-
   const selected = authentication.find(({ id }) => id === selectedProviderId);
-
   if (selected === undefined || !(selected.credential instanceof Object)) {
     throw new Error(
       `Provider \`${selectedProviderId}\` was not found or does not declare OAuth authentication.`,
     );
   }
-
   const credential = selected.credential;
   const capability: Partial<AuthCapability> = await import(credential.capability.module);
-
   if (!(capability.authenticate instanceof Function)) {
     throw new Error(
       `OAuth capability for Provider \`${selectedProviderId}\` does not export \`authenticate\`.`,
     );
   }
-
   const reader = createInterface({ input: process.stdin, crlfDelay: Infinity });
   const lines = reader[Symbol.asyncIterator]();
-
   try {
     await capability.authenticate({
       operation,
       configDirectory: authConfigDirectory,
       input: async () => {
         const next = await lines.next();
-
         return next.done ? undefined : next.value;
       },
       output: (text) => process.stdout.write(text),

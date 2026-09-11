@@ -40,7 +40,6 @@ describe("memoryTranscripts", () => {
   it.effect("saves, loads, and lists Transcript metadata", () =>
     Effect.gen(function* () {
       const store = memoryTranscripts();
-
       const transcript = makeTranscript({
         id: "transcript-1",
         messages: Prompt.make([
@@ -124,7 +123,6 @@ describe("memoryTranscripts", () => {
         }),
       },
     ];
-
     const schema = Schema.Array(TurnEventDtoSchema);
     const encoded = Schema.encodeUnknownSync(schema)(events);
     const decoded = Schema.decodeUnknownSync(schema)(JSON.parse(JSON.stringify(encoded)));

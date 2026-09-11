@@ -3,11 +3,8 @@ import { join } from "node:path";
 import { Data, Effect, Result, Schedule, Schema } from "effect";
 
 const StoredCredential = Schema.Json;
-
 type StoredCredential = typeof StoredCredential.Type;
-
 const AuthFile = Schema.fromJsonString(Schema.Record(Schema.String, StoredCredential));
-
 type AuthFile = typeof AuthFile.Type;
 
 export class CredentialStoreError extends Data.TaggedError("CredentialStoreError")<{
@@ -17,9 +14,7 @@ export class CredentialStoreError extends Data.TaggedError("CredentialStoreError
 }> {}
 
 const authPath = (configDirectory: string) => join(configDirectory, "auth.json");
-
 const lockPath = (configDirectory: string) => join(configDirectory, "auth.lock");
-
 const lockTimeout = 30_000;
 
 const attempt = <A>(operation: () => Promise<A>): Effect.Effect<A, CredentialStoreError> =>
@@ -28,7 +23,6 @@ const attempt = <A>(operation: () => Promise<A>): Effect.Effect<A, CredentialSto
     catch: (cause) => {
       // SAFETY: Node filesystem promises reject with Error objects whose optional code is the errno.
       const error = cause as NodeJS.ErrnoException;
-
       return new CredentialStoreError({
         message: error.message,
         code: error.code,
@@ -45,7 +39,6 @@ const ensureDirectory = (configDirectory: string): Effect.Effect<void, Credentia
 
 const acquireLock = (configDirectory: string) => {
   const path = lockPath(configDirectory);
-
   return attempt(() => open(path, "wx", 0o600)).pipe(
     Effect.retry({ while: (error) => error.code === "EEXIST", schedule: Schedule.spaced(10) }),
     // ponytail: a timeout firing mid-open can strand the lock file; the next
@@ -64,20 +57,16 @@ const readAuth = (configDirectory: string): Effect.Effect<AuthFile, CredentialSt
   Effect.gen(function* () {
     const path = authPath(configDirectory);
     const result = yield* Effect.result(attempt(() => readFile(path, "utf8")));
-
     if (!Result.isSuccess(result)) {
       // Absent storage is the pre-login state, not a failure.
       if (result.failure.code === "ENOENT") return {};
-
       return yield* result.failure;
     }
-
     // Every write reads first, so an unreadable file would otherwise block re-authentication
     // with a bare SyntaxError naming neither the file nor the way out.
     const corrupted = new CredentialStoreError({
       message: `Credential storage at ${path} is corrupted; delete it and authenticate again.`,
     });
-
     return yield* Schema.decodeEffect(AuthFile)(result.success).pipe(
       Effect.mapError(() => corrupted),
     );
@@ -127,21 +116,18 @@ export const modifyCredential = <A, E, R>(
 ): Effect.Effect<A, CredentialStoreError | E, R> =>
   Effect.gen(function* () {
     yield* ensureDirectory(configDirectory);
-
     return yield* Effect.acquireUseRelease(
       acquireLock(configDirectory),
       () =>
         Effect.gen(function* () {
           const auth = yield* readAuth(configDirectory);
           const [next, value] = yield* update(auth[providerKey]);
-
           if (next === undefined) {
             const { [providerKey]: _, ...remaining } = auth;
             yield* writeAuth(configDirectory, remaining);
           } else {
             yield* writeAuth(configDirectory, { ...auth, [providerKey]: next });
           }
-
           return value;
         }),
       (lock) =>

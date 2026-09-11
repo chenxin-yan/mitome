@@ -1,5 +1,4 @@
 export const appName = "Mitome";
-
 export const docsRoute = "/docs";
 
 export const gitConfig = {

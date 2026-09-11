@@ -21,7 +21,6 @@ export const apiKeyClientLayer = <Id, E>(
                 () => `Environment variable ${apiKeyEnv} is not set or empty` as const,
               ),
             );
-
       return layer({ apiUrl: baseUrl, apiKey }).pipe(Layer.provide(FetchHttpClient.layer));
     }),
   ).pipe(

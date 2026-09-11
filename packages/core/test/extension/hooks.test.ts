@@ -18,31 +18,25 @@ class HookFailure extends Schema.TaggedError<HookFailure>()("HookFailure", {
 const textModel = (capture: (prompt: Prompt.Prompt) => void) =>
   makeTestProvider(({ prompt }) => {
     capture(prompt);
-
     return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
   });
 
 const toolModel = () => {
   let calls = 0;
   let secondPrompt: Prompt.Prompt | undefined;
-
   return {
     provider: makeTestProvider((options) => {
       calls += 1;
-
       if (calls === 2) {
         secondPrompt = options.prompt;
-
         return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
       }
-
       const call = Response.makePart("tool-call", {
         id: "call-1",
         name: "echo",
         params: "hello",
         providerExecuted: false,
       });
-
       return Stream.concat(
         Stream.succeed(call),
         Stream.unwrap(
@@ -72,7 +66,6 @@ describe("Extension Hooks", () => {
       Effect.gen(function* () {
         const log: Array<string> = [];
         let modelPrompt: Prompt.Prompt | undefined;
-
         const extension = (name: string, transform?: boolean): Extension => ({
           name,
           hooks: {
@@ -84,12 +77,10 @@ describe("Extension Hooks", () => {
             stepEnd: () => Effect.sync(() => void log.push(`${name}:step-end`)),
             preStep: (prompt) => {
               log.push(`${name}:pre-step:${JSON.stringify(prompt).includes("marker")}`);
-
               return Effect.succeed(transform ? Prompt.concat(prompt, "marker") : prompt);
             },
           },
         });
-
         const definition: AgentDefinition = {
           providers: [textModel((prompt) => (modelPrompt = prompt))],
           model: "test/default",
@@ -130,12 +121,10 @@ describe("Extension Hooks", () => {
       const responsePartTypes: Array<ReadonlyArray<string>> = [];
       let starts = 0;
       let ends = 0;
-
       const echo = Tool.make("echo", {
         parameters: Schema.String,
         success: Schema.String,
       });
-
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
@@ -170,7 +159,6 @@ describe("Extension Hooks", () => {
   it.effect("keeps pre-Step context ephemeral across Turns", () =>
     Effect.gen(function* () {
       const prompts: Array<Prompt.Prompt> = [];
-
       const definition: AgentDefinition = {
         providers: [textModel((prompt) => void prompts.push(prompt))],
         model: "test/default",
@@ -202,13 +190,11 @@ describe("Extension Hooks", () => {
       const fixture = toolModel();
       let handlerCalls = 0;
       let postCalls = 0;
-
       const echo = Tool.make("echo", {
         parameters: Schema.String,
         success: Schema.String,
         failureMode: "return",
       });
-
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
@@ -247,12 +233,10 @@ describe("Extension Hooks", () => {
   it.effect("revalidates post-Tool transforms before adding them to history", () =>
     Effect.gen(function* () {
       const fixture = toolModel();
-
       const echo = Tool.make("echo", {
         parameters: Schema.String,
         success: Schema.String,
       });
-
       const valid: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
@@ -270,7 +254,6 @@ describe("Extension Hooks", () => {
           },
         ],
       };
-
       const session = yield* createSession(valid);
       const events = yield* Stream.runCollect(session.runTurn("Hi"));
       expect(events).toContainEqual({
@@ -283,7 +266,6 @@ describe("Extension Hooks", () => {
       expect(JSON.stringify(fixture.prompt())).toContain("hello!");
 
       const invalidFixture = toolModel();
-
       const invalid: AgentDefinition = {
         ...valid,
         providers: [invalidFixture.provider],
@@ -293,7 +275,6 @@ describe("Extension Hooks", () => {
           valid.extensions[1]!,
         ],
       };
-
       const invalidSession = yield* createSession(invalid);
       const exit = yield* Effect.exit(Stream.runDrain(invalidSession.runTurn("Hi")));
       const failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
@@ -306,7 +287,6 @@ describe("Extension Hooks", () => {
   it.effect("only ends lifecycle phases that started", () =>
     Effect.gen(function* () {
       let sessionEnds = 0;
-
       const startupExit = yield* Effect.exit(
         createSession({
           providers: [textModel(() => undefined)],
@@ -322,13 +302,11 @@ describe("Extension Hooks", () => {
           ],
         }),
       );
-
       expect(Exit.isFailure(startupExit)).toBe(true);
       expect(sessionEnds).toBe(0);
 
       let laterTurnStarts = 0;
       let turnEnds = 0;
-
       const turnSession = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
@@ -349,13 +327,11 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-
       yield* Effect.exit(Stream.runDrain(turnSession.runTurn("Hi")));
       expect(laterTurnStarts).toBe(0);
       expect(turnEnds).toBe(0);
 
       const stepLog: Array<string> = [];
-
       const stepSession = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
@@ -370,7 +346,6 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-
       yield* Effect.exit(Stream.runDrain(stepSession.runTurn("Hi")));
       expect(stepLog).toEqual(["start", "end"]);
     }),
@@ -406,7 +381,6 @@ describe("Extension Hooks", () => {
       expect(sessionLog).toEqual(["start:first", "start:second", "end:first"]);
 
       const turnLog: Array<string> = [];
-
       const turnSession = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
@@ -430,12 +404,10 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-
       yield* Effect.exit(Stream.runDrain(turnSession.runTurn("Hi")));
       expect(turnLog).toEqual(["start:first", "start:second", "end:first"]);
 
       const stepLog: Array<string> = [];
-
       const stepSession = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
@@ -459,7 +431,6 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-
       yield* Effect.exit(Stream.runDrain(stepSession.runTurn("Hi")));
       expect(stepLog).toEqual(["start:first", "start:second", "end:first"]);
     }),
@@ -493,11 +464,9 @@ describe("Extension Hooks", () => {
       expect(sessionLog).toEqual(["second", "first"]);
 
       const turnLog: Array<string> = [];
-
       const failingModel = makeTestProvider(() =>
         Stream.fail(new HookFailure({ message: "model" })),
       );
-
       const session = yield* createSession({
         providers: [failingModel],
         model: "test/default",
@@ -524,7 +493,6 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-
       yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
       expect(turnLog).toEqual(["step:second", "step:first", "turn:second", "turn:first"]);
     }),
@@ -533,7 +501,6 @@ describe("Extension Hooks", () => {
   it.effect("emits response-complete only after turnEnd succeeds", () =>
     Effect.gen(function* () {
       const log: Array<string> = [];
-
       const session = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
@@ -546,7 +513,6 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-
       yield* Stream.runForEach(session.runTurn("Hi"), (event) =>
         Effect.sync(() => void log.push(event.type)),
       );
@@ -557,7 +523,6 @@ describe("Extension Hooks", () => {
   it.effect("does not commit history or completion when turnEnd fails", () =>
     Effect.gen(function* () {
       const events: Array<string> = [];
-
       const session = yield* createSession({
         providers: [textModel(() => undefined)],
         model: "test/default",
@@ -570,13 +535,11 @@ describe("Extension Hooks", () => {
           },
         ],
       });
-
       const exit = yield* Effect.exit(
         Stream.runForEach(session.runTurn("Hi"), (event) =>
           Effect.sync(() => void events.push(event.type)),
         ),
       );
-
       const history = session.history();
       expect(Exit.isFailure(exit)).toBe(true);
       expect(events).toEqual(["model-output"]);
@@ -602,12 +565,10 @@ describe("Extension Hooks", () => {
     it.effect(`fails the Turn when ${hookName} fails`, () =>
       Effect.gen(function* () {
         const fixture = toolModel();
-
         const echo = Tool.make("echo", {
           parameters: Schema.String,
           success: Schema.String,
         });
-
         const session = yield* createSession({
           providers: [fixture.provider],
           model: "test/default",
@@ -620,11 +581,9 @@ describe("Extension Hooks", () => {
             },
           ],
         });
-
         const exit = yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
         const failure = Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty);
         expect(failure).toBeInstanceOf(TurnError);
-
         if (hookName === "preTool" || hookName === "postTool") {
           expect(failure).toMatchObject({
             message: `${hookName === "preTool" ? "Pre-Tool" : "Post-Tool"} Hook failed: ${hookName}`,
@@ -644,13 +603,11 @@ describe("Extension Hooks", () => {
   it.effect("preserves the causes of startup and Turn Hook failures", () =>
     Effect.gen(function* () {
       const startup = new HookFailure({ message: "startup" });
-
       const startupDefinition: AgentDefinition = {
         providers: [textModel(() => undefined)],
         model: "test/default",
         extensions: [{ name: "bad", hooks: { sessionStart: Effect.fail(startup) } }],
       };
-
       const startupExit = yield* Effect.exit(createSession(startupDefinition));
       expect(
         Cause.squash(Exit.isFailure(startupExit) ? startupExit.cause : Cause.empty),
@@ -660,13 +617,11 @@ describe("Extension Hooks", () => {
       });
 
       const turn = new HookFailure({ message: "turn" });
-
       const turnDefinition: AgentDefinition = {
         providers: [textModel(() => undefined)],
         model: "test/default",
         extensions: [{ name: "bad", hooks: { turnStart: () => Effect.fail(turn) } }],
       };
-
       const turnSession = yield* createSession(turnDefinition);
       const turnExit = yield* Effect.exit(Stream.runDrain(turnSession.runTurn("Hi")));
       expect(Cause.squash(Exit.isFailure(turnExit) ? turnExit.cause : Cause.empty)).toMatchObject({

@@ -38,20 +38,17 @@ type ChildHostCalls = {
 };
 
 const temporaryDirectories: Array<string> = [];
-
 let previousMitomeHome: string | undefined;
 
 const temporaryDirectory = async (): Promise<string> => {
   const path = await mkdtemp(join(tmpdir(), "mitome-handlers-"));
   temporaryDirectories.push(path);
-
   return path;
 };
 
 const definition = async (path: string, runtime = true): Promise<string> => {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, "export default {};\n");
-
   if (runtime) {
     const core = join(dirname(path), "node_modules", "@mitome", "core");
     await mkdir(core, { recursive: true });
@@ -63,7 +60,6 @@ const definition = async (path: string, runtime = true): Promise<string> => {
       }),
     );
   }
-
   return path;
 };
 
@@ -82,20 +78,17 @@ const fakeChildHost = (
     inspect: [],
     oauth: [],
   };
-
   return {
     calls,
     layer: Layer.succeed(ChildHost, {
       runHost: (path, message, mode) =>
         Effect.sync(() => {
           calls.runHost.push({ path, message, mode });
-
           return options.runExitCode ?? 0;
         }),
       install: (path) =>
         Effect.promise(async () => {
           calls.install.push(path);
-
           if (options.installRuntime === true) {
             const core = join(dirname(path), "node_modules", "@mitome", "core");
             await mkdir(core, { recursive: true });
@@ -104,13 +97,11 @@ const fakeChildHost = (
               JSON.stringify({ name: "@mitome/core", version: corePackage.version }),
             );
           }
-
           return options.installExitCode ?? 0;
         }),
       removeDependency: (path, packageName) =>
         Effect.sync(() => {
           calls.removeDependency.push({ path, packageName });
-
           return 0;
         }),
       listExports: () => Effect.succeed([]),
@@ -118,7 +109,6 @@ const fakeChildHost = (
       inspectProviderAuthentication: (path) =>
         Effect.sync(() => {
           calls.inspect.push(path);
-
           return options.authentications ?? [];
         }),
       runOAuthAuth: (path, providerId, command) =>
@@ -131,39 +121,30 @@ const fakeChildHost = (
 
 const fakePrompter = (answers: ReadonlyArray<PromptAnswer> = [], canPrompt = true) => {
   const remaining = [...answers];
-
   const next = <Type extends PromptAnswer["type"]>(
     type: Type,
   ): Extract<PromptAnswer, { readonly type: Type | "abort" }> => {
     const answer = remaining.shift();
-
     if (answer === undefined) throw new Error(`Unexpected ${type} prompt`);
-
     if (answer.type !== type && answer.type !== "abort") {
       throw new Error(`Expected ${answer.type} prompt, received ${type}`);
     }
-
     // SAFETY: The checks above narrow the queued answer to the requested variant or abort.
     return answer as Extract<PromptAnswer, { readonly type: Type | "abort" }>;
   };
-
   return Layer.succeed(Prompter, {
     canPrompt: Effect.succeed(canPrompt),
     select: <A>({ choices }: { readonly choices: ReadonlyArray<PromptChoice<A>> }) => {
       const answer = next("select");
-
       if (answer.type === "abort") return Effect.interrupt;
-
       return Effect.sync(() => choices.at(answer.index)!.value);
     },
     text: () => {
       const answer = next("text");
-
       return answer.type === "abort" ? Effect.interrupt : Effect.succeed(answer.value);
     },
     password: () => {
       const answer = next("password");
-
       return answer.type === "abort" ? Effect.interrupt : Effect.succeed(answer.value);
     },
   });
@@ -174,7 +155,6 @@ const exitCode = <A, E>(exit: Exit.Exit<A, E>): number => {
   Runtime.defaultTeardown(exit, (value) => {
     code = value;
   });
-
   return code;
 };
 
@@ -197,9 +177,7 @@ describe("CLI handlers", () => {
       const path = yield* Effect.promise(() =>
         definition(join(process.env.MITOME_HOME!, "index.ts")),
       );
-
       const childHost = fakeChildHost({ runExitCode: 23 });
-
       const exit = yield* Effect.exit(
         runMessage({ print: true, message: Option.some("hello"), use: Option.none() }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
@@ -216,7 +194,6 @@ describe("CLI handlers", () => {
     Effect.gen(function* () {
       const childHost = fakeChildHost();
       const missing = join(yield* Effect.promise(temporaryDirectory), "missing.ts");
-
       const exit = yield* Effect.exit(
         runMessage({ print: true, message: Option.none(), use: Option.some(missing) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
@@ -235,7 +212,6 @@ describe("CLI handlers", () => {
       const directory = yield* Effect.promise(temporaryDirectory);
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
       const childHost = fakeChildHost({ installRuntime: true });
-
       const exit = yield* Effect.exit(
         runMessage({ print: true, message: Option.some("hello"), use: Option.some(path) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
@@ -254,7 +230,6 @@ describe("CLI handlers", () => {
       const directory = yield* Effect.promise(temporaryDirectory);
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
       const childHost = fakeChildHost({ installExitCode: 17 });
-
       const exit = yield* Effect.exit(
         runMessage({ print: false, message: Option.some("hello"), use: Option.some(path) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
@@ -273,7 +248,6 @@ describe("CLI handlers", () => {
       const directory = join(temporary, "agent");
       const path = yield* Effect.promise(() => definition(join(directory, "index.ts"), false));
       const childHost = fakeChildHost({ installExitCode: 17 });
-
       const exit = yield* Effect.exit(
         runInstall({ use: Option.some(directory) }).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
@@ -295,13 +269,11 @@ describe("CLI handlers", () => {
       for (const contents of ["{", "null"]) {
         yield* Effect.promise(() => writeFile(packagePath, contents));
         const beforeErrors = (yield* TestConsole.errorLines).length;
-
         const exit = yield* Effect.exit(
           runMessage({ print: false, message: Option.some("hello"), use: Option.some(path) }).pipe(
             Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
           ),
         );
-
         const errors = (yield* TestConsole.errorLines).slice(beforeErrors).join("\n");
 
         expect(Exit.isFailure(exit)).toBe(true);
@@ -309,7 +281,6 @@ describe("CLI handlers", () => {
         expect(errors).toContain("Could not decode");
         expect(errors).toContain("cause:");
       }
-
       expect(childHost.calls.runHost).toEqual([]);
     }),
   );
@@ -322,7 +293,6 @@ describe("CLI handlers", () => {
       const missingDefault = yield* Effect.exit(
         runInstall({ use: Option.none() }).pipe(Effect.provide(layers)),
       );
-
       expect(exitCode(missingDefault)).toBe(1);
       expect((yield* TestConsole.errorLines).join("\n")).toContain("run mitome init first");
       expect((yield* TestConsole.errorLines).join("\n")).not.toContain(
@@ -331,22 +301,18 @@ describe("CLI handlers", () => {
 
       const missingDirectory = yield* Effect.promise(temporaryDirectory);
       const missingPath = join(missingDirectory, "missing.ts");
-
       const missing = yield* Effect.exit(
         runInstall({ use: Option.some(missingPath) }).pipe(Effect.provide(layers)),
       );
-
       expect(exitCode(missing)).toBe(1);
       expect((yield* TestConsole.errorLines).join("\n")).toContain(
         `Mitome Definition not found at ${missingPath}`,
       );
 
       const emptyDirectory = yield* Effect.promise(temporaryDirectory);
-
       const directory = yield* Effect.exit(
         runInstall({ use: Option.some(emptyDirectory) }).pipe(Effect.provide(layers)),
       );
-
       expect(exitCode(directory)).toBe(1);
       expect((yield* TestConsole.errorLines).join("\n")).toContain(
         `No Mitome Definition module found at ${join(emptyDirectory, "index.ts")}`,
@@ -355,11 +321,9 @@ describe("CLI handlers", () => {
       const javascriptDirectory = yield* Effect.promise(temporaryDirectory);
       const javascript = join(javascriptDirectory, "agent.js");
       yield* Effect.promise(() => writeFile(javascript, "export default {};\n"));
-
       const nonTypescript = yield* Effect.exit(
         runInstall({ use: Option.some(javascript) }).pipe(Effect.provide(layers)),
       );
-
       expect(exitCode(nonTypescript)).toBe(1);
       expect((yield* TestConsole.errorLines).join("\n")).toContain("must be a TypeScript module");
       expect(childHost.calls.install).toEqual([]);
@@ -389,12 +353,10 @@ describe("CLI handlers", () => {
     Effect.gen(function* () {
       const directory = yield* Effect.promise(temporaryDirectory);
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
-
       const childHost = fakeChildHost({
         installRuntime: true,
         authentications: [{ id: "openai", credential: "OPENAI_API_KEY" }],
       });
-
       const exit = yield* Effect.exit(
         runAuth("login", Option.some(path)).pipe(
           Effect.provide(
@@ -422,7 +384,6 @@ describe("CLI handlers", () => {
       yield* Effect.promise(() =>
         writeFile(envPath, "# retained\nOTHER=present\nOPENAI_API_KEY=old\n"),
       );
-
       const login = yield* Effect.exit(
         runAuth("login", Option.some(path)).pipe(
           Effect.provide(
@@ -433,7 +394,6 @@ describe("CLI handlers", () => {
           ),
         ),
       );
-
       expect(login).toEqual(Exit.succeed(0));
       expect(yield* Effect.promise(() => readFile(envPath, "utf8"))).toBe(
         "# retained\nOTHER=present\nOPENAI_API_KEY=synthetic-secret\n",
@@ -444,7 +404,6 @@ describe("CLI handlers", () => {
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
         ),
       );
-
       expect(logout).toEqual(Exit.succeed(0));
       expect(yield* Effect.promise(() => readFile(envPath, "utf8"))).toBe(
         "# retained\nOTHER=present\n",
@@ -457,11 +416,9 @@ describe("CLI handlers", () => {
     Effect.gen(function* () {
       const directory = yield* Effect.promise(temporaryDirectory);
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts")));
-
       const childHost = fakeChildHost({
         authentications: [{ id: "codex", credential: { capability: { module: "fixture-auth" } } }],
       });
-
       const layers = Layer.merge(childHost.layer, fakePrompter());
 
       expect(
@@ -481,14 +438,12 @@ describe("CLI handlers", () => {
     Effect.gen(function* () {
       const directory = yield* Effect.promise(temporaryDirectory);
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts")));
-
       const childHost = fakeChildHost({
         authentications: [
           { id: "first", credential: "FIRST_KEY" },
           { id: "second", credential: "SECOND_KEY" },
         ],
       });
-
       const exit = yield* Effect.exit(
         runAuth("login", Option.some(path)).pipe(
           Effect.provide(
@@ -514,11 +469,9 @@ describe("CLI handlers", () => {
     Effect.gen(function* () {
       const directory = yield* Effect.promise(temporaryDirectory);
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts")));
-
       const childHost = fakeChildHost({
         authentications: [{ id: "openai", credential: "EMPTY_LOGIN_KEY" }],
       });
-
       const exit = yield* Effect.exit(
         runAuth("login", Option.some(path)).pipe(
           Effect.provide(
@@ -538,7 +491,6 @@ describe("CLI handlers", () => {
       const directory = yield* Effect.promise(temporaryDirectory);
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts")));
       const childHost = fakeChildHost();
-
       const exit = yield* Effect.exit(
         runAuth("login", Option.some(path)).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
@@ -556,14 +508,12 @@ describe("CLI handlers", () => {
     Effect.gen(function* () {
       const directory = yield* Effect.promise(temporaryDirectory);
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts")));
-
       const childHost = fakeChildHost({
         authentications: [
           { id: "first", credential: "FIRST_KEY" },
           { id: "second", credential: "SECOND_KEY" },
         ],
       });
-
       const exit = yield* Effect.exit(
         runAuth("login", Option.some(path)).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter([], false))),
@@ -582,11 +532,9 @@ describe("CLI handlers", () => {
     Effect.gen(function* () {
       const directory = yield* Effect.promise(temporaryDirectory);
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts")));
-
       const childHost = fakeChildHost({
         authentications: [{ id: "openai", credential: "AUTH_REJECT_KEY" }],
       });
-
       const exit = yield* Effect.exit(
         runAuth("login", Option.some(path)).pipe(
           Effect.provide(
@@ -607,11 +555,9 @@ describe("CLI handlers", () => {
     Effect.gen(function* () {
       const directory = yield* Effect.promise(temporaryDirectory);
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts")));
-
       const childHost = fakeChildHost({
         authentications: [{ id: "openai", credential: "LOGOUT_NOOP_KEY" }],
       });
-
       const exit = yield* Effect.exit(
         runAuth("logout", Option.some(path)).pipe(
           Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
@@ -637,7 +583,6 @@ describe("CLI handlers", () => {
         const path = join(home, existing.name);
         yield* Effect.promise(() => writeFile(path, existing.contents));
         const childHost = fakeChildHost();
-
         // No scripted answers: the fake throws on any prompt, proving init
         // refuses the clobber before prompting.
         const exit = yield* Effect.exit(
@@ -652,7 +597,6 @@ describe("CLI handlers", () => {
           existing.contents,
         );
         expect(childHost.calls.install, existing.name).toEqual([]);
-
         if (existing.name !== "index.ts") expect(existsSync(join(home, "index.ts"))).toBe(false);
       }
     }),
@@ -661,7 +605,6 @@ describe("CLI handlers", () => {
   it.effect("init rejects a blank custom Model id before writing the scaffold", () =>
     Effect.gen(function* () {
       const childHost = fakeChildHost();
-
       const exit = yield* Effect.exit(
         runInit().pipe(
           Effect.provide(
@@ -691,7 +634,6 @@ describe("CLI handlers", () => {
           { id: "openai-codex", credential: { capability: { module: "fixture-auth" } } },
         ],
       });
-
       const exit = yield* Effect.exit(
         runInit().pipe(
           Effect.provide(
@@ -721,7 +663,6 @@ describe("CLI handlers", () => {
           { id: "openai-codex", credential: { capability: { module: "fixture-auth" } } },
         ],
       });
-
       const exit = yield* Effect.exit(
         runInit().pipe(
           Effect.provide(
@@ -754,7 +695,6 @@ describe("CLI handlers", () => {
   it.effect("returns the installer exit code without inspecting Provider authentication", () =>
     Effect.gen(function* () {
       const childHost = fakeChildHost({ installExitCode: 9 });
-
       const exit = yield* Effect.exit(
         runInit().pipe(
           Effect.provide(
@@ -809,13 +749,11 @@ describe("CLI handlers", () => {
         const home = yield* Effect.promise(temporaryDirectory);
         process.env.MITOME_HOME = home;
         const childHost = fakeChildHost({ authentications: scenario.authentications });
-
         const exit = yield* Effect.exit(
           runInit().pipe(
             Effect.provide(Layer.merge(childHost.layer, fakePrompter(scenario.answers))),
           ),
         );
-
         expect(exitCode(exit), scenario.name).toBe(130);
       }
     }),

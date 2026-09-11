@@ -24,25 +24,19 @@ import { Effect, type Schema } from "effect";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
 const binary = join(packageDir, "dist/local/mitome");
-
 const coreDir = resolve(packageDir, "../core");
-
 const effectDir = dirname(createRequire(import.meta.url).resolve("effect/package.json"));
-
 // The concrete installed version: a "catalog:" range (as in cli devDependencies)
 // inside a file: dep makes Bun 1.4 re-resolve effect and refuse its out-of-project
 // folder path as unsafe. https://github.com/oven-sh/bun/issues/40561
 // SAFETY: effect/package.json is a published npm manifest; version is always a string.
 const effectVersion = (createRequire(import.meta.url)("effect/package.json") as { version: string })
   .version;
-
 // SAFETY: This reads the repository-owned package manifest whose fields are required by the test setup.
 const cliPackage = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8")) as {
   version: string;
 };
-
 const temporaryDirectories: Array<string> = [];
 
 const definitionSource = (
@@ -169,7 +163,6 @@ const scaffold = async (prefix: string): Promise<Fixture> => {
   temporaryDirectories.push(root);
   const emptyPath = join(root, "empty-path");
   await mkdir(emptyPath);
-
   return {
     root,
     definition: join(root, "definition", "agent.ts"),
@@ -190,7 +183,6 @@ const fixture = async (source = definitionSource("first")): Promise<Fixture> => 
   await cp(join(coreDir, "dist"), join(core, "dist"), { recursive: true });
   await cp(join(coreDir, "package.json"), join(core, "package.json"));
   await symlink(effectDir, join(nodeModules, "effect"), "dir");
-
   return current;
 };
 
@@ -250,7 +242,6 @@ const installFixture = async (): Promise<Fixture> => {
       dependencies: { "local-dep": "file:../pkgs/local-dep" },
     }),
   );
-
   return current;
 };
 
@@ -283,7 +274,6 @@ const reconcileFixture = async (): Promise<Fixture> => {
       },
     }),
   );
-
   return current;
 };
 
@@ -298,16 +288,13 @@ const spawn = (
     env,
     stdio: ["pipe", "pipe", "pipe"],
   });
-
   child.stdin.end(input);
-
   return child;
 };
 
 const exited = async (child: ReturnType<typeof spawnChild>): Promise<number | null> => {
   if (child.exitCode !== null || child.signalCode !== null) return child.exitCode;
   const [code] = await once(child, "close");
-
   return code;
 };
 
@@ -317,7 +304,6 @@ const output = async (child: ReturnType<typeof spawn>) => {
     text(child.stderr),
     exited(child),
   ]);
-
   return { stdout, stderr, exitCode };
 };
 
@@ -329,15 +315,12 @@ const ptyOutput = (
   terminal = "ghostty",
 ): Promise<Awaited<ReturnType<typeof output>>> => {
   const command = [binary, ...args].map(shellQuote).join(" ");
-
   const child = spawnChild("/usr/bin/script", ["-qec", command, "/dev/null"], {
     cwd: current.root,
     env: { ...current.env, TERM_PROGRAM: terminal },
     stdio: ["pipe", "pipe", "pipe"],
   });
-
   child.stdin.end();
-
   return output(child);
 };
 
@@ -347,11 +330,9 @@ type StdoutReader = AsyncIterator<string>;
 
 const rest = async (reader: StdoutReader) => {
   let output = "";
-
   for (let next = await reader.next(); !next.done; next = await reader.next()) {
     output += next.value;
   }
-
   return output;
 };
 
@@ -454,7 +435,6 @@ describe("compiled mitome", () => {
 
   test("runs a custom interactive Host outside the TUI terminal matrix", async ({ skip }) => {
     if (ptyUnavailable) skip();
-
     const current = await fixture(
       definitionSource("first", { customHost: true, transcripts: true }),
     );
@@ -535,29 +515,24 @@ describe("compiled mitome", () => {
 
   test("forwards SIGINT to the Child Host through scoped Turn cleanup", async () => {
     const current = await fixture();
-
     const signalProbe = {
       pid: join(current.root, "host-pid"),
       cleanupStarted: join(current.root, "cleanup-started"),
       cleanupDone: join(current.root, "cleanup-done"),
     };
-
     await writeFile(current.definition, definitionSource("first", { block: true, signalProbe }));
     const child = spawn("", ["hello", "--use", current.definition], current);
     const reader = child.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
     const first = await reader.next();
-
     if (first.done) throw new Error("Missing first output");
     expect(first.value).toContain("first");
 
     const hostPid = Number(await readFile(signalProbe.pid, "utf8"));
     child.kill("SIGINT");
-
     for (let attempt = 0; !exists(signalProbe.cleanupStarted); attempt += 1) {
       if (attempt === 500) throw new Error("Session cleanup did not start");
       await delay(10);
     }
-
     process.kill(hostPid, "SIGINT");
     const tail = await rest(reader);
     expect(await exited(child)).toBe(130);
@@ -657,12 +632,10 @@ describe("compiled mitome", () => {
       join(declaredExtension, "package.json"),
       JSON.stringify({ name: "declared-fixture-extension", version: "1.0.0" }),
     );
-
     // SAFETY: installFixture writes this manifest with a string-valued dependencies object.
     const manifest = JSON.parse(
       await readFile(join(definitionDirectory, "package.json"), "utf8"),
     ) as { dependencies: Record<string, string> };
-
     manifest.dependencies["declared-fixture-extension"] = "file:./packages/declared-extension";
     await writeFile(join(definitionDirectory, "package.json"), JSON.stringify(manifest));
     const stale = await output(spawn("", ["hello", "--use", current.definition], current));
@@ -686,12 +659,10 @@ describe("compiled mitome", () => {
     const current = await installFixture();
     const definitionDirectory = dirname(current.definition);
     const packagePath = join(definitionDirectory, "package.json");
-
     // SAFETY: installFixture writes this manifest with a string-valued dependencies object.
     const manifest = JSON.parse(await readFile(packagePath, "utf8")) as {
       dependencies: Record<string, string>;
     };
-
     delete manifest.dependencies["local-dep"];
     await writeFile(packagePath, JSON.stringify(manifest));
 
@@ -744,7 +715,6 @@ describe("compiled mitome", () => {
     expect(JSON.parse(await readFile(packagePath, "utf8"))).toEqual(manifest);
     expect(exists(join(definitionDirectory, "node_modules", "local-dep"))).toBe(false);
     const lockPath = join(definitionDirectory, "bun.lock");
-
     if (exists(lockPath)) {
       expect(await readFile(lockPath, "utf8")).not.toContain("local-dep");
     }
@@ -764,12 +734,10 @@ describe("compiled mitome", () => {
     );
 
     expect(result).toMatchObject({ exitCode: 0 });
-
     // SAFETY: runRemove preserves the fixture manifest and its optional string dependency map.
     const updatedManifest = JSON.parse(await readFile(packagePath, "utf8")) as {
       dependencies?: Record<string, string>;
     };
-
     expect(updatedManifest.dependencies?.["local-dep"]).toBeUndefined();
     expect(exists(join(definitionDirectory, "node_modules", "local-dep"))).toBe(false);
   });

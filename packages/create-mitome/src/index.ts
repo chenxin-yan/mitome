@@ -28,12 +28,10 @@ const choose = async <A>(
   choices.forEach((choice, index) =>
     console.log(`  ${index + 1}. ${choice.label}${index === 0 ? " (default)" : ""}`),
   );
-
   for (;;) {
     const answer = (await question("> ")).trim();
     const index = answer === "" ? 0 : Number(answer) - 1;
     const choice = choices[index];
-
     if (choice !== undefined) return choice.value;
     console.error(`Choose 1-${choices.length}.`);
   }
@@ -42,30 +40,22 @@ const choose = async <A>(
 const main = async (): Promise<void> => {
   const terminal = createInterface({ input: process.stdin, output: process.stdout });
   const lines = terminal[Symbol.asyncIterator]();
-
   const question = async (message: string): Promise<string> => {
     process.stdout.write(message);
     const answer = await lines.next();
-
     if (answer.done) throw new Error("Input closed");
-
     return answer.value;
   };
-
   try {
     const provider = await choose(question, "Provider", providerChoices);
     const selectedModel = await choose(question, "Model", modelChoices(knownModelIds[provider]));
-
     const model =
       selectedModel === customModel ? validateModelId(await question("Model ID: ")) : selectedModel;
-
     if (model === undefined) throw new Error("Model ID is required");
-
     const flavor = await choose(question, "Template", [
       { label: "Promise-first", value: "promise" },
       { label: "Effect-native", value: "effect" },
     ] as const);
-
     // npm create mitome <dir> forwards <dir> as the first CLI argument.
     const directory = resolve(process.argv[2] ?? ".");
     await scaffold(directory, { flavor, provider, model });

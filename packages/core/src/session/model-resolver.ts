@@ -29,16 +29,13 @@ export const makeModelResolver = (
   const resolve: ModelResolver["resolve"] = Effect.fn("@mitome/core/ModelResolver.resolve")(
     function* (qualifiedModelId) {
       const parsed = parseQualifiedModelId(qualifiedModelId);
-
       if (parsed === undefined) {
         return yield* new TurnError({
           message: `Malformed Qualified Model id: ${String(qualifiedModelId)}`,
           cause: qualifiedModelId,
         });
       }
-
       const provider = providers.get(parsed.providerId);
-
       if (provider === undefined) {
         return yield* new TurnError({
           message: `Unregistered Provider id: ${parsed.providerId}`,
@@ -47,12 +44,10 @@ export const makeModelResolver = (
       }
 
       const cached = models.get(qualifiedModelId);
-
       if (cached !== undefined) return cached;
 
       // SAFETY: compileAgentDefinition rejects providers without Core metadata before creating a Session.
       const metadata = getProviderMetadata(provider)!;
-
       return yield* Effect.try({
         try: () => metadata.provision(parsed.modelId),
         catch: modelSetupTurnError,
@@ -65,9 +60,7 @@ export const makeModelResolver = (
             context,
             model: Context.get(context, LanguageModel.LanguageModel),
           };
-
           models.set(qualifiedModelId, selected);
-
           return selected;
         }),
       );

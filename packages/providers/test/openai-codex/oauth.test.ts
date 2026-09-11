@@ -15,12 +15,10 @@ import { accountId } from "../../src/openai-codex/oauth-token.js";
 import { launchDefaultBrowser } from "../../src/shared/oauth.js";
 
 const temporaryDirectories: Array<string> = [];
-
 const marker = "synthetic-secret-marker";
 
 const loadCredential = (configDirectory: string) =>
   Effect.runPromise(loadCredentialEffect(configDirectory));
-
 const writeCredential = (
   configDirectory: string,
   value: Parameters<typeof writeCredentialEffect>[1],
@@ -37,14 +35,12 @@ const credential = (suffix: string) => ({
 const directory = async () => {
   const value = await mkdtemp(join(tmpdir(), "mitome-codex-"));
   temporaryDirectories.push(value);
-
   return value;
 };
 
 // Real Codex access tokens nest the account under this claim.
 const accessToken = (claims: typeof Schema.Json.Type) =>
   `header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`;
-
 const jwt = (accountId: string) =>
   accessToken({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } });
 
@@ -52,21 +48,17 @@ const callbackPort = async (): Promise<number> => {
   const server = await serve({ fetch: () => new Response() });
   const port = server.port;
   await server.stop(true);
-
   return port;
 };
 
 const tokenServer = async () => {
   const requests: Array<Record<string, string>> = [];
-
   const server = await serve({
     async fetch(request) {
       const form = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String))(
         Object.fromEntries(await request.formData()),
       );
-
       requests.push(form);
-
       return Response.json({
         access_token: jwt("fixture-account"),
         refresh_token: `${marker}-refresh-issued`,
@@ -74,7 +66,6 @@ const tokenServer = async () => {
       });
     },
   });
-
   return { server, requests };
 };
 
@@ -95,7 +86,6 @@ describe("Codex OAuth", () => {
     const port = await callbackPort();
     let authorization = "";
     const printed: Array<string> = [];
-
     try {
       await login({
         configDirectory,
@@ -152,7 +142,6 @@ describe("Codex OAuth", () => {
   test("hands the whole OAuth URL to the native Windows launcher", () => {
     const platform = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
     const launch = vi.fn<(command: string, args: ReadonlyArray<string>) => void>();
-
     try {
       const url = "https://auth.openai.com/oauth/authorize?client_id=x&state=y";
       launchDefaultBrowser(url, launch);
@@ -166,7 +155,6 @@ describe("Codex OAuth", () => {
     const configDirectory = await directory();
     const { server } = await tokenServer();
     const port = await callbackPort();
-
     try {
       await expect(
         login({
@@ -198,13 +186,11 @@ describe("Codex OAuth", () => {
       occupied.listen(0, "localhost", resolve);
     });
     const address = occupied.address();
-
     if (address === null || Schema.is(Schema.String)(address))
       throw new Error("Expected TCP address");
     const occupiedPort = address.port;
     let state = "";
     const output: Array<string> = [];
-
     try {
       await login({
         configDirectory,
@@ -311,7 +297,6 @@ describe("Codex OAuth", () => {
     const { server } = await tokenServer();
     let state = "";
     const output: Array<string> = [];
-
     try {
       await login({
         configDirectory,

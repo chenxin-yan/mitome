@@ -35,7 +35,6 @@ const memoryCredentialStoreLayer = (
 ): Layer.Layer<CredentialStore> =>
   Layer.sync(CredentialStore, () => {
     let current = initial;
-
     return {
       loadCredential: Effect.sync(() => current),
       refreshCredential: (failedAccess, expiredOnly) =>
@@ -75,13 +74,11 @@ const completed = () =>
   });
 
 type TestRequest = Parameters<Parameters<typeof HttpClient.make>[0]>[0];
-
 type TestResponse = Response | HttpClientError.HttpClientError;
 
 const clientFor = (fetch: (request: TestRequest, url: URL) => TestResponse) =>
   HttpClient.make((request, url) => {
     const response = fetch(request, url);
-
     return HttpClientError.isHttpClientError(response)
       ? Effect.fail(response)
       : Effect.succeed(HttpClientResponse.fromWeb(request, response));
@@ -92,7 +89,6 @@ const runWithLayer = (
   fetch: (request: TestRequest, url: URL) => TestResponse,
 ) => {
   const client = clientFor(fetch);
-
   return Effect.runPromise(
     Stream.runCollect(
       streamText("gpt-5.4", "https://codex.test/backend-api", "session-1", providerOptions),
@@ -111,7 +107,6 @@ const run = (
   ) => Effect.Effect<OAuthCredential, CredentialError> = (current) => Effect.succeed(current),
 ) => {
   const client = clientFor(fetch);
-
   return Effect.runPromise(
     Stream.runCollect(
       streamText("gpt-5.4", "https://codex.test/backend-api", "session-1", providerOptions),
@@ -145,9 +140,7 @@ describe("Codex transport", () => {
             Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)),
           )(new TextDecoder().decode(outgoing.body.body))
         : {};
-
       request = { method: outgoing.method, url: url.toString(), headers: outgoing.headers, body };
-
       return completed();
     });
 
@@ -253,7 +246,6 @@ describe("Codex transport", () => {
     const unavailable = new CredentialUnavailableError({
       message: "Codex Credential is unavailable. Run `mitome auth login` to authenticate.",
     });
-
     await expect(
       runWithLayer(failingCredentialStoreLayer(unavailable), () => completed()),
     ).rejects.toMatchObject({
@@ -268,7 +260,6 @@ describe("Codex transport", () => {
       message: "Credential storage failed",
       code: "EACCES",
     });
-
     await expect(
       runWithLayer(failingCredentialStoreLayer(storage), () => completed()),
     ).rejects.toMatchObject({
@@ -285,7 +276,6 @@ describe("Codex transport", () => {
     await expect(
       run(credential(), (request) => {
         requests += 1;
-
         return new HttpClientError.HttpClientError({
           reason: new HttpClientError.InvalidUrlError({
             request,
@@ -303,7 +293,6 @@ describe("Codex transport", () => {
     let networkRequests = 0;
     await run(credential(), (request) => {
       networkRequests += 1;
-
       return networkRequests === 1
         ? new HttpClientError.HttpClientError({
             reason: new HttpClientError.TransportError({
@@ -318,7 +307,6 @@ describe("Codex transport", () => {
     let transientRequests = 0;
     await run(credential(), () => {
       transientRequests += 1;
-
       return transientRequests === 1 ? new Response("busy", { status: 503 }) : completed();
     });
     expect(transientRequests).toBe(2);
@@ -327,7 +315,6 @@ describe("Codex transport", () => {
     await expect(
       run(credential(), () => {
         exhaustedRequests += 1;
-
         return new Response("busy", { status: 503 });
       }),
     ).rejects.toMatchObject({ reason: { _tag: "InternalProviderError" } });
@@ -339,7 +326,6 @@ describe("Codex transport", () => {
     await expect(
       run(credential(), () => {
         invalidRequests += 1;
-
         return Response.json({ error: { message: "model not found" } }, { status: 400 });
       }),
     ).rejects.toMatchObject({
@@ -354,7 +340,6 @@ describe("Codex transport", () => {
     await expect(
       run(credential(), () => {
         streamRequests += 1;
-
         return new Response(
           sse({ type: "error", error: { message: "stream failed after headers" } }),
           { headers: { "content-type": "text/event-stream" } },
@@ -374,13 +359,11 @@ describe("Codex transport", () => {
       credential("expired-access", 1),
       (request) => {
         authorizations.push(request.headers.authorization);
-
         return authorizations.length === 1 ? new Response("", { status: 401 }) : completed();
       },
       (_current, failedAccess, expiredOnly) =>
         Effect.sync(() => {
           refreshes.push({ failedAccess, expiredOnly });
-
           return refreshes.length === 1 ? proactive : retried;
         }),
     );
@@ -401,9 +384,7 @@ describe("Codex transport", () => {
       credential(),
       () => {
         requests += 1;
-
         if (requests > 1) return completed();
-
         return new Response(
           new ReadableStream({
             pull(controller) {
@@ -417,7 +398,6 @@ describe("Codex transport", () => {
       () =>
         Effect.sync(() => {
           drainedBeforeRefresh = drained;
-
           return credential("retried-access");
         }),
     );
@@ -460,13 +440,11 @@ describe("Codex transport", () => {
         credential(),
         () => {
           requests += 1;
-
           return new Response("", { status: 401 });
         },
         () =>
           Effect.sync(() => {
             refreshes += 1;
-
             return credential("retried-access");
           }),
       ),

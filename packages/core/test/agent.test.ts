@@ -12,7 +12,6 @@ import {
 import { makeTestProvider } from "./support/provider.js";
 
 const model = makeTestProvider(() => Stream.empty);
-
 const getAgentDefinitionError = (definition: typeof Schema.Unknown.Type) =>
   Effect.flip(compileAgentDefinition(definition));
 
@@ -28,14 +27,12 @@ describe("Agent Definition compilation", () => {
       const countHandler = () => Effect.succeed(1);
       const echoInput = (input: ToolInput) => Effect.succeed(input);
       const countResult = (result: ToolOutput) => Effect.succeed(result);
-
       const first = {
         name: "first",
         instructions: "First",
         toolkit: Toolkit.make(echo),
         toolInputValidators: { echo: echoInput },
       };
-
       const second = {
         name: "second",
         instructions: "Second",
@@ -89,7 +86,6 @@ describe("Agent Definition compilation", () => {
         model: "test/default",
         extensions: [unnamed, unnamed],
       });
-
       expect(compiled.extensions).toEqual([unnamed]);
       expect(compiled.instructions).toBe("Once");
 
@@ -98,7 +94,6 @@ describe("Agent Definition compilation", () => {
         model: "test/default",
         extensions: [firstNamed, secondNamed],
       });
-
       expect(error.issues).toContain("Conflicting Extension name: same refers to different values");
     }),
   );
@@ -107,7 +102,6 @@ describe("Agent Definition compilation", () => {
     Effect.gen(function* () {
       const tool = Tool.make("__proto__", { success: Schema.String });
       const handler = () => Effect.succeed("ok");
-
       const compiled = yield* compileAgentDefinition({
         providers: [model],
         model: "test/default",
@@ -135,10 +129,8 @@ describe("Agent Definition compilation", () => {
       const provider = makeProvider("registered", [] as const, undefined, () => {
         throw new Error("compilation must not provision Models");
       });
-
       const echo = Tool.make("echo", { success: Schema.String });
       const missing = Tool.make("missing", { success: Schema.String });
-
       const structural = {
         providers: [null, provider, provider],
         model: "unregistered/model",
@@ -190,7 +182,6 @@ describe("Agent Definition compilation", () => {
           "Agent Definition must be an object",
         ]);
       }
-
       expect((yield* getAgentDefinitionError({})).issues).toEqual([
         "Agent Definition Providers must be an array",
         "Agent Definition Model must be a string",

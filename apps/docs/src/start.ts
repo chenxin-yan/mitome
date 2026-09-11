@@ -16,7 +16,6 @@ const llmMiddleware = createMiddleware().server(({ next, request }) => {
       .slice(docsRoute.length)
       .split("/")
       .filter((v) => v.length > 0);
-
     url.pathname = slugsToMarkdownPath(slugs).url;
 
     throw redirect(url);

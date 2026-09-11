@@ -66,18 +66,14 @@ const createSessionImpl: (
 
   const sessionScope = yield* Effect.scope;
   const extensionContexts = new Map<AnyExtension, Context.Context<any>>();
-
   for (const extension of compiled.extensions) {
     if (extension.resource === undefined) continue;
-
     // SAFETY: contexts are intentionally heterogeneous and indexed by their owning Extension.
     const context = (yield* Layer.build(extension.resource).pipe(
       hookTurnError("Extension setup failed"),
     )) as Context.Context<any>;
-
     extensionContexts.set(extension, context);
   }
-
   const toolExecution = yield* ToolExecution.makeToolExecution(compiled, extensionContexts);
   const modelResolver = ModelResolver.makeModelResolver(compiled.providers, sessionScope);
   const stepRunner = StepRunner.makeStepRunner(compiled, extensionContexts, toolExecution);
@@ -85,10 +81,8 @@ const createSessionImpl: (
   const sessionId = crypto.randomUUID();
   const parentTranscriptId = sessionOptions.transcript?.id;
   let eventSeq = 0;
-
   const appendTurnEvent = (event: PersistedTurnEvent): Effect.Effect<void, StoreError> => {
     const transcripts = sessionOptions.transcripts;
-
     return transcripts === undefined
       ? Effect.void
       : Effect.sync(() => ({
@@ -99,14 +93,12 @@ const createSessionImpl: (
           event: turnEventToDto(event),
         })).pipe(Effect.flatMap((record) => transcripts.appendEvent(record)));
   };
-
   let history =
     sessionOptions.transcript === undefined
       ? Prompt.make(
           compiled.instructions === "" ? [] : [{ role: "system", content: compiled.instructions }],
         )
       : Transcript.promptFromTranscript(sessionOptions.transcript);
-
   let isReleased = false;
   let isTurnActive = false;
 
@@ -138,14 +130,11 @@ const createSessionImpl: (
         if (isReleased) {
           return Stream.fail(new SessionReleasedError({}));
         }
-
         if (isTurnActive) {
           return Stream.fail(new SessionBusyError({}));
         }
-
         const qualifiedModelId = turnOptions?.model ?? definition.model;
         isTurnActive = true;
-
         return Stream.unwrap(
           modelResolver.resolve(qualifiedModelId).pipe(
             Effect.flatMap((selected) =>
@@ -170,12 +159,10 @@ const createSessionImpl: (
                   stepRunner.run(Prompt.concat(history, message), selected).pipe(
                     Stream.mapEffect((event) => {
                       if (event.type !== "turn-complete") return Effect.succeed(event);
-
                       return turnHooks.end.pipe(
                         hookTurnError("Turn end Hook failed"),
                         Effect.flatMap(() => {
                           const { type: _type, history: nextHistory, ...finish } = event;
-
                           const persist =
                             sessionOptions.transcripts === undefined
                               ? Effect.void
@@ -186,14 +173,12 @@ const createSessionImpl: (
                                     messages: nextHistory.content,
                                   }),
                                 );
-
                           // Commit only after the durable save: a failed save leaves the Turn
                           // absent from history() and transcript() alike. Uninterruptible so an
                           // interrupt cannot land between the store's side effect and the commit.
                           return persist.pipe(
                             Effect.map(() => {
                               history = nextHistory;
-
                               return { type: "response-complete", ...finish } as const;
                             }),
                             Effect.uninterruptible,
@@ -205,7 +190,6 @@ const createSessionImpl: (
                     Stream.map((event) => {
                       if (event.type !== "tool-result") return event;
                       const { encodedResult: _encodedResult, ...turnEvent } = event;
-
                       return turnEvent;
                     }),
                     Stream.filter(

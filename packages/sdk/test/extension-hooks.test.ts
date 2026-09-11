@@ -10,7 +10,6 @@ describe("@mitome/sdk Extension Hooks", () => {
     const signals: Array<boolean> = [];
     const responsePartTypes: Array<ReadonlyArray<string>> = [];
     const model = makeToolModel().provider;
-
     const core: Extension = {
       name: "core",
       hooks: {
@@ -22,7 +21,6 @@ describe("@mitome/sdk Extension Hooks", () => {
         postTool: ({ result }) => Effect.sync(() => (log.push("core:post-tool"), result)),
       },
     };
-
     const sdk = defineExtension({
       name: "sdk",
       tools: ({ tool }) => [
@@ -59,7 +57,6 @@ describe("@mitome/sdk Extension Hooks", () => {
         preStep: async (prompt, { signal }) => {
           signals.push(signal.aborted);
           log.push("sdk:pre-step");
-
           return prompt;
         },
         preTool: async ({ signal }) => {
@@ -69,7 +66,6 @@ describe("@mitome/sdk Extension Hooks", () => {
         postTool: async ({ result, signal }) => {
           signals.push(signal.aborted);
           log.push("sdk:post-tool");
-
           return `${String(result)}!`;
         },
       },
@@ -114,14 +110,12 @@ describe("@mitome/sdk Extension Hooks", () => {
 
   test("round-trips a plain SDK Prompt through pre-Step Hooks", async () => {
     let seen = "";
-
     const agent = defineAgent({
       providers: [
         makeTestProvider(({ prompt }) => {
           const message = prompt.content.at(-1);
           const part = message?.role === "user" ? message.content[0] : undefined;
           seen = part?.type === "text" ? part.text : "";
-
           return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
         }),
       ],
@@ -147,12 +141,10 @@ describe("@mitome/sdk Extension Hooks", () => {
 
   test("rejects invalid pre-Step output before calling the model", async () => {
     let modelCalls = 0;
-
     const agent = defineAgent({
       providers: [
         makeTestProvider(() => {
           modelCalls += 1;
-
           return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
         }),
       ],
@@ -178,7 +170,6 @@ describe("@mitome/sdk Extension Hooks", () => {
   test("aborts an in-flight Promise Hook when iteration stops", async () => {
     const { promise: hookStarted, resolve: started } = Promise.withResolvers<void>();
     let aborted = false;
-
     const agent = defineAgent({
       providers: [makeToolModel().provider],
       model: "test/default",
@@ -218,7 +209,6 @@ describe("@mitome/sdk Extension Hooks", () => {
     const { promise: hookStarted, resolve: started } = Promise.withResolvers<void>();
     let aborted = false;
     let laterCompleted = false;
-
     const agent = defineAgent({
       providers: [
         makeTestProvider(() =>
@@ -267,7 +257,6 @@ describe("@mitome/sdk Extension Hooks", () => {
 
   test("preserves the original rejected Hook error as the TurnError cause", async () => {
     const original = new Error("hook failed");
-
     const agent = defineAgent({
       providers: [
         makeTestProvider(() =>
@@ -290,19 +279,16 @@ describe("@mitome/sdk Extension Hooks", () => {
 
   test("centrally validates SDK Tool transforms and observes SDK failures", async () => {
     let postCalls = 0;
-
     const core: Extension = {
       name: "core",
       hooks: {
         postTool: ({ result }) =>
           Effect.sync(() => {
             postCalls += 1;
-
             return result;
           }),
       },
     };
-
     const failing = defineAgent({
       providers: [makeToolModel().provider],
       model: "test/default",
@@ -321,7 +307,6 @@ describe("@mitome/sdk Extension Hooks", () => {
         }),
       ],
     });
-
     const events = await withSession(failing, (session) => Array.fromAsync(session.runTurn("Hi")));
     expect(events.find((event) => event.type === "tool-result")).toMatchObject({
       type: "tool-result",
@@ -348,7 +333,6 @@ describe("@mitome/sdk Extension Hooks", () => {
         }),
       ],
     });
-
     await expect(
       withSession(invalid, (session) => Array.fromAsync(session.runTurn("Hi"))),
     ).rejects.toMatchObject({

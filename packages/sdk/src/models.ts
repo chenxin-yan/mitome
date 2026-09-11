@@ -48,13 +48,10 @@ interface PromptMessageBase<Role extends string> {
 }
 
 type PromptPartOf<Type extends PromptPart["type"]> = Extract<PromptPart, { readonly type: Type }>;
-
 type UserPromptPart = PromptPartOf<"text" | "file">;
-
 type AssistantPromptPart = PromptPartOf<
   "text" | "reasoning" | "file" | "tool-call" | "tool-result" | "tool-approval-request"
 >;
-
 type ToolPromptPart = PromptPartOf<"tool-result" | "tool-approval-response">;
 
 /** One Message of a Model Prompt, by role; each role permits its own part types. */

@@ -6,14 +6,10 @@ import { pathToFileURL } from "node:url";
 import type { MitomeDefinition, TurnEvent } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
-
 const mode = process.argv[2];
-
 if (mode !== "auto" && mode !== "print") throw new Error("Invalid Child Host mode.");
-
 // Absent when no message was given; an explicitly empty message arrives as "".
 const message: string | undefined = process.argv[3];
-
 // SAFETY: Dynamic import namespaces expose their module's default export at `.default`.
 const loaded: unknown = (
   (await import(pathToFileURL(definitionPath).href)) as { readonly default: unknown }
@@ -59,16 +55,13 @@ const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefiniti
 if (!(loaded instanceof Object)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
-
 if (!isMitomeDefinition(loaded)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
 
 const interactiveHost = loaded.hosts[0];
-
 if (mode === "auto" && interactiveHost !== undefined) {
   const reason = interactiveHost.unsupported?.();
-
   if (reason === undefined) {
     await interactiveHost.run({
       agent: loaded.agent,
@@ -77,7 +70,6 @@ if (mode === "auto" && interactiveHost !== undefined) {
     });
     process.exit(0);
   }
-
   process.stderr.write(`${reason}; falling back to one-shot output.\n`);
 }
 
@@ -137,24 +129,16 @@ const errorMessage = (error: Error | ErrorDetails): string => {
       : error instanceof Error
         ? error.message
         : safeJson(error);
-
   const cause = error.cause;
-
   if (cause === undefined) return head;
-
   return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause) : safeJson(cause)}`;
 };
 
 const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
-
 const effectPath = Bun.resolveSync("effect", dirname(corePath));
-
 const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath).href);
-
 const effect: typeof import("effect") = await import(pathToFileURL(effectPath).href);
-
 const { Cause, Effect, Exit, Fiber, Stream } = effect;
-
 const program = Effect.scoped(
   Effect.gen(function* () {
     const session = yield* core.createHostSession({
@@ -162,11 +146,9 @@ const program = Effect.scoped(
       message,
       transcripts: loaded.transcripts,
     });
-
     yield* Stream.runForEach(session.runTurn(message), (event) =>
       Effect.gen(function* () {
         render(event);
-
         if (event.type === "approval-required") yield* event.approve();
       }),
     );
@@ -174,33 +156,24 @@ const program = Effect.scoped(
 );
 
 const root = Effect.runFork(program);
-
 let forceExit: ReturnType<typeof setTimeout> | undefined;
-
 const interrupt = (): void => {
   forceExit ??= setTimeout(() => process.exit(124), 1_000);
   Effect.runFork(Fiber.interrupt(root));
 };
-
 process.on("SIGINT", interrupt);
-
 const exit = await Effect.runPromiseExit(Fiber.join(root));
-
 process.off("SIGINT", interrupt);
-
 if (forceExit !== undefined) {
   clearTimeout(forceExit);
   process.exit(130);
 }
-
 if (Exit.isFailure(exit)) {
   const squashed = Cause.squash(exit.cause);
-
   if (!(squashed instanceof Object)) {
     process.stderr.write(`${String(squashed)}\n`);
   } else {
     process.stderr.write(`${errorMessage(squashed)}\n`);
   }
-
   process.exitCode = 1;
 }

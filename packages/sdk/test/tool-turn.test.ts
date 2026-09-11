@@ -30,11 +30,9 @@ describe("@mitome/sdk Tool", () => {
         },
       },
     };
-
     let modelCalls = 0;
     let preToolCalls = 0;
     let handlerCalls = 0;
-
     const provider = makeProvider("test", [] as const, undefined, () =>
       Layer.effect(
         LanguageModel.LanguageModel,
@@ -42,7 +40,6 @@ describe("@mitome/sdk Tool", () => {
           generateText: () => Effect.succeed([]),
           streamText: () => {
             modelCalls += 1;
-
             return Stream.succeed(
               modelCalls === 1
                 ? {
@@ -57,7 +54,6 @@ describe("@mitome/sdk Tool", () => {
         }),
       ),
     );
-
     const definition = defineAgent({
       providers: [provider],
       model: "test/default",
@@ -71,7 +67,6 @@ describe("@mitome/sdk Tool", () => {
               outputSchema: stringSchema,
               handler: async () => {
                 handlerCalls += 1;
-
                 return "unused";
               },
             }),
@@ -114,7 +109,6 @@ describe("@mitome/sdk Tool", () => {
 
   test("validates Tool input/output and completes a second Step", async () => {
     const fixture = makeToolModel();
-
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -135,9 +129,7 @@ describe("@mitome/sdk Tool", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
-
       for await (const event of session.runTurn("Hi")) collected.push(event);
-
       return collected;
     });
 
@@ -157,7 +149,6 @@ describe("@mitome/sdk Tool", () => {
 
   test("passes through output when outputSchema is omitted", async () => {
     const fixture = makeToolModel();
-
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -185,7 +176,6 @@ describe("@mitome/sdk Tool", () => {
 
   test("returns a schema-checked expected failure to the Model", async () => {
     const fixture = makeToolModel();
-
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -226,7 +216,6 @@ describe("@mitome/sdk Tool", () => {
     const fixture = makeToolModel();
     // SAFETY: Deliberately violates the declared failure type to exercise runtime schema rejection.
     const invalidFailure = fail({ code: "OTHER" }) as never;
-
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -256,7 +245,6 @@ describe("@mitome/sdk Tool", () => {
     let handlerCalls = 0;
     const { promise: started, resolve: handlerStarted } = Promise.withResolvers<void>();
     const { promise: aborted, resolve: handlerAborted } = Promise.withResolvers<void>();
-
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -270,9 +258,7 @@ describe("@mitome/sdk Tool", () => {
               outputSchema: stringSchema,
               handler: async (_input, { signal }) => {
                 handlerCalls += 1;
-
                 if (handlerCalls === 2) return "second";
-
                 return new Promise((resolve) => {
                   signal.addEventListener(
                     "abort",
@@ -301,9 +287,7 @@ describe("@mitome/sdk Tool", () => {
       await pending.catch(() => undefined);
       expect(session.history()).toEqual([]);
       const next = [];
-
       for await (const event of session.runTurn("second")) next.push(event);
-
       return next;
     });
 
@@ -325,7 +309,6 @@ describe("@mitome/sdk Tool", () => {
     const { promise: started, resolve: handlerStarted } = Promise.withResolvers<void>();
     const { promise: aborted, resolve: handlerAborted } = Promise.withResolvers<void>();
     const model = makeToolModel().provider;
-
     const definition = defineAgent({
       providers: [model],
       model: "test/default",
@@ -354,9 +337,7 @@ describe("@mitome/sdk Tool", () => {
         }),
       ],
     });
-
     const order: string[] = [];
-
     const completion = withSession(definition, async (session) => {
       const iterator = session.runTurn("Hi")[Symbol.asyncIterator]();
       await iterator.next();
@@ -394,7 +375,6 @@ describe("@mitome/sdk Tool", () => {
 
   test("aggregates duplicate Tool names across Extensions when creating a Session", async () => {
     const fixture = makeToolModel();
-
     const extension = (name: string) =>
       defineExtension({
         name,
@@ -407,7 +387,6 @@ describe("@mitome/sdk Tool", () => {
           }),
         ],
       });
-
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -416,14 +395,12 @@ describe("@mitome/sdk Tool", () => {
 
     const failure = await withSession(definition, async () => undefined).catch((error) => error);
     expect(failure).toBeInstanceOf(AgentDefinitionError);
-
     if (!(failure instanceof AgentDefinitionError)) throw failure;
     expect(failure.issues).toContain("Duplicate Tool name: echo");
   });
 
   test("keeps a thrown error opaque when failureSchema and postTool are present", async () => {
     const fixture = makeToolModel();
-
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
@@ -450,9 +427,7 @@ describe("@mitome/sdk Tool", () => {
 
     const events = await withSession(definition, async (session) => {
       const collected = [];
-
       for await (const event of session.runTurn("Hi")) collected.push(event);
-
       return collected;
     });
 
@@ -470,7 +445,6 @@ describe("@mitome/sdk Tool", () => {
 
   test("schema-checks an expected failure after postTool transforms it into an AiError", async () => {
     const fixture = makeToolModel();
-
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",

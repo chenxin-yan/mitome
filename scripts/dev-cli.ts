@@ -18,51 +18,40 @@ const ManifestFromJson = Schema.fromJsonString(
 );
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-
 const home = join(root, ".dev-home");
-
 const manifestPath = join(home, "package.json");
 
 const repoint = async (): Promise<void> => {
   const manifest = Schema.decodeSync(ManifestFromJson, {
     onExcessProperty: "preserve",
   })(await readFile(manifestPath, "utf8"));
-
   const dependencies = { ...manifest.dependencies };
   // core is no direct dependency, but the run host resolves it beside the definition.
   const names = new Set([...Object.keys(dependencies), "@mitome/core"]);
-
   const workspace = [...names].filter(
     (name) =>
       name.startsWith("@mitome/") &&
       existsSync(join(root, "packages", name.slice("@mitome/".length))),
   );
-
   await mkdir(join(home, "node_modules", "@mitome"), { recursive: true });
-
   for (const name of workspace) {
     const link = join(home, "node_modules", name);
     await rm(link, { recursive: true, force: true });
     await symlink(join("..", "..", "..", "packages", name.slice("@mitome/".length)), link);
   }
-
   const patched = workspace.filter(
     (name) => dependencies[name] !== undefined && dependencies[name] !== "workspace:*",
   );
-
   for (const name of patched) dependencies[name] = "workspace:*";
-
   if (patched.length > 0) {
     await writeFile(manifestPath, `${JSON.stringify({ ...manifest, dependencies }, null, 2)}\n`);
   }
-
   // A lockfile from `init` pins published versions; it can never match the
   // workspace:* manifest, so reconcile would force a doomed `bun install`.
   await rm(join(home, "bun.lock"), { force: true });
 };
 
 const hadManifest = existsSync(manifestPath);
-
 if (hadManifest) await repoint();
 
 // The definition side needs sdk/extensions dist too; `@mitome/cli^...` alone only
@@ -83,7 +72,6 @@ const build = Bun.spawnSync(
     stderr: "pipe",
   },
 );
-
 if (build.exitCode !== 0) {
   process.stdout.write(build.stdout);
   process.stderr.write(build.stderr);
@@ -98,9 +86,7 @@ const run = (args: ReadonlyArray<string>) =>
     stdout: "inherit",
     stderr: "inherit",
   });
-
 const args = process.argv.slice(2);
-
 process.exitCode = await run(args).exited;
 
 // A fresh `init` installs the published (stub) packages and then fails to
@@ -108,7 +94,6 @@ process.exitCode = await run(args).exited;
 // and retry the auth step it died on.
 if (args[0] === "init" && !hadManifest && existsSync(manifestPath)) {
   await repoint();
-
   if (process.exitCode !== 0) {
     console.log("Repointed sandbox at workspace source; retrying auth login...");
     process.exitCode = await run(["auth", "login"]).exited;

@@ -28,7 +28,6 @@ describe("Session event log", () => {
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");
       const records: Array<TranscriptEventRecord> = [];
-
       const session = yield* createSession(
         {
           providers: [fixture.provider],
@@ -61,13 +60,11 @@ describe("Session event log", () => {
       const appended = yield* Deferred.make<void>();
       const records: Array<TranscriptEventRecord> = [];
       let blockNextAppend = true;
-
       const store: TranscriptStore = {
         ...makeRecordingStore(records),
         appendEvent: (record) => {
           const block = blockNextAppend;
           blockNextAppend = false;
-
           return Effect.sync(() => void records.push(record)).pipe(
             Effect.andThen(
               block
@@ -80,7 +77,6 @@ describe("Session event log", () => {
           );
         },
       };
-
       const session = yield* createSession(
         {
           providers: [fixture.provider],
@@ -89,7 +85,6 @@ describe("Session event log", () => {
         },
         { transcripts: store },
       );
-
       const interruptedTurn = yield* Effect.forkChild(Stream.runDrain(session.runTurn("first")));
 
       yield* Deferred.await(appended);
@@ -104,7 +99,6 @@ describe("Session event log", () => {
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");
       const records: Array<TranscriptEventRecord> = [];
-
       const store: TranscriptStore & { readonly records: Array<TranscriptEventRecord> } = {
         ...makeRecordingStore(records),
         records,
@@ -112,7 +106,6 @@ describe("Session event log", () => {
           return Effect.sync(() => void this.records.push(record));
         },
       };
-
       const session = yield* createSession(
         {
           providers: [fixture.provider],
@@ -132,7 +125,6 @@ describe("Session event log", () => {
     Effect.gen(function* () {
       const appended = yield* Deferred.make<void>();
       const records: Array<TranscriptEventRecord> = [];
-
       const provider = makeProvider("test", [] as const, undefined, () =>
         Layer.effect(
           LanguageModel.LanguageModel,
@@ -146,7 +138,6 @@ describe("Session event log", () => {
           }),
         ),
       );
-
       const session = yield* createSession(
         { providers: [provider], model: "test/default", extensions: [] },
         {
@@ -156,12 +147,10 @@ describe("Session event log", () => {
           ),
         },
       );
-
       const turn = yield* Effect.forkChild(Stream.runDrain(session.runTurn("Hi")));
 
       yield* Deferred.await(appended);
       yield* Fiber.interrupt(turn);
-
       const decoded = yield* Schema.decodeUnknownEffect(Schema.Array(TranscriptEventRecordSchema))(
         JSON.parse(JSON.stringify(records)),
       );
@@ -175,21 +164,17 @@ describe("Session event log", () => {
     Effect.gen(function* () {
       const timestamp = new Date("2026-08-24T00:00:00.000Z");
       let calls = 0;
-
       const provider = makeTestProvider((options) => {
         calls += 1;
-
         if (calls === 3) {
           return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
         }
-
         const call = Response.makePart("tool-call", {
           id: `call-${calls}`,
           name: calls === 1 ? "notify" : "timestamp",
           params: {},
           providerExecuted: false,
         });
-
         return Stream.concat(
           Stream.succeed(call),
           Stream.unwrap(
@@ -208,19 +193,15 @@ describe("Session event log", () => {
           ),
         );
       });
-
       const notify = Tool.make("notify", {
         parameters: Schema.Struct({}),
         success: Schema.Void,
       });
-
       const getTimestamp = Tool.make("timestamp", {
         parameters: Schema.Struct({}),
         success: Schema.DateFromString,
       });
-
       const records: Array<TranscriptEventRecord> = [];
-
       const session = yield* createSession(
         {
           providers: [provider],
@@ -240,7 +221,6 @@ describe("Session event log", () => {
       );
 
       const events = yield* Stream.runCollect(session.runTurn("Hi"));
-
       const decoded = yield* Schema.decodeUnknownEffect(Schema.Array(TranscriptEventRecordSchema))(
         JSON.parse(JSON.stringify(records)),
       );
@@ -283,7 +263,6 @@ describe("Session event log", () => {
   it.effect("records Approval requests and outcomes without resolution closures", () =>
     Effect.gen(function* () {
       let calls = 0;
-
       const provider = makeProvider("test", [] as const, undefined, () =>
         Layer.effect(
           LanguageModel.LanguageModel,
@@ -291,7 +270,6 @@ describe("Session event log", () => {
             generateText: () => Effect.succeed([]),
             streamText: () => {
               calls += 1;
-
               return Stream.succeed(
                 calls === 1
                   ? {
@@ -306,13 +284,11 @@ describe("Session event log", () => {
           }),
         ),
       );
-
       const dangerous = Tool.make("dangerous", {
         parameters: Schema.Struct({ action: Schema.String }),
         success: Schema.String,
         needsApproval: true,
       });
-
       const definition: AgentDefinition = {
         providers: [provider],
         model: "test/default",
@@ -324,9 +300,7 @@ describe("Session event log", () => {
           },
         ],
       };
-
       const records: Array<TranscriptEventRecord> = [];
-
       const session = yield* createSession(definition, {
         transcripts: makeRecordingStore(records),
       });
@@ -334,13 +308,11 @@ describe("Session event log", () => {
       yield* Stream.runForEach(session.runTurn("Hi"), (event) =>
         event.type === "approval-required" ? event.deny("not allowed") : Effect.void,
       );
-
       const encoded = JSON.parse(
         JSON.stringify(
           yield* Schema.encodeEffect(Schema.Array(TranscriptEventRecordSchema))(records),
         ),
       );
-
       const decoded = yield* Schema.decodeUnknownEffect(Schema.Array(TranscriptEventRecordSchema))(
         encoded,
       );
@@ -361,7 +333,6 @@ describe("Session event log", () => {
         params: { action: "delete" },
       });
       const approvalRequest = decoded[1]!.event;
-
       if (approvalRequest.type !== "approval-required") return;
       expect(decoded[2]!.event).toEqual({
         type: "approval-resolved",

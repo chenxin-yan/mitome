@@ -11,7 +11,6 @@ export const TranscriptSummarySchema = Schema.Struct({
   messageCount: Schema.Natural,
   preview: Schema.String,
 });
-
 /**
  * One row of `TranscriptStore.list`: id, lineage, ISO timestamps, message count, and a single-line
  * preview of the first user Message.
@@ -20,7 +19,6 @@ export type TranscriptSummary = typeof TranscriptSummarySchema.Type;
 
 /** The `version` written into every event record this version of Mitome produces. */
 export const TranscriptEventRecordVersion = 1 as const;
-
 /**
  * Records decode independently. A tail without `response-complete` is an expected interrupted Turn,
  * not a corrupt log; event records are observability data and have no Session replay contract.
@@ -32,7 +30,6 @@ export const TranscriptEventRecordSchema = Schema.Struct({
   version: Schema.Literal(TranscriptEventRecordVersion),
   event: TurnEventDtoSchema,
 });
-
 /** One appended Turn event, ordered by `seq` within the Session that produced it. */
 export interface TranscriptEventRecord {
   readonly transcriptId: string;
@@ -80,7 +77,6 @@ export const summarizeTranscript = (
   transcript: Transcript,
 ): Pick<TranscriptSummary, "messageCount" | "preview"> => {
   const firstUserMessage = transcript.messages.find((message) => message.role === "user");
-
   const preview =
     firstUserMessage?.content
       .filter((part) => part.type === "text")
@@ -89,7 +85,6 @@ export const summarizeTranscript = (
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 100) ?? "";
-
   return { messageCount: transcript.messages.length, preview };
 };
 
@@ -114,7 +109,6 @@ export const memoryTranscripts = (): TranscriptStore => {
     load: (id) =>
       Effect.suspend(() => {
         const stored = transcripts.get(id);
-
         return stored === undefined
           ? Effect.fail(new TranscriptNotFound({ id }))
           : Effect.succeed(stored.transcript);

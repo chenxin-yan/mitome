@@ -30,7 +30,6 @@ export {
   promptFromTranscript,
   summarizeTranscript,
 } from "@mitome/core";
-
 export type {
   AgentDefinition,
   AnyExtension,

@@ -121,14 +121,12 @@ const compileExtensions = (
 
   if (!Array.isArray(extensionValues)) {
     issues.push("Agent Definition Extensions must be an array");
-
     return { extensions, tools, handlers, instructions, requiredHandlerNames };
   }
 
   const discovered = new WeakSet<object>();
   const extensionsByName = new Map<string, AnyExtension>();
   const conflictingNames = new Set<string>();
-
   for (const [index, value] of extensionValues.entries()) {
     if (
       !Predicate.isObject(value) ||
@@ -137,16 +135,13 @@ const compileExtensions = (
       issues.push(`Extension at index ${index} must be an object with an optional string name`);
       continue;
     }
-
     if (discovered.has(value)) continue;
     discovered.add(value);
 
     // SAFETY: runtime shape validation above established the optional identity field.
     const extension = value as AnyExtension;
-
     if (extension.name !== undefined) {
       const existing = extensionsByName.get(extension.name);
-
       if (existing === undefined) {
         extensionsByName.set(extension.name, extension);
       } else if (!conflictingNames.has(extension.name)) {
@@ -154,18 +149,15 @@ const compileExtensions = (
         issues.push(`Conflicting Extension name: ${extension.name} refers to different values`);
       }
     }
-
     extensions.push(extension);
   }
 
   for (const extension of extensions) {
     const label =
       extension.name === undefined ? "Anonymous Extension" : `Extension ${extension.name}`;
-
     if (extension.instructions !== undefined && !Predicate.isString(extension.instructions)) {
       issues.push(`${label} Instructions must be a string`);
     }
-
     if (Predicate.isString(extension.instructions) && extension.instructions.length > 0) {
       instructions.push(extension.instructions);
     }
@@ -179,7 +171,6 @@ const compileExtensions = (
         resultValidator: undefined,
         failureValidator: undefined,
       });
-
       if (Tool.isProviderDefined(tool) ? tool.requiresHandler : true) {
         requiredHandlerNames.add(tool.name);
       }
@@ -187,7 +178,6 @@ const compileExtensions = (
 
     for (const [name, validator] of Object.entries(extension.toolInputValidators ?? {})) {
       const compiledTool = tools.get(name);
-
       if (compiledTool === undefined || compiledTool.owner !== extension) {
         issues.push(`Tool input validator has no matching Tool: ${name}`);
       } else {
@@ -197,7 +187,6 @@ const compileExtensions = (
 
     for (const [name, validator] of Object.entries(extension.toolResultValidators ?? {})) {
       const compiledTool = tools.get(name);
-
       if (compiledTool === undefined || compiledTool.owner !== extension) {
         issues.push(`Tool result validator has no matching Tool: ${name}`);
       } else {
@@ -207,7 +196,6 @@ const compileExtensions = (
 
     for (const [name, validator] of Object.entries(extension.toolFailureValidators ?? {})) {
       const compiledTool = tools.get(name);
-
       if (compiledTool === undefined || compiledTool.owner !== extension) {
         issues.push(`Tool failure validator has no matching Tool: ${name}`);
       } else {
@@ -238,12 +226,10 @@ export const compileAgentDefinition: (
   if (!Predicate.isObject(definition)) {
     return yield* new AgentDefinitionError({ issues: ["Agent Definition must be an object"] });
   }
-
   const issues: Array<string> = [];
 
   const providers = new Map<string, AnyProvider>();
   const providerValues = definition.providers;
-
   if (!Array.isArray(providerValues)) {
     issues.push("Agent Definition Providers must be an array");
   } else {
@@ -252,27 +238,22 @@ export const compileAgentDefinition: (
         issues.push(`Provider at index ${index} must be an object with a string id`);
         continue;
       }
-
       if (!isProvider(value)) {
         return yield* Effect.die(new Error("Provider was not created by @mitome/core"));
       }
-
       if (providers.has(value.id)) {
         issues.push(`Duplicate Provider id: ${value.id}`);
       }
-
       providers.set(value.id, value);
     }
   }
 
   let defaultModel: ReturnType<typeof parseQualifiedModelId>;
   const model = definition.model;
-
   if (!Predicate.isString(model)) {
     issues.push("Agent Definition Model must be a string");
   } else {
     defaultModel = parseQualifiedModelId(model);
-
     if (defaultModel === undefined) {
       issues.push(`Malformed Qualified Model id: ${model}`);
     } else if (!providers.has(defaultModel.providerId)) {
@@ -290,7 +271,6 @@ export const compileAgentDefinition: (
       issues.push(`Missing Tool handler: ${name}`);
     }
   }
-
   for (const name of handlers.keys()) {
     if (!tools.has(name)) {
       issues.push(`Tool handler has no matching Tool: ${name}`);

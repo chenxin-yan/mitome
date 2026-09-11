@@ -12,24 +12,19 @@ import { makeTestProvider } from "../support/provider.js";
 const makeToolModel = () => {
   let calls = 0;
   let secondPrompt: Prompt.Prompt | undefined;
-
   return {
     provider: makeTestProvider((options) => {
       calls += 1;
-
       if (calls === 2) {
         secondPrompt = options.prompt;
-
         return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
       }
-
       const call = Response.makePart("tool-call", {
         id: "call-1",
         name: "echo",
         params: { text: "hello" },
         providerExecuted: false,
       });
-
       return Stream.concat(
         Stream.succeed(call),
         Stream.unwrap(
@@ -57,14 +52,12 @@ describe("createSession Tool Turn", () => {
   it.effect("runs a Tool Step, records its result, then completes the next Step", () =>
     Effect.gen(function* () {
       const fixture = makeToolModel();
-
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),
         success: Schema.String,
         failure: Schema.Struct({ code: Schema.String }),
         failureMode: "return",
       });
-
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
@@ -98,10 +91,8 @@ describe("createSession Tool Turn", () => {
   it.effect("does not start another Step for a provider-executed Tool call", () =>
     Effect.gen(function* () {
       let calls = 0;
-
       const model = makeTestProvider(() => {
         calls += 1;
-
         return Stream.fromIterable([
           Response.makePart("tool-call", {
             id: "provider-call",
@@ -126,7 +117,6 @@ describe("createSession Tool Turn", () => {
         model: "test/default",
         extensions: [],
       });
-
       const events = yield* Stream.runCollect(session.runTurn("Find it"));
 
       expect([...events]).toEqual([
@@ -148,10 +138,8 @@ describe("createSession Tool Turn", () => {
     Effect.gen(function* () {
       let calls = 0;
       const echo = Tool.make("echo", { success: Schema.String });
-
       const model = makeTestProvider(() => {
         calls += 1;
-
         return Stream.succeed(
           calls === 17
             ? Response.makePart("text-delta", { id: "done", delta: "done" })
@@ -175,7 +163,6 @@ describe("createSession Tool Turn", () => {
           },
         ],
       });
-
       const events = yield* Stream.runCollect(session.runTurn("Start"));
 
       expect(calls).toBe(17);
@@ -188,7 +175,6 @@ describe("createSession Tool Turn", () => {
       const order: Array<string> = [];
       const validationFailure = new Error("invalid input");
       let modelCalls = 0;
-
       const provider = makeProvider("test", [] as const, undefined, () =>
         Layer.effect(
           LanguageModel.LanguageModel,
@@ -196,7 +182,6 @@ describe("createSession Tool Turn", () => {
             generateText: () => Effect.succeed([]),
             streamText: () => {
               modelCalls += 1;
-
               return Stream.succeed(
                 modelCalls === 1
                   ? {
@@ -211,12 +196,10 @@ describe("createSession Tool Turn", () => {
           }),
         ),
       );
-
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),
         success: Schema.String,
       });
-
       const session = yield* createSession({
         providers: [provider],
         model: "test/default",
@@ -228,7 +211,6 @@ describe("createSession Tool Turn", () => {
               echo: () =>
                 Effect.sync(() => {
                   order.push("handler");
-
                   return "handled";
                 }),
             },
@@ -271,7 +253,6 @@ describe("createSession Tool Turn", () => {
     Effect.gen(function* () {
       const order: Array<string> = [];
       const defect = new Error("validator defect");
-
       const provider = makeProvider("test", [] as const, undefined, () =>
         Layer.effect(
           LanguageModel.LanguageModel,
@@ -287,12 +268,10 @@ describe("createSession Tool Turn", () => {
           }),
         ),
       );
-
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),
         success: Schema.String,
       });
-
       const session = yield* createSession({
         providers: [provider],
         model: "test/default",
@@ -304,7 +283,6 @@ describe("createSession Tool Turn", () => {
               echo: () =>
                 Effect.sync(() => {
                   order.push("handler");
-
                   return "handled";
                 }),
             },
@@ -332,42 +310,33 @@ describe("createSession Tool Turn", () => {
       const order: Array<string> = [];
       const failure = new Error("preTool failed");
       let modelCalls = 0;
-
       const provider = makeTestProvider((options) => {
         modelCalls += 1;
-
         if (modelCalls === 2) {
           return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
         }
-
         const call = Response.makePart("tool-call", {
           id: "call-1",
           name: "echo",
           params: { text: "hello" },
           providerExecuted: false,
         });
-
         return Stream.concat(
           Stream.succeed(call),
           Stream.unwrap(
             Effect.gen(function* () {
               const needsApproval = options.toolkit!.tools.echo!.needsApproval;
-
               if (!Predicate.isFunction(needsApproval)) {
                 return yield* Effect.die("Wrapped Tool has no Approval predicate");
               }
-
               const decision = needsApproval(call.params, {
                 toolCallId: call.id,
                 messages: [],
               });
-
               const required = yield* Effect.isEffect(decision)
                 ? decision
                 : Effect.succeed(decision);
-
               if (!required) return yield* Effect.die("Prepared Hook failure did not fail closed");
-
               return yield* options.toolkit!.handle(call.name, call.params, call.id).pipe(
                 Effect.map((results) =>
                   Stream.map(results, (result) =>
@@ -384,12 +353,10 @@ describe("createSession Tool Turn", () => {
           ),
         );
       });
-
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),
         success: Schema.String,
       });
-
       const session = yield* createSession({
         providers: [provider],
         model: "test/default",
@@ -401,7 +368,6 @@ describe("createSession Tool Turn", () => {
               echo: () =>
                 Effect.sync(() => {
                   order.push("handler");
-
                   return "handled";
                 }),
             },
@@ -433,12 +399,10 @@ describe("createSession Tool Turn", () => {
     Effect.gen(function* () {
       const fixture = makeToolModel();
       const order: Array<string> = [];
-
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),
         success: Schema.String,
       });
-
       const session = yield* createSession({
         providers: [fixture.provider],
         model: "test/default",
@@ -450,7 +414,6 @@ describe("createSession Tool Turn", () => {
               echo: () =>
                 Effect.sync(() => {
                   order.push("handler");
-
                   return "handled";
                 }),
             },
@@ -458,7 +421,6 @@ describe("createSession Tool Turn", () => {
               echo: () =>
                 Effect.sync(() => {
                   order.push("validator");
-
                   return "validated";
                 }),
             },
@@ -466,7 +428,6 @@ describe("createSession Tool Turn", () => {
               postTool: () =>
                 Effect.sync(() => {
                   order.push("postTool");
-
                   return "post";
                 }),
             },
@@ -491,7 +452,6 @@ describe("createSession Tool Turn", () => {
     Effect.gen(function* () {
       const fixture = makeToolModel();
       let postCalls = 0;
-
       const echo = Tool.dynamic("echo", {
         parameters: {
           type: "object",
@@ -500,7 +460,6 @@ describe("createSession Tool Turn", () => {
         },
         failureMode: "return",
       });
-
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
@@ -511,7 +470,6 @@ describe("createSession Tool Turn", () => {
               postTool: () =>
                 Effect.sync(() => {
                   postCalls += 1;
-
                   return { code: "transformed" };
                 }),
             },
@@ -553,14 +511,12 @@ describe("createSession Tool Turn", () => {
       const fixture = makeToolModel();
       let validatorCalls = 0;
       const order: Array<string> = [];
-
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),
         success: Schema.String,
         failure: Schema.Struct({ code: Schema.String }),
         failureMode: "return",
       });
-
       const definition: AgentDefinition = {
         providers: [fixture.provider],
         model: "test/default",
@@ -571,7 +527,6 @@ describe("createSession Tool Turn", () => {
               postTool: ({ isFailure }) =>
                 Effect.sync(() => {
                   order.push("postTool");
-
                   return { code: isFailure ? "transformed" : "unexpected" };
                 }),
             },
@@ -585,7 +540,6 @@ describe("createSession Tool Turn", () => {
                 Effect.sync(() => {
                   order.push("failureValidator");
                   expect(failure).toEqual({ code: "transformed" });
-
                   return failure;
                 }),
             },
@@ -593,7 +547,6 @@ describe("createSession Tool Turn", () => {
               echo: (result) =>
                 Effect.sync(() => {
                   validatorCalls += 1;
-
                   return result;
                 }),
             },

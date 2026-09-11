@@ -12,7 +12,6 @@ import { modifyCredential, readCredential } from "../../src/shared/credential-st
 type StoredCredential = typeof Schema.Json.Type;
 
 const temporaryDirectories: Array<string> = [];
-
 const marker = "synthetic-secret-marker";
 
 const credential = (suffix: string) => ({
@@ -26,7 +25,6 @@ const credential = (suffix: string) => ({
 const directory = async () => {
   const value = await mkdtemp(join(tmpdir(), "mitome-store-"));
   temporaryDirectories.push(value);
-
   return value;
 };
 
@@ -59,7 +57,6 @@ describe("Credential storage", () => {
     const seen = await Effect.runPromise(
       modifyCredential(configDirectory, "alpha", (current) => Effect.succeed([current, current])),
     );
-
     expect(seen).toEqual(credential("alpha"));
 
     await write(configDirectory, "alpha", credential("alpha-2"));
@@ -85,13 +82,11 @@ describe("Credential storage", () => {
       JSON.stringify({ other: { retained: true } }),
     );
     const source = new URL("../../dist/shared/credential-store.js", import.meta.url).href;
-
     const writer = (providerKey: string) =>
       spawnRuntime([
         "-e",
         `import { Effect } from "effect"; const { modifyCredential } = await import(${JSON.stringify(source)}); await Effect.runPromise(modifyCredential(${JSON.stringify(configDirectory)}, ${JSON.stringify(providerKey)}, () => Effect.succeed([${JSON.stringify(credential(providerKey))}, undefined])));`,
       ]);
-
     const writers = [writer("first"), writer("second")];
     expect(await Promise.all(writers.map((child) => child.exited))).toEqual([0, 0]);
     await Promise.all(
@@ -119,17 +114,14 @@ describe("Credential storage", () => {
         Effect.flip(writeEffect(configDirectory, "alpha", credential("timeout"))),
         { startImmediately: true },
       );
-
       // Let each real filesystem rejection register its next Clock-driven retry.
       yield* Effect.promise(
         () => new Promise<void>((resolve) => globalThis.setTimeout(resolve, 25)),
       );
-
       for (let seconds = 0; seconds < 31; seconds += 1) {
         yield* TestClock.adjust("1 second");
         yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
       }
-
       expect((yield* Fiber.join(fiber)).message).toBe(
         `Credential storage lock timed out: ${lock}. If no other process is authenticating, delete ${lock} and retry.`,
       );
@@ -140,17 +132,14 @@ describe("Credential storage", () => {
     Effect.gen(function* () {
       const configDirectory = yield* Effect.promise(directory);
       const path = join(configDirectory, "auth.lock");
-
       const fiber = yield* Effect.forkChild(
         modifyCredential(configDirectory, "alpha", () => Effect.never),
         { startImmediately: true },
       );
-
       yield* Effect.promise(async () => {
         while (true) {
           try {
             await readFile(path);
-
             return;
           } catch {
             await setTimeout(1);

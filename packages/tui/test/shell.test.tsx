@@ -9,12 +9,10 @@ import type { SessionViewModel } from "../src/view-model.js";
 import { scriptedSession } from "./support/scripted-session.js";
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined;
-
 let viewModel: SessionViewModel | undefined;
 
 afterEach(async () => {
   setup?.renderer.destroy();
-
   if (viewModel !== undefined) await viewModel.dispose();
 });
 
@@ -60,7 +58,6 @@ describe("TUI shell", () => {
 
   test("opens the Transcript picker from the keyboard", async () => {
     const unused = () => Effect.die("not used");
-
     const transcripts: TranscriptStore = {
       list: () =>
         Effect.succeed([
@@ -76,7 +73,6 @@ describe("TUI shell", () => {
       save: unused,
       appendEvent: unused,
     };
-
     await renderShell("", [], {
       transcripts,
       open: () => Effect.die("not used"),
@@ -93,7 +89,6 @@ describe("TUI shell", () => {
   test("navigates the picker and resumes the selected Transcript", async () => {
     const unused = () => Effect.die("not used");
     const opened: Array<string | undefined> = [];
-
     const transcripts: TranscriptStore = {
       list: () =>
         Effect.succeed([
@@ -116,12 +111,10 @@ describe("TUI shell", () => {
       save: unused,
       appendEvent: unused,
     };
-
     await renderShell("", [], {
       transcripts,
       open: (transcriptId) => {
         opened.push(transcriptId);
-
         return Effect.succeed(scriptedSession([]));
       },
     });
@@ -139,14 +132,12 @@ describe("TUI shell", () => {
 
   test("closes the picker with Escape", async () => {
     const unused = () => Effect.die("not used");
-
     const transcripts: TranscriptStore = {
       list: () => Effect.succeed([]),
       load: unused,
       save: unused,
       appendEvent: unused,
     };
-
     await renderShell("", [], { transcripts, open: unused });
 
     setup!.mockInput.pressKey("o", { ctrl: true });
@@ -166,7 +157,6 @@ describe("TUI shell", () => {
     });
 
     setup!.mockInput.pressKey("n", { ctrl: true });
-
     const frame = await setup!.waitForFrame((candidate) =>
       candidate.includes("Started a new Session."),
     );

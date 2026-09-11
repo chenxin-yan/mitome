@@ -10,7 +10,6 @@ export const OAuthCredentialSchema = Schema.Struct({
   expires: Schema.Finite,
   accountId: Schema.String,
 });
-
 /** The stored ChatGPT OAuth Credential: access and refresh tokens, expiry, and account id. */
 export type OAuthCredential = typeof OAuthCredentialSchema.Type;
 

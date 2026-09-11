@@ -2,11 +2,8 @@ import { mkdtemp, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 const packageDirectory = process.cwd();
-
 const babelExecutable = Bun.resolveSync("@babel/cli/bin/babel.js", import.meta.dir);
-
 const distDirectory = join(packageDirectory, "dist");
-
 const temporaryDirectory = await mkdtemp(join(packageDirectory, ".mitome-dist-"));
 
 const run = async (command: ReadonlyArray<string>): Promise<void> => {
@@ -15,7 +12,6 @@ const run = async (command: ReadonlyArray<string>): Promise<void> => {
     stdout: "inherit",
     stderr: "inherit",
   });
-
   if ((await child.exited) !== 0) throw new Error(`Command failed: ${command.join(" ")}`);
 };
 

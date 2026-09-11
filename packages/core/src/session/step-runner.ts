@@ -42,7 +42,6 @@ export const makeStepRunner = (
           if (Predicate.isTagged(outcome, "Failure")) {
             return Stream.fail(new TurnError({ message: outcome.message, cause: outcome.cause }));
           }
-
           if (Predicate.isTagged(outcome, "Veto")) {
             record(
               Prompt.toolApprovalResponsePart({
@@ -51,7 +50,6 @@ export const makeStepRunner = (
                 reason: outcome.reason,
               }),
             );
-
             return Stream.succeed({
               type: "approval-resolved",
               approvalId: part.approvalId,
@@ -60,7 +58,6 @@ export const makeStepRunner = (
               reason: outcome.reason,
             } satisfies ApprovalResolvedEvent);
           }
-
           return Stream.concat(
             Stream.succeed({
               type: "approval-required",
@@ -113,7 +110,6 @@ export const makeStepRunner = (
     const toolCalls = new Map<string, Response.ToolCallPart<string, unknown>>();
     const decisions: Array<Prompt.ToolApprovalResponsePart> = [];
     let endPrompt = prompt;
-
     return Stream.unwrap(
       beginHookPhase(
         compiled.extensions,
@@ -130,7 +126,6 @@ export const makeStepRunner = (
               hookTurnError("Pre-Step Hook failed"),
               Effect.map((transformed) => {
                 endPrompt = transformed;
-
                 // Tool.Any leaks handler services; context is supplied below and model errors map to TurnError.
                 // SAFETY: ToolExecution provides every handler and the selected context below supplies model services.
                 return (
@@ -150,18 +145,14 @@ export const makeStepRunner = (
                   Stream.tap((part) => Effect.sync(() => parts.push(part))),
                   Stream.flatMap((part): Stream.Stream<StepEvent, TurnError> => {
                     if (part.type === "error") return Stream.fail(modelTurnError(part.error));
-
                     if (part.type === "text-delta") {
                       return Stream.succeed({ type: "model-output", text: part.delta });
                     }
-
                     if (part.type === "reasoning-delta") {
                       return Stream.succeed({ type: "reasoning", text: part.delta });
                     }
-
                     if (part.type === "tool-call") {
                       toolCalls.set(part.id, part);
-
                       return Stream.succeed({
                         type: "tool-call",
                         id: part.id,
@@ -169,7 +160,6 @@ export const makeStepRunner = (
                         params: part.params,
                       });
                     }
-
                     if (part.type === "tool-result") {
                       return Stream.succeed({
                         type: "tool-result",
@@ -180,11 +170,9 @@ export const makeStepRunner = (
                         isFailure: part.isFailure,
                       });
                     }
-
                     if (part.type !== "tool-approval-request") return Stream.empty;
 
                     const call = toolCalls.get(part.toolCallId);
-
                     if (call === undefined) {
                       return Stream.fail(
                         new TurnError({
@@ -193,13 +181,11 @@ export const makeStepRunner = (
                         }),
                       );
                     }
-
                     return approvalEvents(part, call, (decision) => decisions.push(decision));
                   }),
                   Stream.concat(
                     Stream.suspend(() => {
                       const responsePrompt = Prompt.concat(prompt, Prompt.fromResponseParts(parts));
-
                       const nextPrompt =
                         decisions.length === 0
                           ? responsePrompt
@@ -209,11 +195,9 @@ export const makeStepRunner = (
                                 Prompt.makeMessage("tool", { content: decisions }),
                               ]),
                             );
-
                       const finish = parts.findLast(
                         (part): part is Response.FinishPart => part.type === "finish",
                       );
-
                       const next: Stream.Stream<StepEvent, TurnError> = parts.some(
                         (part) => part.type === "tool-call" && part.providerExecuted !== true,
                       )
@@ -224,7 +208,6 @@ export const makeStepRunner = (
                             finishReason: finish?.reason,
                             usage: finish?.usage,
                           });
-
                       return Stream.concat(
                         Stream.fromEffectDrain(
                           stepHooks.end.pipe(hookTurnError("Step end Hook failed")),

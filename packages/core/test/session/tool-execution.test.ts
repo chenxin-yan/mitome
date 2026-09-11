@@ -18,11 +18,9 @@ const pending = (
   outcome: ApprovalRequestOutcome,
 ): Extract<ApprovalRequestOutcome, { readonly _tag: "Pending" }> => {
   expect(outcome._tag).toBe("Pending");
-
   if (!Predicate.isTagged(outcome, "Pending")) {
     throw new Error("Expected a pending Approval request");
   }
-
   return outcome;
 };
 
@@ -32,10 +30,8 @@ const prepare = (
   toolCallId = "call-1",
 ): Effect.Effect<boolean> => {
   const needsApproval = execution.toolkit.tools.dangerous!.needsApproval;
-
   if (!Predicate.isFunction(needsApproval)) throw new Error("Tool pipeline is not installed");
   const result = needsApproval(params, { toolCallId, messages: [] });
-
   return Effect.isEffect(result) ? result : Effect.succeed(result);
 };
 
@@ -53,7 +49,6 @@ const makeFixture = (options?: {
   let handlerCalls = 0;
   let postCalls = 0;
   let preToolCalls = 0;
-
   const dangerous = Tool.make("dangerous", {
     parameters: Schema.Struct({
       action: Schema.String,
@@ -62,7 +57,6 @@ const makeFixture = (options?: {
     success: Schema.String,
     needsApproval: options?.needsApproval ?? true,
   });
-
   const extension: Extension = {
     name: "dangerous",
     toolkit: Toolkit.make(dangerous),
@@ -71,18 +65,15 @@ const makeFixture = (options?: {
       preTool: (context) =>
         Effect.sync(() => {
           preToolCalls += 1;
-
           return context;
         }).pipe(Effect.flatMap(() => options?.preTool?.(context) ?? Effect.void)),
       postTool: (context) =>
         Effect.sync(() => {
           postCalls += 1;
-
           return context.result;
         }),
     },
   };
-
   const compiled: CompiledAgent = {
     extensions: [extension],
     providers: new Map(),
@@ -95,7 +86,6 @@ const makeFixture = (options?: {
           handler: () =>
             Effect.sync(() => {
               handlerCalls += 1;
-
               return "executed";
             }),
           inputValidator: options?.inputValidator,
@@ -106,7 +96,6 @@ const makeFixture = (options?: {
     ]),
     instructions: "",
   };
-
   return {
     execution: makeToolExecution(compiled, new Map()),
     counts: () => ({ handlerCalls, postCalls, preToolCalls }),
@@ -186,7 +175,6 @@ describe("ToolExecution", () => {
       const requiresApproval = makeFixture({
         needsApproval: (params: { readonly action: string }) => params.action === "delete",
       });
-
       const gated = yield* requiresApproval.execution;
       const params = { action: "delete" };
       expect(yield* prepare(gated, params)).toBe(true);
@@ -208,7 +196,6 @@ describe("ToolExecution", () => {
       const immediate = makeFixture({
         needsApproval: (input: { readonly action: string }) => input.action !== "delete",
       });
-
       const ungated = yield* immediate.execution;
       expect(yield* prepare(ungated, params)).toBe(false);
       yield* execute(ungated, params);
@@ -223,7 +210,6 @@ describe("ToolExecution", () => {
           throw new Error("predicate threw");
         },
       });
-
       const execution = yield* fixture.execution;
       const params = { action: "delete" };
       expect(yield* prepare(execution, params)).toBe(true);
@@ -258,7 +244,6 @@ describe("ToolExecution", () => {
             raw: { action: "delete" },
           },
         ];
-
         for (const [index, current] of cases.entries()) {
           const fixture = makeFixture({ needsApproval: false });
           const execution = yield* fixture.execution;
