@@ -6,6 +6,7 @@
  */
 
 export { configDirectory, configDirectoryMessage } from "./config.js";
+export { fileRoutes } from "./file-routes.js";
 export { fileTranscripts } from "./file-transcript-store.js";
 export { CredentialDescriptorSchema } from "./credential.js";
 export type { AuthCapability, AuthenticateOptions, CredentialDescriptor } from "./credential.js";
@@ -36,6 +37,8 @@ export type {
   MitomeDefinition,
 } from "./host.js";
 export { credentialDescriptor, makeProvider } from "./provider.js";
+export { memoryRoutes } from "./routes.js";
+export type { RouteKey, Routes } from "./routes.js";
 export type { AnyProvider, Provider, QualifiedModelId, ValidProviderId } from "./provider.js";
 export {
   ApprovalResolutionError,

@@ -16,6 +16,7 @@ const services = Layer.mergeAll(
   CliOutput.layer(CliOutput.defaultFormatter({ colors: false })),
   Layer.succeed(ChildHost, {
     runHost: () => unused,
+    serve: () => unused,
     install: () => unused,
     removeDependency: () => unused,
     listExports: () => unused,
@@ -40,6 +41,10 @@ describe("mitome command", () => {
         expect.stringContaining("Mitome Definition"),
       );
       expect((yield* TestConsole.logLines).join("\n")).toEqual(expect.stringContaining("message"));
+
+      const serveHelpExit = yield* Effect.exit(runCli(["serve", "--help"]));
+      expect(serveHelpExit).toEqual(expect.objectContaining({ _tag: "Success" }));
+      expect((yield* TestConsole.logLines).join("\n")).toEqual(expect.stringContaining("--port"));
 
       const loginHelpExit = yield* Effect.exit(runCli(["auth", "login", "--help"]));
       expect(loginHelpExit).toEqual(expect.objectContaining({ _tag: "Success" }));
@@ -69,6 +74,7 @@ describe("mitome command", () => {
         ["auth", "bogus"],
         ["init", "extra"],
         ["install", "--use"],
+        ["serve", "--port", "http"],
         ["--unknown"],
       ]) {
         const stderrBefore = (yield* TestConsole.errorLines).length;

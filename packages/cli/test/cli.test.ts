@@ -59,7 +59,7 @@ const definitionSource = (
 import { writeFileSync } from "node:fs";
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
-import { defineMitome, fileTranscripts, makeProvider } from "@mitome/core";
+import { createHostSession, defineMitome, fileTranscripts, makeProvider } from "@mitome/core";
 ${options.tui ? 'import { tui } from "@mitome/tui";' : ""}
 
 ${options.signalProbe ? `writeFileSync(${JSON.stringify(options.signalProbe.pid)}, String(process.pid));` : ""}
@@ -309,6 +309,54 @@ const output = async (child: ReturnType<typeof spawn>) => {
   return { stdout, stderr, exitCode };
 };
 
+/** Buffers a child stream so a test can wait for a marker and still read everything at the end. */
+const collect = (stream: NodeJS.ReadableStream) => {
+  let buffer = "";
+  stream.setEncoding("utf8").on("data", (chunk: string) => {
+    buffer += chunk;
+  });
+  return {
+    text: () => buffer,
+    until: async (marker: string): Promise<string> => {
+      for (let attempt = 0; !buffer.includes(marker); attempt += 1) {
+        if (attempt === 1000) throw new Error(`Timed out waiting for ${marker} in: ${buffer}`);
+        await delay(10);
+      }
+      return buffer;
+    },
+  };
+};
+
+const serveChannels = {
+  /** Answers `/<name>/<path>` with the path it saw and the Agent's reply to the request body. */
+  echo: `{ kind: "channel", name: "echo", handle: async (context, request) => {
+    const message = await request.text();
+    const reply = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const session = yield* createHostSession(context);
+      return yield* Stream.runFold(session.runTurn(message), () => "", (text, event) => event.type === "model-output" ? text + event.text : text);
+    })));
+    // The fixture imports effect/unstable/ai's Response, which shadows the global.
+    return new globalThis.Response(\`ECHO \${request.method} \${new URL(request.url).pathname}\${new URL(request.url).search} \${reply}\`);
+  } }`,
+  steady: `{ kind: "channel", name: "steady", serve: (context, signal) => new Promise((resolve) => {
+    console.log(\`STEADY_STARTED \${context.agent !== undefined}\`);
+    signal.addEventListener("abort", () => { console.log("STEADY_STOPPED"); resolve(); });
+  }) }`,
+  broken: `{ kind: "channel", name: "broken", serve: () => { throw new Error("no token"); } }`,
+  flaky: `{ kind: "channel", name: "flaky", serve: async () => { await new Promise((resolve) => setTimeout(resolve, 50)); throw new Error("poll died"); } }`,
+};
+
+const startServe = (current: Fixture, port = 0) => {
+  const child = spawn("", ["serve", "--port", String(port), "--use", current.definition], current);
+  return { child, stdout: collect(child.stdout), stderr: collect(child.stderr) };
+};
+
+const listeningPort = (stderr: string): number => {
+  const match = /at http:\/\/localhost:(\d+)\//.exec(stderr);
+  if (match === null) throw new Error(`No listener announced in: ${stderr}`);
+  return Number(match[1]);
+};
+
 const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
 
 const ptyOutput = (
@@ -470,6 +518,110 @@ describe("compiled mitome", () => {
     // Channel Hosts alone leave ordinary invocation on one-shot output.
     const printed = await output(spawn("", ["hello", "--use", current.definition], current));
     expect(printed).toMatchObject({ exitCode: 0, stdout: "first second\n", stderr: "" });
+  });
+
+  test("serves handle under the Channel name and stops on SIGTERM", async () => {
+    const current = await fixture(
+      definitionSource("first", { hosts: `[${serveChannels.echo}, ${serveChannels.steady}]` }),
+    );
+    const serve = startServe(current);
+    const port = listeningPort(await serve.stderr.until('Serving Channel "steady"'));
+    await serve.stdout.until("STEADY_STARTED true");
+
+    const answered = await fetch(`http://localhost:${port}/echo/inbox?thread=7`, {
+      method: "POST",
+      body: "hello",
+    });
+    expect(answered.status).toBe(200);
+    expect(await answered.text()).toBe("ECHO POST /inbox?thread=7 first second");
+    expect((await fetch(`http://localhost:${port}/echo`)).status).toBe(200);
+    expect((await fetch(`http://localhost:${port}/steady/anything`)).status).toBe(404);
+    expect((await fetch(`http://localhost:${port}/`)).status).toBe(404);
+
+    serve.child.kill("SIGTERM");
+    expect(await exited(serve.child)).toBe(130);
+    expect(serve.stdout.text()).toContain("STEADY_STOPPED");
+    expect(serve.stderr.text()).toContain(
+      `Serving Channel "echo" at http://localhost:${port}/echo`,
+    );
+    await expect(fetch(`http://localhost:${port}/echo`)).rejects.toThrow();
+  });
+
+  test("runs a serve-only Channel until SIGINT without opening a listener", async () => {
+    const current = await fixture(
+      definitionSource("first", { hosts: `[${serveChannels.steady}]` }),
+    );
+    const serve = startServe(current);
+    const announced = await serve.stderr.until('Serving Channel "steady"');
+    expect(announced).not.toContain("http://");
+    await serve.stdout.until("STEADY_STARTED");
+
+    serve.child.kill("SIGINT");
+    expect(await exited(serve.child)).toBe(130);
+    expect(serve.stdout.text()).toContain("STEADY_STOPPED");
+  });
+
+  test("exits naming a Channel whose serve throws at startup and stops the others", async () => {
+    const current = await fixture(
+      definitionSource("first", { hosts: `[${serveChannels.steady}, ${serveChannels.broken}]` }),
+    );
+    const result = await output(
+      spawn("", ["serve", "--port", "0", "--use", current.definition], current),
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('Channel "broken" failed to start: no token');
+    expect(result.stderr).not.toContain("Serving Channel");
+    expect(result.stdout).toContain("STEADY_STOPPED");
+  });
+
+  test("logs a Channel that fails at runtime and keeps the others serving", async () => {
+    const current = await fixture(
+      definitionSource("first", {
+        hosts: `[${serveChannels.flaky}, ${serveChannels.echo}, ${serveChannels.steady}]`,
+      }),
+    );
+    const serve = startServe(current);
+    const port = listeningPort(await serve.stderr.until('Serving Channel "steady"'));
+    await serve.stderr.until('Channel "flaky" failed: poll died');
+
+    expect((await fetch(`http://localhost:${port}/echo`)).status).toBe(200);
+    serve.child.kill("SIGTERM");
+    expect(await exited(serve.child)).toBe(130);
+    expect(serve.stdout.text()).toContain("STEADY_STOPPED");
+  });
+
+  test("exits non-zero once no Channel is left running", async () => {
+    const current = await fixture(definitionSource("first", { hosts: `[${serveChannels.flaky}]` }));
+    const result = await output(
+      spawn("", ["serve", "--port", "0", "--use", current.definition], current),
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('Channel "flaky" failed: poll died');
+    expect(result.stderr).toContain("No Channel is left running.");
+  });
+
+  test("refuses to serve a Definition without Channel Hosts or on a busy port", async () => {
+    const current = await fixture();
+    const none = await output(spawn("", ["serve", "--use", current.definition], current));
+    expect(none.exitCode).toBe(1);
+    expect(none.stderr).toContain("declares no Channel Hosts");
+
+    await writeFile(
+      current.definition,
+      definitionSource("first", { hosts: `[${serveChannels.echo}]` }),
+    );
+    const occupied = startServe(current);
+    const port = listeningPort(await occupied.stderr.until('Serving Channel "echo"'));
+    try {
+      const busy = await output(
+        spawn("", ["serve", "--port", String(port), "--use", current.definition], current),
+      );
+      expect(busy.exitCode).not.toBe(0);
+      expect(busy.stderr).toContain(`port ${port} in use`);
+    } finally {
+      occupied.child.kill("SIGTERM");
+      await exited(occupied.child);
+    }
   });
 
   test.each([

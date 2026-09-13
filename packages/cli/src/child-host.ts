@@ -35,6 +35,8 @@ const configEnvFlag = (): string => {
 export const childHostLayer = Layer.succeed(ChildHost, {
   runHost: (path, message, mode) =>
     Effect.uninterruptible(attempt(() => runHost(path, message, mode))),
+  serve: (path, port) =>
+    Effect.uninterruptible(attempt(() => runEmbeddedHost(hostSource, path, String(port), "serve"))),
   install: (path) => Effect.uninterruptible(attempt(() => install(path))),
   removeDependency: (path, packageName) =>
     Effect.uninterruptible(attempt(() => removeDependency(path, packageName))),
@@ -168,12 +170,13 @@ export const runEmbeddedHost = async (
   source: string,
   path: string,
   message: string | undefined,
-  mode: "auto" | "print",
+  mode: "auto" | "print" | "serve",
 ): Promise<ExitCode> => {
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.
   // The message argument is omitted entirely when absent so the child can tell
-  // "no message given" apart from an explicitly empty message.
+  // "no message given" apart from an explicitly empty message; serve mode
+  // carries the port in its place.
   const arguments_ = [process.execPath, configEnvFlag(), "--eval", source, path, mode];
   if (message !== undefined) arguments_.push(message);
   const child = Bun.spawn(arguments_, {
@@ -182,12 +185,17 @@ export const runEmbeddedHost = async (
     stdout: "inherit",
     stderr: "inherit",
   });
+  // SIGINT reaches the child through the process group as well; SIGTERM (a
+  // service manager stopping `mitome serve`) only through this forwarding.
   const forwardSigint = () => child.kill("SIGINT");
+  const forwardSigterm = () => child.kill("SIGTERM");
   process.once("SIGINT", forwardSigint);
+  process.once("SIGTERM", forwardSigterm);
   try {
     return await child.exited;
   } finally {
     process.off("SIGINT", forwardSigint);
+    process.off("SIGTERM", forwardSigterm);
   }
 };
 

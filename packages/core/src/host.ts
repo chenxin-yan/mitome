@@ -32,13 +32,17 @@ export interface InteractiveHost {
 /**
  * A Host that connects an external surface to the Agent. It must expose `handle`, `serve`, or
  * both; `defineMitome` rejects a Channel Host with neither. `mitome [message]` ignores Channel
- * Hosts.
+ * Hosts; `mitome serve` runs them.
  */
 export interface ChannelHost {
   readonly kind: "channel";
   /** Identifies the Channel; unique among the Channel Hosts of one Mitome Definition. */
   readonly name: string;
-  /** Answers one request; the response body owns the Session scope until it ends or is cancelled. */
+  /**
+   * Answers one request; the response body owns the Session scope until it ends or is cancelled.
+   * `mitome serve` mounts it under `/<name>` and strips that prefix, so the request URL path is the
+   * remainder (`/` when nothing follows) and the Channel never sees its own name.
+   */
   readonly handle?: (context: ChannelHostContext, request: Request) => Promise<Response>;
   /** Runs a long-lived connection and resolves only after the signal aborts and shutdown completes. */
   readonly serve?: (context: ChannelHostContext, signal: AbortSignal) => Promise<void>;
