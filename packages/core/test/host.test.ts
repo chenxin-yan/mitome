@@ -56,6 +56,11 @@ describe("defineMitome", () => {
       'Host at index 0 has unknown kind "gateway"; expected "interactive" or "channel".',
     ],
     [
+      "a kind JSON cannot serialize",
+      [{ kind: 1n }],
+      'Host at index 0 has a non-string kind; expected "interactive" or "channel".',
+    ],
+    [
       "an interactive Host without run",
       [{ kind: "interactive" }],
       "Interactive Host at index 0 must have a run function and optional unsupported function.",

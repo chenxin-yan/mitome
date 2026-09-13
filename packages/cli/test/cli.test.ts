@@ -484,6 +484,16 @@ describe("compiled mitome", () => {
       'Host at index 0 has unknown kind "gateway"; expected "interactive" or "channel".',
     ],
     [
+      "a Host kind JSON cannot serialize",
+      "[{ kind: 1n }]",
+      'Host at index 0 has a non-string kind; expected "interactive" or "channel".',
+    ],
+    [
+      "a boxed Channel Host name",
+      '[{ kind: "channel", name: new String("telegram"), serve: async () => undefined }]',
+      "Channel Host at index 0 must have a non-empty string name.",
+    ],
+    [
       "a Channel Host without handle or serve",
       '[{ kind: "channel", name: "telegram" }]',
       'Channel Host "telegram" must expose a handle or serve function.',

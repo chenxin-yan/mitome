@@ -102,7 +102,10 @@ const hostIssue = (host: Host, index: number): string | undefined => {
       ? undefined
       : `Channel Host "${candidate.name}" must expose a handle or serve function.`;
   }
-  return `Host at index ${index} has unknown kind ${JSON.stringify(candidate.kind)}; expected "interactive" or "channel".`;
+  // Only strings are echoed; JSON.stringify would throw on bigint or cyclic kinds.
+  return Predicate.isString(candidate.kind)
+    ? `Host at index ${index} has unknown kind "${candidate.kind}"; expected "interactive" or "channel".`
+    : `Host at index ${index} has a non-string kind; expected "interactive" or "channel".`;
 };
 
 /**

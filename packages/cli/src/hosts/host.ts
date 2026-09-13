@@ -63,8 +63,8 @@ const hostIssue = (host: Host, index: number): string | undefined => {
       : `Interactive Host at index ${index} must have a run function and optional unsupported function.`;
   }
   if (candidate.kind === "channel") {
-    // Object() boxes a primitive string; nothing else becomes a String instance.
-    if (!(Object(candidate.name) instanceof String) || candidate.name === "") {
+    // Only a primitive string equals its own String() conversion (lint bans typeof).
+    if (String(candidate.name) !== candidate.name || candidate.name === "") {
       return `Channel Host at index ${index} must have a non-empty string name.`;
     }
     return hasOptionalFunction(candidate, "handle") &&
@@ -73,7 +73,10 @@ const hostIssue = (host: Host, index: number): string | undefined => {
       ? undefined
       : `Channel Host "${String(candidate.name)}" must expose a handle or serve function.`;
   }
-  return `Host at index ${index} has unknown kind ${JSON.stringify(candidate.kind)}; expected "interactive" or "channel".`;
+  // Only primitive strings are echoed; JSON.stringify would throw on bigint or cyclic kinds.
+  return Object(candidate.kind) instanceof String && !(candidate.kind instanceof String)
+    ? `Host at index ${index} has unknown kind ${JSON.stringify(candidate.kind)}; expected "interactive" or "channel".`
+    : `Host at index ${index} has a non-string kind; expected "interactive" or "channel".`;
 };
 
 const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefinition =>
