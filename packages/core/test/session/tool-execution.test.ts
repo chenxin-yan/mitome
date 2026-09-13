@@ -406,28 +406,42 @@ describe("ToolExecution Approval policy merge", () => {
           approvals: () => {
             throw thrown;
           },
-          cause: thrown,
+          cause: { _tag: "ApprovalPolicyError", message: "Approval policy threw", cause: thrown },
         },
         {
           approvals: () => Promise.resolve("allow"),
-          cause: new Error("Approval policy returned an invalid decision"),
+          cause: {
+            _tag: "ApprovalPolicyError",
+            message: "Approval policy returned an invalid decision",
+          },
         },
         {
           approvals: () => "maybe",
-          cause: new Error("Approval policy returned an invalid decision"),
+          cause: {
+            _tag: "ApprovalPolicyError",
+            message: "Approval policy returned an invalid decision",
+          },
         },
       ];
       for (const current of cases) {
         const fixture = makeFixture({ needsApproval: false, approvals: current.approvals });
         const execution = yield* fixture.execution;
         expect(yield* prepare(execution, params)).toBe(true);
-        expect(yield* request(execution, params)).toEqual({
+        expect(yield* request(execution, params)).toMatchObject({
           _tag: "Failure",
           message: "Approval policy failed",
           cause: current.cause,
         });
         expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
       }
+
+      // A call handle() never prepared still fails without echoing the callback's text.
+      const fixture = makeFixture({ needsApproval: false, approvals: cases[0]!.approvals });
+      const execution = yield* fixture.execution;
+      const failure = yield* Effect.flip(execute(execution, params));
+      expect(failure.message).toContain("Approval policy failed: Approval policy threw");
+      expect(failure.message).not.toContain("secret detail");
+      expect(fixture.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
     }),
   );
 

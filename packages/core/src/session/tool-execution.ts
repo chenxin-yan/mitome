@@ -88,6 +88,11 @@ type GateOutcome =
 
 const GateOutcome = Data.taggedEnum<GateOutcome>();
 
+class ApprovalPolicyError extends Data.TaggedError("ApprovalPolicyError")<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
+
 const policyDecisions: ReadonlyArray<unknown> = ["allow", "ask", "deny", undefined];
 
 const policyDenialReason = (name: string): string =>
@@ -225,11 +230,17 @@ export const makeToolExecution = (
             return GateOutcome.Passed({ decision: preTool.ask ? "ask" : undefined });
           }
           // The callback is synchronous by contract, so a Promise or Effect is an invalid decision.
-          // Sync throws become defects; interruptOrFailure squashes Fail and Die alike.
-          const decision = yield* Effect.sync(() => policy({ name, params, toolCallId })).pipe(
+          // A throw is wrapped so its text never reaches a user-facing description (ADR-0044).
+          const decision = yield* Effect.try({
+            try: () => policy({ name, params, toolCallId }),
+            catch: (cause) => new ApprovalPolicyError({ message: "Approval policy threw", cause }),
+          }).pipe(
             Effect.filterOrFail(
               (result) => policyDecisions.includes(result),
-              () => new Error("Approval policy returned an invalid decision"),
+              () =>
+                new ApprovalPolicyError({
+                  message: "Approval policy returned an invalid decision",
+                }),
             ),
             Effect.map((result) => ({ _tag: "Decision" as const, result })),
             Effect.catchCause(interruptOrFailure),
