@@ -101,11 +101,12 @@ export interface ExtensionHooksDefinition<Resource = never> {
   readonly preStep?: (prompt: Prompt, context: HookContext<Resource>) => Promise<Prompt>;
   /**
    * Policy check before a Tool runs: return `{ reason }` to veto the call, which the Model then
-   * sees as a denied execution. Approval is a separate Host decision after this Hook passes.
+   * sees as a denied execution, or `"ask"` to require a Host Approval even when the Agent's
+   * `approvals` allow the call. Extensions can tighten but never remove an Approval requirement.
    */
   readonly preTool?: (
     context: ToolHookContext & HookContext<Resource>,
-  ) => Promise<void | { readonly reason: string }>;
+  ) => Promise<void | { readonly reason: string } | "ask">;
   /** Observes and returns the Tool result, transformed or unchanged; it is revalidated afterwards. */
   readonly postTool?: (
     context: ToolResultHookContext & HookContext<Resource>,

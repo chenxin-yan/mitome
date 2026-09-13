@@ -6,6 +6,7 @@ import {
   type AgentDefinition,
   type AnyExtension,
   type AnyProvider,
+  type ApprovalPolicy,
   type Extension,
   type QualifiedModelId,
 } from "@mitome/core";
@@ -34,22 +35,32 @@ type RuntimeAgentDefinition = BaseDefinition<
   readonly tools?: (scope: { readonly tool: ToolBuilder<never> }) => ReadonlyArray<AnyTool>;
 };
 
+type ExtensionsWithTools<
+  Extensions extends ReadonlyArray<AnyExtension>,
+  Tools extends ReadonlyArray<AnyTool>,
+> = readonly [...Extensions, Extension<never, unknown, ToolContributionsOf<Tools>>];
+
 /**
  * Declares an Agent from its Providers, Default Model, and optional Extensions. The Default Model
  * is a Qualified Model id (`provider/model`) whose prefix must name a registered Provider; catalog
- * ids are offered as completions but any model id under that Provider is accepted.
+ * ids are offered as completions but any model id under that Provider is accepted. `approvals`
+ * offers the Extensions' Tool names as completions; see `ApprovalPolicy`.
  */
 export function defineAgent<
   const Providers extends ReadonlyArray<AnyProvider>,
   const DefaultModel extends QualifiedModelId<NoInfer<Providers[number]>>,
   const Extensions extends ReadonlyArray<AnyExtension> = readonly [],
 >(
-  definition: BaseDefinition<Providers, DefaultModel, Extensions> & { readonly tools?: undefined },
+  definition: BaseDefinition<Providers, DefaultModel, Extensions> & {
+    readonly tools?: undefined;
+    readonly approvals?: ApprovalPolicy<NoInfer<Extensions>> | undefined;
+  },
 ): AgentDefinition<Providers, DefaultModel, Extensions>;
 /**
  * Declares an Agent with one-off Tools that need no Resource. The `tools` builder becomes an
  * anonymous Extension appended after `extensions`; use `defineExtension` when Tools need a
- * Resource, Hooks, Instructions, or reuse.
+ * Resource, Hooks, Instructions, or reuse. An `approvals` callback narrows `params` by inline
+ * Tool name only when it is written after `tools`; rule lists complete inline names in any order.
  */
 export function defineAgent<
   const Providers extends ReadonlyArray<AnyProvider>,
@@ -59,12 +70,11 @@ export function defineAgent<
 >(
   definition: BaseDefinition<Providers, DefaultModel, Extensions> & {
     readonly tools: (scope: { readonly tool: ToolBuilder<never> }) => Tools;
+    readonly approvals?:
+      | ApprovalPolicy<NoInfer<ExtensionsWithTools<Extensions, Tools>>>
+      | undefined;
   },
-): AgentDefinition<
-  Providers,
-  DefaultModel,
-  readonly [...Extensions, Extension<never, unknown, ToolContributionsOf<Tools>>]
->;
+): AgentDefinition<Providers, DefaultModel, ExtensionsWithTools<Extensions, Tools>>;
 export function defineAgent(definition: typeof Schema.Unknown.Type): never {
   // SAFETY: overload resolution validates every public call before this erased implementation.
   const { tools, ...agent } = definition as RuntimeAgentDefinition;

@@ -3,6 +3,7 @@ import { Effect, Layer, Result, Schema, Stream } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
 import { makeProvider } from "@mitome/core";
 import { defineAgent, defineExtension, withSession, type InputSchema } from "../src/index.js";
+import { defineAgent as defineEffectAgent } from "../src/effect.js";
 
 const Action = Schema.Struct({ action: Schema.String });
 
@@ -205,6 +206,133 @@ describe("@mitome/sdk Tool Approval", () => {
       isFailure: false,
     });
     expect(events).toContainEqual({ type: "response-complete" });
+  });
+
+  test('forwards a Promise preTool "ask" as a policy Approval requirement', async () => {
+    const fixture = approvalModel();
+    let handlerCalls = 0;
+    const definition = defineAgent({
+      providers: [fixture.provider],
+      model: "test/default",
+      extensions: [
+        defineExtension({
+          name: "dangerous",
+          tools: ({ tool }) => [
+            tool({
+              name: "dangerous",
+              inputSchema: schema,
+              outputSchema: schema,
+              handler: async (input) => {
+                handlerCalls += 1;
+                return input;
+              },
+            }),
+          ],
+          hooks: { preTool: async ({ name }) => (name === "dangerous" ? "ask" : undefined) },
+        }),
+      ],
+      approvals: { allow: ["*"] },
+    });
+
+    const events = await withSession(definition, async (session) => {
+      const collected = [];
+      for await (const event of session.runTurn("Hi")) {
+        collected.push(event);
+        if (event.type === "approval-required") await event.approve();
+      }
+      return collected;
+    });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "approval-required",
+        name: "dangerous",
+        params: { action: "delete" },
+        requirement: "policy",
+      }),
+    );
+    expect(handlerCalls).toBe(1);
+  });
+
+  test("passes approvals through to the compiled Agent on both SDK surfaces", async () => {
+    let handlerCalls = 0;
+    const dangerous = defineExtension({
+      name: "dangerous",
+      tools: ({ tool }) => [
+        tool({
+          name: "dangerous",
+          inputSchema: schema,
+          outputSchema: schema,
+          needsApproval: true,
+          handler: async (input) => {
+            handlerCalls += 1;
+            return input;
+          },
+        }),
+      ],
+    });
+    const unattended = defineAgent({
+      providers: [approvalModel().provider],
+      model: "test/default",
+      extensions: [dangerous],
+      approvals: { allow: ["*"] },
+    });
+    expect(unattended.approvals).toEqual({ allow: ["*"] });
+    expect(
+      defineEffectAgent({
+        providers: [approvalModel().provider],
+        model: "test/default",
+        extensions: [dangerous],
+        approvals: { allow: ["*"] },
+      }).approvals,
+    ).toEqual({ allow: ["*"] });
+
+    const events = await withSession(unattended, (session) =>
+      Array.fromAsync(session.runTurn("Hi")),
+    );
+    expect(events.some((event) => event.type === "approval-required")).toBe(false);
+    expect(handlerCalls).toBe(1);
+
+    const flagged = await withSession(
+      defineAgent({
+        providers: [approvalModel().provider],
+        model: "test/default",
+        extensions: [dangerous],
+      }),
+      async (session) => {
+        const collected = [];
+        for await (const event of session.runTurn("Hi")) {
+          collected.push(event);
+          if (event.type === "approval-required") await event.deny();
+        }
+        return collected;
+      },
+    );
+    expect(flagged).toContainEqual(
+      expect.objectContaining({ type: "approval-required", requirement: "tool" }),
+    );
+
+    const denied = await withSession(
+      defineAgent({
+        providers: [approvalModel().provider],
+        model: "test/default",
+        extensions: [dangerous],
+        // `dangerous` is the only known Tool, so `params` is already its input.
+        approvals: (call) => (call.params.action === "delete" ? "deny" : "allow"),
+      }),
+      (session) => Array.fromAsync(session.runTurn("Hi")),
+    );
+    expect(denied).toContainEqual({
+      type: "tool-result",
+      id: "call-approval",
+      name: "dangerous",
+      result: {
+        type: "execution-denied",
+        reason: 'Tool call "dangerous" is denied by the Agent\'s approval policy',
+      },
+      isFailure: true,
+    });
+    expect(handlerCalls).toBe(1);
   });
 
   test("interrupts a pending approval and reuses the Session", async () => {

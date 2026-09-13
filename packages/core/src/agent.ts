@@ -2,6 +2,7 @@ import { Effect, Predicate, Schema } from "effect";
 import { Tool } from "effect/unstable/ai";
 import type {
   AnyExtension,
+  Extension,
   ToolFailureValidator,
   ToolInput,
   ToolInputValidator,
@@ -11,12 +12,45 @@ import type {
 import { isProvider, parseQualifiedModelId } from "./provider.js";
 import type { AnyProvider, QualifiedModelId } from "./provider.js";
 
-/** The Tool call an `approvals` callback decides on; `params` is the decoded Tool input. */
-export interface ApprovalPolicyCall {
-  readonly name: string;
-  readonly params: unknown;
-  readonly toolCallId: string;
-}
+type ContributionsOf<Value> =
+  Value extends Extension<infer _Resource, infer _Error, infer Contributions>
+    ? Contributions
+    : never;
+// Widened contributions (`any`, `Record<string, ...>`, or none) contribute no names, so Tool
+// names stay completion hints and never collapse the soft-string union to `string`.
+type KnownToolNames<Contributions> = Contributions extends unknown
+  ? string extends keyof Contributions
+    ? never
+    : keyof Contributions & string
+  : never;
+type KnownToolInput<Contributions, Name extends string> = Contributions extends unknown
+  ? Name extends keyof Contributions
+    ? Contributions[Name] extends { readonly input: infer Input }
+      ? Input
+      : never
+    : never
+  : never;
+type KnownToolCall<Contributions, Name extends string> = Name extends unknown
+  ? {
+      readonly name: Name;
+      readonly params: KnownToolInput<Contributions, Name>;
+      readonly toolCallId: string;
+    }
+  : never;
+
+/**
+ * The Tool call an `approvals` callback decides on; `params` is the decoded Tool input. When the
+ * Extensions' Tool names are known at the type level, comparing `name` narrows `params` to that
+ * Tool's input; Extensions typed without contributions leave `name: string` and `params: unknown`.
+ */
+export type ApprovalPolicyCall<
+  Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
+> = [KnownToolNames<ContributionsOf<Extensions[number]>>] extends [never]
+  ? { readonly name: string; readonly params: unknown; readonly toolCallId: string }
+  : KnownToolCall<
+      ContributionsOf<Extensions[number]>,
+      KnownToolNames<ContributionsOf<Extensions[number]>>
+    >;
 
 /** The Agent author's opinion on one Tool call; `undefined` defers to the Tool's `needsApproval`. */
 export type ApprovalPolicyDecision = "allow" | "ask" | "deny";
@@ -25,26 +59,34 @@ export type ApprovalPolicyDecision = "allow" | "ask" | "deny";
  * Synchronous, param-aware Approval rule. Throwing, returning a Promise or Effect, or returning
  * anything other than a decision or `undefined` fails the Turn before the Tool runs.
  */
-export type ApprovalPolicyCallback = (
-  call: ApprovalPolicyCall,
-) => ApprovalPolicyDecision | undefined;
+export type ApprovalPolicyCallback<
+  Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
+> = (call: ApprovalPolicyCall<Extensions>) => ApprovalPolicyDecision | undefined;
 
 /**
  * Tool-name patterns per decision: an exact Tool name or a prefix followed by one `*` (`"*"` alone
  * matches every Tool). A Tool matched by several lists resolves `deny` over `ask` over `allow`.
+ * Known Tool names of the Extensions are offered as completions; any string is accepted.
  */
-export interface ApprovalRules {
-  readonly allow?: ReadonlyArray<string> | undefined;
-  readonly ask?: ReadonlyArray<string> | undefined;
-  readonly deny?: ReadonlyArray<string> | undefined;
+export interface ApprovalRules<
+  Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
+> {
+  readonly allow?: ReadonlyArray<ToolNamePattern<Extensions>> | undefined;
+  readonly ask?: ReadonlyArray<ToolNamePattern<Extensions>> | undefined;
+  readonly deny?: ReadonlyArray<ToolNamePattern<Extensions>> | undefined;
 }
+type ToolNamePattern<Extensions extends ReadonlyArray<AnyExtension>> =
+  | KnownToolNames<ContributionsOf<Extensions[number]>>
+  | (string & {});
 
 /**
  * The Agent author's sparse Approval override: Tools it does not mention keep their author's
  * `needsApproval` default. `deny` and `ask` always hold; `allow` only bypasses the Tool default and
  * never an Extension veto or `"ask"`.
  */
-export type ApprovalPolicy = ApprovalRules | ApprovalPolicyCallback;
+export type ApprovalPolicy<
+  Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
+> = ApprovalRules<Extensions> | ApprovalPolicyCallback<Extensions>;
 
 /**
  * A user-authored declaration of exactly one Agent: its Providers, Default Model, and Extensions.
@@ -132,7 +174,7 @@ export function defineAgent<
     readonly providers: Providers;
     readonly model: DefaultModel;
     readonly extensions: Extensions;
-    readonly approvals?: ApprovalPolicy | undefined;
+    readonly approvals?: ApprovalPolicy<NoInfer<Extensions>> | undefined;
   } & ([Providers[number]] extends [AnyProvider] ? unknown : never),
 ): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, Extensions>;
 export function defineAgent(definition: any): AgentDefinition {
