@@ -27,7 +27,14 @@ export type {
   ToolResultValidator,
 } from "./extension.js";
 export { createHostSession, defineMitome } from "./host.js";
-export type { Host, HostContext, MitomeDefinition } from "./host.js";
+export type {
+  ChannelHost,
+  ChannelHostContext,
+  Host,
+  HostContext,
+  InteractiveHost,
+  MitomeDefinition,
+} from "./host.js";
 export { credentialDescriptor, makeProvider } from "./provider.js";
 export type { AnyProvider, Provider, QualifiedModelId, ValidProviderId } from "./provider.js";
 export {

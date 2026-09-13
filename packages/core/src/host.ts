@@ -3,21 +3,26 @@ import type { AgentDefinition } from "./agent.js";
 import { createSession } from "./session/session.js";
 import type { TranscriptStore } from "./transcript-store.js";
 
-/** What a Host receives to run Sessions for one Mitome Definition. */
-export interface HostContext {
+/** What a Channel Host receives to run Sessions for one Mitome Definition. */
+export interface ChannelHostContext {
   readonly agent: AgentDefinition;
-  /** First user Message to submit, or `""` when the user gave none. */
-  readonly message: string;
   /** Store the Mitome Definition composed; absent means nothing is persisted. */
   readonly transcripts?: TranscriptStore | undefined;
 }
 
+/** What an interactive Host receives: the Channel Host context plus the staged first Message. */
+export interface HostContext extends ChannelHostContext {
+  /** First user Message to submit, or `""` when the user gave none. */
+  readonly message: string;
+}
+
 /**
- * Drives Sessions on a user's behalf, such as the CLI's one-shot Host or `@mitome/tui`. A Mitome
- * Definition composes at most one Host, and the CLI falls back to one-shot output when
- * `unsupported()` returns a reason.
+ * A Host that owns a TTY process, such as `@mitome/tui`. `mitome [message]` runs the first
+ * interactive Host in Definition order whose `unsupported()` returns undefined and otherwise falls
+ * back to one-shot output.
  */
-export interface Host {
+export interface InteractiveHost {
+  readonly kind: "interactive";
   /** Reason this Host cannot run in the current environment, or undefined when it can. */
   readonly unsupported?: () => string | undefined;
   /** Runs Sessions for the context and resolves when the Host is finished. */
@@ -25,24 +30,86 @@ export interface Host {
 }
 
 /**
+ * A Host that connects an external surface to the Agent. It must expose `handle`, `serve`, or
+ * both; `defineMitome` rejects a Channel Host with neither. `mitome [message]` ignores Channel
+ * Hosts.
+ */
+export interface ChannelHost {
+  readonly kind: "channel";
+  /** Identifies the Channel; unique among the Channel Hosts of one Mitome Definition. */
+  readonly name: string;
+  /** Answers one request; the response body owns the Session scope until it ends or is cancelled. */
+  readonly handle?: (context: ChannelHostContext, request: Request) => Promise<Response>;
+  /** Runs a long-lived connection and resolves only after the signal aborts and shutdown completes. */
+  readonly serve?: (context: ChannelHostContext, signal: AbortSignal) => Promise<void>;
+}
+
+/** Connects people to the Agent through one surface; discriminated by `kind`. */
+export type Host = InteractiveHost | ChannelHost;
+
+/**
  * The composition root pairing one Agent Definition with its Hosts and Transcript persistence. A
  * Mitome Definition module exports it as default; `defineMitome` creates it.
  */
 export interface MitomeDefinition<Agent extends AgentDefinition = AgentDefinition> {
   readonly agent: Agent;
-  /** Zero or one Host. */
+  /** Hosts in declaration order; interactive Hosts are tried in this order. */
   readonly hosts: ReadonlyArray<Host>;
   /** Store shared by every Host; absent means no Transcript data is written. */
   readonly transcripts?: TranscriptStore | undefined;
 }
 
 /** Opens the scoped Session a Host runs for its context; closing the Scope ends the Session. */
-export const createHostSession = (context: HostContext) =>
+export const createHostSession = (context: ChannelHostContext) =>
   createSession(context.agent, { transcripts: context.transcripts });
 
+/** A declared Host as it may actually arrive at runtime, before validation. */
+interface HostCandidate {
+  readonly kind?: unknown;
+  readonly name?: unknown;
+  readonly run?: unknown;
+  readonly unsupported?: unknown;
+  readonly handle?: unknown;
+  readonly serve?: unknown;
+}
+
+const hasOptionalFunction = (
+  host: HostCandidate,
+  member: "unsupported" | "handle" | "serve",
+): boolean => host[member] === undefined || Predicate.isFunction(host[member]);
+
+// packages/cli/src/hosts/host.ts mirrors these checks and messages; it cannot import them.
+const hostIssue = (host: Host, index: number): string | undefined => {
+  if (!Predicate.isObject(host)) {
+    return `Host at index ${index} must be an object with a kind — did you forget to call the factory?`;
+  }
+  const candidate: HostCandidate = host;
+  if (candidate.kind === undefined) {
+    return `Host at index ${index} must be an object with a kind — did you forget to call the factory?`;
+  }
+  if (candidate.kind === "interactive") {
+    return Predicate.isFunction(candidate.run) && hasOptionalFunction(candidate, "unsupported")
+      ? undefined
+      : `Interactive Host at index ${index} must have a run function and optional unsupported function.`;
+  }
+  if (candidate.kind === "channel") {
+    if (!Predicate.isString(candidate.name) || candidate.name === "") {
+      return `Channel Host at index ${index} must have a non-empty string name.`;
+    }
+    return hasOptionalFunction(candidate, "handle") &&
+      hasOptionalFunction(candidate, "serve") &&
+      (candidate.handle !== undefined || candidate.serve !== undefined)
+      ? undefined
+      : `Channel Host "${candidate.name}" must expose a handle or serve function.`;
+  }
+  return `Host at index ${index} has unknown kind ${JSON.stringify(candidate.kind)}; expected "interactive" or "channel".`;
+};
+
 /**
- * Creates a Mitome Definition. `hosts` defaults to none; more than one Host, or a value that is not
- * a Host (typically a factory that was not called), throws.
+ * Creates a Mitome Definition. `hosts` defaults to none and may hold any number of Hosts. A value
+ * that is not a Host (typically a factory that was not called), an unknown `kind`, a Channel Host
+ * without `handle` or `serve`, or two Channel Hosts sharing a name throws with the offending Host
+ * named.
  */
 export const defineMitome = <const Agent extends AgentDefinition>(
   definition: Omit<MitomeDefinition<Agent>, "hosts"> & {
@@ -50,20 +117,15 @@ export const defineMitome = <const Agent extends AgentDefinition>(
   },
 ): MitomeDefinition<Agent> => {
   const hosts = definition.hosts === undefined ? [] : definition.hosts;
-  if (
-    hosts.some(
-      (host) =>
-        !Predicate.isObject(host) ||
-        !Predicate.isFunction(host.run) ||
-        (host.unsupported !== undefined && !Predicate.isFunction(host.unsupported)),
-    )
-  ) {
-    throw new Error(
-      "Host must be an object with a run function and optional unsupported function — did you forget to call the factory?",
-    );
-  }
-  if (hosts.length > 1) {
-    throw new Error("Mitome Definition must declare at most one Host.");
-  }
+  const channelNames = new Set<string>();
+  hosts.forEach((host, index) => {
+    const issue = hostIssue(host, index);
+    if (issue !== undefined) throw new Error(issue);
+    if (host.kind !== "channel") return;
+    if (channelNames.has(host.name)) {
+      throw new Error(`Channel Host name "${host.name}" is declared more than once.`);
+    }
+    channelNames.add(host.name);
+  });
   return { ...definition, hosts };
 };

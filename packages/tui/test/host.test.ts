@@ -2,12 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { tui } from "../src/index.js";
 
 describe("TUI Host", () => {
-  test("requires an interactive terminal", () => {
+  test("is an interactive Host that requires an interactive terminal", () => {
     const originalIn = process.stdin.isTTY;
     const originalOut = process.stdout.isTTY;
     try {
       process.stdin.isTTY = true;
       process.stdout.isTTY = true;
+      expect(tui().kind).toBe("interactive");
       expect(tui().unsupported?.()).toBeUndefined();
       process.stdout.isTTY = false;
       expect(tui().unsupported?.()).toBe("@mitome/tui requires an interactive terminal");

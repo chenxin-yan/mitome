@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0047
+status: amended by ADR-0047; superseded by ADR-0050
 ---
 
 # Compose Hosts explicitly in the composition root

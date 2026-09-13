@@ -3,7 +3,7 @@
 // resolved beside the selected root so it shares the author's module instances.
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { MitomeDefinition, TurnEvent } from "@mitome/core";
+import type { Host, MitomeDefinition, TurnEvent } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
 const mode = process.argv[2];
@@ -24,8 +24,17 @@ interface TranscriptStoreCandidate {
 
 interface DefinitionCandidate {
   readonly agent?: object;
-  readonly hosts?: ReadonlyArray<object>;
+  readonly hosts?: ReadonlyArray<unknown>;
   readonly transcripts?: TranscriptStoreCandidate | undefined;
+}
+
+interface HostCandidate {
+  readonly kind?: unknown;
+  readonly name?: unknown;
+  readonly run?: unknown;
+  readonly unsupported?: unknown;
+  readonly handle?: unknown;
+  readonly serve?: unknown;
 }
 
 const isTranscriptStore = (value: TranscriptStoreCandidate): boolean =>
@@ -34,23 +43,46 @@ const isTranscriptStore = (value: TranscriptStoreCandidate): boolean =>
   value.list instanceof Function &&
   value.appendEvent instanceof Function;
 
+const hasOptionalFunction = (
+  host: HostCandidate,
+  member: "unsupported" | "handle" | "serve",
+): boolean => host[member] === undefined || host[member] instanceof Function;
+
+// Mirrors hostIssue in @mitome/core's host.ts, which this file cannot import.
+const hostIssue = (host: Host, index: number): string | undefined => {
+  if (!(host instanceof Object) || host instanceof Function) {
+    return `Host at index ${index} must be an object with a kind — did you forget to call the factory?`;
+  }
+  const candidate: HostCandidate = host;
+  if (candidate.kind === undefined) {
+    return `Host at index ${index} must be an object with a kind — did you forget to call the factory?`;
+  }
+  if (candidate.kind === "interactive") {
+    return candidate.run instanceof Function && hasOptionalFunction(candidate, "unsupported")
+      ? undefined
+      : `Interactive Host at index ${index} must have a run function and optional unsupported function.`;
+  }
+  if (candidate.kind === "channel") {
+    // Object() boxes a primitive string; nothing else becomes a String instance.
+    if (!(Object(candidate.name) instanceof String) || candidate.name === "") {
+      return `Channel Host at index ${index} must have a non-empty string name.`;
+    }
+    return hasOptionalFunction(candidate, "handle") &&
+      hasOptionalFunction(candidate, "serve") &&
+      (candidate.handle !== undefined || candidate.serve !== undefined)
+      ? undefined
+      : `Channel Host "${String(candidate.name)}" must expose a handle or serve function.`;
+  }
+  return `Host at index ${index} has unknown kind ${JSON.stringify(candidate.kind)}; expected "interactive" or "channel".`;
+};
+
 const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefinition =>
   "agent" in value &&
   value.agent instanceof Object &&
   "hosts" in value &&
   Array.isArray(value.hosts) &&
-  value.hosts.length <= 1 &&
   (value.transcripts === undefined ||
-    (value.transcripts instanceof Object && isTranscriptStore(value.transcripts))) &&
-  value.hosts.every(
-    (host) =>
-      host instanceof Object &&
-      "run" in host &&
-      host.run instanceof Function &&
-      (!("unsupported" in host) ||
-        host.unsupported === undefined ||
-        host.unsupported instanceof Function),
-  );
+    (value.transcripts instanceof Object && isTranscriptStore(value.transcripts)));
 
 if (!(loaded instanceof Object)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
@@ -58,19 +90,33 @@ if (!(loaded instanceof Object)) {
 if (!isMitomeDefinition(loaded)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
-
-const interactiveHost = loaded.hosts[0];
-if (mode === "auto" && interactiveHost !== undefined) {
-  const reason = interactiveHost.unsupported?.();
-  if (reason === undefined) {
-    await interactiveHost.run({
-      agent: loaded.agent,
-      message: message ?? "",
-      transcripts: loaded.transcripts,
-    });
-    process.exit(0);
+const channelNames = new Set<string>();
+loaded.hosts.forEach((host, index) => {
+  const issue = hostIssue(host, index);
+  if (issue !== undefined) throw new Error(issue);
+  if (host.kind !== "channel") return;
+  if (channelNames.has(host.name)) {
+    throw new Error(`Channel Host name "${host.name}" is declared more than once.`);
   }
-  process.stderr.write(`${reason}; falling back to one-shot output.\n`);
+  channelNames.add(host.name);
+});
+
+if (mode === "auto") {
+  const interactive = loaded.hosts.filter((host) => host.kind === "interactive");
+  for (const [index, host] of interactive.entries()) {
+    const reason = host.unsupported?.();
+    if (reason === undefined) {
+      await host.run({
+        agent: loaded.agent,
+        message: message ?? "",
+        transcripts: loaded.transcripts,
+      });
+      process.exit(0);
+    }
+    const fallback =
+      index + 1 < interactive.length ? "trying the next Host" : "falling back to one-shot output";
+    process.stderr.write(`${reason}; ${fallback}.\n`);
+  }
 }
 
 // One-shot has nothing to run without a message; an explicitly empty message is
@@ -143,7 +189,6 @@ const program = Effect.scoped(
   Effect.gen(function* () {
     const session = yield* core.createHostSession({
       agent: loaded.agent,
-      message,
       transcripts: loaded.transcripts,
     });
     yield* Stream.runForEach(session.runTurn(message), (event) =>
