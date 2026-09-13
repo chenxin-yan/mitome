@@ -31,6 +31,7 @@ describe("session view model", () => {
       toolCallId: "call-1",
       name: "lookup",
       params: { query: "weather" },
+      requirement: "tool",
       approve: () => Effect.sync(() => void approvals++),
       deny: () => Effect.void,
     };

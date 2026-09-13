@@ -261,4 +261,63 @@ describe("Agent Definition compilation", () => {
       ]);
     }),
   );
+
+  it.effect("carries approvals through defineAgent and compilation", () =>
+    Effect.gen(function* () {
+      const callback = () => "allow" as const;
+      const viaCallback = yield* compileAgentDefinition(
+        defineAgent({ providers: [model], model: "test/default", approvals: callback }),
+      );
+      expect(viaCallback.approvals).toBe(callback);
+
+      const viaRules = yield* compileAgentDefinition(
+        defineAgent({
+          providers: [model],
+          model: "test/default",
+          extensions: [],
+          approvals: { allow: ["*"], ask: ["write_*"], deny: ["drop_table"] },
+        }),
+      );
+      const decide = (name: string) => viaRules.approvals?.({ name, params: {}, toolCallId: "" });
+      expect(["read_file", "write_file", "drop_table"].map(decide)).toEqual([
+        "allow",
+        "ask",
+        "deny",
+      ]);
+
+      const unset = yield* compileAgentDefinition(
+        defineAgent({ providers: [model], model: "test/default" }),
+      );
+      expect(unset.approvals).toBeUndefined();
+    }),
+  );
+
+  it.effect("rejects malformed approvals at the Agent boundary", () =>
+    Effect.gen(function* () {
+      const withApprovals = (approvals: typeof Schema.Unknown.Type) => ({
+        providers: [model],
+        model: "test/default",
+        extensions: [],
+        approvals,
+      });
+
+      expect((yield* getAgentDefinitionError(withApprovals("allow"))).issues).toEqual([
+        "Agent Definition approvals must be a rule object or a function",
+      ]);
+      expect((yield* getAgentDefinitionError(withApprovals(["*"]))).issues).toEqual([
+        "Agent Definition approvals must be a rule object or a function",
+      ]);
+      expect(
+        (yield* getAgentDefinitionError(
+          withApprovals({ alow: ["x"], allow: "x", deny: ["a*b", "**", 1, "*"] }),
+        )).issues,
+      ).toEqual([
+        "Unknown approvals rule: alow (expected allow, ask, or deny)",
+        "Invalid Tool-name pattern in approvals.deny: a*b (use an exact Tool name or one trailing *)",
+        "Invalid Tool-name pattern in approvals.deny: ** (use an exact Tool name or one trailing *)",
+        "Invalid Tool-name pattern in approvals.deny: 1 (use an exact Tool name or one trailing *)",
+        "approvals.allow must be an array of Tool-name patterns",
+      ]);
+    }),
+  );
 });

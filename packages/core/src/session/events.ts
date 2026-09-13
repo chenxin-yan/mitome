@@ -11,6 +11,13 @@ export type Json =
   | ReadonlyArray<Json>
   | { readonly [key: string]: Json };
 
+/**
+ * Why a Tool call paused for Approval: the Tool author's `needsApproval` (`tool`), the Agent's
+ * `approvals` or an Extension `preTool` `"ask"` (`policy`), or a `needsApproval` predicate that
+ * failed and therefore fails closed (`predicate-error`).
+ */
+export type ApprovalRequirement = "tool" | "policy" | "predicate-error";
+
 /** The Tool result the Model receives when a `preTool` Hook vetoes or a Host denies a Tool call. */
 export interface ToolExecutionDenied {
   readonly type: "execution-denied";
@@ -44,6 +51,7 @@ export type TurnEvent =
       readonly toolCallId: string;
       readonly name: string;
       readonly params: unknown;
+      readonly requirement: ApprovalRequirement;
       /** Lets the Tool call run. One-shot: resolving again or after the Turn ended fails. */
       readonly approve: () => Effect.Effect<void, ApprovalResolutionError>;
       /** Rejects the Tool call; the Model sees `reason`. One-shot like `approve`. */
@@ -97,6 +105,7 @@ const approvalRequiredEventDto = Schema.Struct({
   toolCallId: Schema.String,
   name: Schema.String,
   params: Schema.Json,
+  requirement: Schema.Literals(["tool", "policy", "predicate-error"]),
 });
 const approvalResolvedEventDto = Schema.Struct({
   type: Schema.Literal("approval-resolved"),
@@ -147,6 +156,7 @@ export type TurnEventDto =
       readonly toolCallId: string;
       readonly name: string;
       readonly params: Json;
+      readonly requirement: ApprovalRequirement;
     }
   | {
       readonly type: "approval-resolved";
@@ -205,6 +215,7 @@ export const turnEventToDto = (event: PersistedTurnEvent): TurnEventDto => {
       toolCallId: event.toolCallId,
       name: event.name,
       params: Schema.is(Schema.Json)(event.params) ? event.params : null,
+      requirement: event.requirement,
     };
   }
   return event;

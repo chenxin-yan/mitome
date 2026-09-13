@@ -11,6 +11,41 @@ import type {
 import { isProvider, parseQualifiedModelId } from "./provider.js";
 import type { AnyProvider, QualifiedModelId } from "./provider.js";
 
+/** The Tool call an `approvals` callback decides on; `params` is the decoded Tool input. */
+export interface ApprovalPolicyCall {
+  readonly name: string;
+  readonly params: unknown;
+  readonly toolCallId: string;
+}
+
+/** The Agent author's opinion on one Tool call; `undefined` defers to the Tool's `needsApproval`. */
+export type ApprovalPolicyDecision = "allow" | "ask" | "deny";
+
+/**
+ * Synchronous, param-aware Approval rule. Throwing, returning a Promise or Effect, or returning
+ * anything other than a decision or `undefined` fails the Turn before the Tool runs.
+ */
+export type ApprovalPolicyCallback = (
+  call: ApprovalPolicyCall,
+) => ApprovalPolicyDecision | undefined;
+
+/**
+ * Tool-name patterns per decision: an exact Tool name or a prefix followed by one `*` (`"*"` alone
+ * matches every Tool). A Tool matched by several lists resolves `deny` over `ask` over `allow`.
+ */
+export interface ApprovalRules {
+  readonly allow?: ReadonlyArray<string> | undefined;
+  readonly ask?: ReadonlyArray<string> | undefined;
+  readonly deny?: ReadonlyArray<string> | undefined;
+}
+
+/**
+ * The Agent author's sparse Approval override: Tools it does not mention keep their author's
+ * `needsApproval` default. `deny` and `ask` always hold; `allow` only bypasses the Tool default and
+ * never an Extension veto or `"ask"`.
+ */
+export type ApprovalPolicy = ApprovalRules | ApprovalPolicyCallback;
+
 /**
  * A user-authored declaration of exactly one Agent: its Providers, Default Model, and Extensions.
  * Create it with `defineAgent`; a Session compiles it once when it starts.
@@ -26,6 +61,8 @@ export interface AgentDefinition<
   readonly model: DefaultModel;
   /** Extensions in composition order; start Hooks run and Resources are acquired in this order. */
   readonly extensions: Extensions;
+  /** Which Tool calls run unattended, always ask, or never run; see `ApprovalPolicy`. */
+  readonly approvals?: ApprovalPolicy | undefined;
 }
 
 type AnyToolHandler = (params: ToolInput) => Effect.Effect<ToolOutput, unknown, any>;
@@ -50,12 +87,14 @@ export interface CompiledAgent {
   readonly providers: ReadonlyMap<string, AnyProvider>;
   readonly tools: ReadonlyMap<string, CompiledTool>;
   readonly instructions: string;
+  /** The Agent's `approvals`, with a rule object folded into one callback. */
+  readonly approvals: ApprovalPolicyCallback | undefined;
 }
 
 /**
  * The Agent Definition cannot compile: duplicate Provider ids, a malformed or unregistered Default
- * Model, conflicting Extension or Tool names, or Tool handlers without a matching Tool. `issues`
- * lists every problem found, not just the first.
+ * Model, conflicting Extension or Tool names, Tool handlers without a matching Tool, or malformed
+ * `approvals` rules. `issues` lists every problem found, not just the first.
  */
 export class AgentDefinitionError extends Schema.TaggedError<AgentDefinitionError>()(
   "AgentDefinitionError",
@@ -80,6 +119,7 @@ export function defineAgent<
     readonly providers: Providers;
     readonly model: DefaultModel;
     readonly extensions?: undefined;
+    readonly approvals?: ApprovalPolicy | undefined;
   } & ([Providers[number]] extends [AnyProvider] ? unknown : never),
 ): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, readonly []>;
 /** Declares an Agent with Extensions; see the Extension-free overload for the Default Model rules. */
@@ -92,6 +132,7 @@ export function defineAgent<
     readonly providers: Providers;
     readonly model: DefaultModel;
     readonly extensions: Extensions;
+    readonly approvals?: ApprovalPolicy | undefined;
   } & ([Providers[number]] extends [AnyProvider] ? unknown : never),
 ): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, Extensions>;
 export function defineAgent(definition: any): AgentDefinition {
@@ -212,6 +253,55 @@ const compileExtensions = (
   return { extensions, tools, handlers, instructions, requiredHandlerNames };
 };
 
+const approvalDecisions = ["deny", "ask", "allow"] as const satisfies ReadonlyArray<
+  keyof ApprovalRules
+>;
+
+const matchesToolName = (pattern: string, name: string): boolean =>
+  pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : pattern === name;
+
+const compileApprovals = (
+  value: typeof Schema.Unknown.Type,
+  issues: Array<string>,
+): ApprovalPolicyCallback | undefined => {
+  if (value === undefined) return undefined;
+  if (Predicate.isFunction(value)) {
+    // SAFETY: the callback's return value is validated per call in ToolExecution.
+    return value as ApprovalPolicyCallback;
+  }
+  if (!Predicate.isObject(value) || Array.isArray(value)) {
+    issues.push("Agent Definition approvals must be a rule object or a function");
+    return undefined;
+  }
+  for (const key of Object.keys(value)) {
+    if (!approvalDecisions.some((decision) => decision === key)) {
+      issues.push(`Unknown approvals rule: ${key} (expected allow, ask, or deny)`);
+    }
+  }
+  const rules = new Map<ApprovalPolicyDecision, ReadonlyArray<string>>();
+  for (const decision of approvalDecisions) {
+    const patterns = value[decision];
+    if (patterns === undefined) continue;
+    if (!Array.isArray(patterns)) {
+      issues.push(`approvals.${decision} must be an array of Tool-name patterns`);
+      continue;
+    }
+    for (const pattern of patterns) {
+      const star = Predicate.isString(pattern) ? pattern.indexOf("*") : -1;
+      if (!Predicate.isString(pattern) || (star !== -1 && star !== pattern.length - 1)) {
+        issues.push(
+          `Invalid Tool-name pattern in approvals.${decision}: ${String(pattern)} (use an exact Tool name or one trailing *)`,
+        );
+      }
+    }
+    rules.set(decision, patterns.filter(Predicate.isString));
+  }
+  return (call) =>
+    approvalDecisions.find((decision) =>
+      rules.get(decision)?.some((pattern) => matchesToolName(pattern, call.name)),
+    );
+};
+
 /**
  * Validates an unknown value as an Agent Definition and resolves it into a `CompiledAgent`.
  * Sessions call this when they start; a Host may call it earlier to surface
@@ -265,6 +355,7 @@ export const compileAgentDefinition: (
     definition.extensions,
     issues,
   );
+  const approvals = compileApprovals(definition.approvals, issues);
 
   for (const name of requiredHandlerNames) {
     if (!handlers.has(name)) {
@@ -294,5 +385,6 @@ export const compileAgentDefinition: (
       ]),
     ),
     instructions: instructions.join("\n\n"),
+    approvals,
   };
 });

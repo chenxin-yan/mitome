@@ -331,6 +331,7 @@ describe("Session event log", () => {
         toolCallId: "call-1",
         name: "dangerous",
         params: { action: "delete" },
+        requirement: "tool",
       });
       const approvalRequest = decoded[1]!.event;
       if (approvalRequest.type !== "approval-required") return;

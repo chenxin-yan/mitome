@@ -65,6 +65,7 @@ export const makeStepRunner = (
               toolCallId: outcome.toolCallId,
               name: outcome.name,
               params: outcome.params,
+              requirement: outcome.requirement,
               approve: () => toolExecution.approval.resolve(outcome.approvalId, { approved: true }),
               deny: (reason) =>
                 toolExecution.approval.resolve(outcome.approvalId, {
