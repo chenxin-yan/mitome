@@ -489,6 +489,11 @@ describe("compiled mitome", () => {
       'Host at index 0 has a non-string kind; expected "interactive" or "channel".',
     ],
     [
+      "a Channel Host name that cannot be coerced",
+      '[{ kind: "channel", name: Object.create(null), serve: async () => undefined }]',
+      "Channel Host at index 0 must have a non-empty string name.",
+    ],
+    [
       "a boxed Channel Host name",
       '[{ kind: "channel", name: new String("telegram"), serve: async () => undefined }]',
       "Channel Host at index 0 must have a non-empty string name.",

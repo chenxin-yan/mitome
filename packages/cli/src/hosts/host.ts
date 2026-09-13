@@ -63,8 +63,12 @@ const hostIssue = (host: Host, index: number): string | undefined => {
       : `Interactive Host at index ${index} must have a run function and optional unsupported function.`;
   }
   if (candidate.kind === "channel") {
-    // Only a primitive string equals its own String() conversion (lint bans typeof).
-    if (String(candidate.name) !== candidate.name || candidate.name === "") {
+    // Object() boxes only primitive strings and never invokes user coercion (lint bans typeof).
+    if (
+      !(Object(candidate.name) instanceof String) ||
+      candidate.name instanceof String ||
+      candidate.name === ""
+    ) {
       return `Channel Host at index ${index} must have a non-empty string name.`;
     }
     return hasOptionalFunction(candidate, "handle") &&
