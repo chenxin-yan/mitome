@@ -18,12 +18,5 @@
       "version": "19.2.6"
     }
   },
-  "ignorePatterns": [
-    ".source/",
-    ".output/",
-    ".tanstack/",
-    ".nitro/",
-    ".vercel/",
-    "src/routeTree.gen.ts"
-  ]
+  "ignorePatterns": [".output/", ".tanstack/", ".nitro/", ".vercel/", "src/routeTree.gen.ts"]
 }

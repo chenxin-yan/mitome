@@ -9,9 +9,6 @@
     "build": {
       "dependsOn": ["//#api:generate"],
       "outputs": ["dist/**", ".wrangler/deploy/**"]
-    },
-    "check:types": {
-      "outputs": [".source/**"]
     }
   }
 }
