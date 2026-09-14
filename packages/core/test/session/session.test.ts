@@ -282,6 +282,46 @@ describe("createSession", () => {
     }),
   );
 
+  it.effect("keeps the committed Turn when appending the final event record fails", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDeterministicProvider("hello");
+      const saved: Array<number> = [];
+      const store: TranscriptStore = {
+        save: (transcript) => Effect.sync(() => void saved.push(transcript.messages.length)),
+        appendEvent: (record) =>
+          record.event.type === "response-complete"
+            ? Effect.fail(new StoreError({ message: "append failed" }))
+            : Effect.void,
+        load: () => Effect.die("not used"),
+        list: () => Effect.die("not used"),
+      };
+      const session = yield* createSession(
+        { providers: [fixture.provider], model: "test/default", extensions: [] },
+        { transcripts: store },
+      );
+      const events: Array<unknown> = [];
+      const error = yield* Effect.flip(
+        Stream.runDrain(
+          session.runTurn("Hi").pipe(Stream.tap((event) => Effect.sync(() => events.push(event)))),
+        ),
+      );
+
+      // The snapshot save and history mutation are the commit; the final event append is a
+      // post-commit audit write. Its failure surfaces, but does not roll the Turn back.
+      expect(error).toMatchObject({ _tag: "StoreError", message: "append failed" });
+      expect(events).toEqual([{ type: "model-output", text: "hello" }]);
+      // A lone text-delta yields no assistant message, so the committed Turn is the user Message.
+      expect(saved).toEqual([1]);
+      expect(session.history().map((message) => message.role)).toEqual(["user"]);
+      expect(session.transcript().messages).toHaveLength(1);
+
+      const second = yield* Effect.flip(Stream.runDrain(session.runTurn("Again")));
+      expect(second).toMatchObject({ _tag: "StoreError" });
+      expect(saved).toEqual([1, 2]);
+      expect(session.history()).toHaveLength(2);
+    }),
+  );
+
   it.effect("commits history when interrupted during the Transcript save", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDeterministicProvider("hello");

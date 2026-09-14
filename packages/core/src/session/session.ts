@@ -44,7 +44,9 @@ export interface Session<
   /**
    * Runs one Turn for a user Message as a Stream of Turn events; consume or interrupt it exactly
    * once. Fails with `SessionBusyError` while another Turn is active and `SessionReleasedError`
-   * after the Session scope closed. An interrupted or failed Turn is not committed.
+   * after the Session scope closed. A Turn that fails or is interrupted before its Transcript save
+   * is not committed. Once the save succeeds the Turn is committed, even if appending the final
+   * event record then fails with `StoreError` in place of `response-complete`.
    */
   readonly runTurn: (
     message: string,

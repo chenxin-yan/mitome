@@ -20,8 +20,9 @@ export type TranscriptSummary = typeof TranscriptSummarySchema.Type;
 /** The `version` written into every event record this version of Mitome produces. */
 export const TranscriptEventRecordVersion = 1 as const;
 /**
- * Records decode independently. A tail without `response-complete` is an expected interrupted Turn,
- * not a corrupt log; event records are observability data and have no Session replay contract.
+ * Records decode independently. A tail without `response-complete` is not a corrupt log: the Turn
+ * was interrupted, or committed and then failed to append its final record. Event records are
+ * observability data and have no Session replay contract; the Transcript snapshot is authoritative.
  */
 export const TranscriptEventRecordSchema = Schema.Struct({
   transcriptId: Schema.String,
@@ -39,7 +40,11 @@ export interface TranscriptEventRecord {
   readonly event: TurnEventDto;
 }
 
-/** A Transcript store operation failed; the Turn that triggered it fails and stays uncommitted. */
+/**
+ * A Transcript store operation failed. From `save` or a mid-Turn `appendEvent`, the Turn fails
+ * before commit. From the `appendEvent` of the final `response-complete` record, the Turn is already
+ * committed and the failure surfaces to the consumer instead of `response-complete`.
+ */
 export class StoreError extends Schema.TaggedError<StoreError>()("StoreError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),

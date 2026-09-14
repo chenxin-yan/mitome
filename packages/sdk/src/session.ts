@@ -41,7 +41,9 @@ export interface Session<
   /**
    * Runs one Turn for a user Message. The returned iterable is single-use; requesting a second
    * iterator throws. Returning from the iterator early interrupts the Turn, fires the Hook
-   * `AbortSignal`, and leaves the Session usable; the interrupted Turn is not committed.
+   * `AbortSignal`, and leaves the Session usable. A Turn interrupted before its Transcript save is
+   * not committed; one interrupted during or after the save stays committed, so check `history()`
+   * before resending the Message.
    */
   readonly runTurn: (message: string, options?: TurnOptions<Providers>) => AsyncIterable<TurnEvent>;
   /** The committed Model Prompt, advanced only after a Turn completes and its Transcript save succeeds. */

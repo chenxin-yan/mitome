@@ -52,10 +52,11 @@ An unknown `resume` id rejects with `TranscriptNotFound`. You can also seed from
 
 ## Commit boundary
 
-Only a completed Turn updates its Transcript, and only after the store's `save` succeeds. Until then `session.history()` and `session.transcript()` still show the previous state. This means:
+Only a completed Turn updates its Transcript, and only after the store's `save` succeeds. Until then `session.history()` and `session.transcript()` still show the previous state. The successful `save` and the matching `history()` update are the commit. This means:
 
-- A failed or interrupted Turn leaves the Transcript unchanged.
+- A Turn that fails or is interrupted before the save leaves the Transcript unchanged. Tools that already ran are not undone.
 - A `StoreError` from `save` fails the Turn the same way. The Turn is absent from `history()` and `transcript()`; sending the Message again runs the Model and the turn-end Hooks again.
+- A `StoreError` from the `appendEvent` of the final `response-complete` record arrives after the commit. The Turn is present in `history()` and `transcript()` even though `response-complete` was never delivered. A missing `response-complete` is therefore not proof that a Turn did not commit; check `history()` before resending.
 - Resuming never reattaches a live Session. Extension Resources are acquired again, a new Session and Transcript id are created, and any Approval pending in the old process is gone.
 
 Each Turn event is also appended to the store as a versioned record through `appendEvent`. That event log is **write-only observability data**: it may end midway through an interrupted Turn and is never replayed to rebuild a Session. The Transcript snapshot is the sole resume mechanism.
