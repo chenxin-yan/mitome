@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -111,6 +111,20 @@ describe("scaffold plans", () => {
       expect(await readFile(existing, "utf8")).toBe("hand-written\n");
     },
   );
+
+  test("refuses a dangling symlink instead of writing through it", async () => {
+    const path = await directory();
+    const link = join(path, "index.ts");
+    const target = join(path, "elsewhere.ts");
+    await symlink(target, link);
+
+    await expect(
+      writeScaffold(path, projectPlan({ flavor: "promise", provider: "openai", model: "gpt-5.6" })),
+    ).rejects.toThrow(`${link} already exists`);
+    expect((await lstat(link)).isSymbolicLink()).toBe(true);
+    expect(await readlink(link)).toBe(target);
+    expect(existsSync(target)).toBe(false);
+  });
 });
 
 describe("selection policy", () => {
