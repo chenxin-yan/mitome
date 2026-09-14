@@ -170,7 +170,7 @@ describe("createSession Tool Turn", () => {
     }),
   );
 
-  it.effect("decodes a native transforming parameters schema once for Hooks and the handler", () =>
+  it.effect("hands a native transforming parameters schema decoded values to Hooks and encoded params to the handler", () =>
     Effect.gen(function* () {
       let modelCalls = 0;
       let preToolParams: unknown;
