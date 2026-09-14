@@ -85,7 +85,7 @@ describe("fileTranscripts", () => {
 
   // Root ignores directory permissions, so the write would succeed.
   it.effect.skipIf(process.getuid?.() === 0)(
-    "keeps the stored Transcript and leaves no temporary file when a write fails",
+    "keeps the stored Transcript when the temporary file cannot be created",
     () =>
       withDirectory((directory) =>
         Effect.gen(function* () {
