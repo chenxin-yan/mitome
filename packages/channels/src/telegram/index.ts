@@ -12,12 +12,12 @@ import {
   type RouteKey,
   type Routes,
   type StoreError,
-  type Transcript,
   type TurnEvent,
 } from "@mitome/core";
-import { Effect, Exit, Inspectable, Stream } from "effect";
+import { type Cause, Effect, Exit, Inspectable, Stream } from "effect";
 import { createPendingApprovals } from "../shared/pending-approvals.js";
 import { createRouteLock } from "../shared/route-lock.js";
+import { loadRouteTranscript } from "../shared/route-transcript.js";
 import {
   createTelegramApi,
   TelegramApiError,
@@ -146,47 +146,31 @@ export const telegram = (options: TelegramOptions): ChannelHost => {
     `Approval denied: the telegram Channel "${name}" received no decision before the Approval timed out`,
   );
 
-  // A lost reply is not a Channel failure; the Turn is committed and the Route advanced already.
-  const send = (
-    target: Target,
-    text: string,
-    markup?: TelegramInlineKeyboard,
-  ): Effect.Effect<void> => {
+  // Fails at the first chunk Telegram rejects, so a keyboard never follows a prompt it belongs to.
+  const deliver = (target: Target, text: string, markup?: TelegramInlineKeyboard) => {
     const chunks = splitMessage(text);
     return Effect.forEach(
       chunks,
       (chunk, index) =>
-        Effect.ignore(
-          Effect.tryPromise(() =>
-            api.sendMessage({
-              ...target,
-              text: chunk,
-              reply_markup: index === chunks.length - 1 ? markup : undefined,
-            }),
-          ),
+        Effect.tryPromise(() =>
+          api.sendMessage({
+            ...target,
+            text: chunk,
+            reply_markup: index === chunks.length - 1 ? markup : undefined,
+          }),
         ),
       { discard: true },
     );
   };
 
+  // A lost reply is not a Channel failure; the Turn is committed and the Route advanced already.
+  const send = (target: Target, text: string): Effect.Effect<void> =>
+    Effect.ignore(deliver(target, text));
+
   const answer = (query: TelegramCallbackQuery, text: string): Effect.Effect<void> =>
     Effect.ignore(
       Effect.tryPromise(() => api.answerCallbackQuery({ callback_query_id: query.id, text })),
     );
-
-  const loadTranscript = (
-    context: ChannelHostContext,
-    key: RouteKey,
-  ): Effect.Effect<Transcript | undefined, StoreError> =>
-    Effect.gen(function* () {
-      if (context.transcripts === undefined) return undefined;
-      const transcriptId = yield* options.routes.get(key);
-      if (transcriptId === undefined) return undefined;
-      // A stale Route names a Transcript that no longer loads; the conversation starts fresh.
-      return yield* context.transcripts
-        .load(transcriptId)
-        .pipe(Effect.catchTag("TranscriptNotFound", () => Effect.succeed(undefined)));
-    });
 
   const runTurn = (
     context: ChannelHostContext,
@@ -199,31 +183,38 @@ export const telegram = (options: TelegramOptions): ChannelHost => {
       Effect.scoped(
         Effect.gen(function* () {
           const sessionScope = yield* Effect.scope;
-          const transcript = yield* loadTranscript(context, key);
+          const transcript = yield* loadRouteTranscript(options.routes, context, key);
           const session = yield* createSession(context.agent, {
             transcripts: context.transcripts,
             transcript,
           });
           const committedMessages = session.history().length;
           const advanceRoute = options.routes.set(key, session.transcript().id);
-          const prompt = (event: ApprovalRequiredEvent): Effect.Effect<void> => {
+          const prompt = (event: ApprovalRequiredEvent) => {
             // callback_data is limited to 64 bytes, so the keyboard carries a Channel-minted id.
             const id = crypto.randomUUID();
             return pending
               .register(id, { key, approve: event.approve, deny: event.deny }, sessionScope)
               .pipe(
                 Effect.andThen(
-                  send(
+                  deliver(
                     target,
                     `Tool ${event.name} (${event.requirement}) wants to run: ${Inspectable.toStringUnknown(event.params, 0)}`,
                     keyboard(id),
                   ),
                 ),
+                // A prompt nobody saw would park the Turn on its Route until the timeout; the
+                // failure ends the Turn instead, and the entry goes before a press can find it.
+                Effect.tapError(() =>
+                  Effect.sync(() => {
+                    pending.take(id);
+                  }),
+                ),
               );
           };
           let reply = "";
           const outcome = yield* session.runTurn(text).pipe(
-            Stream.runForEach((event) => {
+            Stream.runForEach((event): Effect.Effect<void, Cause.UnknownError | StoreError> => {
               if (event.type === "model-output") {
                 reply += event.text;
                 return Effect.void;

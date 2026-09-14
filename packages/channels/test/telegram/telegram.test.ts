@@ -204,7 +204,7 @@ describe("telegram Channel Approvals", () => {
     await running.stop();
   });
 
-  it("prompts with an inline keyboard, rejects other users and chats, and runs the Tool once approved", async () => {
+  it("prompts with an inline keyboard, rejects other users, chats, and threads, and runs the Tool once approved", async () => {
     const model = toolModel([dangerous]);
     const fake = fakeApi();
     const running = serving(
@@ -217,40 +217,44 @@ describe("telegram Channel Approvals", () => {
       }),
       contextFor(agentWith(model.provider, [model.extension])),
     );
-    fake.message(alice, "go", -500);
+    fake.message(alice, "go", -500, 7);
     await waitFor(() => fake.sent.length === 1);
     const prompt = fake.sent[0]!;
-    expect(prompt.chat_id).toBe(-500);
+    expect(prompt).toMatchObject({ chat_id: -500, message_thread_id: 7 });
     expect(prompt.text).toBe('Tool dangerous (tool) wants to run: {"action":"run"}');
     const approve = fake.callbackFor(prompt, "approve");
     expect(approve).toMatch(/^approve:.+$/);
     expect(fake.callbackFor(prompt, "deny")).toBe(approve.replace(/^approve/, "deny"));
     expect(Buffer.byteLength(approve)).toBeLessThanOrEqual(64);
 
-    // Bob is allowlisted and in the same group, but the Turn is Alice's.
-    fake.callback(bob, approve, -500);
-    await waitFor(() => fake.answered.length === 1);
-    expect(fake.answered[0]!.text).toBe("This Approval is not yours to decide.");
-    // Alice from another chat is not the conversation the Turn runs in.
+    // Bob is allowlisted and in the same topic, but the Turn is Alice's.
+    fake.callback(bob, approve, -500, 7);
+    // Alice from another chat, or from another topic of the same group, is not the conversation
+    // the Turn runs in.
     fake.callback(alice, approve, alice);
-    await waitFor(() => fake.answered.length === 2);
-    expect(fake.answered[1]!.text).toBe("This Approval is not yours to decide.");
+    fake.callback(alice, approve, -500, 8);
+    await waitFor(() => fake.answered.length === 3);
+    expect(fake.answered.map((answer) => answer.text)).toEqual([
+      "This Approval is not yours to decide.",
+      "This Approval is not yours to decide.",
+      "This Approval is not yours to decide.",
+    ]);
     expect(model.executions.get("dangerous")).toBeUndefined();
 
     // A message on the busy Route is dropped while the decision goes through.
-    fake.message(alice, "hurry up", -500);
+    fake.message(alice, "hurry up", -500, 7);
     await waitFor(() => fake.sent.length === 2);
     expect(fake.sent[1]!.text).toBe("Still working on your previous message.");
-    fake.callback(alice, approve, -500);
+    fake.callback(alice, approve, -500, 7);
     await waitFor(() => fake.sent.length === 3);
-    expect(fake.answered[2]!.text).toBe("Approved.");
+    expect(fake.answered[3]!.text).toBe("Approved.");
     expect(fake.sent[2]!.text).toBe("done");
     expect(model.executions.get("dangerous")).toBe(1);
     expect(model.steps()).toBe(2);
 
-    fake.callback(alice, approve, -500);
-    await waitFor(() => fake.answered.length === 4);
-    expect(fake.answered[3]!.text).toBe("This Approval is no longer pending.");
+    fake.callback(alice, approve, -500, 7);
+    await waitFor(() => fake.answered.length === 5);
+    expect(fake.answered[4]!.text).toBe("This Approval is no longer pending.");
     expect(model.executions.get("dangerous")).toBe(1);
     await running.stop();
   });
@@ -281,6 +285,40 @@ describe("telegram Channel Approvals", () => {
     fake.callback(alice, fake.callbackFor(fake.sent[0]!, "deny"));
     await waitFor(() => fake.sent.length === 2);
     expect(fake.answered[2]!.text).toBe("Denied.");
+    expect(fake.sent[1]!.text).toBe("done");
+    expect(model.executions.get("dangerous")).toBeUndefined();
+    await running.stop();
+  });
+
+  it("fails the Turn when the Approval prompt cannot be sent", async () => {
+    const model = toolModel([dangerous]);
+    const fake = fakeApi();
+    const running = serving(
+      telegram({
+        token: "t",
+        allow,
+        routes: memoryRoutes(),
+        approvals: "interactive",
+        api: fake.api,
+      }),
+      contextFor(agentWith(model.provider, [model.extension])),
+    );
+    fake.failNextSend(
+      new TelegramApiError({ method: "sendMessage", description: "Forbidden: bot was blocked" }),
+    );
+    fake.message(alice, "go");
+    await waitFor(() => fake.sent.length === 1);
+    expect(fake.rejected).toHaveLength(1);
+    expect(fake.rejected[0]!.text).toBe('Tool dangerous (tool) wants to run: {"action":"run"}');
+    expect(fake.sent[0]!.text).toBe("Something went wrong; try again.");
+    expect(model.executions.get("dangerous")).toBeUndefined();
+    expect(model.released()).toBe(1);
+
+    // The Route is free again, a late press finds nothing, and the poll loop is still running.
+    fake.callback(alice, fake.callbackFor(fake.rejected[0]!, "approve"));
+    fake.message(alice, "again");
+    await waitFor(() => fake.sent.length === 2 && fake.answered.length === 1);
+    expect(fake.answered[0]!.text).toBe("This Approval is no longer pending.");
     expect(fake.sent[1]!.text).toBe("done");
     expect(model.executions.get("dangerous")).toBeUndefined();
     await running.stop();

@@ -69,7 +69,8 @@ export interface AnswerCallbackQueryParams {
  * `getUpdates` receives the signal the Channel aborts on shutdown so an in-flight long poll ends
  * at once. A rejected `getUpdates` makes the Channel back off and poll again, honouring
  * `TelegramApiError.retryAfterMs` when present; a rejected `sendMessage` or `answerCallbackQuery`
- * loses that one reply.
+ * loses that one reply, except that a rejected Approval prompt fails its Turn, which would otherwise
+ * wait for a decision nobody can give.
  */
 export interface TelegramApi {
   readonly getUpdates: (

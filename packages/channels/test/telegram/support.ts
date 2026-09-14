@@ -18,15 +18,18 @@ export const waitFor = async (predicate: () => boolean, timeoutMs = 2000): Promi
 
 /**
  * In-memory Bot API: `getUpdates` hands out pushed updates (waiting when there are none) and
- * records outgoing calls. `failNextPoll` makes the next `getUpdates` reject once.
+ * records outgoing calls. `failNextPoll` makes the next `getUpdates` reject once; `failNextSend`
+ * does the same for `sendMessage`, recording the refused params under `rejected`.
  */
 export const fakeApi = () => {
   const queue: Array<TelegramUpdate> = [];
   const polls: Array<{ readonly params: GetUpdatesParams; readonly at: number }> = [];
   const sent: Array<SendMessageParams> = [];
+  const rejected: Array<SendMessageParams> = [];
   const answered: Array<AnswerCallbackQueryParams> = [];
   let waiting: ((updates: ReadonlyArray<TelegramUpdate>) => void) | undefined;
   let nextPollFailure: Error | undefined;
+  let nextSendFailure: Error | undefined;
   let nextId = 1;
 
   const api: TelegramApi = {
@@ -51,6 +54,12 @@ export const fakeApi = () => {
       });
     },
     sendMessage: async (params) => {
+      if (nextSendFailure !== undefined) {
+        const failure = nextSendFailure;
+        nextSendFailure = undefined;
+        rejected.push(params);
+        throw failure;
+      }
       sent.push(params);
     },
     answerCallbackQuery: async (params) => {
@@ -99,12 +108,16 @@ export const fakeApi = () => {
     api,
     polls,
     sent,
+    rejected,
     answered,
     message,
     callback,
     callbackFor,
     failNextPoll: (error: Error) => {
       nextPollFailure = error;
+    },
+    failNextSend: (error: Error) => {
+      nextSendFailure = error;
     },
   };
 };

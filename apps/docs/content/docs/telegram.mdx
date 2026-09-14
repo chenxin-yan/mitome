@@ -87,7 +87,7 @@ Tool deploy (tool) wants to run: {"target":"staging"}
 [ Approve ] [ Deny ]
 ```
 
-The `(tool)` part is the [requirement](/docs/approvals#resolving-an-approval): `tool` for a Tool the author flagged, `policy` for an Agent `ask` rule, `predicate-error` when the Tool's `needsApproval` predicate failed. Pressing **Approve** runs the Tool and the Turn continues; **Deny** rejects it with `Approval denied by the user.` Either way the Turn's final reply arrives as usual.
+The `(tool)` part is the [requirement](/docs/approvals#resolving-an-approval): `tool` for a Tool the author flagged, `policy` for an Agent `ask` rule, `predicate-error` when the Tool's `needsApproval` predicate failed. Pressing **Approve** runs the Tool and the Turn continues; **Deny** rejects it with `Approval denied by the user.` Either way the Turn's final reply arrives as usual. If Telegram refuses the prompt itself, the Turn fails with the usual one-line reply rather than waiting for a decision nobody can give.
 
 A press is honoured only from the user whose Turn is waiting, in the chat and thread that Turn runs in. Another allowlisted member of the same group, or the same user pressing from a different chat, is told `This Approval is not yours to decide.` and nothing changes; ids are correlation, not authorization. A press on a prompt that was already decided, timed out, or belongs to a Turn that ended is told `This Approval is no longer pending.` and never re-executes a Tool. Because a decision must reach a Turn that is currently holding its Route, it is never rejected as "still working".
 

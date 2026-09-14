@@ -72,19 +72,25 @@ export const hangingModel = () => {
  */
 export const toolModel = (tools: ReadonlyArray<{ name: string; needsApproval: boolean }>) => {
   let calls = 0;
+  let released = 0;
   const executions = new Map<string, number>();
-  const provider = makeTestProvider(() => {
-    calls += 1;
-    if (calls > 1) return Stream.succeed({ type: "text-delta", id: "done", delta: "done" });
-    return Stream.fromIterable(
-      tools.map((tool) => ({
-        type: "tool-call" as const,
-        id: `call-${tool.name}`,
-        name: tool.name,
-        params: { action: "run" },
-      })),
-    );
-  });
+  const provider = makeTestProvider(
+    () => {
+      calls += 1;
+      if (calls > 1) return Stream.succeed({ type: "text-delta", id: "done", delta: "done" });
+      return Stream.fromIterable(
+        tools.map((tool) => ({
+          type: "tool-call" as const,
+          id: `call-${tool.name}`,
+          name: tool.name,
+          params: { action: "run" },
+        })),
+      );
+    },
+    () => {
+      released += 1;
+    },
+  );
   const extension = {
     name: "tools",
     toolkit: Toolkit.make(
@@ -107,7 +113,7 @@ export const toolModel = (tools: ReadonlyArray<{ name: string; needsApproval: bo
       ]),
     ),
   };
-  return { provider, extension, executions, steps: () => calls };
+  return { provider, extension, executions, steps: () => calls, released: () => released };
 };
 
 export const agentWith = (

@@ -10,13 +10,12 @@ import {
   type ChannelHostContext,
   type RouteKey,
   type Routes,
-  type StoreError,
-  type Transcript,
   type TurnEvent,
 } from "@mitome/core";
 import { Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
 import { createPendingApprovals } from "../shared/pending-approvals.js";
 import { createRouteLock } from "../shared/route-lock.js";
+import { loadRouteTranscript } from "../shared/route-transcript.js";
 import type { Authenticator } from "./auth.js";
 import { encodeFrame, toWireEvent, type WireTurnEvent } from "./sse.js";
 
@@ -140,20 +139,6 @@ export const http = (options: HttpOptions): ChannelHost => {
     `Approval denied: the http Channel "${name}" received no decision before the Approval timed out`,
   );
 
-  const loadTranscript = (
-    context: ChannelHostContext,
-    key: RouteKey,
-  ): Effect.Effect<Transcript | undefined, StoreError> =>
-    Effect.gen(function* () {
-      if (context.transcripts === undefined) return undefined;
-      const transcriptId = yield* options.routes.get(key);
-      if (transcriptId === undefined) return undefined;
-      // A stale Route names a Transcript that no longer loads; the conversation starts fresh.
-      return yield* context.transcripts
-        .load(transcriptId)
-        .pipe(Effect.catchTag("TranscriptNotFound", () => Effect.succeed(undefined)));
-    });
-
   const runTurn = async (
     context: ChannelHostContext,
     request: Request,
@@ -173,7 +158,7 @@ export const http = (options: HttpOptions): ChannelHost => {
       Effect.scoped(
         Effect.gen(function* () {
           const sessionScope = yield* Effect.scope;
-          const transcript = yield* loadTranscript(context, key);
+          const transcript = yield* loadRouteTranscript(options.routes, context, key);
           const session = yield* createSession(context.agent, {
             transcripts: context.transcripts,
             transcript,
