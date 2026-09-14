@@ -31,7 +31,6 @@ type ChildHostCalls = {
   }>;
   readonly serve: Array<{ readonly path: string; readonly port: number }>;
   readonly install: Array<string>;
-  readonly removeDependency: Array<{ readonly path: string; readonly packageName: string }>;
   readonly inspect: Array<string>;
   readonly oauth: Array<{
     readonly path: string;
@@ -78,7 +77,6 @@ const fakeChildHost = (
     runHost: [],
     serve: [],
     install: [],
-    removeDependency: [],
     inspect: [],
     oauth: [],
   };
@@ -108,11 +106,7 @@ const fakeChildHost = (
           }
           return options.installExitCode ?? 0;
         }),
-      removeDependency: (path, packageName) =>
-        Effect.sync(() => {
-          calls.removeDependency.push({ path, packageName });
-          return 0;
-        }),
+      removeDependency: () => Effect.succeed(0),
       listExports: () => Effect.succeed([]),
       inspectExtensions: () => Effect.succeed({ exitCode: 0, extensions: [] }),
       inspectProviderAuthentication: (path) =>

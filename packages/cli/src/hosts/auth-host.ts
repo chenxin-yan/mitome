@@ -26,10 +26,7 @@ const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefiniti
   value.agent instanceof Object &&
   "providers" in value.agent &&
   Array.isArray(value.agent.providers);
-if (!(loaded instanceof Object)) {
-  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
-}
-if (!isMitomeDefinition(loaded)) {
+if (!(loaded instanceof Object) || !isMitomeDefinition(loaded)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
 const authentication = loaded.agent.providers.flatMap((provider) => {

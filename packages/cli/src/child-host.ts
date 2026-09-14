@@ -47,7 +47,7 @@ const configEnvFlag = (): string => {
 
 export const childHostLayer = Layer.succeed(ChildHost, {
   runHost: (path, message, mode) =>
-    Effect.uninterruptible(attempt(() => runHost(path, message, mode))),
+    Effect.uninterruptible(attempt(() => runEmbeddedHost(hostSource, path, message, mode))),
   serve: (path, port) =>
     Effect.uninterruptible(attempt(() => runEmbeddedHost(hostSource, path, String(port), "serve"))),
   install: (path) => Effect.uninterruptible(attempt(() => install(path))),
@@ -79,7 +79,7 @@ const ExtensionListFromJson = Schema.fromJsonString(
   ),
 );
 
-// No SIGINT forwarding (unlike runHost): the installer is short-lived and
+// No SIGINT forwarding (unlike runEmbeddedHost): the installer is short-lived and
 // terminal Ctrl-C reaches it through the process group.
 const install = async (path: string): Promise<ExitCode> => {
   const child = Bun.spawn([process.execPath, "install"], {
@@ -170,12 +170,6 @@ const inspectExtensions = async (path: string): Promise<ExtensionListResult> => 
     extensions: Schema.decodeSync(ExtensionListFromJson)(result.output),
   };
 };
-
-const runHost = (
-  path: string,
-  message: string | undefined,
-  mode: "auto" | "print",
-): Promise<ExitCode> => runEmbeddedHost(hostSource, path, message, mode);
 
 export const runEmbeddedHost = async (
   source: string,
