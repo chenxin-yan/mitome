@@ -76,17 +76,39 @@ const decodeSegment = (segment: string): string | undefined => {
   }
 };
 
-const readBody = (request: Request): Promise<string | undefined> =>
-  request.text().then(
-    (body) => body,
-    () => undefined,
-  );
+// `handle` may run on a Node listener with no body cap, so the Channel bounds what it buffers.
+const MAX_BODY_BYTES = 1_048_576;
+
+/** The body as text, or undefined once it exceeds `limit`; an unreadable body counts as empty. */
+const readBody = async (request: Request, limit: number): Promise<string | undefined> => {
+  if (Number(request.headers.get("content-length")) > limit) return undefined;
+  const reader = request.body?.getReader();
+  if (reader === undefined) return "";
+  const decoder = new TextDecoder();
+  let body = "";
+  let bytes = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) return body + decoder.decode();
+      bytes += chunk.value.byteLength;
+      if (bytes > limit) {
+        await reader.cancel();
+        return undefined;
+      }
+      body += decoder.decode(chunk.value, { stream: true });
+    }
+  } catch {
+    return "";
+  }
+};
 
 const text = (status: number, body: string): Response => new Response(body, { status });
 const notFound = (): Response => text(404, "Not Found");
 const methodNotAllowed = (): Response =>
   new Response("Method Not Allowed", { status: 405, headers: { allow: "POST" } });
 const malformedBody = (): Response => text(400, "Malformed request body");
+const payloadTooLarge = (): Response => text(413, "Payload Too Large");
 
 interface PendingApproval {
   readonly turnId: string;
@@ -165,6 +187,8 @@ export const http = (options: HttpOptions): ChannelHost => {
     const turnId = crypto.randomUUID();
     const ready = Promise.withResolvers<void>();
     const opened = Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>();
+    // Resolved by every `pull`, so a producer waiting on a slow reader wakes when it reads again.
+    let pulled = Promise.withResolvers<void>();
     let closed = false;
 
     // Resolves with the status to answer when the Turn never reached its headers.
@@ -187,9 +211,11 @@ export const http = (options: HttpOptions): ChannelHost => {
           ready.resolve();
           const controller = yield* Effect.promise(() => opened.promise);
           const send = (event: WireTurnEvent) =>
-            Effect.sync(() => {
-              if (closed) return;
-              controller.enqueue(encoder.encode(encodeFrame({ v: 1, turnId, event })));
+            Effect.promise(async () => {
+              const frame = encoder.encode(encodeFrame({ v: 1, turnId, event }));
+              // A client that stops reading stops the Turn here instead of growing the queue.
+              while (!closed && (controller.desiredSize ?? 0) <= 0) await pulled.promise;
+              if (!closed) controller.enqueue(frame);
             });
           const advanceRoute = options.routes.set(key, session.transcript().id);
           const resolveApproval = (event: ApprovalRequiredEvent): Effect.Effect<void> =>
@@ -218,10 +244,12 @@ export const http = (options: HttpOptions): ChannelHost => {
                 }),
               ),
               Stream.runForEach(send),
+              // Fixed public text: a TurnError may carry a Provider's own message, and the caller
+              // is not the operator.
               Effect.catchTags({
-                TurnError: (error) => send({ type: "error", message: error.message }),
-                SessionBusyError: (error) => send({ type: "error", message: error.message }),
-                SessionReleasedError: (error) => send({ type: "error", message: error.message }),
+                TurnError: () => send({ type: "error", message: "Turn failed" }),
+                SessionBusyError: () => send({ type: "error", message: "Session busy" }),
+                SessionReleasedError: () => send({ type: "error", message: "Session released" }),
                 // The Turn may already be committed when its final event record fails to append.
                 StoreError: () =>
                   (session.history().length > committedMessages
@@ -258,8 +286,13 @@ export const http = (options: HttpOptions): ChannelHost => {
 
     const stream = new ReadableStream<Uint8Array>({
       start: (controller) => opened.resolve(controller),
+      pull: () => {
+        pulled.resolve();
+        pulled = Promise.withResolvers();
+      },
       cancel: () => {
         closed = true;
+        pulled.resolve();
         return Effect.runPromise(Fiber.interrupt(fiber));
       },
     });
@@ -280,8 +313,9 @@ export const http = (options: HttpOptions): ChannelHost => {
     turnId: string,
     approvalId: string,
   ): Promise<Response> => {
-    const raw = await readBody(request);
-    const body = raw === undefined ? Option.none() : decodeDecision(raw);
+    const raw = await readBody(request, MAX_BODY_BYTES);
+    if (raw === undefined) return payloadTooLarge();
+    const body = decodeDecision(raw);
     if (Option.isNone(body)) return malformedBody();
     const entry = pending.get(turnId)?.get(approvalId);
     if (entry === undefined) return notFound();
@@ -315,8 +349,9 @@ export const http = (options: HttpOptions): ChannelHost => {
         if (request.method !== "POST") return methodNotAllowed();
         const conversation = decodeSegment(turn[1]!);
         if (conversation === undefined) return notFound();
-        const raw = await readBody(request);
-        const body = raw === undefined ? Option.none() : decodeTurnRequest(raw);
+        const raw = await readBody(request, MAX_BODY_BYTES);
+        if (raw === undefined) return payloadTooLarge();
+        const body = decodeTurnRequest(raw);
         if (Option.isNone(body)) return malformedBody();
         return runTurn(context, request, { channel: name, principal, conversation }, body.value);
       }

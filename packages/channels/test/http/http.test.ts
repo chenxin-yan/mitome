@@ -193,8 +193,43 @@ describe("http Channel Turns", () => {
     expect(response.status).toBe(200);
     const frames = await readFrames(response);
     expect(frames.map((frame) => frame.event.type)).toEqual(["model-output", "error"]);
-    expect(frames[1]!.event).toEqual({ type: "error", message: expect.any(String) });
+    expect(frames[1]!.event).toEqual({ type: "error", message: "Turn failed" });
+    expect(JSON.stringify(frames)).not.toContain("upstream exploded");
     expect(calls).toBe(1);
+  });
+
+  it("waits for the client to read before pulling more of the Turn", async () => {
+    const total = 20;
+    let consumed = 0;
+    const third = Promise.withResolvers<void>();
+    const provider = makeTestProvider(() =>
+      Stream.fromIterable(Array.from({ length: total }, (_, index) => index)).pipe(
+        Stream.tap(() =>
+          Effect.sync(() => {
+            consumed += 1;
+            if (consumed === 3) third.resolve();
+          }),
+        ),
+        Stream.map((index) => ({ type: "text-delta" as const, id: "reply", delta: `${index} ` })),
+      ),
+    );
+    const channel = http({ auth, routes: memoryRoutes() });
+    const response = await channel.handle!(
+      contextFor(agentWith(provider)),
+      turnRequest("chat-1", "alice-token"),
+    );
+    const reader = frameReader(response);
+    expect((await reader.next())?.event).toEqual({ type: "model-output", text: "0 " });
+
+    // One frame may sit in the queue; the next `send` blocks until the client reads it, so the
+    // Model stream is pulled no further than that frame.
+    await third.promise;
+    expect(consumed).toBe(3);
+
+    const rest = await reader.rest();
+    expect(rest.filter((frame) => frame.event.type === "model-output")).toHaveLength(total - 1);
+    expect(rest.at(-1)?.event.type).toBe("response-complete");
+    expect(consumed).toBe(total);
   });
 
   it("answers 400, 404, and 405 before any Turn starts", async () => {
@@ -212,6 +247,17 @@ describe("http Channel Turns", () => {
         await status(turnRequest("chat-1", "alice-token", JSON.stringify({ message: "x", model }))),
       ).toBe(400);
     }
+    const oversized = JSON.stringify({ message: "x".repeat(1_048_576) });
+    expect(await status(turnRequest("chat-1", "alice-token", oversized))).toBe(413);
+    expect(
+      await status(
+        new Request("http://channel.test/conversations/chat-1/turns", {
+          method: "POST",
+          headers: { authorization: "Bearer alice-token", "content-length": "2000000" },
+          body: "{}",
+        }),
+      ),
+    ).toBe(413);
     expect(
       await status(
         new Request("http://channel.test/conversations/chat-1/turns", {

@@ -118,9 +118,10 @@ Before the stream starts, a failure is an ordinary status:
 | `404`  | Unknown path, or the Approval endpoint when `approvals` is not `"interactive"`.                     |
 | `405`  | A method other than `POST` on a known path.                                                         |
 | `409`  | A Turn is already running on this Route; wait for it to end, or interrupt it by disconnecting.      |
+| `413`  | The body exceeds 1 MiB.                                                                             |
 | `500`  | The Route store, the Transcript store, or Session creation failed; the body is a fixed description. |
 
-After the stream started, the status is never changed. A Turn that fails mid-way ends its stream with one `error` frame whose `message` is either a typed Mitome error's message (a `TurnError`, for example) or a fixed description; raw exception text never crosses the wire.
+After the stream started, the status is never changed. A Turn that fails mid-way ends its stream with one `error` frame whose `message` is a fixed description (`Turn failed`, `Session busy`, `Session released`, or `Transcript store failed`); the Turn's own error text never crosses the wire, because the caller is a client rather than the operator.
 
 Closing the connection interrupts the Turn: the Session closes, its Route is released, and any pending Approval of that Turn is forgotten. A Turn interrupted before its Transcript was saved is not committed.
 
