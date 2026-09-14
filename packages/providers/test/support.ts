@@ -3,7 +3,8 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import { type AddressInfo } from "node:net";
 import { Readable } from "node:stream";
 import type { AgentDefinition, AnyExtension, AnyProvider } from "@mitome/core";
-import { Schema } from "effect";
+import { ConfigProvider, Effect, Schema } from "effect";
+import { FetchHttpClient } from "effect/unstable/http";
 
 type SseData = string | typeof Schema.Json.Type;
 
@@ -19,6 +20,26 @@ export const agent = (
   model: `${provider.id}/${model}`,
   extensions,
 });
+
+export const fakeFetch =
+  (handle: (request: Request) => Response | Promise<Response>): typeof globalThis.fetch =>
+  async (input, init) =>
+    handle(new Request(input, init));
+
+/** Runs `effect` with a fetch and config-backed credentials; `key` names the provider's API key variable. */
+export const runWithKey =
+  (key: string) =>
+  <A, E>(
+    effect: Effect.Effect<A, E>,
+    fetch: typeof globalThis.fetch = globalThis.fetch,
+    config: Record<string, string> = { [key]: "synthetic-key" },
+  ) =>
+    Effect.runPromise(
+      effect.pipe(
+        Effect.provideService(FetchHttpClient.Fetch, fetch),
+        Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config)),
+      ),
+    );
 
 interface ServerOptions {
   readonly fetch: (request: Request) => Response | Promise<Response>;
@@ -48,16 +69,7 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
         const request = new Request(`http://${incoming.headers.host}${incoming.url}`, init);
         const response = await fetch(request);
         outgoing.writeHead(response.status, Object.fromEntries(response.headers));
-        if (response.body === null) {
-          outgoing.end();
-          return;
-        }
-        const reader = response.body.getReader();
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          outgoing.write(value);
-        }
+        if (response.body !== null) for await (const chunk of response.body) outgoing.write(chunk);
         outgoing.end();
       } catch {
         outgoing.writeHead(500).end();

@@ -63,8 +63,7 @@ const raceRotation = async (
   const configDirectory = await directory(stored);
   const refreshes: Array<string> = [];
   let arrivals = 0;
-  let releaseBarrier!: () => void;
-  const barrier = new Promise<void>((resolve) => (releaseBarrier = resolve));
+  const { promise: barrier, resolve: releaseBarrier } = Promise.withResolvers<void>();
   const tokenServer = await serve({
     async fetch(request) {
       if (new URL(request.url).pathname === "/barrier") {
@@ -119,8 +118,7 @@ const raceRotation = async (
 describe("Codex SSE", () => {
   test("streams real SSE bytes incrementally end to end", async () => {
     const configDirectory = await directory();
-    let release!: () => void;
-    const released = new Promise<void>((resolve) => (release = resolve));
+    const { promise: released, resolve: release } = Promise.withResolvers<void>();
     const server = await serve({
       fetch() {
         const added = sse({
@@ -198,8 +196,7 @@ describe("Codex SSE", () => {
     });
     try {
       const events: Array<unknown> = [];
-      let firstOutput!: () => void;
-      const output = new Promise<void>((resolve) => (firstOutput = resolve));
+      const { promise: output, resolve: firstOutput } = Promise.withResolvers<void>();
       const turn = Effect.runPromise(
         Effect.scoped(
           Effect.gen(function* () {
