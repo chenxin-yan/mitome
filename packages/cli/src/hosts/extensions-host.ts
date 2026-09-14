@@ -58,10 +58,6 @@ try {
   );
   await Bun.write(outputPath, JSON.stringify(extensions));
 } catch (error) {
-  if (!(error instanceof Object)) {
-    process.stderr.write(`${String(error)}\n`);
-  } else {
-    process.stderr.write(`${errorMessage(error)}\n`);
-  }
+  process.stderr.write(`${error instanceof Object ? errorMessage(error) : String(error)}\n`);
   process.exit(1);
 }
