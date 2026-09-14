@@ -4,11 +4,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Effect, Layer, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
-import { createSession, makeProvider } from "@mitome/core";
+import { Effect, Stream } from "effect";
+import { Response } from "effect/unstable/ai";
+import { createSession } from "@mitome/core";
 import { defineExtension } from "../src/index.js";
 import { instructionFiles, instructions } from "../src/extensions/index.js";
+import { makeTestProvider } from "./provider.js";
 
 const cwd = process.cwd();
 const temporaryDirectories: Array<string> = [];
@@ -25,15 +26,8 @@ const temporaryDirectory = (): string => {
 };
 
 const provider = () =>
-  makeProvider("test", [] as const, undefined, () =>
-    Layer.effect(
-      LanguageModel.LanguageModel,
-      LanguageModel.make({
-        generateText: () => Effect.succeed([]),
-        streamText: () =>
-          Stream.succeed(Response.makePart("text-delta", { id: "test", delta: "done" })),
-      }),
-    ),
+  makeTestProvider(() =>
+    Stream.succeed(Response.makePart("text-delta", { id: "test", delta: "done" })),
   );
 
 describe("@mitome/sdk/extensions", () => {

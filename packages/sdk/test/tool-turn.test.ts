@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { Effect, Layer, Schema, Stream } from "effect";
-import { AiError, LanguageModel } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { Schema, Stream } from "effect";
+import { AiError } from "effect/unstable/ai";
 import {
   AgentDefinitionError,
   defineAgent,
@@ -10,7 +9,7 @@ import {
   withSession,
   type InputSchema,
 } from "../src/index.js";
-import { jsonStringSchema, makeToolModel, stringSchema } from "./provider.js";
+import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
 
 describe("@mitome/sdk Tool", () => {
   test("returns every input validation issue to the model without executing the Tool", async () => {
@@ -33,27 +32,19 @@ describe("@mitome/sdk Tool", () => {
     let modelCalls = 0;
     let preToolCalls = 0;
     let handlerCalls = 0;
-    const provider = makeProvider("test", [] as const, undefined, () =>
-      Layer.effect(
-        LanguageModel.LanguageModel,
-        LanguageModel.make({
-          generateText: () => Effect.succeed([]),
-          streamText: () => {
-            modelCalls += 1;
-            return Stream.succeed(
-              modelCalls === 1
-                ? {
-                    type: "tool-call" as const,
-                    id: "call-1",
-                    name: "validate",
-                    params: {},
-                  }
-                : { type: "text-delta" as const, id: "done", delta: "done" },
-            );
-          },
-        }),
-      ),
-    );
+    const provider = makeTestProvider(() => {
+      modelCalls += 1;
+      return Stream.succeed(
+        modelCalls === 1
+          ? {
+              type: "tool-call" as const,
+              id: "call-1",
+              name: "validate",
+              params: {},
+            }
+          : { type: "text-delta" as const, id: "done", delta: "done" },
+      );
+    });
     const definition = defineAgent({
       providers: [provider],
       model: "test/default",
@@ -127,11 +118,9 @@ describe("@mitome/sdk Tool", () => {
       ],
     });
 
-    const events = await withSession(definition, async (session) => {
-      const collected = [];
-      for await (const event of session.runTurn("Hi")) collected.push(event);
-      return collected;
-    });
+    const events = await withSession(definition, (session) =>
+      Array.fromAsync(session.runTurn("Hi")),
+    );
 
     expect(events).toEqual([
       { type: "tool-call", id: "call-1", name: "echo", params: "hello" },
@@ -286,9 +275,7 @@ describe("@mitome/sdk Tool", () => {
       await aborted;
       await pending.catch(() => undefined);
       expect(session.history()).toEqual([]);
-      const next = [];
-      for await (const event of session.runTurn("second")) next.push(event);
-      return next;
+      return Array.fromAsync(session.runTurn("second"));
     });
 
     expect(fixture.calls()).toBe(3);
@@ -425,11 +412,9 @@ describe("@mitome/sdk Tool", () => {
       ],
     });
 
-    const events = await withSession(definition, async (session) => {
-      const collected = [];
-      for await (const event of session.runTurn("Hi")) collected.push(event);
-      return collected;
-    });
+    const events = await withSession(definition, (session) =>
+      Array.fromAsync(session.runTurn("Hi")),
+    );
 
     const failure = events.find((event) => event.type === "tool-result");
     expect(failure).toMatchObject({
