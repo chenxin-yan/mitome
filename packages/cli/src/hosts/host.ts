@@ -74,6 +74,10 @@ const hostIssue = (host: Host, index: number): string | undefined => {
     ) {
       return `Channel Host at index ${index} must have a non-empty string name.`;
     }
+    // URL parsing collapses "." and ".." path segments, so serve mode could never mount them.
+    if (candidate.name === "." || candidate.name === "..") {
+      return `Channel Host at index ${index} must not be named "." or "..".`;
+    }
     return hasOptionalFunction(candidate, "handle") &&
       hasOptionalFunction(candidate, "serve") &&
       (candidate.handle !== undefined || candidate.serve !== undefined)
@@ -127,7 +131,13 @@ const safeJson = (value: Error | ErrorDetails | null): string => {
   }
 };
 
-const errorMessage = (error: Error | ErrorDetails): string => {
+// User-thrown errors may point `cause` back at themselves; `seen` stops that recursion.
+const errorMessage = (
+  error: Error | ErrorDetails,
+  seen: Set<Error | ErrorDetails> = new Set(),
+): string => {
+  if (seen.has(error)) return "[circular cause]";
+  seen.add(error);
   const head =
     "_tag" in error && "message" in error
       ? `${String(error._tag)}: ${String(error.message)}`
@@ -136,7 +146,7 @@ const errorMessage = (error: Error | ErrorDetails): string => {
         : safeJson(error);
   const cause = error.cause;
   if (cause === undefined) return head;
-  return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause) : safeJson(cause)}`;
+  return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause, seen) : safeJson(cause)}`;
 };
 
 const describeFailure = (cause: unknown): string =>
@@ -201,8 +211,9 @@ if (mode === "serve") {
     await Promise.all([server?.stop(true), ...running.values()]);
     process.exit(exitCode);
   };
-  process.on("SIGINT", () => void shutdown(0));
-  process.on("SIGTERM", () => void shutdown(0));
+  // 130 matches the one-shot Runner and the parent CLI's interrupt status.
+  process.on("SIGINT", () => void shutdown(130));
+  process.on("SIGTERM", () => void shutdown(130));
 
   let startupFailure: string | undefined;
   for (const channel of channels) {

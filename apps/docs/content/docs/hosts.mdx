@@ -89,7 +89,7 @@ export const printer = (): InteractiveHost => ({
 });
 ```
 
-Export a factory such as `printer()` from your package so users declare it as `hosts: [printer()]`; a Host module owns its own options, so pass them to the factory rather than to `defineMitome`. `defineMitome` throws when given a factory that was not called, a Host with an unknown `kind`, a Channel Host with neither `handle` nor `serve`, or two Channel Hosts sharing a name; each message names the offending Host by index or name. The [Runner](/docs/concepts#host) repeats the same checks when `mitome` loads the Definition, so a hand-written default export gets the same messages.
+Export a factory such as `printer()` from your package so users declare it as `hosts: [printer()]`; a Host module owns its own options, so pass them to the factory rather than to `defineMitome`. `defineMitome` throws when given a factory that was not called, a Host with an unknown `kind`, a Channel Host with neither `handle` nor `serve`, a Channel Host named `.` or `..` (URL parsing collapses those segments), or two Channel Hosts sharing a name; each message names the offending Host by index or name. The [Runner](/docs/concepts#host) repeats the same checks when `mitome` loads the Definition, so a hand-written default export gets the same messages.
 
 ## Approvals
 

@@ -93,10 +93,11 @@ export const fileRoutes = (directory: string = defaultRouteDirectory()): Routes 
         transcriptId,
       });
       const temporary = join(directory, `${temporaryPrefix}${process.pid}-${crypto.randomUUID()}`);
+      // A write that fails after creating the file (ENOSPC) must not leave the key on disk.
       yield* attempt("write", temporary, () =>
         writeFile(temporary, `${JSON.stringify(encoded)}\n`, { flag: "wx", mode: 0o600 }),
-      );
-      yield* attempt("replace", path, () => rename(temporary, path)).pipe(
+      ).pipe(
+        Effect.andThen(attempt("replace", path, () => rename(temporary, path))),
         Effect.ensuring(
           Effect.ignore(
             attempt("remove temporary file", temporary, () => rm(temporary, { force: true })),
