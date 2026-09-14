@@ -113,6 +113,40 @@ const provider = makeProvider("test", [], undefined, () => Layer.succeed(Languag
 export default defineMitome({ agent: { providers: [provider], model: "test/default", extensions: [] }, hosts: [] });
 `;
 
+// One Tool call the Model always makes; the second Model Step echoes the Tool result it was
+// shown, so a test can read the Model-visible Approval reason from stdout.
+const approvalDefinitionSource = (
+  options: { readonly needsApproval?: string; readonly approvals?: string } = {},
+): string => `
+import { Effect, Layer, Schema, Stream } from "effect";
+import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
+import { defineMitome, makeProvider } from "@mitome/core";
+
+let calls = 0;
+const provider = makeProvider("test", [], undefined, () => Layer.effect(LanguageModel.LanguageModel, LanguageModel.make({
+  streamText: (options) => {
+    calls += 1;
+    if (calls === 1) return Stream.succeed({ type: "tool-call", id: "call-1", name: "dangerous", params: { action: "delete" } });
+    return Stream.succeed({ type: "text-delta", id: "done", delta: JSON.stringify(options.prompt.content.at(-1)) });
+  },
+  generateText: () => Effect.die("unused"),
+})));
+const dangerous = Tool.make("dangerous", {
+  parameters: Schema.Struct({ action: Schema.String }),
+  success: Schema.String,
+  needsApproval: ${options.needsApproval ?? "true"},
+});
+export default defineMitome({
+  agent: {
+    providers: [provider],
+    model: "test/default",
+    ${options.approvals === undefined ? "" : `approvals: ${options.approvals},`}
+    extensions: [{ toolkit: Toolkit.make(dangerous), handlers: { dangerous: () => Effect.succeed("HANDLER_RAN") } }],
+  },
+  hosts: [],
+});
+`;
+
 const extensionListDefinitionSource = (invalid = false): string => `
 import { Layer } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
@@ -777,6 +811,63 @@ describe("compiled mitome", () => {
     expect(missing.exitCode).not.toBe(0);
     expect(missing.stdout + missing.stderr).toContain("Missing argument message");
     expect(missing.stdout).not.toContain("TUI_MESSAGE");
+  });
+
+  test("denies one-shot Approval requests with a Model-visible reason unless --yes covers them", async () => {
+    const current = await fixture(approvalDefinitionSource());
+
+    const denied = await output(spawn("", ["-p", "hello", "--use", current.definition], current));
+    expect(denied).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(denied.stdout).toContain("[approval dangerous denied]");
+    expect(denied.stdout).toContain("[tool dangerous failed]");
+    expect(denied.stdout).toContain(
+      'Approval denied: no user is present to approve \\"dangerous\\" (pass --yes to approve Tool-flagged requests)',
+    );
+    expect(denied.stdout).not.toContain("HANDLER_RAN");
+
+    const approved = await output(
+      spawn("", ["-p", "--yes", "hello", "--use", current.definition], current),
+    );
+    expect(approved).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(approved.stdout).toContain("[approval dangerous approved]");
+    expect(approved.stdout).toContain("[tool dangerous completed]");
+    expect(approved.stdout).toContain("HANDLER_RAN");
+  });
+
+  test.each([
+    [
+      "a policy ask",
+      approvalDefinitionSource({ needsApproval: "false", approvals: '{ ask: ["dangerous"] }' }),
+      "(the Agent's approval policy asks; --yes does not apply)",
+    ],
+    [
+      "a needsApproval predicate that throws",
+      approvalDefinitionSource({ needsApproval: '() => { throw new Error("predicate threw"); }' }),
+      "(its needsApproval predicate failed; --yes does not apply)",
+    ],
+    [
+      // Effect.promise turns a rejected Promise-SDK predicate into a defect like this one.
+      "a needsApproval predicate that fails asynchronously",
+      approvalDefinitionSource({
+        needsApproval: '() => Effect.die(new Error("predicate rejected"))',
+      }),
+      "(its needsApproval predicate failed; --yes does not apply)",
+    ],
+  ])("still denies %s under --yes", async (_, source, reason) => {
+    const current = await fixture(source);
+
+    const result = await output(
+      spawn("", ["-p", "--yes", "hello", "--use", current.definition], current),
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("[approval dangerous denied]");
+    expect(result.stdout).toContain("[tool dangerous failed]");
+    expect(result.stdout).not.toContain("HANDLER_RAN");
+    // The echoed Tool result is what the Model saw: the stable reason, never the predicate's error.
+    const seen = result.stdout.split("\n").find((line) => line.startsWith('{"content"'));
+    expect(seen).toContain(reason);
+    expect(seen).not.toContain("predicate threw");
+    expect(seen).not.toContain("predicate rejected");
   });
 
   test("loads the config env file in the Child Host without cwd leakage", async () => {

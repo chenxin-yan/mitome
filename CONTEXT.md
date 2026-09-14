@@ -106,6 +106,10 @@ _Avoid_: Function call, invocation (bare)
 A user decision allowing one pending Tool call to execute; the Turn stays paused until the decision is resolved or the Turn is interrupted.
 _Avoid_: Permission, confirmation
 
+**Session grant**:
+A Host-local decision, keyed by Tool name, that lets an interactive Host approve later Approvals with `requirement: "tool"` for that Tool during one live Session; it never answers `policy` or `predicate-error` Approvals and is cleared when a new Session starts or a Transcript is resumed.
+_Avoid_: Auto-approve, allowlist (that is the Agent's `approvals.allow`)
+
 **Host**:
 A module that connects people to the Agent through one surface, run by the CLI or by application code; it starts Turns, presents events, and resolves Approvals. Its kind is either interactive, owning a terminal for one person, or Channel. The Promise SDK accepts configured Host values opaquely so their Effect-native context does not leak into its surface.
 _Avoid_: Extension, Frontend, client, harness

@@ -22,7 +22,7 @@ mitome -p "message"       # one-shot: run one Turn, print the response, exit
 
 `mitome` runs the Host the Mitome Definition declares; with `-p`, or when stdout is not a TTY, it prints one Turn instead: streamed text, a line per Tool call and result, and a final newline. The full selection and fallback rules, including why installing a Host package alone changes nothing, are under [Hosts](/docs/hosts#how-the-cli-picks-a-host).
 
-Both built-in Hosts approve every Tool call that Extension policy lets through; see [Approvals](/docs/approvals#who-approves-by-default).
+One-shot output never waits for a person: a Tool call that needs an Approval is denied with a reason the Model sees, and `--yes` approves the ones the Tool author flagged. The TUI prompts instead; see [Approvals](/docs/approvals#who-approves-by-default).
 
 ## Serving Channels
 
@@ -39,17 +39,17 @@ A Definition with no Channel Hosts exits with a clear message. A Channel whose `
 
 Every command except `init` accepts `--use <path>` to select a Mitome Definition module or directory; the default is `<config-dir>/index.ts`. Selection and dependency reconciliation are described under [Configuration](/docs/configuration#selecting-a-mitome-definition).
 
-| Command                                    | Purpose                                                                                                                                                                          |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mitome init`                              | Create the default Mitome Definition: choose a Provider and Model, write `index.ts`, `AGENTS.md`, and `package.json`, install, and log in. Existing files are never overwritten. |
-| `mitome [message] [-p] [--use <path>]`     | Run a Turn or open the interactive Host.                                                                                                                                         |
-| `mitome install [--use <path>]`            | Install the Mitome Definition's dependencies without running it.                                                                                                                 |
-| `mitome serve [--port <n>] [--use <path>]` | Run every Channel Host in the foreground; `handle` Channels share one listener under `/<name>`.                                                                                  |
-| `mitome add <package> [--use <path>]`      | Add a dependency, install, and print an import snippet for it. A failed install rolls the manifest back.                                                                         |
-| `mitome remove <package> [--use <path>]`   | Remove a dependency and uninstall it.                                                                                                                                            |
-| `mitome ext list [--use <path>]`           | Print its Extensions in composition order with their package versions.                                                                                                           |
-| `mitome auth login [--use <path>]`         | Collect a Credential for one of its Providers; prompts to choose when several qualify.                                                                                           |
-| `mitome auth logout [--use <path>]`        | Remove that Provider's stored Credential.                                                                                                                                        |
+| Command                                        | Purpose                                                                                                                                                                          |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mitome init`                                  | Create the default Mitome Definition: choose a Provider and Model, write `index.ts`, `AGENTS.md`, and `package.json`, install, and log in. Existing files are never overwritten. |
+| `mitome [message] [-p] [--yes] [--use <path>]` | Run a Turn or open the interactive Host.                                                                                                                                         |
+| `mitome install [--use <path>]`                | Install the Mitome Definition's dependencies without running it.                                                                                                                 |
+| `mitome serve [--port <n>] [--use <path>]`     | Run every Channel Host in the foreground; `handle` Channels share one listener under `/<name>`.                                                                                  |
+| `mitome add <package> [--use <path>]`          | Add a dependency, install, and print an import snippet for it. A failed install rolls the manifest back.                                                                         |
+| `mitome remove <package> [--use <path>]`       | Remove a dependency and uninstall it.                                                                                                                                            |
+| `mitome ext list [--use <path>]`               | Print its Extensions in composition order with their package versions.                                                                                                           |
+| `mitome auth login [--use <path>]`             | Collect a Credential for one of its Providers; prompts to choose when several qualify.                                                                                           |
+| `mitome auth logout [--use <path>]`            | Remove that Provider's stored Credential.                                                                                                                                        |
 
 Where Credentials are stored, and how a shell variable takes precedence over `<config-dir>/.env`, is on the [Configuration](/docs/configuration#credentials) page.
 

@@ -5,10 +5,12 @@ import { attempt, fail } from "../support.js";
 
 export const runMessage = Effect.fn("@mitome/cli/runMessage")(function* ({
   print,
+  yes,
   message,
   use,
 }: {
   readonly print: boolean;
+  readonly yes: boolean;
   readonly message: Option.Option<string>;
   readonly use: Option.Option<string>;
 }) {
@@ -23,7 +25,7 @@ export const runMessage = Effect.fn("@mitome/cli/runMessage")(function* ({
   const prepared = yield* prepareDefinition(use);
   if ("exitCode" in prepared) return prepared.exitCode;
   const childHost = yield* ChildHost;
-  return yield* childHost.runHost(prepared.path, messageValue, forcePrint ? "print" : "auto");
+  return yield* childHost.runHost(prepared.path, messageValue, forcePrint ? "print" : "auto", yes);
 });
 
 export const runInstall = Effect.fn("@mitome/cli/runInstall")(function* ({

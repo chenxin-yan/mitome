@@ -164,6 +164,59 @@ describe("TUI shell", () => {
     expect(frame).toContain("Type a message");
   });
 
+  test("prompts for an Approval and resolves it from the keyboard", async () => {
+    const decisions: Array<string> = [];
+    const { promise: decided, resolve: decide } = Promise.withResolvers<void>();
+    const events: Array<TurnEvent> = [
+      { type: "tool-call", id: "call-1", name: "lookup", params: { query: "weather" } },
+      {
+        type: "approval-required",
+        approvalId: "approval-1",
+        toolCallId: "call-1",
+        name: "lookup",
+        params: { query: "weather" },
+        requirement: "tool",
+        approve: () =>
+          Effect.sync(() => {
+            decisions.push("approve");
+            decide();
+          }),
+        deny: () => Effect.sync(() => void decisions.push("deny")),
+      },
+    ];
+    await renderShell("look up", [
+      Stream.concat(
+        Stream.fromIterable(events),
+        Stream.concat(
+          Stream.fromEffectDrain(Effect.promise(() => decided)),
+          Stream.fromIterable<TurnEvent>([
+            {
+              type: "tool-result",
+              id: "call-1",
+              name: "lookup",
+              result: "sunny",
+              isFailure: false,
+            },
+            { type: "response-complete" },
+          ]),
+        ),
+      ),
+    ]);
+
+    setup!.mockInput.pressEnter({ meta: true });
+    const prompt = await setup!.waitForFrame((frame) => frame.includes("Tool lookup (tool)"));
+    expect(prompt).toContain('"query": "weather"');
+    expect(prompt).toContain("y approve • n deny • a allow for this Session");
+    setup!.mockInput.pressKey("y");
+    const frame = await setup!.waitForFrame((candidate) =>
+      candidate.includes("Tool lookup approved"),
+    );
+
+    expect(decisions).toEqual(["approve"]);
+    expect(frame).not.toContain("Tool lookup (tool)");
+    expect(frame).toContain("Alt-Enter send");
+  });
+
   test("maps Escape to Turn interruption and returns the input to idle", async () => {
     await renderShell("cancel", [Stream.never]);
 

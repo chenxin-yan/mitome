@@ -106,16 +106,18 @@ To run an Agent with no prompts at all, say so in the Agent:
 approvals: { allow: ["*"] },
 ```
 
-Every Tool then runs without asking unless an Extension vetoes or asks, or you also list it under `ask` or `deny`. This is the sanctioned way to run unattended; it is a decision the Agent author makes once, visible in the Agent Definition, rather than something a Host guesses. An `"ask"` from an Extension or from your own rules is a request for a person; the built-in Hosts still auto-approve it today (see below), and [issue #140](https://github.com/chenxin-yan/mitome/issues/140) changes them to present it or leave the Turn paused. A custom Host you write remains responsible for its own consent behavior.
+Every Tool then runs without asking unless an Extension vetoes or asks, or you also list it under `ask` or `deny`. This is the sanctioned way to run unattended; it is a decision the Agent author makes once, visible in the Agent Definition, rather than something a Host guesses. An `"ask"` from an Extension or from your own rules is a request for a person: the built-in Hosts present it or deny it, never approve it on their own (see below). A custom Host you write remains responsible for its own consent behavior.
+
+For a one-off script run, `mitome --yes` approves requests the Tool author flagged (`requirement: "tool"`) for that invocation only. Unlike `allow`, it does not skip the Tool's `needsApproval` predicate, and it never answers a `policy` or `predicate-error` request.
 
 ## Who approves by default
 
-The built-in Hosts do not ask a human:
+Nobody. An `approval-required` event is a request for a person, and the built-in Hosts behave accordingly:
 
-- The CLI's one-shot printer (`mitome -p`) approves every `approval-required` event and prints `[approval <name> auto-approved]`.
-- The [TUI](/docs/tui) approves every `approval-required` event and shows `Tool <name> auto-approved` in the Turn.
+- The [TUI](/docs/tui) shows the Tool name, the `requirement`, and the decoded params, and waits: `y` approves, `n` denies with `Approval denied by the user.`, and, for `requirement: "tool"` only, `a` allows that Tool for the rest of the Session. The grant is local to the running TUI, keyed by Tool name, and cleared when a new Session starts or a Transcript is resumed.
+- The CLI's one-shot printer (`mitome -p`, or any run without a TTY) never waits. It denies each request with a reason the Model sees, `Approval denied: no user is present to approve "<name>" (...)`, prints `[approval <name> denied]`, and lets the Turn continue; the exit status is unchanged. With `--yes`, requests with `requirement: "tool"` are approved instead; `policy` and `predicate-error` requests are still denied.
 
-Both do so only for calls that `preTool` Hooks and the Agent's `approvals` let through. If your Agent has Tools whose execution needs a person, drive `runTurn` yourself as shown above, or [author a Host](/docs/hosts) that presents the decision.
+In both Hosts policy runs first: a `deny` or veto never reaches the prompt, and a Session grant or `--yes` only answers a request Core already emitted. If your Agent has Tools whose execution needs a person and you embed the SDK, drive `runTurn` yourself as shown above, or [author a Host](/docs/hosts) that presents the decision.
 
 ## `preTool` versus `approvals` versus Approval
 

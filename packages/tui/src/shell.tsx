@@ -2,13 +2,45 @@ import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { render, useKeyboard } from "@opentui/solid";
 import { Match } from "effect";
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
-import type { SessionTurn, SessionViewModel, TranscriptPickerState } from "./view-model.js";
+import type {
+  ApprovalDecision,
+  ApprovalPrompt,
+  SessionState,
+  SessionTurn,
+  SessionViewModel,
+  TranscriptPickerState,
+} from "./view-model.js";
 
 const Turn = (props: { readonly turn: SessionTurn }) => (
   <box flexDirection="column" gap={1}>
     <text>{`You\n${props.turn.message}`}</text>
     <For each={props.turn.activities}>{(item) => <text>{`• ${item}`}</text>}</For>
     <text>{`Assistant\n${props.turn.response}`}</text>
+  </box>
+);
+
+const approvalDecisions = new Map<string, ApprovalDecision>([
+  ["y", "approve"],
+  ["n", "deny"],
+  ["a", "allow-session"],
+]);
+
+const approvalKeys = (approval: ApprovalPrompt): string =>
+  approval.requirement === "tool"
+    ? "y approve • n deny • a allow for this Session"
+    : "y approve • n deny";
+
+const footer = (current: SessionState): string => {
+  if (current.picker !== undefined) return "↑/↓ select • Enter resume • Esc close • Ctrl-C exit";
+  if (current.approval !== undefined) {
+    return `${approvalKeys(current.approval)} • Esc stop • Ctrl-C exit`;
+  }
+  return "Alt-Enter send • Esc stop • Ctrl-O list • Ctrl-N new • Ctrl-C exit";
+};
+
+const Approval = (props: { readonly approval: ApprovalPrompt }) => (
+  <box border title="Approval required">
+    <text>{`Tool ${props.approval.name} (${props.approval.requirement})\n${JSON.stringify(props.approval.params, null, 2)}`}</text>
   </box>
 );
 
@@ -63,6 +95,15 @@ export const Shell = (props: {
       key.preventDefault();
       key.stopPropagation();
     };
+    if (state().approval !== undefined && !key.ctrl && !key.meta) {
+      const decision = approvalDecisions.get(key.name);
+      if (decision !== undefined) {
+        // Swallowed even when refused (`a` on a policy ask) so it does not land in the input.
+        props.viewModel.resolveApproval(decision);
+        stop();
+        return;
+      }
+    }
     const picker = state().picker;
     if (picker !== undefined) {
       if (key.name === "escape" || key.name === "esc") {
@@ -106,6 +147,9 @@ export const Shell = (props: {
               <Show when={state().activeTurn}>
                 {(turn: () => SessionTurn) => <Turn turn={turn()} />}
               </Show>
+              <Show when={state().approval}>
+                {(approval: () => ApprovalPrompt) => <Approval approval={approval()} />}
+              </Show>
             </box>
             <Show when={state().notice}>{(notice: () => string) => <text>{notice()}</text>}</Show>
           </scrollbox>
@@ -129,11 +173,7 @@ export const Shell = (props: {
           onSubmit={submit}
         />
       </box>
-      <text>
-        {state().picker === undefined
-          ? "Alt-Enter send • Esc stop • Ctrl-O list • Ctrl-N new • Ctrl-C exit"
-          : "↑/↓ select • Enter resume • Esc close • Ctrl-C exit"}
-      </text>
+      <text>{footer(state())}</text>
     </box>
   );
 };

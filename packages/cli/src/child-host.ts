@@ -46,8 +46,10 @@ const configEnvFlag = (): string => {
 };
 
 export const childHostLayer = Layer.succeed(ChildHost, {
-  runHost: (path, message, mode) =>
-    Effect.uninterruptible(attempt(() => runEmbeddedHost(hostSource, path, message, mode))),
+  runHost: (path, message, mode, yes) =>
+    Effect.uninterruptible(
+      attempt(() => runEmbeddedHost(hostSource, path, message, yes ? `${mode}-yes` : mode)),
+    ),
   serve: (path, port) =>
     Effect.uninterruptible(attempt(() => runEmbeddedHost(hostSource, path, String(port), "serve"))),
   install: (path) => Effect.uninterruptible(attempt(() => install(path))),
@@ -171,11 +173,14 @@ const inspectExtensions = async (path: string): Promise<ExtensionListResult> => 
   };
 };
 
+/** The Runner's argv[2]; `-yes` carries `--yes` so the optional message keeps its argv slot. */
+export type HostMode = "auto" | "print" | "serve" | "auto-yes" | "print-yes";
+
 export const runEmbeddedHost = async (
   source: string,
   path: string,
   message: string | undefined,
-  mode: "auto" | "print" | "serve",
+  mode: HostMode,
 ): Promise<ExitCode> => {
   // Both flags suppress Bun's automatic cwd .env autoload in the child; the
   // config .env is loaded explicitly when a config directory exists.

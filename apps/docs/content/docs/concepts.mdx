@@ -56,7 +56,7 @@ Instructions are the static text an Extension contributes to the Agent's system 
 
 ## Approval
 
-An Approval is a user decision that lets one pending Tool call execute. A Tool marked `needsApproval` pauses the Turn and emits an `approval-required` event; the Turn stays paused until the Host calls `approve()` or `deny(reason)`, or interrupts the Turn. Approval is a Host decision, made after the Model asked for the Tool. It is distinct from the `preTool` Hook, which is Extension policy that can veto a Tool call before anyone is asked. The built-in one-shot Host and the TUI approve every Tool call that passes policy.
+An Approval is a user decision that lets one pending Tool call execute. A Tool marked `needsApproval` pauses the Turn and emits an `approval-required` event; the Turn stays paused until the Host calls `approve()` or `deny(reason)`, or interrupts the Turn. Approval is a Host decision, made after the Model asked for the Tool. It is distinct from the `preTool` Hook, which is Extension policy that can veto a Tool call before anyone is asked. The TUI asks the person at the terminal; the one-shot Host denies, because nobody is present.
 
 ## Host
 

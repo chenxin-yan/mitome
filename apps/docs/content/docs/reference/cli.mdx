@@ -10,7 +10,7 @@ Exhaustive tables for the `mitome` command. The narrative is on the [CLI](/docs/
 
 | Command                                 | Arguments and flags                                               | What it does                                                                                                                                                                |
 | --------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mitome [message]`                      | `[message]`, `--print`/`-p`, `--use`                              | Reconciles the Mitome Definition's dependencies, then runs its Host or one Turn.                                                                                            |
+| `mitome [message]`                      | `[message]`, `--print`/`-p`, `--yes`, `--use`                     | Reconciles the Mitome Definition's dependencies, then runs its Host or one Turn.                                                                                            |
 | `mitome init`                           | none                                                              | Prompts for a Provider and Model, writes the default Mitome Definition, installs its dependencies, and runs `auth login`. Fails if a file it would write exists.            |
 | `mitome install`                        | `--use`                                                           | Installs the Mitome Definition's dependencies without running it.                                                                                                           |
 | `mitome serve`                          | `--port`, `--use`                                                 | Reconciles dependencies, then runs every Channel Host in the foreground: `handle` under `/<name>` on one listener, `serve` with an `AbortSignal`, until `SIGINT`/`SIGTERM`. |
@@ -33,6 +33,7 @@ Exhaustive tables for the `mitome` command. The narrative is on the [CLI](/docs/
 | --------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `[message]`     | `mitome`                    | The first user Message. Optional for an interactive Host; required for one-shot output. An empty string is a valid Message.                                                                                         |
 | `--print`, `-p` | `mitome`                    | Force one-shot output: run one Turn, stream the response to stdout, exit. Implied when stdout is not a TTY.                                                                                                         |
+| `--yes`         | `mitome`                    | In one-shot output, approve `approval-required` events with `requirement: "tool"` for this invocation. `"policy"` and `"predicate-error"` requests are still denied. No effect on an interactive Host.              |
 | `--port <n>`    | `serve`                     | Port of the listener that mounts Channel Hosts exposing `handle`; opened only when one does. Default: `3000`.                                                                                                       |
 | `--use <path>`  | every command except `init` | Select a Mitome Definition: a `.ts` module, or a directory whose `index.ts` is one. Default: `<config-dir>/index.ts`. Selection rules are under [Configuration](/docs/configuration#selecting-a-mitome-definition). |
 | `<package>`     | `add`, `remove`             | A package name such as `@mitome/tui`; `add` also accepts `name@version`.                                                                                                                                            |
@@ -51,14 +52,14 @@ Variables the CLI itself reads. Providers read their own; see [Configuration](/d
 
 When `mitome` prints one Turn instead of running a Host, stdout receives:
 
-| Event               | Output                                                   |
-| ------------------- | -------------------------------------------------------- |
-| `model-output`      | The text, streamed.                                      |
-| `reasoning`         | Nothing.                                                 |
-| `tool-call`         | `[tool <name>]` on its own line.                         |
-| `tool-result`       | `[tool <name> completed]` or `[tool <name> failed]`.     |
-| `approval-required` | `[approval <name> auto-approved]`; the call is approved. |
-| `response-complete` | A newline.                                               |
+| Event               | Output                                                                                                                                                                                                                     |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model-output`      | The text, streamed.                                                                                                                                                                                                        |
+| `reasoning`         | Nothing.                                                                                                                                                                                                                   |
+| `tool-call`         | `[tool <name>]` on its own line.                                                                                                                                                                                           |
+| `tool-result`       | `[tool <name> completed]` or `[tool <name> failed]`.                                                                                                                                                                       |
+| `approval-required` | `[approval <name> denied]`, or `[approval <name> approved]` under `--yes` for `requirement: "tool"`. A denial reaches the Model as `Approval denied: no user is present to approve "<name>" (...)` and the Turn continues. |
+| `response-complete` | A newline.                                                                                                                                                                                                                 |
 
 How the CLI decides between a Host and one-shot output is under [Hosts](/docs/hosts#how-the-cli-picks-a-host).
 
@@ -71,7 +72,8 @@ How the CLI decides between a Host and one-shot output is under [Hosts](/docs/ho
 | `130`  | Interrupted by `Ctrl-C` or `SIGTERM`: one-shot output does not commit the Turn; `mitome serve` stopped its Channels gracefully.   |
 | `124`  | Shutdown timed out and the process was killed: one-shot output after one second, `mitome serve` after five seconds.               |
 
-Two messages are informational and do not change the exit status on their own:
+Three messages are informational and do not change the exit status on their own:
 
 - `<reason>; falling back to one-shot output.` (stderr) — the declared Host's `unsupported()` returned `<reason>`; with `@mitome/tui` that is `@mitome/tui requires an interactive terminal`.
 - `Installing Mitome Definition dependencies...` (stdout) — dependency reconciliation ran before the command.
+- `[approval <name> denied]` (stdout) — one-shot output denied an Approval request; the Turn continues and the Model explains what was not permitted. Pass `--yes` for Tool-flagged requests, or set `approvals.allow` in the Agent.

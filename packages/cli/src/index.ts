@@ -27,6 +27,11 @@ const printFlag = Flag.boolean("print").pipe(
   Flag.withAlias("p"),
   Flag.withDescription("Force one-shot output"),
 );
+const yesFlag = Flag.boolean("yes").pipe(
+  Flag.withDescription(
+    "In one-shot output, approve Approval requests flagged by the Tool author (not policy asks)",
+  ),
+);
 const packageArgument = Argument.string("package").pipe(
   Argument.withDescription("Extension package to add or remove"),
 );
@@ -86,6 +91,7 @@ const command = Command.make(
   "mitome",
   {
     print: printFlag,
+    yes: yesFlag,
     message: messageArgument,
     use: useFlag,
   },

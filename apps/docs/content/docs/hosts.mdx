@@ -93,7 +93,7 @@ Export a factory such as `printer()` from your package so users declare it as `h
 
 ## Approvals
 
-Every `approval-required` event a Host receives must be resolved with `approve()` or `deny(reason?)`, or the Turn interrupted; an unresolved Approval leaves the Turn paused forever. A Host that puts a person in the loop presents `name` and `params` and waits. The built-in one-shot printer and the TUI approve automatically after `preTool` Hooks pass; the [Approvals](/docs/approvals) page explains the difference between policy and consent.
+Every `approval-required` event a Host receives must be resolved with `approve()` or `deny(reason?)`, or the Turn interrupted; an unresolved Approval leaves the Turn paused forever. A Host that puts a person in the loop presents `name`, `params`, and `requirement` and waits; a Host with nobody to ask denies with a reason, as the built-in one-shot printer does. The [Approvals](/docs/approvals#who-approves-by-default) page explains the difference between policy and consent and what the built-in Hosts do.
 
 ## How the CLI picks a Host
 

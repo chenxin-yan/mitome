@@ -16,7 +16,17 @@ The same holds when you embed the SDK: an Extension's Tool handlers run in your 
 
 ## Tools act on your behalf
 
-A Tool call is the Model deciding to run your code. Two mechanisms gate it: `preTool` Hooks apply policy an Extension author wrote, and `needsApproval` asks the Host. The built-in one-shot printer and the TUI approve every Tool call that passes policy without asking a person. For Tools with real side effects, mark them `needsApproval` and run them under a Host that puts a person in the loop, as the [Approvals](/docs/approvals) page explains.
+A Tool call is the Model deciding to run your code. Three mechanisms gate it: `preTool` Hooks apply policy an Extension author wrote, the Agent's `approvals` applies the Agent author's policy, and whatever still asks becomes an Approval the Host resolves. Core enforces every `deny` and veto itself; an ask is a request for a person. The [TUI](/docs/tui) prompts for it, and one-shot output (`mitome -p`, or any non-TTY run) denies it with a reason the Model sees, because nobody is there to answer.
+
+Three switches relax that, and it matters what each does not bypass:
+
+| Switch                       | Set by                     | Skips the Tool's `needsApproval` predicate | Answers `policy` asks | Beats `deny` or a `preTool` veto |
+| ---------------------------- | -------------------------- | ------------------------------------------ | --------------------- | -------------------------------- |
+| `approvals.allow` in Agent   | The Agent author           | Yes; the predicate is not evaluated        | No                    | No                               |
+| `mitome --yes`               | Whoever runs it            | No; a failed predicate is still denied     | No                    | No                               |
+| TUI "allow for this Session" | The person at the terminal | No                                         | No                    | No                               |
+
+`allow` is the Agent author's standing decision and is visible in the Agent Definition; `--yes` is a per-invocation decision by whoever runs the command and only covers requests the Tool author flagged (`requirement: "tool"`). The TUI's Session grant is the same scope as `--yes`, held for one live Session on one terminal. None of them turns a `deny`, a veto, or a policy `ask` into a run. For Tools with real side effects, mark them `needsApproval` and run them where a person can answer, as the [Approvals](/docs/approvals) page explains.
 
 ## Credentials
 
