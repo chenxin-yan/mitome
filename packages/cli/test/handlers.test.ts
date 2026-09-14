@@ -13,6 +13,7 @@ import { runAuth } from "../src/commands/auth.ts";
 import { updateConfigEnv } from "../src/config.ts";
 import { runInit } from "../src/commands/init.ts";
 import { runInstall, runMessage } from "../src/commands/run.ts";
+import { runServe } from "../src/commands/serve.ts";
 import { Prompter, type PromptChoice } from "../src/prompter.ts";
 
 type PromptAnswer =
@@ -27,6 +28,7 @@ type ChildHostCalls = {
     readonly message: string | undefined;
     readonly mode: "auto" | "print";
   }>;
+  readonly serve: Array<{ readonly path: string; readonly port: number }>;
   readonly install: Array<string>;
   readonly removeDependency: Array<{ readonly path: string; readonly packageName: string }>;
   readonly inspect: Array<string>;
@@ -73,6 +75,7 @@ const fakeChildHost = (
 ) => {
   const calls: ChildHostCalls = {
     runHost: [],
+    serve: [],
     install: [],
     removeDependency: [],
     inspect: [],
@@ -84,6 +87,11 @@ const fakeChildHost = (
       runHost: (path, message, mode) =>
         Effect.sync(() => {
           calls.runHost.push({ path, message, mode });
+          return options.runExitCode ?? 0;
+        }),
+      serve: (path, port) =>
+        Effect.sync(() => {
+          calls.serve.push({ path, port });
           return options.runExitCode ?? 0;
         }),
       install: (path) =>
@@ -222,6 +230,24 @@ describe("CLI handlers", () => {
       expect(childHost.calls.install).toEqual([path]);
       expect(childHost.calls.runHost).toEqual([{ path, message: "hello", mode: "print" }]);
       expect(yield* TestConsole.logLines).toContain("Installing Mitome Definition dependencies...");
+    }),
+  );
+
+  it.effect("reconciles, then serves the selected Mitome Definition on the given port", () =>
+    Effect.gen(function* () {
+      const directory = yield* Effect.promise(temporaryDirectory);
+      const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
+      const childHost = fakeChildHost({ installRuntime: true, runExitCode: 7 });
+      const exit = yield* Effect.exit(
+        runServe({ port: 4321, use: Option.some(path) }).pipe(
+          Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
+        ),
+      );
+
+      expect(exit).toEqual(Exit.succeed(7));
+      expect(childHost.calls.install).toEqual([path]);
+      expect(childHost.calls.serve).toEqual([{ path, port: 4321 }]);
+      expect(childHost.calls.runHost).toEqual([]);
     }),
   );
 

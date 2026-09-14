@@ -25,6 +25,8 @@ export class ChildHost extends Context.Service<
       message: string | undefined,
       mode: "auto" | "print",
     ) => Effect.Effect<ExitCode, CliError>;
+    /** Runs every Channel Host of the Mitome Definition until a signal ends the Runner. */
+    readonly serve: (path: string, port: number) => Effect.Effect<ExitCode, CliError>;
     readonly install: (path: string) => Effect.Effect<ExitCode, CliError>;
     readonly removeDependency: (
       path: string,

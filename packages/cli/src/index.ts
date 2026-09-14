@@ -8,6 +8,7 @@ import { runAdd, runRemove } from "./commands/dependencies.js";
 import { runExtensionList } from "./commands/extensions.js";
 import { runInit } from "./commands/init.js";
 import { runInstall, runMessage } from "./commands/run.js";
+import { runServe } from "./commands/serve.js";
 import { Prompter } from "./prompter.js";
 import { fail, type ExitCode } from "./support.js";
 
@@ -28,6 +29,10 @@ const printFlag = Flag.boolean("print").pipe(
 );
 const packageArgument = Argument.string("package").pipe(
   Argument.withDescription("Extension package to add or remove"),
+);
+const portFlag = Flag.integer("port").pipe(
+  Flag.withDescription("Port for Channel Hosts that expose handle"),
+  Flag.withDefault(3000),
 );
 
 const definitionCommandConfig = {
@@ -56,6 +61,11 @@ const extensionCommand = Command.make("ext", {}, () =>
 const installCommand = Command.make("install", definitionCommandConfig, (options) =>
   useExitCode(runInstall(options)),
 ).pipe(Command.withDescription("Install Mitome Definition dependencies"));
+const serveCommand = Command.make(
+  "serve",
+  { ...definitionCommandConfig, port: portFlag },
+  (options) => useExitCode(runServe(options)),
+).pipe(Command.withDescription("Run the Mitome Definition's Channel Hosts until stopped"));
 const initCommand = Command.make("init", {}, () => useExitCode(runInit())).pipe(
   Command.withDescription("Create a default Mitome Definition"),
 );
@@ -87,6 +97,7 @@ const command = Command.make(
     removeCommand,
     extensionCommand,
     installCommand,
+    serveCommand,
     initCommand,
     authCommand,
   ]),

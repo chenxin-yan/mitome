@@ -71,6 +71,22 @@ describe("defineMitome", () => {
       "Channel Host at index 0 must have a non-empty string name.",
     ],
     [
+      "a Channel Host named after a URL dot segment",
+      [{ kind: "channel", name: "..", handle: async () => new Response() }],
+      'Channel Host at index 0 must not be named "." or "..".',
+    ],
+    [
+      "a Channel Host name with a lone surrogate",
+      [
+        {
+          kind: "channel",
+          name: `bad${String.fromCharCode(0xd800)}`,
+          serve: async () => undefined,
+        },
+      ],
+      "Channel Host at index 0 must have a well-formed name without lone surrogates.",
+    ],
+    [
       "a Channel Host with neither handle nor serve",
       [{ kind: "channel", name: "telegram" }],
       'Channel Host "telegram" must expose a handle or serve function.',

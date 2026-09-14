@@ -3,12 +3,15 @@
 // resolved beside the selected root so it shares the author's module instances.
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Host, MitomeDefinition, TurnEvent } from "@mitome/core";
+import type { ChannelHost, Host, MitomeDefinition, TurnEvent } from "@mitome/core";
 
 const definitionPath = process.argv[1]!;
 const mode = process.argv[2];
-if (mode !== "auto" && mode !== "print") throw new Error("Invalid Child Host mode.");
+if (mode !== "auto" && mode !== "print" && mode !== "serve") {
+  throw new Error("Invalid Child Host mode.");
+}
 // Absent when no message was given; an explicitly empty message arrives as "".
+// In serve mode this is the listener port instead.
 const message: string | undefined = process.argv[3];
 // SAFETY: Dynamic import namespaces expose their module's default export at `.default`.
 const loaded: unknown = (
@@ -71,6 +74,14 @@ const hostIssue = (host: Host, index: number): string | undefined => {
     ) {
       return `Channel Host at index ${index} must have a non-empty string name.`;
     }
+    // URL parsing collapses "." and ".." path segments, so serve mode could never mount them.
+    if (candidate.name === "." || candidate.name === "..") {
+      return `Channel Host at index ${index} must not be named "." or "..".`;
+    }
+    // encodeURIComponent throws on a lone surrogate, so the mount announcement could never print it.
+    if (!String(candidate.name).isWellFormed()) {
+      return `Channel Host at index ${index} must have a well-formed name without lone surrogates.`;
+    }
     return hasOptionalFunction(candidate, "handle") &&
       hasOptionalFunction(candidate, "serve") &&
       (candidate.handle !== undefined || candidate.serve !== undefined)
@@ -107,6 +118,156 @@ loaded.hosts.forEach((host, index) => {
   }
   channelNames.add(host.name);
 });
+
+interface ErrorDetails {
+  readonly _tag?: string;
+  readonly message?: string;
+  readonly cause?: Error | ErrorDetails;
+}
+
+// JSON.stringify throws on BigInt values and circular structures; a throwing
+// formatter would mask the error being reported, so fall back to Bun's renderer.
+const safeJson = (value: Error | ErrorDetails | null): string => {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return Bun.inspect(value);
+  }
+};
+
+// User-thrown errors may point `cause` back at themselves; `seen` stops that recursion.
+const errorMessage = (
+  error: Error | ErrorDetails,
+  seen: Set<Error | ErrorDetails> = new Set(),
+): string => {
+  if (seen.has(error)) return "[circular cause]";
+  seen.add(error);
+  const head =
+    "_tag" in error && "message" in error
+      ? `${String(error._tag)}: ${String(error.message)}`
+      : error instanceof Error
+        ? error.message
+        : safeJson(error);
+  const cause = error.cause;
+  if (cause === undefined) return head;
+  return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause, seen) : safeJson(cause)}`;
+};
+
+const describeFailure = (cause: unknown): string =>
+  cause instanceof Object ? errorMessage(cause) : String(cause);
+
+if (mode === "serve") {
+  const port = Number(message);
+  const channels = loaded.hosts.filter((host) => host.kind === "channel");
+  if (channels.length === 0) {
+    process.stderr.write(
+      "The Mitome Definition declares no Channel Hosts; mitome serve has nothing to run.\n",
+    );
+    process.exit(1);
+  }
+  const context = { agent: loaded.agent, transcripts: loaded.transcripts };
+  const handlers = new Map<string, NonNullable<ChannelHost["handle"]>>();
+  // Bound so a method-syntax handle sees its Channel as `this`, as serve does below.
+  for (const channel of channels) {
+    if (channel.handle !== undefined) handlers.set(channel.name, channel.handle.bind(channel));
+  }
+  // Channel names may contain spaces or Unicode, so the first segment arrives percent-encoded.
+  const decodeMount = (segment: string): string | undefined => {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return undefined;
+    }
+  };
+  const listen = () => {
+    try {
+      return Bun.serve({
+        port,
+        fetch: (request) => {
+          const url = new URL(request.url);
+          const [, segment = "", ...rest] = url.pathname.split("/");
+          const name = decodeMount(segment);
+          const handle = name === undefined ? undefined : handlers.get(name);
+          if (handle === undefined) return new Response("Not Found", { status: 404 });
+          url.pathname = `/${rest.join("/")}`;
+          return handle(context, new Request(url.href, request));
+        },
+      });
+    } catch (error) {
+      const mounted = [...handlers.keys()].map((name) => `"${name}"`).join(", ");
+      process.stderr.write(
+        `Cannot listen on port ${port} for Channel ${mounted}: ${describeFailure(error)}\n`,
+      );
+      process.exit(1);
+    }
+  };
+  // A listener that fails to bind ends the process before any Channel runs.
+  const server = handlers.size === 0 ? undefined : listen();
+  const controller = new AbortController();
+  const running = new Map<string, Promise<void>>();
+  // Pending Promises alone do not keep the event loop alive until a signal arrives.
+  const keepAlive = setInterval(() => {}, 60_000);
+  let forceExit: ReturnType<typeof setTimeout> | undefined;
+  const shutdown = async (exitCode: number): Promise<never> => {
+    controller.abort();
+    clearInterval(keepAlive);
+    forceExit ??= setTimeout(() => process.exit(124), 5_000);
+    // Active connections close so response bodies release their Session scopes.
+    await Promise.all([server?.stop(true), ...running.values()]);
+    process.exit(exitCode);
+  };
+  // 130 matches the one-shot Runner and the parent CLI's interrupt status.
+  process.on("SIGINT", () => void shutdown(130));
+  process.on("SIGTERM", () => void shutdown(130));
+
+  let startupFailure: string | undefined;
+  for (const channel of channels) {
+    if (channel.serve === undefined) continue;
+    const { name } = channel;
+    let started: Promise<void>;
+    try {
+      // A serve that returns a plain value instead of a Promise counts as stopping at once.
+      started = Promise.resolve(channel.serve(context, controller.signal));
+    } catch (error) {
+      startupFailure = `Channel "${name}" failed to start: ${describeFailure(error)}`;
+      break;
+    }
+    // A rejection or early return after start is a runtime failure: the others keep running.
+    running.set(
+      name,
+      started
+        .then(
+          () => {
+            if (!controller.signal.aborted) {
+              process.stderr.write(`Channel "${name}" stopped before shutdown.\n`);
+            }
+          },
+          (error) => {
+            process.stderr.write(`Channel "${name}" failed: ${describeFailure(error)}\n`);
+          },
+        )
+        .finally(() => {
+          running.delete(name);
+          if (running.size === 0 && server === undefined && !controller.signal.aborted) {
+            process.stderr.write("No Channel is left running.\n");
+            void shutdown(1);
+          }
+        }),
+    );
+  }
+  if (startupFailure !== undefined) {
+    process.stderr.write(`${startupFailure}\n`);
+    await shutdown(1);
+  }
+  for (const channel of channels) {
+    const mount =
+      server !== undefined && channel.handle !== undefined
+        ? ` at http://localhost:${server.port}/${encodeURIComponent(channel.name)}`
+        : "";
+    process.stderr.write(`Serving Channel "${channel.name}"${mount}\n`);
+  }
+  await new Promise<never>(() => {});
+}
 
 if (mode === "auto") {
   const interactive = loaded.hosts.filter((host) => host.kind === "interactive");
@@ -159,34 +320,6 @@ const render = (event: TurnEvent): void => {
   }
 };
 
-interface ErrorDetails {
-  readonly _tag?: string;
-  readonly message?: string;
-  readonly cause?: Error | ErrorDetails;
-}
-
-// JSON.stringify throws on BigInt values and circular structures; a throwing
-// formatter would mask the error being reported, so fall back to Bun's renderer.
-const safeJson = (value: Error | ErrorDetails | null): string => {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return Bun.inspect(value);
-  }
-};
-
-const errorMessage = (error: Error | ErrorDetails): string => {
-  const head =
-    "_tag" in error && "message" in error
-      ? `${String(error._tag)}: ${String(error.message)}`
-      : error instanceof Error
-        ? error.message
-        : safeJson(error);
-  const cause = error.cause;
-  if (cause === undefined) return head;
-  return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause) : safeJson(cause)}`;
-};
-
 const corePath = Bun.resolveSync("@mitome/core", dirname(definitionPath));
 const effectPath = Bun.resolveSync("effect", dirname(corePath));
 const core: typeof import("@mitome/core") = await import(pathToFileURL(corePath).href);
@@ -214,8 +347,10 @@ const interrupt = (): void => {
   Effect.runFork(Fiber.interrupt(root));
 };
 process.on("SIGINT", interrupt);
+process.on("SIGTERM", interrupt);
 const exit = await Effect.runPromiseExit(Fiber.join(root));
 process.off("SIGINT", interrupt);
+process.off("SIGTERM", interrupt);
 if (forceExit !== undefined) {
   clearTimeout(forceExit);
   process.exit(130);

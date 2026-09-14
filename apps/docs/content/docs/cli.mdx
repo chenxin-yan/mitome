@@ -24,20 +24,32 @@ mitome -p "message"       # one-shot: run one Turn, print the response, exit
 
 Both built-in Hosts approve every Tool call that Extension policy lets through; see [Approvals](/docs/approvals#who-approves-by-default).
 
+## Serving Channels
+
+```sh
+mitome serve                 # run every Channel Host until Ctrl-C or SIGTERM
+mitome serve --port 8080     # listener for Channels that expose handle; default 3000
+```
+
+`mitome serve` is the long-lived role: it loads the Mitome Definition and runs every [Channel](/docs/hosts#kind-channel) Host, ignoring interactive ones. A Channel exposing `handle` is mounted on one HTTP listener under `/<name>`; a Channel exposing `serve` runs with an `AbortSignal`; one exposing both gets both. The command prints one `Serving Channel "<name>"` line per Channel on stderr, with the mount URL when it has one, and stays in the foreground. `SIGINT` and `SIGTERM` abort every `serve`, close the listener, and exit `130` once every Channel has shut down.
+
+A Definition with no Channel Hosts exits with a clear message. A Channel whose `serve` throws synchronously, or a listener that fails to bind, is a startup failure: the command exits `1` naming the Channel. A `serve` that later rejects or returns early is a runtime failure: it is logged and the other Channels keep running; when no Channel is left running the command exits `1`. This is the one deliberate exception to the CLI's one-shot rule.
+
 ## Commands
 
 Every command except `init` accepts `--use <path>` to select a Mitome Definition module or directory; the default is `<config-dir>/index.ts`. Selection and dependency reconciliation are described under [Configuration](/docs/configuration#selecting-a-mitome-definition).
 
-| Command                                  | Purpose                                                                                                                                                                          |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mitome init`                            | Create the default Mitome Definition: choose a Provider and Model, write `index.ts`, `AGENTS.md`, and `package.json`, install, and log in. Existing files are never overwritten. |
-| `mitome [message] [-p] [--use <path>]`   | Run a Turn or open the interactive Host.                                                                                                                                         |
-| `mitome install [--use <path>]`          | Install the Mitome Definition's dependencies without running it.                                                                                                                 |
-| `mitome add <package> [--use <path>]`    | Add a dependency, install, and print an import snippet for it. A failed install rolls the manifest back.                                                                         |
-| `mitome remove <package> [--use <path>]` | Remove a dependency and uninstall it.                                                                                                                                            |
-| `mitome ext list [--use <path>]`         | Print its Extensions in composition order with their package versions.                                                                                                           |
-| `mitome auth login [--use <path>]`       | Collect a Credential for one of its Providers; prompts to choose when several qualify.                                                                                           |
-| `mitome auth logout [--use <path>]`      | Remove that Provider's stored Credential.                                                                                                                                        |
+| Command                                    | Purpose                                                                                                                                                                          |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mitome init`                              | Create the default Mitome Definition: choose a Provider and Model, write `index.ts`, `AGENTS.md`, and `package.json`, install, and log in. Existing files are never overwritten. |
+| `mitome [message] [-p] [--use <path>]`     | Run a Turn or open the interactive Host.                                                                                                                                         |
+| `mitome install [--use <path>]`            | Install the Mitome Definition's dependencies without running it.                                                                                                                 |
+| `mitome serve [--port <n>] [--use <path>]` | Run every Channel Host in the foreground; `handle` Channels share one listener under `/<name>`.                                                                                  |
+| `mitome add <package> [--use <path>]`      | Add a dependency, install, and print an import snippet for it. A failed install rolls the manifest back.                                                                         |
+| `mitome remove <package> [--use <path>]`   | Remove a dependency and uninstall it.                                                                                                                                            |
+| `mitome ext list [--use <path>]`           | Print its Extensions in composition order with their package versions.                                                                                                           |
+| `mitome auth login [--use <path>]`         | Collect a Credential for one of its Providers; prompts to choose when several qualify.                                                                                           |
+| `mitome auth logout [--use <path>]`        | Remove that Provider's stored Credential.                                                                                                                                        |
 
 Where Credentials are stored, and how a shell variable takes precedence over `<config-dir>/.env`, is on the [Configuration](/docs/configuration#credentials) page.
 

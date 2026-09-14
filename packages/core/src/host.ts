@@ -32,13 +32,17 @@ export interface InteractiveHost {
 /**
  * A Host that connects an external surface to the Agent. It must expose `handle`, `serve`, or
  * both; `defineMitome` rejects a Channel Host with neither. `mitome [message]` ignores Channel
- * Hosts.
+ * Hosts; `mitome serve` runs them.
  */
 export interface ChannelHost {
   readonly kind: "channel";
   /** Identifies the Channel; unique among the Channel Hosts of one Mitome Definition. */
   readonly name: string;
-  /** Answers one request; the response body owns the Session scope until it ends or is cancelled. */
+  /**
+   * Answers one request; the response body owns the Session scope until it ends or is cancelled.
+   * `mitome serve` mounts it under `/<name>` and strips that prefix, so the request URL path is the
+   * remainder (`/` when nothing follows) and the Channel never sees its own name.
+   */
   readonly handle?: (context: ChannelHostContext, request: Request) => Promise<Response>;
   /** Runs a long-lived connection and resolves only after the signal aborts and shutdown completes. */
   readonly serve?: (context: ChannelHostContext, signal: AbortSignal) => Promise<void>;
@@ -96,6 +100,14 @@ const hostIssue = (host: Host, index: number): string | undefined => {
     if (!Predicate.isString(candidate.name) || candidate.name === "") {
       return `Channel Host at index ${index} must have a non-empty string name.`;
     }
+    // URL parsing collapses "." and ".." path segments, so mitome serve could never mount them.
+    if (candidate.name === "." || candidate.name === "..") {
+      return `Channel Host at index ${index} must not be named "." or "..".`;
+    }
+    // encodeURIComponent throws on a lone surrogate, so the mount announcement could never print it.
+    if (!candidate.name.isWellFormed()) {
+      return `Channel Host at index ${index} must have a well-formed name without lone surrogates.`;
+    }
     return hasOptionalFunction(candidate, "handle") &&
       hasOptionalFunction(candidate, "serve") &&
       (candidate.handle !== undefined || candidate.serve !== undefined)
@@ -111,8 +123,8 @@ const hostIssue = (host: Host, index: number): string | undefined => {
 /**
  * Creates a Mitome Definition. `hosts` defaults to none and may hold any number of Hosts. A value
  * that is not a Host (typically a factory that was not called), an unknown `kind`, a Channel Host
- * without `handle` or `serve`, or two Channel Hosts sharing a name throws with the offending Host
- * named.
+ * without `handle` or `serve`, a Channel Host named `.` or `..` or with a lone surrogate in its
+ * name, or two Channel Hosts sharing a name throws with the offending Host named.
  */
 export const defineMitome = <const Agent extends AgentDefinition>(
   definition: Omit<MitomeDefinition<Agent>, "hosts"> & {
