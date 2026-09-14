@@ -83,26 +83,31 @@ describe("fileTranscripts", () => {
     ),
   );
 
-  it.effect("keeps the stored Transcript and leaves no temporary file when a write fails", () =>
-    withDirectory((directory) =>
-      Effect.gen(function* () {
-        const store = fileTranscripts(directory);
-        const transcript = makeTranscript({ id: "transcript-1", messages: [] });
-        yield* store.save(transcript);
+  // Root ignores directory permissions, so the write would succeed.
+  it.effect.skipIf(process.getuid?.() === 0)(
+    "keeps the stored Transcript and leaves no temporary file when a write fails",
+    () =>
+      withDirectory((directory) =>
+        Effect.gen(function* () {
+          const store = fileTranscripts(directory);
+          const transcript = makeTranscript({ id: "transcript-1", messages: [] });
+          yield* store.save(transcript);
 
-        yield* Effect.promise(() => chmod(directory, 0o500));
-        const failure = yield* Effect.flip(
-          store.save(makeTranscript({ id: transcript.id, messages: [], parentTranscriptId: "p" })),
-        ).pipe(Effect.ensuring(Effect.promise(() => chmod(directory, 0o700))));
-        expect(failure).toBeInstanceOf(StoreError);
-        expect(failure.message).toContain("could not write");
+          yield* Effect.promise(() => chmod(directory, 0o500));
+          const failure = yield* Effect.flip(
+            store.save(
+              makeTranscript({ id: transcript.id, messages: [], parentTranscriptId: "p" }),
+            ),
+          ).pipe(Effect.ensuring(Effect.promise(() => chmod(directory, 0o700))));
+          expect(failure).toBeInstanceOf(StoreError);
+          expect(failure.message).toContain("could not write");
 
-        expect(yield* Effect.promise(() => readdir(directory))).toEqual([
-          expect.stringMatching(/\.transcript\.json$/),
-        ]);
-        expect(yield* store.load(transcript.id)).toEqual(transcript);
-      }),
-    ),
+          expect(yield* Effect.promise(() => readdir(directory))).toEqual([
+            expect.stringMatching(/\.transcript\.json$/),
+          ]);
+          expect(yield* store.load(transcript.id)).toEqual(transcript);
+        }),
+      ),
   );
 
   it.effect("ignores an atomic-save temporary file", () =>

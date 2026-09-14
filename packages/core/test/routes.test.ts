@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "@effect/vitest";
@@ -106,25 +106,47 @@ describe("fileRoutes", () => {
     ),
   );
 
-  it.effect("keeps the stored Route and leaves no temporary file when a write fails", () =>
+  it.effect("removes the temporary file when the rename fails", () =>
     withDirectory((directory) =>
       Effect.gen(function* () {
         const store = fileRoutes(directory);
         yield* store.set(key, "transcript-1");
+        // A directory at the Route's path makes rename fail after the temporary file exists.
+        const [file] = yield* Effect.promise(() => readdir(directory));
+        const path = join(directory, file!);
+        yield* Effect.promise(() => rm(path));
+        yield* Effect.promise(() => mkdir(path));
 
-        yield* Effect.promise(() => chmod(directory, 0o500));
-        const failure = yield* Effect.flip(store.set(key, "transcript-2")).pipe(
-          Effect.ensuring(Effect.promise(() => chmod(directory, 0o700))),
-        );
+        const failure = yield* Effect.flip(store.set(key, "transcript-2"));
         expect(failure).toBeInstanceOf(StoreError);
-        expect(failure.message).toContain("could not write");
-
-        expect(yield* Effect.promise(() => readdir(directory))).toEqual([
-          expect.stringMatching(/\.route\.json$/),
-        ]);
-        expect(yield* store.get(key)).toBe("transcript-1");
+        expect(failure.message).toContain("could not replace");
+        expect(yield* Effect.promise(() => readdir(directory))).toEqual([file]);
       }),
     ),
+  );
+
+  // Root ignores directory permissions, so the write would succeed.
+  it.effect.skipIf(process.getuid?.() === 0)(
+    "keeps the stored Route and leaves no temporary file when a write fails",
+    () =>
+      withDirectory((directory) =>
+        Effect.gen(function* () {
+          const store = fileRoutes(directory);
+          yield* store.set(key, "transcript-1");
+
+          yield* Effect.promise(() => chmod(directory, 0o500));
+          const failure = yield* Effect.flip(store.set(key, "transcript-2")).pipe(
+            Effect.ensuring(Effect.promise(() => chmod(directory, 0o700))),
+          );
+          expect(failure).toBeInstanceOf(StoreError);
+          expect(failure.message).toContain("could not write");
+
+          expect(yield* Effect.promise(() => readdir(directory))).toEqual([
+            expect.stringMatching(/\.route\.json$/),
+          ]);
+          expect(yield* store.get(key)).toBe("transcript-1");
+        }),
+      ),
   );
 
   it.effect("rejects a file whose key does not match its name or shape", () =>
