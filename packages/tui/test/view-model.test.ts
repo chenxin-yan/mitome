@@ -272,24 +272,9 @@ describe("session view model", () => {
   });
 
   test("closes a pending prompt on interruption and ignores a late decision", async () => {
-    let approvals = 0;
-    const events: Array<TurnEvent> = [
-      { type: "tool-call", id: "call-1", name: "lookup", params: {} },
-      {
-        type: "approval-required",
-        approvalId: "approval-1",
-        toolCallId: "call-1",
-        name: "lookup",
-        params: {},
-        requirement: "tool",
-        approve: () => Effect.sync(() => void approvals++),
-        deny: () => Effect.void,
-      },
-    ];
-    const viewModel = makeSessionViewModel(
-      scriptedSession([Stream.concat(Stream.fromIterable(events), Stream.never)]),
-      stubManager,
-    );
+    // The script waits for a decision that never comes, so the Turn hangs until interrupted.
+    const pending = approvalScript("lookup", "tool");
+    const viewModel = makeSessionViewModel(scriptedSession([pending.stream]), stubManager);
 
     viewModel.submit("check");
     await waitFor(() => viewModel.getState().approval !== undefined);
@@ -298,7 +283,7 @@ describe("session view model", () => {
     expect(viewModel.resolveApproval("approve")).toBe(false);
     await waitFor(() => viewModel.getState().phase === "idle");
 
-    expect(approvals).toBe(0);
+    expect(pending.decisions()).toEqual([]);
     expect(viewModel.getState().notice).toBe("Turn interrupted.");
     await viewModel.dispose();
   });
