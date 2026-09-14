@@ -93,7 +93,9 @@ const readBody = async (request: Request, limit: number): Promise<string | undef
       if (chunk.done) return body + decoder.decode();
       bytes += chunk.value.byteLength;
       if (bytes > limit) {
-        await reader.cancel();
+        // Not awaited: the request was cloned for the Authenticator, and a tee branch's cancel
+        // settles only once the other branch is cancelled as well.
+        reader.cancel().catch(() => undefined);
         return undefined;
       }
       body += decoder.decode(chunk.value, { stream: true });
@@ -217,7 +219,11 @@ export const http = (options: HttpOptions): ChannelHost => {
               while (!closed && (controller.desiredSize ?? 0) <= 0) await pulled.promise;
               if (!closed) controller.enqueue(frame);
             });
-          const advanceRoute = options.routes.set(key, session.transcript().id);
+          // Without a Transcript store nothing is saved, so a Route would name a Transcript that never existed.
+          const advanceRoute =
+            context.transcripts === undefined
+              ? Effect.void
+              : options.routes.set(key, session.transcript().id);
           const resolveApproval = (event: ApprovalRequiredEvent): Effect.Effect<void> =>
             interactive
               ? registerPending(
@@ -337,7 +343,8 @@ export const http = (options: HttpOptions): ChannelHost => {
     handle: async (context, request) => {
       let principal: string | undefined;
       try {
-        principal = await options.auth(request);
+        // A clone keeps the body readable here when the Authenticator verifies a signed payload.
+        principal = await options.auth(request.clone());
       } catch {
         return text(500, "Authentication failed");
       }

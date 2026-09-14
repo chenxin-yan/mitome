@@ -1,7 +1,8 @@
 /**
  * Resolves the principal a request acts as, or `undefined` when it is unauthenticated. `http()`
  * runs it before anything else: an unauthenticated request is answered `401` before the Route
- * store or a Provider is touched.
+ * store or a Provider is touched. It receives a clone of the request, so reading the body to
+ * verify a signature does not consume the endpoint's body.
  */
 export type Authenticator = (request: Request) => Promise<string | undefined>;
 

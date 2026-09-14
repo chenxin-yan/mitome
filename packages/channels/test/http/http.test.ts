@@ -102,6 +102,31 @@ describe("http Channel Turns", () => {
     expect(model.prompts).toHaveLength(0);
   });
 
+  it("still decodes the body after an Authenticator that read it", async () => {
+    const model = echoModel();
+    const channel = http({
+      auth: async (request) => ((await request.text()).includes("hello") ? "alice" : undefined),
+      routes: memoryRoutes(),
+    });
+    const frames = await readFrames(
+      await channel.handle!(contextFor(agentWith(model.provider)), turnRequest("chat-1", "any")),
+    );
+    expect(frames.at(-1)?.event.type).toBe("response-complete");
+    expect(promptText(model.prompts[0]!)).toContain("hello");
+  });
+
+  it("never writes a Route when the Definition persists no Transcripts", async () => {
+    const model = echoModel();
+    const routes = countingRoutes();
+    const channel = http({ auth, routes });
+    const context = { ...contextFor(agentWith(model.provider)), transcripts: undefined };
+    const frames = await readFrames(
+      await channel.handle!(context, turnRequest("chat-1", "alice-token")),
+    );
+    expect(frames.at(-1)?.event.type).toBe("response-complete");
+    expect(routes.calls()).toBe(0);
+  });
+
   it("keeps two principals on distinct Routes for the same conversation id", async () => {
     const model = echoModel();
     const routes = memoryRoutes();

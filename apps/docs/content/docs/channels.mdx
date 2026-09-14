@@ -18,12 +18,15 @@ import { fileRoutes } from "@mitome/core";
 import { bearer, http } from "@mitome/channels/http";
 import { agent } from "./agent";
 
+const token = process.env.API_TOKEN;
+if (token === undefined) throw new Error("API_TOKEN is required");
+
 export default defineMitome({
   agent,
   transcripts: fileTranscripts(),
   hosts: [
     http({
-      auth: bearer({ [process.env.API_TOKEN!]: "owner" }),
+      auth: bearer({ [token]: "owner" }),
       routes: fileRoutes(),
     }),
   ],
