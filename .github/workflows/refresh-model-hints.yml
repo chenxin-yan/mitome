@@ -1,0 +1,36 @@
+name: Refresh model hints
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - run: bun install --frozen-lockfile
+      - run: bun run hints:refresh
+      - name: Add changeset when hints changed
+        run: |
+          git diff --quiet -- scripts/models-dev.snapshot.json && exit 0
+          cat > .changeset/refresh-model-hints.md <<'EOF'
+          ---
+          "@mitome/providers": patch
+          "create-mitome": patch
+          ---
+
+          Refresh OpenAI model hints from models.dev.
+          EOF
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          branch: chore/refresh-model-hints
+          title: "chore: refresh model hints from models.dev"
+          commit-message: "chore: refresh model hints from models.dev"
+          body: Automated `bun run hints:refresh`. Review the diff; CI runs on this PR as usual.
