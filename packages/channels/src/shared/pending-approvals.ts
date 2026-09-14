@@ -11,6 +11,8 @@ export interface PendingApproval {
 
 /** In-memory registry of pending Approvals keyed by a Channel-chosen id; see {@link createPendingApprovals}. */
 export interface PendingApprovals {
+  /** Stable, Model-visible reason a Channel in `"deny"` mode answers every pending Approval with. */
+  readonly defaultDenial: string;
   /**
    * Registers the entry until it is taken, the Turn's `scope` closes, or `timeoutMs` elapses and
    * it is denied with the timeout reason. The timer is forked in `scope`, so an interrupted Turn
@@ -28,13 +30,16 @@ export interface PendingApprovals {
 }
 
 /**
- * Pending Approvals live in the process for the lifetime of their Turn only. `timeoutReason` is
- * the stable, Model-visible denial written when nobody decides within `timeoutMs`.
+ * Pending Approvals live in the process for the lifetime of their Turn only. `kind` and `name`
+ * identify the Channel in the denial reasons; an unanswered Approval is denied after `timeoutMs`
+ * (default 5 minutes).
  */
 export const createPendingApprovals = (
-  timeoutMs: number,
-  timeoutReason: string,
+  kind: "http" | "telegram",
+  name: string,
+  timeoutMs = 300_000,
 ): PendingApprovals => {
+  const timeoutReason = `Approval denied: the ${kind} Channel "${name}" received no decision before the Approval timed out`;
   const pending = new Map<string, PendingApproval>();
   const take = (id: string): PendingApproval | undefined => {
     const entry = pending.get(id);
@@ -42,6 +47,7 @@ export const createPendingApprovals = (
     return entry;
   };
   return {
+    defaultDenial: `Approval denied: the ${kind} Channel "${name}" does not resolve Approvals (set approvals: "interactive" or list the Tool under approvals.allow)`,
     register: (id, entry, scope) =>
       Effect.gen(function* () {
         pending.set(id, entry);

@@ -6,7 +6,6 @@
  */
 
 import {
-  createSession,
   type ChannelHost,
   type ChannelHostContext,
   type RouteKey,
@@ -17,7 +16,7 @@ import {
 import { type Cause, Effect, Exit, Inspectable, Stream } from "effect";
 import { createPendingApprovals } from "../shared/pending-approvals.js";
 import { createRouteLock } from "../shared/route-lock.js";
-import { loadRouteTranscript } from "../shared/route-transcript.js";
+import { openRouteSession } from "../shared/route-session.js";
 import {
   createTelegramApi,
   TelegramApiError,
@@ -139,12 +138,7 @@ export const telegram = (options: TelegramOptions): ChannelHost => {
   const allowed = new Set(options.allow.map(String));
   const withLock = createRouteLock();
 
-  // Stable, Model-visible text; it never carries exception details.
-  const defaultDenial = `Approval denied: the telegram Channel "${name}" does not resolve Approvals (set approvals: "interactive" or list the Tool under approvals.allow)`;
-  const pending = createPendingApprovals(
-    options.approvalTimeoutMs ?? 300_000,
-    `Approval denied: the telegram Channel "${name}" received no decision before the Approval timed out`,
-  );
+  const pending = createPendingApprovals("telegram", name, options.approvalTimeoutMs);
 
   // Fails at the first chunk Telegram rejects, so a keyboard never follows a prompt it belongs to.
   const deliver = (target: Target, text: string, markup?: TelegramInlineKeyboard) => {
@@ -183,13 +177,11 @@ export const telegram = (options: TelegramOptions): ChannelHost => {
       Effect.scoped(
         Effect.gen(function* () {
           const sessionScope = yield* Effect.scope;
-          const transcript = yield* loadRouteTranscript(options.routes, context, key);
-          const session = yield* createSession(context.agent, {
-            transcripts: context.transcripts,
-            transcript,
-          });
-          const committedMessages = session.history().length;
-          const advanceRoute = options.routes.set(key, session.transcript().id);
+          const { session, advanceRoute, advanceRouteIfCommitted } = yield* openRouteSession(
+            options.routes,
+            context,
+            key,
+          );
           const prompt = (event: ApprovalRequiredEvent) => {
             // callback_data is limited to 64 bytes, so the keyboard carries a Channel-minted id.
             const id = crypto.randomUUID();
@@ -220,7 +212,9 @@ export const telegram = (options: TelegramOptions): ChannelHost => {
                 return Effect.void;
               }
               if (event.type === "approval-required") {
-                return interactive ? prompt(event) : Effect.ignore(event.deny(defaultDenial));
+                return interactive
+                  ? prompt(event)
+                  : Effect.ignore(event.deny(pending.defaultDenial));
               }
               // The Route advances before the user learns the Turn completed.
               return event.type === "response-complete" ? advanceRoute : Effect.void;
@@ -231,12 +225,7 @@ export const telegram = (options: TelegramOptions): ChannelHost => {
               TurnError: () => Effect.succeed(failedReply),
               SessionBusyError: () => Effect.succeed(failedReply),
               SessionReleasedError: () => Effect.succeed(failedReply),
-              // The Turn may already be committed when its final event record fails to append.
-              StoreError: () =>
-                (session.history().length > committedMessages
-                  ? Effect.ignore(advanceRoute)
-                  : Effect.void
-                ).pipe(Effect.as(failedReply)),
+              StoreError: () => advanceRouteIfCommitted.pipe(Effect.as(failedReply)),
             }),
             Effect.catchDefect(() => Effect.succeed(failedReply)),
           );

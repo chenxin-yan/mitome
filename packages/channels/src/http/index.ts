@@ -5,7 +5,6 @@
  */
 
 import {
-  createSession,
   type ChannelHost,
   type ChannelHostContext,
   type RouteKey,
@@ -15,7 +14,7 @@ import {
 import { Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
 import { createPendingApprovals } from "../shared/pending-approvals.js";
 import { createRouteLock } from "../shared/route-lock.js";
-import { loadRouteTranscript } from "../shared/route-transcript.js";
+import { openRouteSession } from "../shared/route-session.js";
 import type { Authenticator } from "./auth.js";
 import { encodeFrame, toWireEvent, type WireTurnEvent } from "./sse.js";
 
@@ -128,16 +127,9 @@ type ApprovalRequiredEvent = Extract<TurnEvent, { readonly type: "approval-requi
 export const http = (options: HttpOptions): ChannelHost => {
   const name = options.name ?? "http";
   const interactive = options.approvals === "interactive";
-  const approvalTimeoutMs = options.approvalTimeoutMs ?? 300_000;
   const withLock = createRouteLock();
   const encoder = new TextEncoder();
-
-  // Stable, Model-visible text; it never carries exception details.
-  const defaultDenial = `Approval denied: the http Channel "${name}" does not resolve Approvals (set approvals: "interactive" or list the Tool under approvals.allow)`;
-  const pending = createPendingApprovals(
-    approvalTimeoutMs,
-    `Approval denied: the http Channel "${name}" received no decision before the Approval timed out`,
-  );
+  const pending = createPendingApprovals("http", name, options.approvalTimeoutMs);
 
   const runTurn = async (
     context: ChannelHostContext,
@@ -158,12 +150,11 @@ export const http = (options: HttpOptions): ChannelHost => {
       Effect.scoped(
         Effect.gen(function* () {
           const sessionScope = yield* Effect.scope;
-          const transcript = yield* loadRouteTranscript(options.routes, context, key);
-          const session = yield* createSession(context.agent, {
-            transcripts: context.transcripts,
-            transcript,
-          });
-          const committedMessages = session.history().length;
+          const { session, advanceRoute, advanceRouteIfCommitted } = yield* openRouteSession(
+            options.routes,
+            context,
+            key,
+          );
           ready.resolve();
           const controller = yield* Effect.promise(() => opened.promise);
           const send = (event: WireTurnEvent) =>
@@ -173,11 +164,6 @@ export const http = (options: HttpOptions): ChannelHost => {
               while (!closed && (controller.desiredSize ?? 0) <= 0) await pulled.promise;
               if (!closed) controller.enqueue(frame);
             });
-          // Without a Transcript store nothing is saved, so a Route would name a Transcript that never existed.
-          const advanceRoute =
-            context.transcripts === undefined
-              ? Effect.void
-              : options.routes.set(key, session.transcript().id);
           const resolveApproval = (event: ApprovalRequiredEvent): Effect.Effect<void> =>
             interactive
               ? pending.register(
@@ -185,7 +171,7 @@ export const http = (options: HttpOptions): ChannelHost => {
                   { key, approve: event.approve, deny: event.deny },
                   sessionScope,
                 )
-              : Effect.ignore(event.deny(defaultDenial));
+              : Effect.ignore(event.deny(pending.defaultDenial));
 
           yield* session
             .runTurn(body.message, body.model === undefined ? undefined : { model: body.model })
@@ -205,12 +191,8 @@ export const http = (options: HttpOptions): ChannelHost => {
                 TurnError: () => send({ type: "error", message: "Turn failed" }),
                 SessionBusyError: () => send({ type: "error", message: "Session busy" }),
                 SessionReleasedError: () => send({ type: "error", message: "Session released" }),
-                // The Turn may already be committed when its final event record fails to append.
                 StoreError: () =>
-                  (session.history().length > committedMessages
-                    ? Effect.ignore(advanceRoute)
-                    : Effect.void
-                  ).pipe(
+                  advanceRouteIfCommitted.pipe(
                     Effect.andThen(send({ type: "error", message: "Transcript store failed" })),
                   ),
               }),
