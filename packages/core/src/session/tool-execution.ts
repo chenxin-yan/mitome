@@ -407,33 +407,28 @@ export const makeToolExecution = (
       // SAFETY: toolAiError maps all erased handler errors to AiError before this function returns.
       const handle = ((name: string, params: ToolInput, toolCallId?: string) =>
         Effect.gen(function* () {
-          const prepared = toolCallId === undefined ? undefined : preparedCalls.get(toolCallId);
           // SAFETY: handle is only invoked for names exposed by this toolkit.
-          const pipeline = prepared?.pipeline ?? pipelines[name]!;
+          const pipeline = pipelines[name]!;
+          const cached = toolCallId === undefined ? undefined : preparedCalls.get(toolCallId);
           if (toolCallId !== undefined) preparedCalls.delete(toolCallId);
-          if (prepared?._tag === "InputFailure") {
+          // The model pipeline always prepares first. Only direct handle() calls reach the
+          // fallback, which decodes and gates the same way; an Approval requirement cannot be
+          // resolved here, so the call runs unattended unless denied or vetoed.
+          const prepared =
+            cached ??
+            (yield* prepare(pipeline, params, { toolCallId: toolCallId ?? "", messages: [] }));
+          if (Predicate.isTagged(prepared, "InputFailure")) {
             return Stream.succeed(failureResult(prepared.reason));
           }
-          if (prepared?._tag === "TurnFailure") {
+          if (Predicate.isTagged(prepared, "TurnFailure")) {
             return yield* Effect.fail(prepared.cause).pipe(
               hookAiError(prepared.method, prepared.message),
             );
           }
-          if (prepared !== undefined) {
-            return prepared.veto === undefined
-              ? yield* pipeline.execute(params)
-              : Stream.succeed(failureResult(prepared.veto));
-          }
-          // Defensive path for a call the model pipeline never prepared: enforce vetoes and
-          // denials, which Core owns; an unresolvable "ask" cannot be honored here. The model
-          // pipeline always supplies an id; only direct handle() calls may omit it.
-          const gated = yield* gate(name, params, toolCallId ?? "");
-          if (Predicate.isTagged(gated, "Failure")) {
-            return yield* Effect.fail(gated.cause).pipe(hookAiError(gated.method, gated.message));
-          }
-          if (Predicate.isTagged(gated, "Denied"))
-            return Stream.succeed(failureResult(gated.reason));
-          return yield* pipeline.execute(params);
+          // Hooks, Approval, and the handler all see the one decoded value from preparation.
+          return prepared.veto === undefined
+            ? yield* pipeline.execute(prepared.params)
+            : Stream.succeed(failureResult(prepared.veto));
         })) as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
 
       const request: ApprovalGate["request"] = Effect.fn("@mitome/core/ApprovalGate.request")(

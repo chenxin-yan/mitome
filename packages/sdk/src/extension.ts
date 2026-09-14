@@ -45,7 +45,7 @@ export interface HookContext<Resource = never> {
   readonly signal: AbortSignal;
 }
 
-type UnvalidatedToolInput = Parameters<CoreToolInputValidator>[0];
+type DecodedToolInput = Parameters<CoreToolInputValidator>[0];
 type StandardInputValue = Parameters<StandardSchemaV1.Props["validate"]>[0];
 
 /** The Tool call a `preTool` Hook observes: its name and decoded input. */
@@ -528,13 +528,14 @@ export function defineExtension<
     toolResultValidators,
     toolFailureValidators,
     handlers: Object.fromEntries(
-      definitions.map(({ tool, input, output, failure }) => [
+      definitions.map(({ tool, output, failure }) => [
         tool.name,
-        (params: UnvalidatedToolInput) =>
+        // Core already decoded `params` through `toolInputValidators` during Tool preparation.
+        (params: DecodedToolInput) =>
           promiseHook<any, Resource>(async (context) => {
             // SAFETY: ToolBuilder fixes this erased handler to the same input/context pair.
             const handler = tool.handler as (input: any, context: HookContext<any>) => Promise<any>;
-            const result = await handler(await validate(input, params), context);
+            const result = await handler(params, context);
             if (failure !== undefined) {
               if (result.ok) {
                 return { ok: true as const, value: await validate(output!, result.value) };
