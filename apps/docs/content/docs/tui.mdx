@@ -35,6 +35,8 @@ Run `mitome` to open an empty Session, or `mitome "first message"` to open it wi
 | `Enter`       | With the picker open, resume the selected Transcript into a new Session.                      |
 | `Ctrl-N`      | Start a fresh Session without leaving the TUI.                                                |
 | `Ctrl-C`      | Exit and release the Session.                                                                 |
+| `y` / `n`     | With an Approval pending, approve or deny that one Tool call.                                 |
+| `a`           | With a Tool-flagged Approval pending, allow that Tool for the rest of the Session.            |
 
 The picker and `Ctrl-N` are available while the Session is idle; interrupt a running Turn first. Resuming seeds a new Session with the selected Transcript's Messages and records it as the parent of the new Transcript after the next completed Turn. Starting a new Session never modifies the previous Transcript.
 
@@ -42,7 +44,9 @@ Without `transcripts` in the Mitome Definition, `Ctrl-O` reports that persistenc
 
 ## Streaming, Tools, and Approvals
 
-Model text and Tool activity appear as the Turn runs. The TUI approves every `approval-required` event and shows `Tool <name> auto-approved`; only `preTool` Hooks can stop a Tool call here. If your Agent has Tools a person should confirm, see [Approvals](/docs/approvals#who-approves-by-default).
+Model text and Tool activity appear as the Turn runs. When a Tool call needs an [Approval](/docs/approvals), the Turn pauses and the TUI shows the Tool name, why it asked (`tool`, `policy`, or `predicate-error`), and the decoded params. Press `y` to approve that call, `n` to deny it (the Model sees `Approval denied by the user.` and the Turn continues), or `Esc` to interrupt the Turn instead of deciding.
+
+When the Tool author's own `needsApproval` asked (`requirement: "tool"`), `a` allows that Tool for the rest of the Session: later calls of the same Tool in this Session are approved without a prompt and appear as `Tool <name> allowed for this Session`. The grant lives only in the running TUI and is keyed by Tool name; `Ctrl-N` and resuming a Transcript start a new Session and clear it. It never answers a `policy` ask (the Agent's `approvals` or an Extension's `preTool` said `ask`) or a `predicate-error` ask, and policy still runs before it is consulted, so a `deny` or veto is never bypassed. To stop being asked at all, the Agent author lists the Tool under `approvals.allow`.
 
 `Esc` interrupts the Turn. Nothing from it is committed to the Transcript; the write-only event log may retain the events emitted so far, as described under [Commit boundary](/docs/persistence#commit-boundary).
 

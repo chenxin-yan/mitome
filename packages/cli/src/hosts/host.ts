@@ -3,11 +3,20 @@
 // resolved beside the selected root so it shares the author's module instances.
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ChannelHost, Host, MitomeDefinition, TurnEvent } from "@mitome/core";
+import type {
+  ApprovalRequirement,
+  ChannelHost,
+  Host,
+  MitomeDefinition,
+  TurnEvent,
+} from "@mitome/core";
 import { errorMessage } from "./diagnostics.js";
 
 const definitionPath = process.argv[1]!;
-const mode = process.argv[2];
+const modeArgument = process.argv[2];
+// `--yes` rides on the mode (child-host.ts HostMode) and only affects one-shot output.
+const approveToolAsks = modeArgument === "auto-yes" || modeArgument === "print-yes";
+const mode = approveToolAsks ? modeArgument.slice(0, -"-yes".length) : modeArgument;
 if (mode !== "auto" && mode !== "print" && mode !== "serve") {
   throw new Error("Invalid Child Host mode.");
 }
@@ -260,6 +269,21 @@ if (message === undefined) {
   process.exit(1);
 }
 
+type ApprovalEvent = Extract<TurnEvent, { readonly type: "approval-required" }>;
+
+// No user is present in one-shot output, so an ask is denied unless --yes covers it. Only the
+// Tool author's own flag is covered: a policy ask and a failed predicate stay a person's call.
+const approves = (event: ApprovalEvent): boolean => approveToolAsks && event.requirement === "tool";
+
+// Stable, Model-visible text; it never carries exception details.
+const denialHints: Record<ApprovalRequirement, string> = {
+  tool: "pass --yes to approve Tool-flagged requests",
+  policy: "the Agent's approval policy asks; --yes does not apply",
+  "predicate-error": "its needsApproval predicate failed; --yes does not apply",
+};
+const denialReason = (event: ApprovalEvent): string =>
+  `Approval denied: no user is present to approve "${event.name}" (${denialHints[event.requirement]})`;
+
 const render = (event: TurnEvent): void => {
   switch (event.type) {
     case "model-output":
@@ -274,7 +298,9 @@ const render = (event: TurnEvent): void => {
       process.stdout.write(`\n[tool ${event.name} ${event.isFailure ? "failed" : "completed"}]\n`);
       break;
     case "approval-required":
-      process.stdout.write(`\n[approval ${event.name} auto-approved]\n`);
+      process.stdout.write(
+        `\n[approval ${event.name} ${approves(event) ? "approved" : "denied"}]\n`,
+      );
       break;
     case "response-complete":
       process.stdout.write("\n");
@@ -298,7 +324,8 @@ const program = Effect.scoped(
     yield* Stream.runForEach(session.runTurn(message), (event) =>
       Effect.gen(function* () {
         render(event);
-        if (event.type === "approval-required") yield* event.approve();
+        if (event.type !== "approval-required") return;
+        yield* approves(event) ? event.approve() : event.deny(denialReason(event));
       }),
     );
   }),

@@ -20,10 +20,15 @@ export interface ExtensionListResult {
 export class ChildHost extends Context.Service<
   ChildHost,
   {
+    /**
+     * Runs the Definition's interactive Host or one-shot output. `yes` is the `--yes` flag: in
+     * one-shot output, Tool-flagged Approval requests are approved instead of denied.
+     */
     readonly runHost: (
       path: string,
       message: string | undefined,
       mode: "auto" | "print",
+      yes: boolean,
     ) => Effect.Effect<ExitCode, CliError>;
     /** Runs every Channel Host of the Mitome Definition until a signal ends the Runner. */
     readonly serve: (path: string, port: number) => Effect.Effect<ExitCode, CliError>;

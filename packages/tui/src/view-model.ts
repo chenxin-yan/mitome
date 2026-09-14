@@ -1,5 +1,5 @@
-import type { TranscriptSummary, TurnEvent } from "@mitome/core";
-import { Cause, Effect, Exit, Fiber, Stream } from "effect";
+import type { ApprovalRequirement, TranscriptSummary, TurnEvent } from "@mitome/core";
+import { Cause, Effect, Exit, Fiber, Match, Stream } from "effect";
 import type { SessionManager, SessionResource } from "./session-manager.js";
 
 export interface SessionTurn {
@@ -14,13 +14,28 @@ export interface TranscriptPickerState {
   readonly selected: number;
 }
 
+/** A pending Approval the user must resolve; the Turn stays paused until they do. */
+export interface ApprovalPrompt {
+  readonly name: string;
+  readonly params: unknown;
+  readonly requirement: ApprovalRequirement;
+}
+
+/** How the user answers a prompt; `allow-session` also records a Session grant for the Tool. */
+export type ApprovalDecision = "approve" | "deny" | "allow-session";
+
 export interface SessionState {
   readonly phase: "idle" | "running" | "interrupting" | "switching";
   readonly turns: ReadonlyArray<SessionTurn>;
   readonly activeTurn?: SessionTurn | undefined;
+  readonly approval?: ApprovalPrompt | undefined;
   readonly picker?: TranscriptPickerState | undefined;
   readonly notice?: string | undefined;
 }
+
+type ApprovalEvent = Extract<TurnEvent, { readonly type: "approval-required" }>;
+
+const userDenialReason = "Approval denied by the user.";
 
 interface ActiveRun {
   readonly fiber: Fiber.Fiber<void, unknown>;
@@ -51,7 +66,7 @@ const activity = (event: TurnEvent): string | undefined => {
     case "tool-call":
       return `Tool ${event.name} started`;
     case "approval-required":
-      return `Tool ${event.name} auto-approved`;
+      return undefined;
     case "tool-result":
       return `Tool ${event.name} ${event.isFailure ? "failed" : "completed"}`;
     case "model-output":
@@ -75,6 +90,10 @@ export const makeSessionViewModel = (initialSession: SessionResource, manager: S
   let abandonSwitch: (() => void) | undefined;
   let abandonTimer: ReturnType<typeof setTimeout> | undefined;
   let pickerRequest = 0;
+  let pendingApproval: ApprovalEvent | undefined;
+  // Session grants: Tool names the user allowed for the rest of the live Session. Host-local,
+  // consulted only for `requirement: "tool"` asks Core already emitted, reset with the Session.
+  const sessionGrants = new Set<string>();
   let disposed = false;
   // Reads `disposed` after an await; the wrapper stops TS/oxlint from stale
   // control-flow narrowing ("always falsy") across the async boundary.
@@ -86,6 +105,10 @@ export const makeSessionViewModel = (initialSession: SessionResource, manager: S
     for (const listener of listeners) listener(state);
   };
 
+  const addActivity = (current: SessionTurn, item: string): void => {
+    publish({ ...state, activeTurn: { ...current, activities: [...current.activities, item] } });
+  };
+
   const handleEvent = (event: TurnEvent, complete: () => void): Effect.Effect<void, unknown> => {
     const current = state.activeTurn;
     if (current === undefined) return Effect.void;
@@ -94,20 +117,54 @@ export const makeSessionViewModel = (initialSession: SessionResource, manager: S
         ...state,
         activeTurn: { ...current, response: current.response + event.text },
       });
+    } else if (event.type === "approval-required") {
+      if (event.requirement === "tool" && sessionGrants.has(event.name)) {
+        addActivity(current, `Tool ${event.name} allowed for this Session`);
+        return event.approve();
+      }
+      pendingApproval = event;
+      publish({
+        ...state,
+        approval: { name: event.name, params: event.params, requirement: event.requirement },
+      });
     } else {
       const nextActivity = activity(event);
-      if (nextActivity !== undefined) {
-        publish({
-          ...state,
-          activeTurn: {
-            ...current,
-            activities: [...current.activities, nextActivity],
-          },
-        });
-      }
+      if (nextActivity !== undefined) addActivity(current, nextActivity);
     }
     if (event.type === "response-complete") complete();
-    return event.type === "approval-required" ? event.approve() : Effect.void;
+    return Effect.void;
+  };
+
+  // Turn end, interruption, and disposal drop the pending Approval; a late keypress then
+  // finds nothing to resolve.
+  const resolveApproval = (decision: ApprovalDecision): boolean => {
+    const pending = pendingApproval;
+    const current = state.activeTurn;
+    if (pending === undefined || current === undefined || state.phase !== "running") return false;
+    if (decision === "allow-session" && pending.requirement !== "tool") return false;
+    pendingApproval = undefined;
+    if (decision === "allow-session") sessionGrants.add(pending.name);
+    publish({
+      ...state,
+      approval: undefined,
+      activeTurn: {
+        ...current,
+        activities: [
+          ...current.activities,
+          Match.value(decision).pipe(
+            Match.when("approve", () => `Tool ${pending.name} approved`),
+            Match.when("deny", () => `Tool ${pending.name} denied`),
+            Match.when("allow-session", () => `Tool ${pending.name} allowed for this Session`),
+            Match.exhaustive,
+          ),
+        ],
+      },
+    });
+    // Core rejects a decision on an Approval whose Turn already ended; that is not a Turn failure.
+    Effect.runFork(
+      Effect.ignore(decision === "deny" ? pending.deny(userDenialReason) : pending.approve()),
+    );
+    return true;
   };
 
   const submit = (text: string): boolean => {
@@ -139,6 +196,7 @@ export const makeSessionViewModel = (initialSession: SessionResource, manager: S
     void Effect.runPromise(Fiber.await(fiber)).then((exit) => {
       if (disposed || active !== run) return;
       active = undefined;
+      pendingApproval = undefined;
       const turn = state.activeTurn;
       const interrupted =
         run.interrupted || (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause));
@@ -186,7 +244,8 @@ export const makeSessionViewModel = (initialSession: SessionResource, manager: S
     }
     if (active === undefined || state.phase !== "running" || active.completed()) return false;
     active.interrupted = true;
-    publish({ ...state, phase: "interrupting" });
+    pendingApproval = undefined;
+    publish({ ...state, phase: "interrupting", approval: undefined });
     Effect.runFork(Fiber.interrupt(active.fiber));
     return true;
   };
@@ -284,6 +343,7 @@ export const makeSessionViewModel = (initialSession: SessionResource, manager: S
         return;
       }
       session = next;
+      sessionGrants.clear();
       const closed = await bounded(Effect.runPromiseExit(previous.close));
       publish({
         phase: "idle",
@@ -316,6 +376,7 @@ export const makeSessionViewModel = (initialSession: SessionResource, manager: S
     },
     submit,
     interrupt,
+    resolveApproval,
     openTranscriptPicker,
     closeTranscriptPicker,
     moveTranscriptSelection,
@@ -325,6 +386,7 @@ export const makeSessionViewModel = (initialSession: SessionResource, manager: S
       disposed = true;
       const running = active;
       active = undefined;
+      pendingApproval = undefined;
       listeners.clear();
       if (running !== undefined) {
         await bounded(Effect.runPromise(Fiber.interrupt(running.fiber)));

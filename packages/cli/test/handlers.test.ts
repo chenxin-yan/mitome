@@ -28,6 +28,7 @@ type ChildHostCalls = {
     readonly path: string;
     readonly message: string | undefined;
     readonly mode: "auto" | "print";
+    readonly yes: boolean;
   }>;
   readonly serve: Array<{ readonly path: string; readonly port: number }>;
   readonly install: Array<string>;
@@ -83,9 +84,9 @@ const fakeChildHost = (
   return {
     calls,
     layer: Layer.succeed(ChildHost, {
-      runHost: (path, message, mode) =>
+      runHost: (path, message, mode, yes) =>
         Effect.sync(() => {
-          calls.runHost.push({ path, message, mode });
+          calls.runHost.push({ path, message, mode, yes });
           return options.runExitCode ?? 0;
         }),
       serve: (path, port) =>
@@ -193,14 +194,19 @@ describe("CLI handlers", () => {
       );
       const childHost = fakeChildHost({ runExitCode: 23 });
       const exit = yield* Effect.exit(
-        runMessage({ print: true, message: Option.some("hello"), use: Option.none() }).pipe(
-          Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
-        ),
+        runMessage({
+          print: true,
+          yes: true,
+          message: Option.some("hello"),
+          use: Option.none(),
+        }).pipe(Effect.provide(Layer.merge(childHost.layer, fakePrompter()))),
       );
 
       expect(exit).toEqual(Exit.succeed(23));
       expect(childHost.calls.install).toEqual([]);
-      expect(childHost.calls.runHost).toEqual([{ path, message: "hello", mode: "print" }]);
+      expect(childHost.calls.runHost).toEqual([
+        { path, message: "hello", mode: "print", yes: true },
+      ]);
     }),
   );
 
@@ -209,9 +215,12 @@ describe("CLI handlers", () => {
       const childHost = fakeChildHost();
       const missing = join(yield* Effect.promise(temporaryDirectory), "missing.ts");
       const exit = yield* Effect.exit(
-        runMessage({ print: true, message: Option.none(), use: Option.some(missing) }).pipe(
-          Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
-        ),
+        runMessage({
+          print: true,
+          yes: false,
+          message: Option.none(),
+          use: Option.some(missing),
+        }).pipe(Effect.provide(Layer.merge(childHost.layer, fakePrompter()))),
       );
 
       expect(exitCode(exit)).toBe(1);
@@ -227,14 +236,19 @@ describe("CLI handlers", () => {
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
       const childHost = fakeChildHost({ installRuntime: true });
       const exit = yield* Effect.exit(
-        runMessage({ print: true, message: Option.some("hello"), use: Option.some(path) }).pipe(
-          Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
-        ),
+        runMessage({
+          print: true,
+          yes: false,
+          message: Option.some("hello"),
+          use: Option.some(path),
+        }).pipe(Effect.provide(Layer.merge(childHost.layer, fakePrompter()))),
       );
 
       expect(exit).toEqual(Exit.succeed(0));
       expect(childHost.calls.install).toEqual([path]);
-      expect(childHost.calls.runHost).toEqual([{ path, message: "hello", mode: "print" }]);
+      expect(childHost.calls.runHost).toEqual([
+        { path, message: "hello", mode: "print", yes: false },
+      ]);
       expect(yield* TestConsole.logLines).toContain("Installing Mitome Definition dependencies...");
     }),
   );
@@ -263,9 +277,12 @@ describe("CLI handlers", () => {
       const path = yield* Effect.promise(() => definition(join(directory, "agent.ts"), false));
       const childHost = fakeChildHost({ installExitCode: 17 });
       const exit = yield* Effect.exit(
-        runMessage({ print: false, message: Option.some("hello"), use: Option.some(path) }).pipe(
-          Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
-        ),
+        runMessage({
+          print: false,
+          yes: false,
+          message: Option.some("hello"),
+          use: Option.some(path),
+        }).pipe(Effect.provide(Layer.merge(childHost.layer, fakePrompter()))),
       );
 
       expect(exit).toEqual(Exit.succeed(17));
@@ -302,9 +319,12 @@ describe("CLI handlers", () => {
         yield* Effect.promise(() => writeFile(packagePath, contents));
         const beforeErrors = (yield* TestConsole.errorLines).length;
         const exit = yield* Effect.exit(
-          runMessage({ print: false, message: Option.some("hello"), use: Option.some(path) }).pipe(
-            Effect.provide(Layer.merge(childHost.layer, fakePrompter())),
-          ),
+          runMessage({
+            print: false,
+            yes: false,
+            message: Option.some("hello"),
+            use: Option.some(path),
+          }).pipe(Effect.provide(Layer.merge(childHost.layer, fakePrompter()))),
         );
         const errors = (yield* TestConsole.errorLines).slice(beforeErrors).join("\n");
 

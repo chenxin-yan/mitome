@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { createSession, makeProvider, memoryTranscripts, StoreError } from "@mitome/core";
-import type { TranscriptStore, TranscriptSummary, TurnEvent } from "@mitome/core";
-import { Context, Effect, Layer, Match, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
+import type {
+  ApprovalRequirement,
+  TranscriptStore,
+  TranscriptSummary,
+  TurnEvent,
+} from "@mitome/core";
+import { Context, Effect, Layer, Match, Schema, Stream } from "effect";
+import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
 import { makeSessionManager } from "../src/session-manager.js";
 import type { SessionManager, SessionResource } from "../src/session-manager.js";
 import { makeSessionViewModel } from "../src/view-model.js";
@@ -22,6 +27,49 @@ const stubManager: SessionManager = {
   open: () => Effect.die("not used"),
 };
 
+const completeTurn = (stream: Stream.Stream<TurnEvent>): Stream.Stream<TurnEvent> =>
+  Stream.concat(stream, Stream.fromIterable<TurnEvent>([{ type: "response-complete" }]));
+
+// One Tool call that stays paused on approval-required until the view model decides, as a
+// real Turn would; `decisions` records what reached the event.
+const approvalScript = (name: string, requirement: ApprovalRequirement) => {
+  const decisions: Array<string> = [];
+  const { promise: decided, resolve: decide } = Promise.withResolvers<void>();
+  const params = { query: "weather" };
+  const before: Array<TurnEvent> = [
+    { type: "tool-call", id: `call-${name}`, name, params },
+    {
+      type: "approval-required",
+      approvalId: `approval-${name}`,
+      toolCallId: `call-${name}`,
+      name,
+      params,
+      requirement,
+      approve: () =>
+        Effect.sync(() => {
+          decisions.push("approve");
+          decide();
+        }),
+      deny: (reason) =>
+        Effect.sync(() => {
+          decisions.push(`deny: ${reason}`);
+          decide();
+        }),
+    },
+  ];
+  const after: Array<TurnEvent> = [
+    { type: "tool-result", id: `call-${name}`, name, result: "sunny", isFailure: false },
+  ];
+  const stream: Stream.Stream<TurnEvent> = Stream.concat(
+    Stream.fromIterable(before),
+    Stream.concat(
+      Stream.fromEffectDrain(Effect.promise(() => decided)),
+      Stream.fromIterable(after),
+    ),
+  );
+  return { stream, decisions: () => decisions };
+};
+
 const testProvider = (streamText: LanguageModel.Service["streamText"]) => {
   const unsupported = () => Effect.die("not used");
   return makeProvider("test", [] as const, undefined, () =>
@@ -34,24 +82,12 @@ const testProvider = (streamText: LanguageModel.Service["streamText"]) => {
 };
 
 describe("session view model", () => {
-  test("streams output, shows tool activity, auto-approves, and supports multiple Turns", async () => {
-    let approvals = 0;
-    const approval: TurnEvent = {
-      type: "approval-required",
-      approvalId: "approval-1",
-      toolCallId: "call-1",
-      name: "lookup",
-      params: { query: "weather" },
-      requirement: "tool",
-      approve: () => Effect.sync(() => void approvals++),
-      deny: () => Effect.void,
-    };
+  test("streams output, shows tool activity, and supports multiple Turns", async () => {
     const session = scriptedSession([
       Stream.make(
         { type: "model-output", text: "hel" },
         { type: "model-output", text: "lo" },
         { type: "tool-call", id: "call-1", name: "lookup", params: {} },
-        approval,
         {
           type: "tool-result",
           id: "call-1",
@@ -74,14 +110,263 @@ describe("session view model", () => {
     expect(viewModel.getState().turns[0]).toEqual({
       message: "first\nline",
       response: "hello",
-      activities: ["Tool lookup started", "Tool lookup auto-approved", "Tool lookup completed"],
+      activities: ["Tool lookup started", "Tool lookup completed"],
     });
-    expect(approvals).toBe(1);
 
     expect(viewModel.submit("second")).toBe(true);
     await waitFor(() => viewModel.getState().phase === "idle");
     expect(viewModel.getState().turns.map((turn) => turn.response)).toEqual(["hello", "again"]);
     await viewModel.dispose();
+  });
+
+  test("prompts on approval-required and applies exactly one decision", async () => {
+    const lookup = approvalScript("lookup", "tool");
+    const viewModel = makeSessionViewModel(
+      scriptedSession([completeTurn(lookup.stream)]),
+      stubManager,
+    );
+
+    expect(viewModel.submit("check")).toBe(true);
+    await waitFor(() => viewModel.getState().approval !== undefined);
+    expect(viewModel.getState().approval).toEqual({
+      name: "lookup",
+      params: { query: "weather" },
+      requirement: "tool",
+    });
+    expect(lookup.decisions()).toEqual([]);
+
+    expect(viewModel.resolveApproval("approve")).toBe(true);
+    expect(viewModel.resolveApproval("approve")).toBe(false);
+    expect(viewModel.resolveApproval("deny")).toBe(false);
+    expect(viewModel.getState().approval).toBeUndefined();
+    await waitFor(() => viewModel.getState().phase === "idle");
+
+    expect(lookup.decisions()).toEqual(["approve"]);
+    expect(viewModel.getState().turns[0]?.activities).toEqual([
+      "Tool lookup started",
+      "Tool lookup approved",
+      "Tool lookup completed",
+    ]);
+    await viewModel.dispose();
+  });
+
+  test("denies with a Model-visible reason", async () => {
+    const lookup = approvalScript("lookup", "policy");
+    const viewModel = makeSessionViewModel(
+      scriptedSession([completeTurn(lookup.stream)]),
+      stubManager,
+    );
+
+    viewModel.submit("check");
+    await waitFor(() => viewModel.getState().approval !== undefined);
+    // A policy ask offers no Session grant.
+    expect(viewModel.resolveApproval("allow-session")).toBe(false);
+    expect(viewModel.resolveApproval("deny")).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+
+    expect(lookup.decisions()).toEqual(["deny: Approval denied by the user."]);
+    expect(viewModel.getState().turns[0]?.activities).toContain("Tool lookup denied");
+    await viewModel.dispose();
+  });
+
+  test("remembers a Session grant for tool asks only and clears it with the Session", async () => {
+    const first = approvalScript("lookup", "tool");
+    const remembered = approvalScript("lookup", "tool");
+    const policy = approvalScript("lookup", "policy");
+    const predicate = approvalScript("lookup", "predicate-error");
+    const other = approvalScript("other", "tool");
+    const afterReset = approvalScript("lookup", "tool");
+    const next = scriptedSession([completeTurn(afterReset.stream)]);
+    const viewModel = makeSessionViewModel(
+      scriptedSession([
+        completeTurn(first.stream),
+        completeTurn(
+          Stream.concat(
+            Stream.concat(remembered.stream, policy.stream),
+            Stream.concat(predicate.stream, other.stream),
+          ),
+        ),
+      ]),
+      { transcripts: undefined, open: () => Effect.succeed(next) },
+    );
+
+    viewModel.submit("first");
+    await waitFor(() => viewModel.getState().approval !== undefined);
+    expect(viewModel.resolveApproval("allow-session")).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(first.decisions()).toEqual(["approve"]);
+
+    viewModel.submit("second");
+    await waitFor(() => viewModel.getState().approval?.requirement === "policy");
+    expect(remembered.decisions()).toEqual(["approve"]);
+    expect(viewModel.resolveApproval("approve")).toBe(true);
+    await waitFor(() => viewModel.getState().approval?.requirement === "predicate-error");
+    expect(viewModel.resolveApproval("allow-session")).toBe(false);
+    expect(viewModel.resolveApproval("deny")).toBe(true);
+    await waitFor(() => viewModel.getState().approval?.name === "other");
+    expect(viewModel.resolveApproval("approve")).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    expect(viewModel.getState().turns[1]?.activities).toEqual([
+      "Tool lookup started",
+      "Tool lookup allowed for this Session",
+      "Tool lookup completed",
+      "Tool lookup started",
+      "Tool lookup approved",
+      "Tool lookup completed",
+      "Tool lookup started",
+      "Tool lookup denied",
+      "Tool lookup completed",
+      "Tool other started",
+      "Tool other approved",
+      "Tool other completed",
+    ]);
+
+    expect(viewModel.newSession()).toBe(true);
+    await waitFor(() => viewModel.getState().notice === "Started a new Session.");
+    viewModel.submit("third");
+    await waitFor(() => viewModel.getState().approval !== undefined);
+    expect(afterReset.decisions()).toEqual([]);
+    expect(viewModel.resolveApproval("deny")).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    await viewModel.dispose();
+  });
+
+  test("clears the Session grant when a Transcript is resumed", async () => {
+    const granted = approvalScript("lookup", "tool");
+    const resumed = approvalScript("lookup", "tool");
+    const unused = () => Effect.die("not used");
+    const viewModel = makeSessionViewModel(scriptedSession([completeTurn(granted.stream)]), {
+      transcripts: {
+        list: () =>
+          Effect.succeed([
+            {
+              id: "saved",
+              createdAt: "2026-08-25T01:00:00.000Z",
+              updatedAt: "2026-08-25T02:00:00.000Z",
+              messageCount: 2,
+              preview: "saved topic",
+            },
+          ]),
+        load: unused,
+        save: unused,
+        appendEvent: unused,
+      },
+      open: () => Effect.succeed(scriptedSession([completeTurn(resumed.stream)])),
+    });
+
+    viewModel.submit("first");
+    await waitFor(() => viewModel.getState().approval !== undefined);
+    expect(viewModel.resolveApproval("allow-session")).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+
+    expect(viewModel.openTranscriptPicker()).toBe(true);
+    await waitFor(() => viewModel.getState().picker?.loading === false);
+    expect(viewModel.resumeTranscript()).toBe(true);
+    await waitFor(() => viewModel.getState().notice === "Transcript resumed in a new Session.");
+    viewModel.submit("again");
+    await waitFor(() => viewModel.getState().approval !== undefined);
+    expect(resumed.decisions()).toEqual([]);
+    expect(viewModel.resolveApproval("approve")).toBe(true);
+    await waitFor(() => viewModel.getState().phase === "idle");
+    await viewModel.dispose();
+  });
+
+  test("closes a pending prompt on interruption and ignores a late decision", async () => {
+    // The script waits for a decision that never comes, so the Turn hangs until interrupted.
+    const pending = approvalScript("lookup", "tool");
+    const viewModel = makeSessionViewModel(scriptedSession([pending.stream]), stubManager);
+
+    viewModel.submit("check");
+    await waitFor(() => viewModel.getState().approval !== undefined);
+    expect(viewModel.interrupt()).toBe(true);
+    expect(viewModel.getState().approval).toBeUndefined();
+    expect(viewModel.resolveApproval("approve")).toBe(false);
+    await waitFor(() => viewModel.getState().phase === "idle");
+
+    expect(pending.decisions()).toEqual([]);
+    expect(viewModel.getState().notice).toBe("Turn interrupted.");
+    await viewModel.dispose();
+  });
+
+  test("never lets a Session grant resolve a failed needsApproval predicate", async () => {
+    const actions = ["ok", "throw", "reject"] as const;
+    let calls = 0;
+    const provider = makeProvider("test", [] as const, undefined, () =>
+      Layer.effect(
+        LanguageModel.LanguageModel,
+        LanguageModel.make({
+          streamText: () => {
+            const action = actions[calls++];
+            return action === undefined
+              ? Stream.succeed({ type: "text-delta" as const, id: "done", delta: "done" })
+              : Stream.succeed({
+                  type: "tool-call" as const,
+                  id: `call-${action}`,
+                  name: "dangerous",
+                  params: { action },
+                });
+          },
+          generateText: () => Effect.die("not used"),
+        }),
+      ),
+    );
+    const dangerous = Tool.make("dangerous", {
+      parameters: Schema.Struct({ action: Schema.Literals(actions) }),
+      success: Schema.String,
+      needsApproval: ({ action }) => {
+        if (action === "throw") throw new Error("predicate threw");
+        // A rejected Promise-SDK predicate reaches Core through Effect.promise like this.
+        return action === "reject"
+          ? Effect.promise(() => Promise.reject(new Error("predicate rejected")))
+          : true;
+      },
+    });
+    let handlerCalls = 0;
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession({
+            providers: [provider],
+            model: "test/default",
+            extensions: [
+              {
+                toolkit: Toolkit.make(dangerous),
+                handlers: { dangerous: () => Effect.sync(() => `ran ${++handlerCalls}`) },
+              },
+            ],
+          });
+          const viewModel = makeSessionViewModel({ ...session, close: Effect.void }, stubManager);
+          yield* Effect.promise(async () => {
+            viewModel.submit("go");
+            await waitFor(() => viewModel.getState().approval?.requirement === "tool");
+            expect(viewModel.resolveApproval("allow-session")).toBe(true);
+            for (const action of ["throw", "reject"]) {
+              await waitFor(
+                () =>
+                  JSON.stringify(viewModel.getState().approval?.params) ===
+                  JSON.stringify({ action }),
+              );
+              expect(viewModel.getState().approval?.requirement).toBe("predicate-error");
+              expect(viewModel.resolveApproval("deny")).toBe(true);
+            }
+            await waitFor(() => viewModel.getState().phase === "idle");
+            expect(handlerCalls).toBe(1);
+            expect(viewModel.getState().turns[0]?.activities).toEqual([
+              "Tool dangerous started",
+              "Tool dangerous allowed for this Session",
+              "Tool dangerous completed",
+              "Tool dangerous started",
+              "Tool dangerous denied",
+              "Tool dangerous failed",
+              "Tool dangerous started",
+              "Tool dangerous denied",
+              "Tool dangerous failed",
+            ]);
+            await viewModel.dispose();
+          });
+        }),
+      ),
+    );
   });
 
   test("rejects interruption after response-complete", async () => {

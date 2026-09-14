@@ -24,11 +24,17 @@ Each entry is symptom, cause, fix. Exact error texts are catalogued under [Error
 
 **Fix.** Add `transcripts: fileTranscripts()` to `defineMitome`; see [Persistence](/docs/persistence).
 
+## My script stopped running Tools
+
+**Cause.** One-shot output (`mitome -p`, or any run whose stdout is not a TTY) no longer approves Approval requests: nobody is present to decide, so each one is denied and stdout shows `[approval <name> denied]`. The Turn still completes and the exit status is `0`; the Model explains what was not permitted.
+
+**Fix.** Pass `--yes` to approve requests the Tool author flagged with `needsApproval`, or have the Agent author list the Tools under `approvals.allow` to stop asking altogether. Neither covers a `policy` ask from the Agent's `approvals` or an Extension's `preTool`; change the policy instead. `--yes` also does not cover a `needsApproval` predicate that failed, because it still runs the predicate; `approvals.allow` skips the predicate entirely. See [Approvals](/docs/approvals#running-unattended) and [Security](/docs/security#tools-act-on-your-behalf).
+
 ## My Tool ran without asking for Approval
 
-**Cause.** The CLI's one-shot printer and the TUI approve every `approval-required` event that `preTool` Hooks let through. `needsApproval` pauses the Turn for a Host decision; those two Hosts decide "yes".
+**Cause.** Either the Agent's `approvals.allow` matches it (which also skips its `needsApproval` predicate), or the run used `--yes`, or someone pressed `a` in the TUI earlier in the same Session.
 
-**Fix.** For rules that never need a person, veto in a `preTool` Hook. For a human decision, drive `runTurn` yourself or author a Host that presents it; see [Approvals](/docs/approvals#who-approves-by-default).
+**Fix.** Remove the Tool from `allow`, drop `--yes`, or start a new Session (`Ctrl-N`); see [Approvals](/docs/approvals#who-approves-by-default).
 
 ## My API key is not picked up from `.env`
 
