@@ -11,7 +11,16 @@ export { fileTranscripts } from "./file-transcript-store.js";
 export { CredentialDescriptorSchema } from "./credential.js";
 export type { AuthCapability, AuthenticateOptions, CredentialDescriptor } from "./credential.js";
 export { AgentDefinitionError, compileAgentDefinition, defineAgent } from "./agent.js";
-export type { AgentDefinition, CompiledAgent, CompiledTool } from "./agent.js";
+export type {
+  AgentDefinition,
+  ApprovalPolicy,
+  ApprovalPolicyCall,
+  ApprovalPolicyCallback,
+  ApprovalPolicyDecision,
+  ApprovalRules,
+  CompiledAgent,
+  CompiledTool,
+} from "./agent.js";
 export { defineExtension } from "./extension.js";
 export type {
   AnyExtension,
@@ -47,7 +56,13 @@ export {
   TurnError,
 } from "./session/errors.js";
 export { TurnEventDtoSchema } from "./session/events.js";
-export type { Json, ToolExecutionDenied, TurnEvent, TurnEventDto } from "./session/events.js";
+export type {
+  ApprovalRequirement,
+  Json,
+  ToolExecutionDenied,
+  TurnEvent,
+  TurnEventDto,
+} from "./session/events.js";
 export { createSession } from "./session/session.js";
 export type { CreateSessionOptions, TurnOptions, Session } from "./session/session.js";
 export {

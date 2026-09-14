@@ -106,6 +106,7 @@ describe("memoryTranscripts", () => {
         toolCallId: "call-2",
         name: "delete",
         params: { path: "/tmp/file" },
+        requirement: "policy",
       },
       {
         type: "approval-resolved",

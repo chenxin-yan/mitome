@@ -58,7 +58,11 @@ const start = (definition: AgentDefinition) =>
 
 type PreTool = NonNullable<ExtensionHooks["preTool"]>;
 
-const definition = (preTool?: PreTool, needsApproval: Tool.Any["needsApproval"] = true) => {
+const definition = (
+  preTool?: PreTool,
+  needsApproval: Tool.Any["needsApproval"] = true,
+  approvals?: AgentDefinition["approvals"],
+) => {
   const fixture = approvalModel();
   let handlerCalls = 0;
   let postCalls = 0;
@@ -74,6 +78,7 @@ const definition = (preTool?: PreTool, needsApproval: Tool.Any["needsApproval"] 
     definition: {
       providers: [fixture.provider],
       model: "test/default",
+      approvals,
       extensions: [
         {
           name: "dangerous",
@@ -113,6 +118,7 @@ describe("Session Approval event adaptation", () => {
         toolCallId: "call-approval",
         name: "dangerous",
         params: { action: "delete" },
+        requirement: "tool",
       });
       expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
       expect(current.fixture.calls()).toBe(1);
@@ -184,6 +190,62 @@ describe("Session Approval event adaptation", () => {
         'needsApproval predicate for \\"dangerous\\" failed',
       );
       expect(current.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
+    }),
+  );
+
+  it.effect("marks a failed Approval predicate as predicate-error", () =>
+    Effect.gen(function* () {
+      const current = definition(undefined, () => Effect.die("predicate failed"));
+      const turn = yield* start(current.definition);
+      expect(turn.pending.requirement).toBe("predicate-error");
+      yield* Fiber.interrupt(turn.turn);
+    }).pipe(Effect.provide(Logger.layer([]))),
+  );
+
+  it.effect("applies the Agent approvals policy across a Turn", () =>
+    Effect.gen(function* () {
+      const allowed = definition(undefined, true, { allow: ["dangerous"] });
+      const allowedSession = yield* createSession(allowed.definition);
+      const allowedEvents = yield* Stream.runCollect(allowedSession.runTurn("Hi"));
+      expect(allowedEvents.some((event) => event.type === "approval-required")).toBe(false);
+      expect(allowed.counts()).toEqual({ handlerCalls: 1, postCalls: 1, preToolCalls: 1 });
+
+      const asked = definition(undefined, false, { ask: ["dangerous"] });
+      const askedTurn = yield* start(asked.definition);
+      expect(askedTurn.pending.requirement).toBe("policy");
+      yield* askedTurn.pending.approve();
+      yield* Fiber.join(askedTurn.turn);
+      expect(asked.counts()).toEqual({ handlerCalls: 1, postCalls: 1, preToolCalls: 1 });
+
+      const deniedReason = `Tool call "dangerous" is denied by the Agent's approval policy`;
+      const denied = definition(undefined, false, { deny: ["dang*"] });
+      const deniedSession = yield* createSession(denied.definition);
+      const deniedEvents = yield* Stream.runCollect(deniedSession.runTurn("Hi"));
+      expect(deniedEvents.some((event) => event.type === "approval-required")).toBe(false);
+      expect(deniedEvents).toContainEqual({
+        type: "tool-result",
+        id: "call-approval",
+        name: "dangerous",
+        result: { type: "execution-denied", reason: deniedReason },
+        isFailure: true,
+      });
+      expect(denied.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
+      expect(JSON.stringify(denied.fixture.prompt())).toContain(
+        "denied by the Agent's approval policy",
+      );
+
+      const thrown = definition(undefined, false, () => {
+        throw new Error("policy bug");
+      });
+      expect(
+        yield* Effect.flip(
+          Effect.gen(function* () {
+            const session = yield* createSession(thrown.definition);
+            yield* Stream.runDrain(session.runTurn("Hi"));
+          }),
+        ),
+      ).toMatchObject({ _tag: "TurnError", message: "Approval policy failed" });
+      expect(thrown.counts()).toEqual({ handlerCalls: 0, postCalls: 0, preToolCalls: 1 });
     }),
   );
 

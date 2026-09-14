@@ -10,7 +10,7 @@ import type {
 } from "../extension.js";
 import { provideExtension } from "../extension.js";
 import { ApprovalResolutionError, hookAiError, toolAiError } from "./errors.js";
-import type { ToolExecutionDenied } from "./events.js";
+import type { ApprovalRequirement, ToolExecutionDenied } from "./events.js";
 
 export type ApprovalDecision = { readonly approved: boolean; readonly reason?: string };
 
@@ -23,6 +23,7 @@ export type ApprovalRequestOutcome =
       readonly toolCallId: string;
       readonly name: string;
       readonly params: ToolInput;
+      readonly requirement: ApprovalRequirement;
       readonly awaitDecision: Effect.Effect<ApprovalDecision>;
     };
 
@@ -46,12 +47,15 @@ export interface ToolExecution {
   readonly approval: ApprovalGate;
 }
 
+// The merged Approval decision, computed once per Tool Call and cached: a veto/deny reason the
+// Model sees, an Approval requirement the Host resolves, or neither (the call runs unattended).
 type PreparedCall =
   | {
       readonly _tag: "Ready";
       readonly pipeline: ToolPipeline;
       readonly params: ToolInput;
       readonly veto: string | undefined;
+      readonly requirement: ApprovalRequirement | undefined;
     }
   | {
       readonly _tag: "InputFailure";
@@ -69,6 +73,35 @@ type PreparedCall =
     };
 
 const PreparedCall = Data.taggedEnum<PreparedCall>();
+
+// Extension vetoes and the Agent's `approvals`, merged: any veto or `deny` denies, otherwise any
+// `"ask"` asks, otherwise an explicit `allow` skips the Tool's own `needsApproval`.
+type GateOutcome =
+  | { readonly _tag: "Denied"; readonly reason: string }
+  | { readonly _tag: "Passed"; readonly decision: "allow" | "ask" | undefined }
+  | {
+      readonly _tag: "Failure";
+      readonly method: string;
+      readonly message: string;
+      readonly cause: unknown;
+    };
+
+const GateOutcome = Data.taggedEnum<GateOutcome>();
+
+class ApprovalPolicyError extends Data.TaggedError("ApprovalPolicyError")<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
+
+const policyDecisions: ReadonlyArray<unknown> = ["allow", "ask", "deny", undefined];
+
+const policyDenialReason = (name: string): string =>
+  `Tool call "${name}" is denied by the Agent's approval policy`;
+
+const interruptOrFailure = (cause: Cause.Cause<unknown>) =>
+  Cause.hasInterruptsOnly(cause)
+    ? Effect.interrupt
+    : Effect.succeed({ _tag: "Failure" as const, cause: Cause.squash(cause) });
 
 type ToolPipeline = {
   readonly compiled: CompiledTool;
@@ -158,17 +191,79 @@ export const makeToolExecution = (
       const runPreTool = (
         name: string,
         params: ToolInput,
-      ): Effect.Effect<string | undefined, unknown> =>
+      ): Effect.Effect<{ readonly veto: string | undefined; readonly ask: boolean }, unknown> =>
         Effect.gen(function* () {
+          let ask = false;
           for (const extension of compiled.extensions) {
-            const veto = yield* provideExtension(
+            const result = yield* provideExtension(
               extension,
               contexts,
               extension.hooks?.preTool?.({ name, params }) ?? Effect.void,
             );
-            if (veto !== undefined) return veto.reason;
+            if (result === "ask") ask = true;
+            else if (result !== undefined) return { veto: result.reason, ask };
           }
-          return undefined;
+          return { veto: undefined, ask };
+        });
+
+      const gate = (
+        name: string,
+        params: ToolInput,
+        toolCallId: string,
+      ): Effect.Effect<GateOutcome> =>
+        Effect.gen(function* () {
+          const preTool = yield* runPreTool(name, params).pipe(
+            Effect.map((hooks) => ({ _tag: "Hooks" as const, ...hooks })),
+            Effect.catch((cause) => Effect.succeed({ _tag: "Failure" as const, cause })),
+            Effect.catchCause(interruptOrFailure),
+          );
+          if (Predicate.isTagged(preTool, "Failure")) {
+            return GateOutcome.Failure({
+              method: "preTool",
+              message: "Pre-Tool Hook failed",
+              cause: preTool.cause,
+            });
+          }
+          if (preTool.veto !== undefined) return GateOutcome.Denied({ reason: preTool.veto });
+          const policy = compiled.approvals;
+          if (policy === undefined) {
+            return GateOutcome.Passed({ decision: preTool.ask ? "ask" : undefined });
+          }
+          // The callback is synchronous by contract, so a Promise or Effect is an invalid decision.
+          // A throw is wrapped so its text never reaches a user-facing description (ADR-0044).
+          const decision = yield* Effect.try({
+            try: () => {
+              const result = policy({ name, params, toolCallId });
+              // An accidentally async callback is rejected below; swallow its own rejection so the
+              // stray Promise cannot surface as an unhandled rejection and kill the Host process.
+              if (Predicate.isPromise(result)) result.catch(() => undefined);
+              return result;
+            },
+            catch: (cause) => new ApprovalPolicyError({ message: "Approval policy threw", cause }),
+          }).pipe(
+            Effect.filterOrFail(
+              (result) => policyDecisions.includes(result),
+              () =>
+                new ApprovalPolicyError({
+                  message: "Approval policy returned an invalid decision",
+                }),
+            ),
+            Effect.map((result) => ({ _tag: "Decision" as const, result })),
+            Effect.catchCause(interruptOrFailure),
+          );
+          if (Predicate.isTagged(decision, "Failure")) {
+            return GateOutcome.Failure({
+              method: "approvals",
+              message: "Approval policy failed",
+              cause: decision.cause,
+            });
+          }
+          if (decision.result === "deny") {
+            return GateOutcome.Denied({ reason: policyDenialReason(name) });
+          }
+          return GateOutcome.Passed({
+            decision: preTool.ask || decision.result === "ask" ? "ask" : decision.result,
+          });
         });
 
       const pipelines = Object.fromEntries(
@@ -230,8 +325,12 @@ export const makeToolExecution = (
         }),
       );
 
-      const prepare: (pipeline: ToolPipeline, params: ToolInput) => Effect.Effect<PreparedCall> =
-        Effect.fn("@mitome/core/ToolExecution.prepare")(function* (pipeline, params) {
+      const prepare: (
+        pipeline: ToolPipeline,
+        params: ToolInput,
+        context: Tool.NeedsApprovalContext,
+      ) => Effect.Effect<PreparedCall> = Effect.fn("@mitome/core/ToolExecution.prepare")(
+        function* (pipeline, params, context) {
           const { inputValidator, tool } = pipeline.compiled;
           const input =
             inputValidator === undefined
@@ -244,14 +343,7 @@ export const makeToolExecution = (
                       reason: `Tool input validation failed: ${cause instanceof Error ? cause.message : String(cause)}`,
                     }),
                   ),
-                  Effect.catchCause((cause) =>
-                    Cause.hasInterruptsOnly(cause)
-                      ? Effect.interrupt
-                      : Effect.succeed({
-                          _tag: "Failure" as const,
-                          cause: Cause.squash(cause),
-                        }),
-                  ),
+                  Effect.catchCause(interruptOrFailure),
                 );
           if (Predicate.isTagged(input, "InputFailure")) {
             return PreparedCall.InputFailure({ pipeline, params, reason: input.reason });
@@ -265,62 +357,47 @@ export const makeToolExecution = (
               cause: input.cause,
             });
           }
-          const preTool = yield* runPreTool(tool.name, input.value).pipe(
-            Effect.map((veto) => ({ _tag: "Ready" as const, veto })),
-            Effect.catch((cause) => Effect.succeed({ _tag: "Failure" as const, cause })),
+          const gated = yield* gate(tool.name, input.value, context.toolCallId);
+          if (Predicate.isTagged(gated, "Failure")) {
+            return PreparedCall.TurnFailure({ pipeline, params: input.value, ...gated });
+          }
+          const ready = (requirement: ApprovalRequirement | undefined, veto?: string) =>
+            PreparedCall.Ready({ pipeline, params: input.value, veto, requirement });
+          if (Predicate.isTagged(gated, "Denied")) return ready(undefined, gated.reason);
+          if (gated.decision === "ask") return ready("policy");
+          if (gated.decision === "allow") return ready(undefined);
+          const needsApproval = tool.needsApproval;
+          if (needsApproval === undefined || Predicate.isBoolean(needsApproval)) {
+            return ready(needsApproval === true ? "tool" : undefined);
+          }
+          // Sync throws become defects; the Cause-level handler treats Fail and Die identically
+          // (log, then fail closed) where Effect's own LanguageModel would fail open.
+          return yield* Effect.sync(() => needsApproval(input.value, context)).pipe(
+            Effect.flatMap((result) => (Effect.isEffect(result) ? result : Effect.succeed(result))),
+            Effect.map((required) => ready(required ? "tool" : undefined)),
             Effect.catchCause((cause) =>
               Cause.hasInterruptsOnly(cause)
                 ? Effect.interrupt
-                : Effect.succeed({ _tag: "Failure" as const, cause: Cause.squash(cause) }),
+                : Effect.logWarning(
+                    `needsApproval predicate for "${tool.name}" failed`,
+                    cause,
+                  ).pipe(Effect.as(ready("predicate-error"))),
             ),
           );
-          return Predicate.isTagged(preTool, "Failure")
-            ? PreparedCall.TurnFailure({
-                pipeline,
-                params: input.value,
-                method: "preTool",
-                message: "Pre-Tool Hook failed",
-                cause: preTool.cause,
-              })
-            : PreparedCall.Ready({
-                pipeline,
-                params: input.value,
-                veto: preTool.veto,
-              });
-        });
+        },
+      );
 
       const tools = Object.fromEntries(
         compiledTools.map((compiledTool) => {
           // SAFETY: pipelines is constructed from every compiled Tool immediately above.
           const pipeline = pipelines[compiledTool.tool.name]!;
-          const needsApproval = compiledTool.tool.needsApproval;
           const wrapped = compiledTool.tool.setNeedsApproval(
             (params: ToolInput, context: Tool.NeedsApprovalContext) =>
-              Effect.gen(function* () {
-                const prepared = yield* prepare(pipeline, params);
+              Effect.map(prepare(pipeline, params, context), (prepared) => {
                 preparedCalls.set(context.toolCallId, prepared);
                 if (Predicate.isTagged(prepared, "InputFailure")) return false;
                 if (Predicate.isTagged(prepared, "TurnFailure")) return true;
-                if (prepared.veto !== undefined) return true;
-                if (needsApproval === undefined || Predicate.isBoolean(needsApproval)) {
-                  return needsApproval ?? false;
-                }
-                // Sync throws become defects; the Cause-level handlers below treat
-                // Fail and Die identically (log, then fail closed).
-                return yield* Effect.sync(() => needsApproval(prepared.params, context)).pipe(
-                  Effect.flatMap((result) =>
-                    Effect.isEffect(result) ? result : Effect.succeed(result),
-                  ),
-                  // Predicate failures cannot execute the Tool Call: log and fail closed.
-                  Effect.catchCause((cause) =>
-                    Cause.hasInterruptsOnly(cause)
-                      ? Effect.interrupt
-                      : Effect.logWarning(
-                          `needsApproval predicate for "${compiledTool.tool.name}" failed`,
-                          cause,
-                        ).pipe(Effect.as(true)),
-                  ),
-                );
+                return prepared.veto !== undefined || prepared.requirement !== undefined;
               }),
           );
           return [compiledTool.tool.name, wrapped] as const;
@@ -342,11 +419,20 @@ export const makeToolExecution = (
               hookAiError(prepared.method, prepared.message),
             );
           }
-          const veto =
-            prepared === undefined
-              ? yield* runPreTool(name, params).pipe(hookAiError("preTool", "Pre-Tool Hook failed"))
-              : prepared.veto;
-          if (veto !== undefined) return Stream.succeed(failureResult(veto));
+          if (prepared !== undefined) {
+            return prepared.veto === undefined
+              ? yield* pipeline.execute(params)
+              : Stream.succeed(failureResult(prepared.veto));
+          }
+          // Defensive path for a call the model pipeline never prepared: enforce vetoes and
+          // denials, which Core owns; an unresolvable "ask" cannot be honored here. The model
+          // pipeline always supplies an id; only direct handle() calls may omit it.
+          const gated = yield* gate(name, params, toolCallId ?? "");
+          if (Predicate.isTagged(gated, "Failure")) {
+            return yield* Effect.fail(gated.cause).pipe(hookAiError(gated.method, gated.message));
+          }
+          if (Predicate.isTagged(gated, "Denied"))
+            return Stream.succeed(failureResult(gated.reason));
           return yield* pipeline.execute(params);
         })) as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
 
@@ -371,13 +457,20 @@ export const makeToolExecution = (
             preparedCalls.delete(part.toolCallId);
             return ApprovalRequest.Veto({ reason: prepared.veto });
           }
+          if (prepared?.requirement === undefined) {
+            return ApprovalRequest.Failure({
+              message: "Tool approval request has no prepared Tool call",
+              cause: part,
+            });
+          }
           const deferred = yield* Deferred.make<ApprovalDecision>();
           pendingApprovals.set(part.approvalId, deferred);
           return ApprovalRequest.Pending({
             approvalId: part.approvalId,
             toolCallId: part.toolCallId,
             name: call.name,
-            params: prepared === undefined ? call.params : prepared.params,
+            params: prepared.params,
+            requirement: prepared.requirement,
             awaitDecision: Deferred.await(deferred).pipe(
               Effect.tap((decision) =>
                 Effect.sync(() => {
