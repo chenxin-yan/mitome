@@ -68,7 +68,7 @@ tool({
 });
 ```
 
-`needsApproval` is a boolean or a predicate over the decoded input and a small context (`toolCallId`, current Messages). What happens next, and which Hosts ask a human, is on the [Approvals](/docs/approvals) page.
+`needsApproval` is a boolean or a predicate over the decoded input and a small context (`toolCallId`, current Messages). It is the Tool author's default, not the last word: the Agent that composes the Tool may relax it with `approvals: { allow: [...] }` or tighten it with `ask`/`deny`, and an Extension's `preTool` may veto or ask. The most restrictive opinion wins; `allow` only overrides this default. What happens next, and which Hosts ask a human, is on the [Approvals](/docs/approvals) page.
 
 ## Expected failures
 
@@ -129,4 +129,4 @@ Tool names must be unique across the whole Agent Definition. A duplicate within 
 ## Next
 
 - [Extensions](/docs/extensions): Resources, Instructions, and Hooks around your Tools.
-- [Approvals](/docs/approvals): gate Tool calls on a human decision.
+- [Approvals](/docs/approvals): gate Tool calls on a human decision, and how the Agent author overrides `needsApproval`.

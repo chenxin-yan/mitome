@@ -6,6 +6,8 @@ icon: ShieldCheck
 
 An [Approval](/docs/concepts#approval) is a decision that lets one pending Tool call execute. A Tool declares `needsApproval`; when the Model calls it, the Turn pauses and emits `approval-required`. Nothing runs until the [Host](/docs/concepts#host) decides or the Turn is interrupted.
 
+Four parties have a say, and the rule that combines them fits in one sentence: **the most restrictive opinion wins; `allow` only overrides the Tool author's own default.** Tool authors flag risk with `needsApproval`, Extensions may tighten with `preTool`, the Agent author decides with `approvals`, and the Host resolves whatever still asks.
+
 ## Resolving an Approval
 
 In an embedded application, your `withSession` callback is the Host. Call `approve()` or `deny(reason?)` on the event; both return a Promise:
@@ -47,6 +49,65 @@ The event carries the Tool `name`, the decoded `params`, and the `toolCallId`, s
 
 Decisions are one-shot. Resolving the same Approval twice, or after its Turn has ended, rejects with `ApprovalResolutionError`. A Host must resolve every pending Approval it receives or interrupt the Turn; leaving one unresolved leaves the Turn paused.
 
+The event also carries `requirement`: `"tool"` when the Tool's own `needsApproval` asked, `"policy"` when the Agent's `approvals` or an Extension's `preTool` asked, and `"predicate-error"` when a `needsApproval` predicate failed and Mitome asked instead of running the call.
+
+## Deciding as the Agent author
+
+`defineAgent` accepts an optional `approvals`: a sparse override of the Tool authors' defaults that travels with the Agent to every Host. Tools it does not mention keep their own `needsApproval`.
+
+```ts
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+  extensions: [files],
+  approvals: {
+    allow: ["read_file", "list_*"], // run without asking, even if the Tool author flagged them
+    ask: ["write_file"], // always ask, even if the Tool author did not flag it
+    deny: ["run_shell", "admin_*"], // never run; the Model sees a policy denial
+  },
+});
+```
+
+Each list holds Tool-name patterns: an exact name, or a prefix followed by one `*` (`"*"` alone matches every Tool). Your editor completes the names of the Tools your Extensions and inline `tools` declare, but any string is accepted; a typo simply matches nothing, and only malformed patterns (a `*` anywhere but the end) fail the Agent Definition. When several lists match one Tool, `deny` beats `ask` beats `allow`.
+
+For rules that depend on the input, pass a synchronous function instead. It receives `{ name, params, toolCallId }` and returns `"allow"`, `"ask"`, `"deny"`, or `undefined` to fall through to the Tool's default. Comparing `name` narrows `params` to that Tool's input for Tools declared through `defineExtension`:
+
+```ts
+const agent = defineAgent({
+  providers: [openai()],
+  model: "openai/gpt-5.4-mini",
+  extensions: [files],
+  approvals: (call) => {
+    if (call.name === "write_file") return call.params.path.startsWith("/tmp/") ? "allow" : "ask";
+    if (call.name === "run_shell") return "deny";
+    return undefined;
+  },
+});
+```
+
+The function must stay synchronous: a throw, a returned Promise, or any value that is not a decision fails the Turn with `Approval policy failed` before the Tool runs, and the Model never sees the cause. One typing caveat: when the callback is written **before** an inline `tools` builder in the same `defineAgent` call, TypeScript has not inferred the inline Tool names yet, so `call.name` and `call.params` stay untyped for them. Write `approvals` after `tools`, or keep those Tools in a `defineExtension`. Rule lists do not have this limitation.
+
+Per Tool call, after its input is decoded, Core merges the opinions once and caches the result with the call:
+
+| Opinions present                                | Outcome                                                    |
+| ----------------------------------------------- | ---------------------------------------------------------- |
+| Any `preTool` veto, or Agent `deny`             | Denied; the Model sees the reason                          |
+| Otherwise any `preTool` `"ask"`, or Agent `ask` | `approval-required` with `requirement: "policy"`           |
+| Otherwise Agent `allow`                         | Runs; the Tool's `needsApproval` is not consulted          |
+| Otherwise                                       | The Tool's `needsApproval` decides (`requirement: "tool"`) |
+
+`allow` therefore never beats an Extension or your own `deny`/`ask`; it only relaxes what the Tool author flagged.
+
+## Running unattended
+
+To run an Agent with no prompts at all, say so in the Agent:
+
+```ts
+approvals: { allow: ["*"] },
+```
+
+Every Tool then runs without asking unless an Extension vetoes or asks, or you also list it under `ask` or `deny`. This is the sanctioned way to run unattended; it is a decision the Agent author makes once, visible in the Agent Definition, rather than something a Host guesses. An `"ask"` from an Extension or from your own rules is a request for a person; the built-in Hosts still auto-approve it today (see below), and [issue #140](https://github.com/chenxin-yan/mitome/issues/140) changes them to present it or leave the Turn paused. A custom Host you write remains responsible for its own consent behavior.
+
 ## Who approves by default
 
 The built-in Hosts do not ask a human:
@@ -54,18 +115,19 @@ The built-in Hosts do not ask a human:
 - The CLI's one-shot printer (`mitome -p`) approves every `approval-required` event and prints `[approval <name> auto-approved]`.
 - The [TUI](/docs/tui) approves every `approval-required` event and shows `Tool <name> auto-approved` in the Turn.
 
-Both do so only for calls that `preTool` Hooks let through. If your Agent has Tools whose execution needs a person, drive `runTurn` yourself as shown above, or [author a Host](/docs/hosts) that presents the decision.
+Both do so only for calls that `preTool` Hooks and the Agent's `approvals` let through. If your Agent has Tools whose execution needs a person, drive `runTurn` yourself as shown above, or [author a Host](/docs/hosts) that presents the decision.
 
-## `preTool` versus Approval
+## `preTool` versus `approvals` versus Approval
 
-Two mechanisms gate a Tool call, and they answer different questions.
+Three mechanisms gate a Tool call, and they answer different questions.
 
-| Mechanism       | Who decides                | When                   | Sees             | On veto                            |
-| --------------- | -------------------------- | ---------------------- | ---------------- | ---------------------------------- |
-| `preTool` Hook  | An Extension, as policy    | Before anyone is asked | `name`, `params` | Model receives the denial `reason` |
-| `needsApproval` | The Host, usually a person | After policy passed    | The event above  | Model receives the denial `reason` |
+| Mechanism       | Who decides                 | When                   | Sees                           | Can say                          |
+| --------------- | --------------------------- | ---------------------- | ------------------------------ | -------------------------------- |
+| `preTool` Hook  | An Extension, as policy     | Before anyone is asked | `name`, `params`               | veto with a `reason`, or `"ask"` |
+| `approvals`     | The Agent author, as policy | After Hooks ran        | `name`, `params`, `toolCallId` | `allow`, `ask`, `deny`           |
+| `needsApproval` | The Host, usually a person  | After policy passed    | The event above                | approve or deny with a `reason`  |
 
-Use `preTool` for rules that never need a human: block a Tool outright, restrict paths, rate-limit. Use `needsApproval` for actions a person should confirm. Do not use one as a substitute for the other; policy is not consent, and consent does not replace policy.
+Use `preTool` for rules an Extension should enforce wherever it is installed: block a Tool outright, restrict paths, rate-limit, or insist on a human. Use `approvals` for the Agent's own stance on the Tools it composes. Use `needsApproval` for actions a person should confirm by default. Do not use one as a substitute for the other; policy is not consent, and consent does not replace policy.
 
 ## Cancellation
 

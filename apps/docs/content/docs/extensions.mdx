@@ -82,7 +82,7 @@ Hooks let an Extension observe or transform the run. Every Hook receives a conte
 | `stepStart(prompt, context)`  | Observes the Model Prompt before one Step.                                                           |
 | `stepEnd(prompt, context)`    | Receives the Model Prompt and the Step's `responseParts`; a failed Step provides its partial parts.  |
 | `preStep(prompt, context)`    | Returns the Model Prompt to send, transformed or unchanged.                                          |
-| `preTool(context)`            | Policy before a Tool runs: return `{ reason }` to veto the call, or nothing to let it continue.      |
+| `preTool(context)`            | Policy before a Tool runs: return `{ reason }` to veto, `"ask"` to require an Approval, or nothing.  |
 | `postTool(context)`           | Observes and returns the Tool result, transformed or unchanged; `isFailure` marks expected failures. |
 
 Start Hooks (`sessionStart`, `turnStart`, `stepStart`) run in Agent Definition order. End Hooks (`sessionEnd`, `turnEnd`, `stepEnd`) run in reverse order, mirroring how Resources are released, so an Extension listed first sees the Session both first and last.
@@ -100,7 +100,7 @@ export const audit = defineExtension({
 });
 ```
 
-A `preTool` veto reaches the Model as a denied execution with your `reason`. It is Extension policy and runs before anyone is asked; [Approval](/docs/approvals) is a separate Host decision that only happens for calls policy let through.
+A `preTool` veto reaches the Model as a denied execution with your `reason`. Returning `"ask"` instead pauses the call for a Host [Approval](/docs/approvals) with `requirement: "policy"`, even when the Agent's `approvals` would allow it. An Extension can therefore tighten a Tool's Approval requirement but never remove one: the most restrictive opinion wins, and only the Agent author's `allow` overrides a Tool author's own `needsApproval`.
 
 ## Names and identity
 
