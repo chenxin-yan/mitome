@@ -179,7 +179,8 @@ diagnostics, and two different named Extensions with the same name conflict.
 
 Effect-native lifecycle Hooks. Start Hooks run in Agent Definition order and end Hooks in
 reverse; a failing Hook fails the Turn (or Session start) with
-[`TurnError`](/docs/reference/api/core#turnerror).
+[`TurnError`](/docs/reference/api/core#turnerror). Failures in `sessionEnd` are logged rather than
+propagated, so Session release can finish.
 
 <auto-type-table path="../../../../../../packages/core/src/index.ts" name="ExtensionHooks" />
 
@@ -507,9 +508,14 @@ type TranscriptMessage =
     };
 ```
 
-One committed Message of a Transcript. The decoded type of
-[`TranscriptMessageSchema`](/docs/reference/api/core#transcriptmessageschema); the part unions are
-listed there.
+One committed Message of a Transcript, the decoded type of
+[`TranscriptMessageSchema`](/docs/reference/api/core#transcriptmessageschema). `UserPart`,
+`AssistantPart`, and `ToolPart` name the unexported part unions: a user part is `text` or `file`;
+an assistant part is `text`, `reasoning`, `file`, `tool-call`, `tool-result`, or
+`tool-approval-request`; a tool part is `tool-result` or `tool-approval-response`. Each part
+carries a `type` discriminant and optional `options`, and file `data` is stored as
+`{ encoding: "string" | "base64" | "url"; value: string }`. `ProviderOptions` is Effect's
+`Prompt.ProviderOptions`.
 
 ### TranscriptSummary
 
@@ -708,30 +714,7 @@ The `version` written into every event record this version of Mitome produces.
 ### TranscriptMessageSchema
 
 ```ts
-const TranscriptMessageSchema: Schema.Union<
-  [
-    Schema.Struct<{
-      role: Schema.Literal<"system">;
-      content: Schema.String;
-      options: optional<ProviderOptions>;
-    }>,
-    Schema.Struct<{
-      role: Schema.Literal<"user">;
-      content: Schema.$Array<UserPart>;
-      options: optional<ProviderOptions>;
-    }>,
-    Schema.Struct<{
-      role: Schema.Literal<"assistant">;
-      content: Schema.$Array<AssistantPart>;
-      options: optional<ProviderOptions>;
-    }>,
-    Schema.Struct<{
-      role: Schema.Literal<"tool">;
-      content: Schema.$Array<ToolPart>;
-      options: optional<ProviderOptions>;
-    }>,
-  ]
->;
+const TranscriptMessageSchema: Schema.Codec<TranscriptMessage>;
 ```
 
 Schema of one committed Message; file data is stored as a string, base64, or URL. Decodes to
@@ -755,7 +738,7 @@ and `result` as [`Json`](/docs/reference/api/core#json) plus an optional `provid
 const TranscriptSchema: Schema.Struct<{
   schemaVersion: Schema.Literal<1>;
   id: Schema.String;
-  parentTranscriptId: optional<Schema.String>;
+  parentTranscriptId: Schema.optional<Schema.String>;
   messages: Schema.$Array<typeof TranscriptMessageSchema>;
 }>;
 ```
@@ -776,7 +759,7 @@ The `schemaVersion` written into every Transcript this version of Mitome produce
 ```ts
 const TranscriptSummarySchema: Schema.Struct<{
   id: Schema.String;
-  parentTranscriptId: optional<Schema.String>;
+  parentTranscriptId: Schema.optional<Schema.String>;
   createdAt: Schema.String;
   updatedAt: Schema.String;
   messageCount: Schema.Natural;
@@ -790,45 +773,7 @@ Schema of one `TranscriptStore.list` row. Decodes to
 ### TurnEventDtoSchema
 
 ```ts
-const TurnEventDtoSchema: Schema.Union<
-  [
-    Schema.Struct<{ type: Schema.Literal<"model-output">; text: Schema.String }>,
-    Schema.Struct<{ type: Schema.Literal<"reasoning">; text: Schema.String }>,
-    Schema.Struct<{
-      type: Schema.Literal<"tool-call">;
-      id: Schema.String;
-      name: Schema.String;
-      params: Schema.Json;
-    }>,
-    Schema.Struct<{
-      type: Schema.Literal<"tool-result">;
-      id: Schema.String;
-      name: Schema.String;
-      result: Schema.Json;
-      isFailure: Schema.Boolean;
-    }>,
-    Schema.Struct<{
-      type: Schema.Literal<"approval-required">;
-      approvalId: Schema.String;
-      toolCallId: Schema.String;
-      name: Schema.String;
-      params: Schema.Json;
-      requirement: Schema.Literals<["tool", "policy", "predicate-error"]>;
-    }>,
-    Schema.Struct<{
-      type: Schema.Literal<"approval-resolved">;
-      approvalId: Schema.String;
-      toolCallId: Schema.String;
-      approved: Schema.Boolean;
-      reason: optional<Schema.String>;
-    }>,
-    Schema.Struct<{
-      type: Schema.Literal<"response-complete">;
-      finishReason: optional<Response.FinishReason>;
-      usage: optional<Response.Usage>;
-    }>,
-  ]
->;
+const TurnEventDtoSchema: Schema.Codec<TurnEventDto>;
 ```
 
 Schema of the serializable Turn event persisted through `TranscriptStore.appendEvent`. Decodes to
@@ -900,24 +845,28 @@ when the Provider declared none or was not created by this copy of Core.
 ```ts
 function defineAgent<
   const Providers extends ReadonlyArray<unknown>,
-  const DefaultModel,
->(definition: {
-  readonly providers: Providers;
-  readonly model: DefaultModel;
-  readonly extensions?: undefined;
-  readonly approvals?: ApprovalPolicy | undefined;
-}): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, readonly []>;
+  const DefaultModel extends QualifiedModelId<Extract<NoInfer<Providers[number]>, AnyProvider>>,
+>(
+  definition: {
+    readonly providers: Providers;
+    readonly model: DefaultModel;
+    readonly extensions?: undefined;
+    readonly approvals?: ApprovalPolicy | undefined;
+  } & ([Providers[number]] extends [AnyProvider] ? unknown : never),
+): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, readonly []>;
 
 function defineAgent<
   const Providers extends ReadonlyArray<unknown>,
-  const DefaultModel,
+  const DefaultModel extends QualifiedModelId<Extract<NoInfer<Providers[number]>, AnyProvider>>,
   const Extensions extends ReadonlyArray<AnyExtension>,
->(definition: {
-  readonly providers: Providers;
-  readonly model: DefaultModel;
-  readonly extensions: Extensions;
-  readonly approvals?: ApprovalPolicy<NoInfer<Extensions>> | undefined;
-}): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, Extensions>;
+>(
+  definition: {
+    readonly providers: Providers;
+    readonly model: DefaultModel;
+    readonly extensions: Extensions;
+    readonly approvals?: ApprovalPolicy<NoInfer<Extensions>> | undefined;
+  } & ([Providers[number]] extends [AnyProvider] ? unknown : never),
+): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, Extensions>;
 ```
 
 Declares an Agent from its Providers, Default Model, and optional Extensions. The Default Model
@@ -935,7 +884,9 @@ defaulted to `[]` when omitted.
 
 ```ts
 function defineExtension<const LayerValue extends Layer.Layer<any, any, never>>(
-  extension: ToolkitlessExtension<LayerValue> & { readonly resource: LayerValue },
+  extension: ToolkitlessExtension<LayerValue> & {
+    readonly resource: LayerValue;
+  } & (0 extends 1 & LayerValue ? never : unknown),
 ): Extension<Layer.Success<LayerValue>, Layer.Error<LayerValue>>;
 
 function defineExtension(extension: ResourceFreeToolkitlessExtension): Extension<never, never>;
@@ -948,7 +899,8 @@ function defineExtension<
   const LayerValue extends Layer.Layer<any, any, never>,
   const ToolkitValue extends Toolkit.Any,
 >(
-  extension: ResourcefulToolkitExtension<LayerValue, ToolkitValue>,
+  extension: ResourcefulToolkitExtension<LayerValue, ToolkitValue> &
+    (0 extends 1 & LayerValue ? never : unknown),
 ): Extension<
   Layer.Success<LayerValue>,
   Layer.Error<LayerValue>,
@@ -1005,8 +957,8 @@ Returns a [`Routes`](/docs/reference/api/core#routes) store.
 function fileTranscripts(directory?: string): TranscriptStore;
 ```
 
-Creates a disk-backed store rooted at `directory` or the Mitome config directory. Throws when
-`directory` is omitted and no config root is set.
+Creates a disk-backed store rooted at `directory`, defaulting to `<config-dir>/transcripts`. Throws
+when `directory` is omitted and no config root is set.
 
 Returns a [`TranscriptStore`](/docs/reference/api/core#transcriptstore).
 

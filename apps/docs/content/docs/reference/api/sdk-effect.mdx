@@ -32,6 +32,7 @@ Persistence and seeding for [`createSession`](#createsession).
 
 Effect-native lifecycle Hooks. Start Hooks run in Agent Definition order and end Hooks in reverse;
 a failing Hook fails the Turn (or Session start) with [`TurnError`](/docs/reference/api/sdk#turnerror).
+Failures in `sessionEnd` are logged rather than propagated, so Session release can finish.
 `Resource` is the Extension's Resource type (default `never`); every Hook may require it.
 
 <auto-type-table path="../../../../../../packages/sdk/src/effect.ts" name="ExtensionHooks" />
@@ -246,7 +247,7 @@ Returns a [`MitomeDefinition`](#mitomedefinition).
 const fileTranscripts: (directory?: string) => TranscriptStore;
 ```
 
-Creates a disk-backed store rooted at `directory` or the Mitome config directory.
+Creates a disk-backed store rooted at `directory`, defaulting to `<config-dir>/transcripts`.
 
 Returns a [`TranscriptStore`](#transcriptstore).
 
@@ -378,23 +379,27 @@ Schema of the serializable Turn event persisted through `TranscriptStore.appendE
 function defineAgent<
   const Providers extends ReadonlyArray<unknown>,
   const DefaultModel extends QualifiedModelId<Extract<NoInfer<Providers[number]>, AnyProvider>>,
->(definition: {
-  readonly providers: Providers;
-  readonly model: DefaultModel;
-  readonly extensions?: undefined;
-  readonly approvals?: ApprovalPolicy | undefined;
-}): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, readonly []>;
+>(
+  definition: {
+    readonly providers: Providers;
+    readonly model: DefaultModel;
+    readonly extensions?: undefined;
+    readonly approvals?: ApprovalPolicy | undefined;
+  } & ([Providers[number]] extends [AnyProvider] ? unknown : never),
+): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, readonly []>;
 
 function defineAgent<
   const Providers extends ReadonlyArray<unknown>,
   const DefaultModel extends QualifiedModelId<Extract<NoInfer<Providers[number]>, AnyProvider>>,
   const Extensions extends ReadonlyArray<AnyExtension>,
->(definition: {
-  readonly providers: Providers;
-  readonly model: DefaultModel;
-  readonly extensions: Extensions;
-  readonly approvals?: ApprovalPolicy<NoInfer<Extensions>> | undefined;
-}): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, Extensions>;
+>(
+  definition: {
+    readonly providers: Providers;
+    readonly model: DefaultModel;
+    readonly extensions: Extensions;
+    readonly approvals?: ApprovalPolicy<NoInfer<Extensions>> | undefined;
+  } & ([Providers[number]] extends [AnyProvider] ? unknown : never),
+): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, Extensions>;
 ```
 
 Declares an Agent from its Providers, Default Model, and optional Extensions. The Default Model is
@@ -410,7 +415,9 @@ Returns an [`AgentDefinition`](/docs/reference/api/sdk#agentdefinition).
 
 ```ts
 function defineExtension<const LayerValue extends Layer.Layer<any, any, never>>(
-  extension: ToolkitlessExtension<LayerValue> & { readonly resource: LayerValue },
+  extension: ToolkitlessExtension<LayerValue> & {
+    readonly resource: LayerValue;
+  } & (0 extends 1 & LayerValue ? never : unknown),
 ): Extension<Layer.Success<LayerValue>, Layer.Error<LayerValue>>;
 
 function defineExtension(extension: ResourceFreeToolkitlessExtension): Extension;
@@ -423,7 +430,8 @@ function defineExtension<
   const LayerValue extends Layer.Layer<any, any, never>,
   const ToolkitValue extends Toolkit.Any,
 >(
-  extension: ResourcefulToolkitExtension<LayerValue, ToolkitValue>,
+  extension: ResourcefulToolkitExtension<LayerValue, ToolkitValue> &
+    (0 extends 1 & LayerValue ? never : unknown),
 ): Extension<
   Layer.Success<LayerValue>,
   Layer.Error<LayerValue>,

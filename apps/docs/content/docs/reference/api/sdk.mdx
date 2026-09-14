@@ -205,7 +205,7 @@ A Tool declaration function scoped to one Extension Resource. The `tools` callba
 `scope.tool`; which overload applies depends on the schemas the definition declares.
 
 ```ts
-interface ToolBuilder<Resource = never> {
+interface ToolBuilder<in out Resource = never> {
   /** With `outputSchema` and `failureSchema`: the handler returns `ok()` or `fail()`, both validated. */
   <Input, Output, Failure, const Name extends string>(definition: {
     readonly name: Name;
@@ -217,7 +217,7 @@ interface ToolBuilder<Resource = never> {
     readonly handler: (
       input: Input,
       context: HookContext<Resource>,
-    ) => Promise<ToolSuccess<Output> | ToolFailure<Failure>>;
+    ) => Promise<ToolSuccess<NoInfer<Output>> | ToolFailure<NoInfer<Failure>>>;
   }): Tool<Input, Output, Failure, Resource, Name>;
 
   /** With `outputSchema` only: the handler returns the output, which is validated. */
@@ -227,7 +227,8 @@ interface ToolBuilder<Resource = never> {
     readonly inputSchema: InputSchema<Input>;
     readonly needsApproval?: Tool<Input>["needsApproval"];
     readonly outputSchema: OutputSchema<Output>;
-    readonly handler: (input: Input, context: HookContext<Resource>) => Promise<Output>;
+    readonly failureSchema?: undefined;
+    readonly handler: (input: Input, context: HookContext<Resource>) => Promise<NoInfer<Output>>;
   }): Tool<Input, Output, never, Resource, Name>;
 
   /** Without schemas: the output is inferred from the handler and passed through unvalidated. */
@@ -236,6 +237,8 @@ interface ToolBuilder<Resource = never> {
     readonly description?: string;
     readonly inputSchema: InputSchema<Input>;
     readonly needsApproval?: Tool<Input>["needsApproval"];
+    readonly outputSchema?: undefined;
+    readonly failureSchema?: undefined;
     readonly handler: (input: Input, context: HookContext<Resource>) => Promise<Output>;
   }): Tool<Input, Output, never, Resource, Name>;
 }
@@ -424,7 +427,8 @@ is a structural view of an Effect `Schema` so that no Effect type appears in thi
 ### Json
 
 ```ts
-type Json = null | boolean | number | string | ReadonlyArray<Json> | { [key: string]: Json };
+type Json =
+  null | boolean | number | string | ReadonlyArray<Json> | { readonly [key: string]: Json };
 ```
 
 A JSON-serializable value.
@@ -712,7 +716,7 @@ type TranscriptMessage =
 ```
 
 One committed Message of a Transcript, decoded from the Transcript schema. The part shapes match
-[`PromptPart`](#promptpart) by `type`, with three differences a store adapter sees: `content` is
+[`PromptPart`](#promptpart) by `type`, with three differences a store adapter sees: non-system Message `content` is
 always a part array, Tool `params` and `result` are [`Json`](#json) rather than `unknown`, and a
 file part's `data` is `{ encoding: "string" | "base64" | "url"; value: string }` instead of a
 `Uint8Array` or `URL`.
@@ -831,18 +835,19 @@ The `schemaVersion` written into every Transcript this version of Mitome produce
 ```ts
 function defineAgent<
   const Providers extends ReadonlyArray<AnyProvider>,
-  const DefaultModel extends QualifiedModelId<Providers[number]>,
+  const DefaultModel extends QualifiedModelId<NoInfer<Providers[number]>>,
   const Extensions extends ReadonlyArray<AnyExtension> = readonly [],
 >(definition: {
   readonly providers: Providers;
   readonly model: DefaultModel;
   readonly extensions?: Extensions;
-  readonly approvals?: ApprovalPolicy<Extensions>;
+  readonly tools?: undefined;
+  readonly approvals?: ApprovalPolicy<NoInfer<Extensions>> | undefined;
 }): AgentDefinition<Providers, DefaultModel, Extensions>;
 
 function defineAgent<
   const Providers extends ReadonlyArray<AnyProvider>,
-  const DefaultModel extends QualifiedModelId<Providers[number]>,
+  const DefaultModel extends QualifiedModelId<NoInfer<Providers[number]>>,
   const Extensions extends ReadonlyArray<AnyExtension> = readonly [],
   const Tools extends ReadonlyArray<AnyTool> = readonly [],
 >(definition: {
@@ -850,9 +855,11 @@ function defineAgent<
   readonly model: DefaultModel;
   readonly extensions?: Extensions;
   readonly tools: (scope: { readonly tool: ToolBuilder<never> }) => Tools;
-  readonly approvals?: ApprovalPolicy<
-    readonly [...Extensions, Extension<never, unknown, ToolContributionsOf<Tools>>]
-  >;
+  readonly approvals?:
+    | ApprovalPolicy<
+        NoInfer<readonly [...Extensions, Extension<never, unknown, ToolContributionsOf<Tools>>]>
+      >
+    | undefined;
 }): AgentDefinition<
   Providers,
   DefaultModel,
@@ -878,14 +885,24 @@ Returns an [`AgentDefinition`](#agentdefinition). Definition problems surface as
 
 ```ts
 function defineExtension<Resource = never>(
-  definition: ExtensionDefinition<Resource, readonly []>,
-): Extension<Resource, unknown, ToolContributionsOf<readonly []>>;
+  definition: ExtensionDefinition<Resource, readonly []> &
+    ([Resource] extends [never]
+      ? { readonly setup?: undefined; readonly dispose?: undefined }
+      : { readonly setup: () => Promise<Resource> }),
+): NoInfer<Extension<Resource, unknown, ToolContributionsOf<readonly []>>>;
 
-function defineExtension<Resource = never, const Tools extends ReadonlyArray<AnyTool>>(
+function defineExtension<
+  Resource = never,
+  const Tools extends ReadonlyArray<AnyTool> = [Resource] extends [never]
+    ? readonly []
+    : ReadonlyArray<AnyTool>,
+>(
   definition: ExtensionDefinition<Resource, Tools> & {
     readonly tools: (scope: { readonly tool: ToolBuilder<Resource> }) => Tools;
-  },
-): Extension<Resource, unknown, ToolContributionsOf<Tools>>;
+  } & ([Resource] extends [never]
+      ? { readonly setup?: undefined; readonly dispose?: undefined }
+      : { readonly setup: () => Promise<Resource> }),
+): NoInfer<Extension<Resource, unknown, ToolContributionsOf<Tools>>>;
 ```
 
 Declares a Promise Extension without Tools: Instructions, Hooks, and an optional Resource. A
