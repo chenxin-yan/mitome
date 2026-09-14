@@ -486,7 +486,7 @@ describe("session view model", () => {
       Layer.succeed(LanguageModel.LanguageModel, {
         generateText: unsupported,
         generateObject: unsupported,
-        streamText: unsupported,
+        streamText: () => Stream.die("not used"),
       }),
     );
     const manager = makeSessionManager({
