@@ -62,7 +62,13 @@ const clientLoader = browserCollections.docs.createClientLoader({
           <MarkdownCopyButton markdownUrl={markdownUrl} />
           <ViewOptionsPopover
             markdownUrl={markdownUrl}
-            githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/docs/content/docs/${path}`}
+            // Pages under reference/api/ are generated and gitignored (ADR-0048);
+            // a content-path link would 404.
+            {...(path.startsWith("reference/api/")
+              ? {}
+              : {
+                  githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/docs/content/docs/${path}`,
+                })}
           />
         </div>
         <DocsBody>
