@@ -93,6 +93,9 @@ const tsconfigSource = `${JSON.stringify(
       moduleResolution: "NodeNext",
       strict: true,
       noEmit: true,
+      // Effect's transitive declarations (msgpackr) reference Node globals; a fresh project
+      // has no @types/node, so checking them would fail before any user code is reached.
+      skipLibCheck: true,
     },
     // The README suggests adding an embed module beside index.ts; check every source file.
     include: ["**/*.ts"],

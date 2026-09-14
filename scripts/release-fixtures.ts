@@ -229,16 +229,7 @@ if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke 
     throw new Error("create-mitome did not generate the Provider-qualified Agent contract.");
   }
   await symlink(nodeModules, join(createdDirectory, "node_modules"), "dir");
-  // The fixture vendors Effect without its declaration-only dependencies; the
-  // earlier packed-consumer check covers dependency declarations.
-  await run([
-    process.execPath,
-    "x",
-    "tsc",
-    "-p",
-    join(createdDirectory, "tsconfig.json"),
-    "--skipLibCheck",
-  ]);
+  await run([process.execPath, "x", "tsc", "-p", join(createdDirectory, "tsconfig.json")]);
   console.log("Release tarball/install fixtures passed.");
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });
