@@ -78,6 +78,10 @@ const hostIssue = (host: Host, index: number): string | undefined => {
     if (candidate.name === "." || candidate.name === "..") {
       return `Channel Host at index ${index} must not be named "." or "..".`;
     }
+    // encodeURIComponent throws on a lone surrogate, so the mount announcement could never print it.
+    if (!String(candidate.name).isWellFormed()) {
+      return `Channel Host at index ${index} must have a well-formed name without lone surrogates.`;
+    }
     return hasOptionalFunction(candidate, "handle") &&
       hasOptionalFunction(candidate, "serve") &&
       (candidate.handle !== undefined || candidate.serve !== undefined)
@@ -163,8 +167,9 @@ if (mode === "serve") {
   }
   const context = { agent: loaded.agent, transcripts: loaded.transcripts };
   const handlers = new Map<string, NonNullable<ChannelHost["handle"]>>();
+  // Bound so a method-syntax handle sees its Channel as `this`, as serve does below.
   for (const channel of channels) {
-    if (channel.handle !== undefined) handlers.set(channel.name, channel.handle);
+    if (channel.handle !== undefined) handlers.set(channel.name, channel.handle.bind(channel));
   }
   // Channel names may contain spaces or Unicode, so the first segment arrives percent-encoded.
   const decodeMount = (segment: string): string | undefined => {
@@ -221,7 +226,8 @@ if (mode === "serve") {
     const { name } = channel;
     let started: Promise<void>;
     try {
-      started = channel.serve(context, controller.signal);
+      // A serve that returns a plain value instead of a Promise counts as stopping at once.
+      started = Promise.resolve(channel.serve(context, controller.signal));
     } catch (error) {
       startupFailure = `Channel "${name}" failed to start: ${describeFailure(error)}`;
       break;
@@ -341,8 +347,10 @@ const interrupt = (): void => {
   Effect.runFork(Fiber.interrupt(root));
 };
 process.on("SIGINT", interrupt);
+process.on("SIGTERM", interrupt);
 const exit = await Effect.runPromiseExit(Fiber.join(root));
 process.off("SIGINT", interrupt);
+process.off("SIGTERM", interrupt);
 if (forceExit !== undefined) {
   clearTimeout(forceExit);
   process.exit(130);

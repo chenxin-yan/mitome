@@ -329,14 +329,15 @@ const collect = (stream: NodeJS.ReadableStream) => {
 
 const serveChannels = {
   /** Answers `/<name>/<path>` with the path it saw and the Agent's reply to the request body. */
-  echo: `{ kind: "channel", name: "echo", handle: async (context, request) => {
+  echo: `{ kind: "channel", name: "echo", async handle(context, request) {
+    // Method syntax: the loader must call handle with the Channel as \`this\`.
     const message = await request.text();
     const reply = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const session = yield* createHostSession(context);
       return yield* Stream.runFold(session.runTurn(message), () => "", (text, event) => event.type === "model-output" ? text + event.text : text);
     })));
     // The fixture imports effect/unstable/ai's Response, which shadows the global.
-    return new globalThis.Response(\`ECHO \${request.method} \${new URL(request.url).pathname}\${new URL(request.url).search} \${reply}\`);
+    return new globalThis.Response(\`\${this.name.toUpperCase()} \${request.method} \${new URL(request.url).pathname}\${new URL(request.url).search} \${reply}\`);
   } }`,
   steady: `{ kind: "channel", name: "steady", serve: (context, signal) => new Promise((resolve) => {
     console.log(\`STEADY_STARTED \${context.agent !== undefined}\`);
@@ -344,6 +345,7 @@ const serveChannels = {
   }) }`,
   broken: `{ kind: "channel", name: "broken", serve: () => { throw new Error("no token"); } }`,
   flaky: `{ kind: "channel", name: "flaky", serve: async () => { await new Promise((resolve) => setTimeout(resolve, 50)); throw new Error("poll died"); } }`,
+  sync: `{ kind: "channel", name: "sync", serve: () => undefined }`,
 };
 
 const startServe = (current: Fixture, port = 0) => {
@@ -562,7 +564,7 @@ describe("compiled mitome", () => {
         body: "hello",
       });
       expect(answered.status).toBe(200);
-      expect(await answered.text()).toBe("ECHO POST /inbox first second");
+      expect(await answered.text()).toBe("TEAM ECHO POST /inbox first second");
       expect((await fetch(`http://localhost:${port}/team%2/inbox`)).status).toBe(404);
     } finally {
       serve.child.kill("SIGTERM");
@@ -614,11 +616,14 @@ describe("compiled mitome", () => {
   });
 
   test("exits non-zero once no Channel is left running", async () => {
-    const current = await fixture(definitionSource("first", { hosts: `[${serveChannels.flaky}]` }));
+    const current = await fixture(
+      definitionSource("first", { hosts: `[${serveChannels.flaky}, ${serveChannels.sync}]` }),
+    );
     const result = await output(
       spawn("", ["serve", "--port", "0", "--use", current.definition], current),
     );
     expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('Channel "sync" stopped before shutdown.');
     expect(result.stderr).toContain('Channel "flaky" failed: poll died');
     expect(result.stderr).toContain("No Channel is left running.");
   });
@@ -678,6 +683,11 @@ describe("compiled mitome", () => {
       "a Channel Host named after a URL dot segment",
       '[{ kind: "channel", name: ".", handle: async () => new Response() }]',
       'Channel Host at index 0 must not be named "." or "..".',
+    ],
+    [
+      "a Channel Host name with a lone surrogate",
+      '[{ kind: "channel", name: "bad" + String.fromCharCode(0xd800), serve: async () => undefined }]',
+      "Channel Host at index 0 must have a well-formed name without lone surrogates.",
     ],
     [
       "a Channel Host without handle or serve",
@@ -771,32 +781,35 @@ describe("compiled mitome", () => {
     });
   });
 
-  test("forwards SIGINT to the Child Host through scoped Turn cleanup", async () => {
-    const current = await fixture();
-    const signalProbe = {
-      pid: join(current.root, "host-pid"),
-      cleanupStarted: join(current.root, "cleanup-started"),
-      cleanupDone: join(current.root, "cleanup-done"),
-    };
-    await writeFile(current.definition, definitionSource("first", { block: true, signalProbe }));
-    const child = spawn("", ["hello", "--use", current.definition], current);
-    const reader = child.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
-    const first = await reader.next();
-    if (first.done) throw new Error("Missing first output");
-    expect(first.value).toContain("first");
+  test.each(["SIGINT", "SIGTERM"] as const)(
+    "forwards %s to the Child Host through scoped Turn cleanup",
+    async (signal) => {
+      const current = await fixture();
+      const signalProbe = {
+        pid: join(current.root, "host-pid"),
+        cleanupStarted: join(current.root, "cleanup-started"),
+        cleanupDone: join(current.root, "cleanup-done"),
+      };
+      await writeFile(current.definition, definitionSource("first", { block: true, signalProbe }));
+      const child = spawn("", ["hello", "--use", current.definition], current);
+      const reader = child.stdout.setEncoding("utf8")[Symbol.asyncIterator]();
+      const first = await reader.next();
+      if (first.done) throw new Error("Missing first output");
+      expect(first.value).toContain("first");
 
-    const hostPid = Number(await readFile(signalProbe.pid, "utf8"));
-    child.kill("SIGINT");
-    for (let attempt = 0; !exists(signalProbe.cleanupStarted); attempt += 1) {
-      if (attempt === 500) throw new Error("Session cleanup did not start");
-      await delay(10);
-    }
-    process.kill(hostPid, "SIGINT");
-    const tail = await rest(reader);
-    expect(await exited(child)).toBe(130);
-    expect(exists(signalProbe.cleanupDone)).toBe(true);
-    expect(first.value + tail).not.toContain(" second");
-  });
+      const hostPid = Number(await readFile(signalProbe.pid, "utf8"));
+      child.kill(signal);
+      for (let attempt = 0; !exists(signalProbe.cleanupStarted); attempt += 1) {
+        if (attempt === 500) throw new Error("Session cleanup did not start");
+        await delay(10);
+      }
+      process.kill(hostPid, signal);
+      const tail = await rest(reader);
+      expect(await exited(child)).toBe(130);
+      expect(exists(signalProbe.cleanupDone)).toBe(true);
+      expect(first.value + tail).not.toContain(" second");
+    },
+  );
 
   test("round-trips one Agent Definition dependency installation", async () => {
     const current = await installFixture();

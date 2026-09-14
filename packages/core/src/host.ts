@@ -104,6 +104,10 @@ const hostIssue = (host: Host, index: number): string | undefined => {
     if (candidate.name === "." || candidate.name === "..") {
       return `Channel Host at index ${index} must not be named "." or "..".`;
     }
+    // encodeURIComponent throws on a lone surrogate, so the mount announcement could never print it.
+    if (!candidate.name.isWellFormed()) {
+      return `Channel Host at index ${index} must have a well-formed name without lone surrogates.`;
+    }
     return hasOptionalFunction(candidate, "handle") &&
       hasOptionalFunction(candidate, "serve") &&
       (candidate.handle !== undefined || candidate.serve !== undefined)
@@ -119,8 +123,8 @@ const hostIssue = (host: Host, index: number): string | undefined => {
 /**
  * Creates a Mitome Definition. `hosts` defaults to none and may hold any number of Hosts. A value
  * that is not a Host (typically a factory that was not called), an unknown `kind`, a Channel Host
- * without `handle` or `serve`, a Channel Host named `.` or `..`, or two Channel Hosts sharing a
- * name throws with the offending Host named.
+ * without `handle` or `serve`, a Channel Host named `.` or `..` or with a lone surrogate in its
+ * name, or two Channel Hosts sharing a name throws with the offending Host named.
  */
 export const defineMitome = <const Agent extends AgentDefinition>(
   definition: Omit<MitomeDefinition<Agent>, "hosts"> & {
