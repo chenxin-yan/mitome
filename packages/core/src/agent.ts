@@ -37,20 +37,34 @@ type KnownToolCall<Contributions, Name extends string> = Name extends unknown
       readonly toolCallId: string;
     }
   : never;
+// The callback runs for every Tool, so `name` may only be a closed union when each Extension in
+// the tuple has known names; one widened Extension (or no Extension) hides Tools the union misses.
+type KnowsEveryToolName<Extensions extends ReadonlyArray<AnyExtension>> = [
+  Extensions[number],
+] extends [never]
+  ? false
+  : {
+      readonly [Index in keyof Extensions]: [
+        KnownToolNames<ContributionsOf<Extensions[Index]>>,
+      ] extends [never]
+        ? false
+        : true;
+    }[number];
 
 /**
- * The Tool call an `approvals` callback decides on; `params` is the decoded Tool input. When the
- * Extensions' Tool names are known at the type level, comparing `name` narrows `params` to that
- * Tool's input; Extensions typed without contributions leave `name: string` and `params: unknown`.
+ * The Tool call an `approvals` callback decides on; `params` is the decoded Tool input. When every
+ * Extension's Tool names are known at the type level, comparing `name` narrows `params` to that
+ * Tool's input; one Extension typed without contributions leaves `name: string` and
+ * `params: unknown` for the whole call, since its Tools reach the callback too.
  */
 export type ApprovalPolicyCall<
   Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
-> = [KnownToolNames<ContributionsOf<Extensions[number]>>] extends [never]
-  ? { readonly name: string; readonly params: unknown; readonly toolCallId: string }
-  : KnownToolCall<
+> = [KnowsEveryToolName<Extensions>] extends [true]
+  ? KnownToolCall<
       ContributionsOf<Extensions[number]>,
       KnownToolNames<ContributionsOf<Extensions[number]>>
-    >;
+    >
+  : { readonly name: string; readonly params: unknown; readonly toolCallId: string };
 
 /** The Agent author's opinion on one Tool call; `undefined` defers to the Tool's `needsApproval`. */
 export type ApprovalPolicyDecision = "allow" | "ask" | "deny";

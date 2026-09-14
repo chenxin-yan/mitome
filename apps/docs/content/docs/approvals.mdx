@@ -63,7 +63,7 @@ const agent = defineAgent({
   approvals: {
     allow: ["read_file", "list_*"], // run without asking, even if the Tool author flagged them
     ask: ["write_file"], // always ask, even if the Tool author did not flag it
-    deny: ["run_shell", "*_admin"], // never run; the Model sees a policy denial
+    deny: ["run_shell", "admin_*"], // never run; the Model sees a policy denial
   },
 });
 ```
@@ -106,7 +106,7 @@ To run an Agent with no prompts at all, say so in the Agent:
 approvals: { allow: ["*"] },
 ```
 
-Every Tool then runs without asking unless an Extension vetoes or asks, or you also list it under `ask` or `deny`. This is the sanctioned way to run unattended; it is a decision the Agent author makes once, visible in the Agent Definition, rather than something a Host guesses. First-party Hosts never resolve a policy ask on their own: an `"ask"` from an Extension or from your own rules is a request for a person, and a Host that receives one either presents it or leaves the Turn paused. A custom Host you write remains responsible for its own consent behavior.
+Every Tool then runs without asking unless an Extension vetoes or asks, or you also list it under `ask` or `deny`. This is the sanctioned way to run unattended; it is a decision the Agent author makes once, visible in the Agent Definition, rather than something a Host guesses. An `"ask"` from an Extension or from your own rules is a request for a person; the built-in Hosts still auto-approve it today (see below), and [issue #140](https://github.com/chenxin-yan/mitome/issues/140) changes them to present it or leave the Turn paused. A custom Host you write remains responsible for its own consent behavior.
 
 ## Who approves by default
 

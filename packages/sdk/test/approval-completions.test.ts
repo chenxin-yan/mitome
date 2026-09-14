@@ -23,6 +23,7 @@ const cursor = "/*|*/";
 const probes = {
   extensionOnly: `defineAgent({ providers: [model], model: "test/default", extensions: [files], approvals: { allow: ["${cursor}"] } });`,
   inlineOnlyAfterTools: `defineAgent({ providers: [model], model: "test/default", ${inlineTools}, approvals: { ask: ["${cursor}"] } });`,
+  inlineOnlyBeforeTools: `defineAgent({ providers: [model], model: "test/default", approvals: { ask: ["${cursor}"] }, ${inlineTools} });`,
   mixedAfterTools: `defineAgent({ providers: [model], model: "test/default", extensions: [files], ${inlineTools}, approvals: { deny: ["${cursor}"] } });`,
   mixedBeforeTools: `defineAgent({ providers: [model], model: "test/default", extensions: [files], approvals: { deny: ["${cursor}"] }, ${inlineTools} });`,
   extensionCallback: `defineAgent({ providers: [model], model: "test/default", extensions: [files], approvals: (call) => (call.name === "${cursor}" ? "deny" : undefined) });`,
@@ -71,6 +72,7 @@ describe("approvals completions", () => {
   test.each([
     ["extensionOnly", ["read_file", "write_file"]],
     ["inlineOnlyAfterTools", ["run_shell"]],
+    ["inlineOnlyBeforeTools", ["run_shell"]],
     ["mixedAfterTools", ["read_file", "write_file", "run_shell"]],
     ["mixedBeforeTools", ["read_file", "write_file", "run_shell"]],
   ] as const)("%s rule list offers exactly the known Tool names", (name, expected) => {

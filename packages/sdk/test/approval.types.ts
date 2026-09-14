@@ -67,7 +67,7 @@ defineAgent({
 defineAgent({
   providers: [model],
   model: "test/default",
-  extensions: [files, widened],
+  extensions: [files],
   approvals: (call) => {
     switch (call.name) {
       case "write_file":
@@ -76,12 +76,35 @@ defineAgent({
         // @ts-expect-error read_file has no content.
         void call.params.content;
         return call.params.path.startsWith("/tmp/") ? "allow" : undefined;
-      // @ts-expect-error Tools of an Extension typed without contributions are not known names.
+      // @ts-expect-error Only the known Tool names are comparable when every Extension is typed.
       case "legacy_tool":
         return "ask";
     }
   },
 });
+// One Extension typed without contributions leaves the whole call untyped: its Tools reach the
+// callback too, so a closed `name` union would wrongly pass an exhaustiveness check.
+defineAgent({
+  providers: [model],
+  model: "test/default",
+  extensions: [files, widened],
+  approvals: (call) => {
+    switch (call.name) {
+      case "legacy_tool":
+        return "ask";
+      case "write_file":
+        // @ts-expect-error params is unknown here.
+        return call.params.content.length > 0 ? "ask" : "deny";
+    }
+    return undefined;
+  },
+});
+export type MixedCallIsUntyped = Expect<
+  Equal<
+    ApprovalPolicyCall<readonly [typeof files, typeof widened]>,
+    { readonly name: string; readonly params: unknown; readonly toolCallId: string }
+  >
+>;
 // Without any known name the call is untyped.
 defineAgent({
   providers: [model],
