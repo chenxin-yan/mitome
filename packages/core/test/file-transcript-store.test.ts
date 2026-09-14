@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "@effect/vitest";
@@ -81,6 +81,33 @@ describe("fileTranscripts", () => {
         });
       }),
     ),
+  );
+
+  // Root ignores directory permissions, so the write would succeed.
+  it.effect.skipIf(process.getuid?.() === 0)(
+    "keeps the stored Transcript when the temporary file cannot be created",
+    () =>
+      withDirectory((directory) =>
+        Effect.gen(function* () {
+          const store = fileTranscripts(directory);
+          const transcript = makeTranscript({ id: "transcript-1", messages: [] });
+          yield* store.save(transcript);
+
+          yield* Effect.promise(() => chmod(directory, 0o500));
+          const failure = yield* Effect.flip(
+            store.save(
+              makeTranscript({ id: transcript.id, messages: [], parentTranscriptId: "p" }),
+            ),
+          ).pipe(Effect.ensuring(Effect.promise(() => chmod(directory, 0o700))));
+          expect(failure).toBeInstanceOf(StoreError);
+          expect(failure.message).toContain("could not write");
+
+          expect(yield* Effect.promise(() => readdir(directory))).toEqual([
+            expect.stringMatching(/\.transcript\.json$/),
+          ]);
+          expect(yield* store.load(transcript.id)).toEqual(transcript);
+        }),
+      ),
   );
 
   it.effect("ignores an atomic-save temporary file", () =>
