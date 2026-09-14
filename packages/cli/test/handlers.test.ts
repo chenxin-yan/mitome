@@ -15,6 +15,7 @@ import { runInit } from "../src/commands/init.ts";
 import { runInstall, runMessage } from "../src/commands/run.ts";
 import { runServe } from "../src/commands/serve.ts";
 import { Prompter, type PromptChoice } from "../src/prompter.ts";
+import { attempt } from "../src/support.ts";
 
 type PromptAnswer =
   | { readonly type: "select"; readonly index: number }
@@ -180,6 +181,17 @@ afterEach(async () => {
 });
 
 describe("CLI handlers", () => {
+  it.effect("renders a self-referential cause once instead of recursing", () =>
+    Effect.gen(function* () {
+      const error = new Error("outer");
+      error.cause = error;
+      const exit = yield* Effect.exit(attempt(() => Promise.reject(error)));
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(yield* TestConsole.errorLines).toEqual(["outer\n  cause: [circular cause]"]);
+    }),
+  );
+
   it.effect("selects the default Agent Definition and returns the Child Host exit code", () =>
     Effect.gen(function* () {
       const path = yield* Effect.promise(() =>

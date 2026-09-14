@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { text } from "node:stream/consumers";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { fileTranscripts } from "@mitome/core";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
 import { Effect, type Schema } from "effect";
@@ -148,6 +148,34 @@ export default defineMitome({
   },
   hosts: [],
 });
+`;
+
+const persistentAuthDefinitionSource = (): string => `
+import { Layer } from "effect";
+import { LanguageModel } from "effect/unstable/ai";
+import { defineMitome, makeProvider } from "@mitome/core";
+
+setInterval(() => {}, 60_000);
+const provider = makeProvider("test", [], "TEST_API_KEY", () => Layer.succeed(LanguageModel.LanguageModel, {}));
+export default defineMitome({ agent: { providers: [provider], model: "test/default", extensions: [] }, hosts: [] });
+`;
+
+// The OAuth capability module records the operation so the test can tell a completed
+// `authenticate` apart from a child that exited without running it.
+const persistentOAuthDefinitionSource = (capabilityModule: string): string => `
+import { Layer } from "effect";
+import { LanguageModel } from "effect/unstable/ai";
+import { defineMitome, makeProvider } from "@mitome/core";
+
+setInterval(() => {}, 60_000);
+const provider = makeProvider("test", [], { capability: { module: ${JSON.stringify(capabilityModule)} } }, () => Layer.succeed(LanguageModel.LanguageModel, {}));
+export default defineMitome({ agent: { providers: [provider], model: "test/default", extensions: [] }, hosts: [] });
+`;
+
+const oauthCapabilitySource = (marker: string): string => `
+export const authenticate = async ({ operation }) => {
+  await Bun.write(${JSON.stringify(marker)}, operation);
+};
 `;
 
 type Fixture = {
@@ -1071,6 +1099,29 @@ describe("compiled mitome", () => {
       stdout: "config-extension\tunknown\n",
       stderr: "",
     });
+  });
+
+  test("inspects Provider authentication and exits despite active handles", async () => {
+    const current = await fixture(persistentAuthDefinitionSource());
+
+    expect(
+      await output(spawn("", ["auth", "logout", "--use", current.definition], current)),
+    ).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+  });
+
+  test("runs OAuth authentication and exits despite active handles", async () => {
+    const current = await scaffold("mitome-cli-oauth-");
+    const capabilityModule = join(current.root, "capability.js");
+    const marker = join(current.root, "authenticated");
+    await writeFile(capabilityModule, oauthCapabilitySource(marker));
+    const definition = await fixture(
+      persistentOAuthDefinitionSource(pathToFileURL(capabilityModule).href),
+    );
+
+    expect(
+      await output(spawn("", ["auth", "logout", "--use", definition.definition], definition)),
+    ).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+    expect(await readFile(marker, "utf8")).toBe("logout");
   });
 
   test("runs one Turn end to end", async () => {

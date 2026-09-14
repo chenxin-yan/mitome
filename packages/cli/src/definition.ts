@@ -1,9 +1,11 @@
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
-import { Option, Result, Schema } from "effect";
+import { Console, Effect, Option, Result, Schema } from "effect";
 import corePackage from "@mitome/core/package.json" with { type: "json" };
 import { configDirectory, configDirectoryMessage } from "@mitome/core";
+import { ChildHost } from "./child-host-service.js";
 import { isEnoent } from "./config.js";
+import { attempt, type ExitCode } from "./support.js";
 
 export const definitionPath = async (use: Option.Option<string>): Promise<string> => {
   const selected = Option.getOrUndefined(use);
@@ -117,7 +119,7 @@ const installedCore = async (
   }
 };
 
-export const checkRuntime = async (path: string): Promise<void> => {
+const checkRuntime = async (path: string): Promise<void> => {
   const core = await installedCore(dirname(path));
   if (core === undefined) {
     throw new Error(
@@ -131,7 +133,7 @@ export const checkRuntime = async (path: string): Promise<void> => {
   }
 };
 
-export const definitionNeedsReconcile = async (path: string): Promise<boolean> => {
+const definitionNeedsReconcile = async (path: string): Promise<boolean> => {
   const directory = dirname(path);
   const core = await installedCore(directory);
   if (core === undefined || core.version !== corePackage.version) return true;
@@ -171,3 +173,20 @@ export const definitionNeedsReconcile = async (path: string): Promise<boolean> =
   if (lockWorkspace !== undefined && !sameDependencies(manifest, lockWorkspace)) return true;
   return missingDependency(directory, manifest);
 };
+
+/**
+ * Selects the Mitome Definition and reconciles its dependencies before any command
+ * imports it. A failed install yields the installer's exit code in place of a path.
+ */
+export const prepareDefinition = Effect.fn("@mitome/cli/prepareDefinition")(function* (
+  use: Option.Option<string>,
+) {
+  const path = yield* attempt(() => definitionPath(use));
+  if (!(yield* attempt(() => definitionNeedsReconcile(path)))) return { path };
+  yield* Console.log("Installing Mitome Definition dependencies...");
+  const childHost = yield* ChildHost;
+  const exitCode: ExitCode = yield* childHost.install(path);
+  if (exitCode !== 0) return { exitCode };
+  yield* attempt(() => checkRuntime(path));
+  return { path };
+});

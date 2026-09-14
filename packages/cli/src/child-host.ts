@@ -20,10 +20,23 @@ import authHost from "./hosts/auth-host.ts" with { type: "text" };
 // @ts-expect-error Bun text import (see above).
 // oxlint-disable-next-line import/default
 import extensionsHost from "./hosts/extensions-host.ts" with { type: "text" };
+// @ts-expect-error Bun text import (see above).
+// oxlint-disable-next-line import/default
+import diagnostics from "./hosts/diagnostics.ts" with { type: "text" };
 
-const hostSource: string = definitionHost;
+// The embedded programs run from `--eval` and cannot resolve a relative import of the
+// CLI's own modules, so the shared diagnostics source takes the place of that import.
+const diagnosticsSource: string = diagnostics;
+const diagnosticsImport = 'import { errorMessage } from "./diagnostics.js";';
+const embed = (source: string): string => source.replace(diagnosticsImport, diagnosticsSource);
+
+const hostSource: string = embed(definitionHost);
 const authHostSource: string = authHost;
-const extensionsHostSource: string = extensionsHost;
+const extensionsHostSource: string = embed(extensionsHost);
+// A probe or auth program's lifetime is owned here, not by the program: it exits as soon
+// as its module body finishes, so an Agent Definition that leaves an interval or server
+// running at import cannot keep the child alive after its work is done.
+const exitAfterBody = (source: string): string => `${source}\nprocess.exit(0);`;
 // process.execPath is the compiled mitome binary; BUN_BE_BUN re-executes it as plain Bun.
 const childEnv = { ...process.env, BUN_BE_BUN: "1" };
 
@@ -96,31 +109,29 @@ const exportProbeSource = [
   "const loaded = await import(process.argv[1]);",
   'const names = Object.entries(loaded).filter(([, value]) => typeof value === "function").map(([name]) => name);',
   "await Bun.write(process.argv[2], JSON.stringify(names));",
-  "process.exit(0);",
 ].join("\n");
 
 interface JsonHostOptions {
+  readonly envFlag: string;
   readonly stderr: "ignore" | "inherit";
-  readonly timeout?: number;
+  readonly timeout: number;
 }
 
+// Runs a disposable inspection program that writes its JSON result to the trailing argv
+// path; `timeout` bounds a body that never finishes.
 const runJsonHost = async (
   prefix: string,
-  command: ReadonlyArray<string>,
+  source: string,
+  arguments_: ReadonlyArray<string>,
   options: JsonHostOptions,
 ): Promise<{ readonly exitCode: ExitCode; readonly output: string }> => {
   const directory = await mkdtemp(join(tmpdir(), prefix));
   const output = join(directory, "output.json");
   try {
-    const spawnOptions = {
-      env: childEnv,
-      stdout: "ignore" as const,
-      stderr: options.stderr,
-    };
-    const child =
-      options.timeout === undefined
-        ? Bun.spawn([...command, output], spawnOptions)
-        : Bun.spawn([...command, output], { ...spawnOptions, timeout: options.timeout });
+    const child = Bun.spawn(
+      [process.execPath, options.envFlag, "--eval", exitAfterBody(source), ...arguments_, output],
+      { env: childEnv, stdout: "ignore", stderr: options.stderr, timeout: options.timeout },
+    );
     const exitCode = await child.exited;
     return {
       exitCode,
@@ -137,22 +148,22 @@ const listExports = async (
 ): Promise<ReadonlyArray<string>> => {
   const moduleUrl = pathToFileURL(Bun.resolveSync(packageName, directory)).href;
   // The names travel via file rather than stdout: importing the package may print.
-  const result = await runJsonHost(
-    "mitome-exports-",
-    [process.execPath, "--no-env-file", "--eval", exportProbeSource, moduleUrl],
-    { stderr: "ignore", timeout: 5000 },
-  );
+  const result = await runJsonHost("mitome-exports-", exportProbeSource, [moduleUrl], {
+    envFlag: "--no-env-file",
+    stderr: "ignore",
+    timeout: 5000,
+  });
   if (result.exitCode !== 0) throw new Error(`Could not inspect ${packageName} exports.`);
   return Schema.decodeSync(ExportNamesFromJson)(result.output);
 };
 
 const inspectExtensions = async (path: string): Promise<ExtensionListResult> => {
-  const result = await runJsonHost(
-    "mitome-extensions-",
-    [process.execPath, configEnvFlag(), "--eval", extensionsHostSource, path],
+  const result = await runJsonHost("mitome-extensions-", extensionsHostSource, [path], {
+    envFlag: configEnvFlag(),
+    stderr: "inherit",
     // Importing and compiling an Agent Definition may take substantially longer than an export probe.
-    { stderr: "inherit", timeout: 30_000 },
-  );
+    timeout: 30_000,
+  });
   if (result.exitCode !== 0) return { exitCode: result.exitCode, extensions: [] };
   return {
     exitCode: result.exitCode,
@@ -204,11 +215,11 @@ const inspectProviderAuthentication = async (
 ): Promise<ReadonlyArray<ProviderAuthentication>> => {
   // The descriptor travels via file rather than stdout: importing the Agent Definition
   // may print, and stdout stays ignored so nothing leaks into the message flow.
-  const result = await runJsonHost(
-    "mitome-auth-",
-    [process.execPath, "--no-env-file", "--eval", authHostSource, path],
-    { stderr: "inherit" },
-  );
+  const result = await runJsonHost("mitome-auth-", authHostSource, [path], {
+    envFlag: "--no-env-file",
+    stderr: "inherit",
+    timeout: 30_000,
+  });
   if (result.exitCode !== 0) throw new Error("Could not inspect Agent Definition authentication.");
   const authentication = Schema.decodeResult(ProviderAuthenticationsFromJson, {
     onExcessProperty: "error",
@@ -229,7 +240,7 @@ const runOAuthAuth = async (
       process.execPath,
       "--no-env-file",
       "--eval",
-      authHostSource,
+      exitAfterBody(authHostSource),
       path,
       "",
       command,

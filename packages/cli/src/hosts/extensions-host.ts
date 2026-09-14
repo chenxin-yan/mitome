@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { MitomeDefinition } from "@mitome/core";
+import { errorMessage } from "./diagnostics.js";
 
 const definitionPath = process.argv[1]!;
 const outputPath = process.argv[2]!;
@@ -30,34 +31,6 @@ if (!isMitomeDefinition(loaded)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
 const definition = loaded;
-
-interface ErrorDetails {
-  readonly _tag?: string;
-  readonly message?: string;
-  readonly cause?: Error | ErrorDetails;
-}
-
-// JSON.stringify throws on BigInt values and circular structures; a throwing
-// formatter would mask the error being reported, so fall back to Bun's renderer.
-const safeJson = (value: Error | ErrorDetails | null): string => {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return Bun.inspect(value);
-  }
-};
-
-const errorMessage = (error: Error | ErrorDetails): string => {
-  const head =
-    "_tag" in error && "message" in error
-      ? `${String(error._tag)}: ${String(error.message)}`
-      : error instanceof Error
-        ? error.message
-        : safeJson(error);
-  const cause = error.cause;
-  if (cause === undefined) return head;
-  return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause) : safeJson(cause)}`;
-};
 
 const packageVersion = async (name: string): Promise<string> => {
   let current = dirname(definitionPath);
@@ -87,7 +60,6 @@ try {
     })),
   );
   await Bun.write(outputPath, JSON.stringify(extensions));
-  process.exit(0);
 } catch (error) {
   if (!(error instanceof Object)) {
     process.stderr.write(`${String(error)}\n`);
