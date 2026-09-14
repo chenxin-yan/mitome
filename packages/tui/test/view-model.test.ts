@@ -73,7 +73,7 @@ describe("session view model", () => {
     await viewModel.dispose();
   });
 
-  test("rejects interruption after completion and commits the Turn", async () => {
+  test("rejects interruption after response-complete", async () => {
     let finish!: () => void;
     const finished = new Promise<void>((resolve) => {
       finish = resolve;
@@ -162,6 +162,50 @@ describe("session view model", () => {
             expect(session.history()).toHaveLength(0);
             expect(viewModel.getState().turns).toEqual([]);
             expect(viewModel.getState().notice).toContain("save failed");
+            await viewModel.dispose();
+          });
+        }),
+      ),
+    );
+  });
+
+  test("keeps the Turn committed when only the final event append fails", async () => {
+    const unsupported = () => Effect.die("not used");
+    const provider = makeProvider("test", [] as const, undefined, () =>
+      Layer.succeed(LanguageModel.LanguageModel, {
+        generateText: unsupported,
+        generateObject: unsupported,
+        streamText: () =>
+          Stream.succeed(Response.makePart("text-delta", { id: "saved", delta: "kept" })),
+      }),
+    );
+    const store: TranscriptStore = {
+      save: () => Effect.void,
+      appendEvent: (record) =>
+        record.event.type === "response-complete"
+          ? Effect.fail(new StoreError({ message: "append failed" }))
+          : Effect.void,
+      load: () => Effect.die("not used"),
+      list: () => Effect.die("not used"),
+    };
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* createSession(
+            { providers: [provider], model: "test/default", extensions: [] },
+            { transcripts: store },
+          );
+          const viewModel = makeSessionViewModel({ ...session, close: Effect.void }, stubManager);
+          yield* Effect.promise(async () => {
+            viewModel.submit("persist me");
+            await waitFor(() => viewModel.getState().phase === "idle");
+
+            expect(session.history()).toHaveLength(1);
+            expect(viewModel.getState().turns).toEqual([
+              { message: "persist me", response: "kept", activities: [] },
+            ]);
+            expect(viewModel.getState().notice).toContain("append failed");
             await viewModel.dispose();
           });
         }),
