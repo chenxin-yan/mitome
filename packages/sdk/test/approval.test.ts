@@ -208,6 +208,91 @@ describe("@mitome/sdk Tool Approval", () => {
     expect(events).toContainEqual({ type: "response-complete" });
   });
 
+  test("decodes Tool input once and shares the value with Hooks, Approval, and the handler", async () => {
+    const fixture = approvalModel();
+    let decodes = 0;
+    // Each decode yields a distinct value, so a second decode anywhere is visible as a mismatch.
+    const countingSchema: InputSchema<{ readonly action: string; readonly decode: number }> = {
+      "~standard": {
+        version: 1,
+        vendor: "test",
+        validate: (value) => {
+          decodes += 1;
+          return Result.match(Schema.decodeUnknownResult(Action)(value), {
+            onFailure: () => ({ issues: [{ message: "expected action" }] }),
+            onSuccess: ({ action }) => ({ value: { action, decode: decodes }, issues: undefined }),
+          });
+        },
+        jsonSchema: {
+          input: () => ({ type: "object" }),
+          output: () => ({ type: "object" }),
+        },
+      },
+    };
+    let preToolParams: unknown;
+    let policyParams: unknown;
+    let predicateInput: unknown;
+    let approvalParams: unknown;
+    let handlerInput: unknown;
+    let postToolParams: unknown;
+    const definition = defineAgent({
+      providers: [fixture.provider],
+      model: "test/default",
+      // Deferring to the Tool lets both the Agent policy and the predicate observe the input.
+      approvals: ({ params }) => {
+        policyParams = params;
+        return undefined;
+      },
+      extensions: [
+        defineExtension({
+          name: "dangerous",
+          tools: ({ tool }) => [
+            tool({
+              name: "dangerous",
+              inputSchema: countingSchema,
+              needsApproval: async (input) => {
+                predicateInput = input;
+                return true;
+              },
+              handler: async (input) => {
+                handlerInput = input;
+                return "done";
+              },
+            }),
+          ],
+          hooks: {
+            preTool: async ({ params }) => {
+              preToolParams = params;
+              return undefined;
+            },
+            postTool: async ({ params, result }) => {
+              postToolParams = params;
+              return result;
+            },
+          },
+        }),
+      ],
+    });
+
+    await withSession(definition, async (session) => {
+      for await (const event of session.runTurn("Hi")) {
+        if (event.type === "approval-required") {
+          approvalParams = event.params;
+          await event.approve();
+        }
+      }
+    });
+
+    const decoded = { action: "delete", decode: 1 };
+    expect(decodes).toBe(1);
+    expect(preToolParams).toEqual(decoded);
+    expect(policyParams).toEqual(decoded);
+    expect(predicateInput).toEqual(decoded);
+    expect(approvalParams).toEqual(decoded);
+    expect(handlerInput).toEqual(decoded);
+    expect(postToolParams).toEqual(decoded);
+  });
+
   test('forwards a Promise preTool "ask" as a policy Approval requirement', async () => {
     const fixture = approvalModel();
     let handlerCalls = 0;

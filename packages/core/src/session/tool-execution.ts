@@ -103,10 +103,17 @@ const interruptOrFailure = (cause: Cause.Cause<unknown>) =>
     ? Effect.interrupt
     : Effect.succeed({ _tag: "Failure" as const, cause: Cause.squash(cause) });
 
+// One Tool Call's input in both shapes: `encoded` is what the Model produced and what the
+// Tool's own parameters schema decodes; `decoded` is the value Hooks and Approval observed.
+type ToolCallInput = {
+  readonly encoded: ToolInput;
+  readonly decoded: ToolInput;
+};
+
 type ToolPipeline = {
   readonly compiled: CompiledTool;
   readonly execute: (
-    params: ToolInput,
+    input: ToolCallInput,
   ) => Effect.Effect<Stream.Stream<Tool.HandlerResult<Tool.Any>>, AiError.AiError>;
 };
 
@@ -268,15 +275,20 @@ export const makeToolExecution = (
 
       const pipelines = Object.fromEntries(
         compiledTools.map((compiledTool) => {
-          const { failureValidator, owner, resultValidator, tool } = compiledTool;
+          const { failureValidator, inputValidator, owner, resultValidator, tool } = compiledTool;
           const execute: ToolPipeline["execute"] = Effect.fn("@mitome/core/ToolPipeline.execute")(
-            function* (params) {
+            function* ({ decoded, encoded }) {
+              // Effect's handle decodes with the Tool's own parameters schema, so a native Tool
+              // must receive the encoded params or a transforming schema would decode twice. An
+              // Extension input validator replaces that decode: its Tools declare loose
+              // parameters and the handler receives the validator's value.
+              const handlerInput = inputValidator === undefined ? encoded : decoded;
               // The whole Tool Call runs in the owning Extension's context: the handler
               // plus any schema decode/encode services from its Resource.
               const results = yield* provideExtension(
                 owner,
                 contexts,
-                baseHandle(tool.name, params).pipe(
+                baseHandle(tool.name, handlerInput).pipe(
                   Effect.flatMap((stream) =>
                     Stream.runCollect(
                       // Collection keeps the handler stream and Hooks inside
@@ -304,7 +316,7 @@ export const makeToolExecution = (
                         contexts,
                         postTool({
                           name: tool.name,
-                          params,
+                          params: decoded,
                           result,
                           isFailure: handlerResult.isFailure,
                         }),
@@ -407,33 +419,28 @@ export const makeToolExecution = (
       // SAFETY: toolAiError maps all erased handler errors to AiError before this function returns.
       const handle = ((name: string, params: ToolInput, toolCallId?: string) =>
         Effect.gen(function* () {
-          const prepared = toolCallId === undefined ? undefined : preparedCalls.get(toolCallId);
           // SAFETY: handle is only invoked for names exposed by this toolkit.
-          const pipeline = prepared?.pipeline ?? pipelines[name]!;
+          const pipeline = pipelines[name]!;
+          const cached = toolCallId === undefined ? undefined : preparedCalls.get(toolCallId);
           if (toolCallId !== undefined) preparedCalls.delete(toolCallId);
-          if (prepared?._tag === "InputFailure") {
+          // The model pipeline always prepares first. Only direct handle() calls reach the
+          // fallback, which decodes and gates the same way; an Approval requirement cannot be
+          // resolved here, so the call runs unattended unless denied or vetoed.
+          const prepared =
+            cached ??
+            (yield* prepare(pipeline, params, { toolCallId: toolCallId ?? "", messages: [] }));
+          if (Predicate.isTagged(prepared, "InputFailure")) {
             return Stream.succeed(failureResult(prepared.reason));
           }
-          if (prepared?._tag === "TurnFailure") {
+          if (Predicate.isTagged(prepared, "TurnFailure")) {
             return yield* Effect.fail(prepared.cause).pipe(
               hookAiError(prepared.method, prepared.message),
             );
           }
-          if (prepared !== undefined) {
-            return prepared.veto === undefined
-              ? yield* pipeline.execute(params)
-              : Stream.succeed(failureResult(prepared.veto));
-          }
-          // Defensive path for a call the model pipeline never prepared: enforce vetoes and
-          // denials, which Core owns; an unresolvable "ask" cannot be honored here. The model
-          // pipeline always supplies an id; only direct handle() calls may omit it.
-          const gated = yield* gate(name, params, toolCallId ?? "");
-          if (Predicate.isTagged(gated, "Failure")) {
-            return yield* Effect.fail(gated.cause).pipe(hookAiError(gated.method, gated.message));
-          }
-          if (Predicate.isTagged(gated, "Denied"))
-            return Stream.succeed(failureResult(gated.reason));
-          return yield* pipeline.execute(params);
+          // Hooks, Approval, and the handler all see the one decoded value from preparation.
+          return prepared.veto === undefined
+            ? yield* pipeline.execute({ encoded: params, decoded: prepared.params })
+            : Stream.succeed(failureResult(prepared.veto));
         })) as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
 
       const request: ApprovalGate["request"] = Effect.fn("@mitome/core/ApprovalGate.request")(

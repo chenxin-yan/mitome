@@ -107,7 +107,12 @@ export interface Extension<
     string,
     (params: ToolInput) => Effect.Effect<ToolOutput, unknown, Resource>
   >;
-  /** Decodes Tool input for Hooks, approval predicates, and approval events. */
+  /**
+   * Decodes Tool input once; Hooks, approval predicates, approval events, and the handler share
+   * the value. A validated Tool's parameters schema must not transform, since the handler receives
+   * the validator's output in place of Effect's own decode. Tools without a validator receive the
+   * encoded params and Effect decodes them with the Tool's parameters schema.
+   */
   readonly toolInputValidators?: Readonly<Record<string, ToolInputValidator>>;
   /** Revalidates post-Tool transforms; keys must name Tools in this Extension. */
   readonly toolResultValidators?: Readonly<Record<string, ToolResultValidator>>;
