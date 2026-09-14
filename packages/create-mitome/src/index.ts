@@ -8,16 +8,11 @@ import {
   projectPlan,
   providerChoices,
   type Choice,
-  type ScaffoldOptions,
   validateModelId,
   writeScaffold,
 } from "./template.js";
 
 import { knownModelIds } from "./model-hints.js";
-
-/** Exported for the CLI entry-point test. */
-export const scaffold = (directory: string, options: ScaffoldOptions): Promise<void> =>
-  writeScaffold(directory, projectPlan(options));
 
 const choose = async <A>(
   question: (message: string) => Promise<string>,
@@ -58,7 +53,7 @@ const main = async (): Promise<void> => {
     ] as const);
     // npm create mitome <dir> forwards <dir> as the first CLI argument.
     const directory = resolve(process.argv[2] ?? ".");
-    await scaffold(directory, { flavor, provider, model });
+    await writeScaffold(directory, projectPlan({ flavor, provider, model }));
     console.log(`Created a Mitome Agent in ${basename(directory)}.`);
   } finally {
     terminal.close();

@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { lstat, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, test } from "vitest";
 import packageJson from "../package.json" with { type: "json" };
 import rootPackage from "../../../package.json" with { type: "json" };
+import { knownModelIds } from "../src/model-hints.js";
 import {
   customModel,
   defaultAgentPlan,
@@ -193,4 +194,67 @@ describe("generated TypeScript", () => {
     ]);
     await expect(tsc).resolves.toMatchObject({ stdout: "" });
   }, 60_000);
+});
+
+describe("create-mitome executable", () => {
+  const executable = join(packageDirectory, "dist/index.js");
+  const run = (args: ReadonlyArray<string>, input: string, cwd: string) =>
+    new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve) => {
+      const child = spawn(process.execPath, [executable, ...args], { cwd });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+      child.on("close", (exitCode) => resolve({ exitCode, stdout, stderr }));
+      child.stdin.end(input);
+    });
+  const customModelChoice = (provider: keyof typeof knownModelIds) =>
+    knownModelIds[provider].length + 1;
+
+  test("scaffolds the numbered selections into the directory argument", async () => {
+    const path = await directory();
+
+    const result = await run(["agent"], "2\n1\n1\n", path);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(result.stdout).toContain("Created a Mitome Agent in agent.");
+    const agent = await contents(join(path, "agent"), "index.ts");
+    expect(agent).toContain('from "@mitome/sdk";');
+    expect(agent).toContain("providers: [codex()]");
+    expect(agent).toContain(`model: "openai-codex/${knownModelIds["openai-codex"][0]}"`);
+  });
+
+  test("accepts a trimmed custom Model id and the Effect template", async () => {
+    const path = await directory();
+
+    const result = await run([], `1\n${customModelChoice("openai")}\n  my-model  \n2\n`, path);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const agent = await contents(path, "index.ts");
+    expect(agent).toContain('from "@mitome/sdk/effect";');
+    expect(agent).toContain('model: "openai/my-model"');
+  });
+
+  test("defaults empty answers and re-asks after an out-of-range choice", async () => {
+    const path = await directory();
+
+    const result = await run([], "9\n\n\n\n", path);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "Choose 1-2.\n" });
+    const agent = await contents(path, "index.ts");
+    expect(agent).toContain('from "@mitome/sdk";');
+    expect(agent).toContain(`model: "openai/${knownModelIds.openai[0]}"`);
+  });
+
+  test.each([
+    ["closed input", "1\n", "Input closed"],
+    ["blank custom Model id", `1\n${customModelChoice("openai")}\n   \n`, "Model ID is required"],
+  ])("fails with exit code 1 and writes nothing on %s", async (_name, input, message) => {
+    const path = await directory();
+
+    const result = await run([], input, path);
+
+    expect(result).toMatchObject({ exitCode: 1, stderr: `${message}\n` });
+    expect(existsSync(join(path, "index.ts"))).toBe(false);
+  });
 });
