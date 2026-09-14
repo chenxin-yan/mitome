@@ -846,10 +846,11 @@ describe("compiled mitome", () => {
       "(its needsApproval predicate failed; --yes does not apply)",
     ],
     [
-      // Effect.promise turns a rejected Promise-SDK predicate into a defect like this one.
+      // A rejected Promise-SDK predicate reaches Core through Effect.promise like this one.
       "a needsApproval predicate that fails asynchronously",
       approvalDefinitionSource({
-        needsApproval: '() => Effect.die(new Error("predicate rejected"))',
+        needsApproval:
+          '() => Effect.promise(() => Promise.reject(new Error("predicate rejected")))',
       }),
       "(its needsApproval predicate failed; --yes does not apply)",
     ],

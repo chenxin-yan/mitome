@@ -330,8 +330,10 @@ describe("session view model", () => {
       success: Schema.String,
       needsApproval: ({ action }) => {
         if (action === "throw") throw new Error("predicate threw");
-        // Effect.promise turns a rejected Promise-SDK predicate into this defect.
-        return action === "reject" ? Effect.die(new Error("predicate rejected")) : true;
+        // A rejected Promise-SDK predicate reaches Core through Effect.promise like this.
+        return action === "reject"
+          ? Effect.promise(() => Promise.reject(new Error("predicate rejected")))
+          : true;
       },
     });
     let handlerCalls = 0;

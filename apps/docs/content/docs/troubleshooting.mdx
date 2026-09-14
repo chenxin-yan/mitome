@@ -28,7 +28,7 @@ Each entry is symptom, cause, fix. Exact error texts are catalogued under [Error
 
 **Cause.** One-shot output (`mitome -p`, or any run whose stdout is not a TTY) no longer approves Approval requests: nobody is present to decide, so each one is denied and stdout shows `[approval <name> denied]`. The Turn still completes and the exit status is `0`; the Model explains what was not permitted.
 
-**Fix.** Pass `--yes` to approve requests the Tool author flagged with `needsApproval`, or have the Agent author list the Tools under `approvals.allow` to stop asking altogether. Neither covers a `policy` ask from the Agent's `approvals` or an Extension's `preTool`, nor a `needsApproval` predicate that failed; change the policy or the predicate instead. See [Approvals](/docs/approvals#running-unattended) and [Security](/docs/security#tools-act-on-your-behalf).
+**Fix.** Pass `--yes` to approve requests the Tool author flagged with `needsApproval`, or have the Agent author list the Tools under `approvals.allow` to stop asking altogether. Neither covers a `policy` ask from the Agent's `approvals` or an Extension's `preTool`; change the policy instead. `--yes` also does not cover a `needsApproval` predicate that failed, because it still runs the predicate; `approvals.allow` skips the predicate entirely. See [Approvals](/docs/approvals#running-unattended) and [Security](/docs/security#tools-act-on-your-behalf).
 
 ## My Tool ran without asking for Approval
 
