@@ -1,18 +1,7 @@
-import { Console, Effect, Option } from "effect";
+import { Effect, Option } from "effect";
 import { ChildHost } from "../child-host-service.js";
-import { checkRuntime, definitionNeedsReconcile, definitionPath } from "../definition.js";
-import { attempt, fail, type ExitCode } from "../support.js";
-
-export const reconcileDefinition = Effect.fn("@mitome/cli/reconcileDefinition")(function* (
-  path: string,
-) {
-  const childHost = yield* ChildHost;
-  if (!(yield* attempt(() => definitionNeedsReconcile(path)))) return 0 satisfies ExitCode;
-  yield* Console.log("Installing Mitome Definition dependencies...");
-  const exitCode = yield* childHost.install(path);
-  if (exitCode === 0) yield* attempt(() => checkRuntime(path));
-  return exitCode;
-});
+import { definitionPath, prepareDefinition } from "../definition.js";
+import { attempt, fail } from "../support.js";
 
 export const runMessage = Effect.fn("@mitome/cli/runMessage")(function* ({
   print,
@@ -31,11 +20,10 @@ export const runMessage = Effect.fn("@mitome/cli/runMessage")(function* ({
     );
   }
 
+  const prepared = yield* prepareDefinition(use);
+  if ("exitCode" in prepared) return prepared.exitCode;
   const childHost = yield* ChildHost;
-  const path = yield* attempt(() => definitionPath(use));
-  const installExitCode = yield* reconcileDefinition(path);
-  if (installExitCode !== 0) return installExitCode;
-  return yield* childHost.runHost(path, messageValue, forcePrint ? "print" : "auto");
+  return yield* childHost.runHost(prepared.path, messageValue, forcePrint ? "print" : "auto");
 });
 
 export const runInstall = Effect.fn("@mitome/cli/runInstall")(function* ({

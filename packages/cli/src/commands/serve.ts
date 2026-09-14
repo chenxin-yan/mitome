@@ -1,8 +1,6 @@
 import { Effect, Option } from "effect";
 import { ChildHost } from "../child-host-service.js";
-import { definitionPath } from "../definition.js";
-import { attempt } from "../support.js";
-import { reconcileDefinition } from "./run.js";
+import { prepareDefinition } from "../definition.js";
 
 export const runServe = Effect.fn("@mitome/cli/runServe")(function* ({
   port,
@@ -11,9 +9,8 @@ export const runServe = Effect.fn("@mitome/cli/runServe")(function* ({
   readonly port: number;
   readonly use: Option.Option<string>;
 }) {
+  const prepared = yield* prepareDefinition(use);
+  if ("exitCode" in prepared) return prepared.exitCode;
   const childHost = yield* ChildHost;
-  const path = yield* attempt(() => definitionPath(use));
-  const installExitCode = yield* reconcileDefinition(path);
-  if (installExitCode !== 0) return installExitCode;
-  return yield* childHost.serve(path, port);
+  return yield* childHost.serve(prepared.path, port);
 });

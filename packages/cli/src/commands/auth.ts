@@ -1,10 +1,9 @@
 import { Effect, Option, Schema } from "effect";
 import { ChildHost, type ProviderAuthentication } from "../child-host-service.js";
 import { removeConfigEnv, updateConfigEnv } from "../config.js";
-import { definitionPath } from "../definition.js";
+import { prepareDefinition } from "../definition.js";
 import { Prompter } from "../prompter.js";
 import { attempt, fail, type ExitCode } from "../support.js";
-import { reconcileDefinition } from "./run.js";
 
 const selectProvider = (providers: ReadonlyArray<ProviderAuthentication>) =>
   Effect.gen(function* () {
@@ -49,9 +48,8 @@ export const runAuth = Effect.fn("@mitome/cli/runAuth")(function* (
   command: "login" | "logout",
   use: Option.Option<string>,
 ) {
-  const path = yield* attempt(() => definitionPath(use));
-  const installExitCode = yield* reconcileDefinition(path);
-  if (installExitCode !== 0) return installExitCode;
-  yield* authenticateDefinition(path, command);
+  const prepared = yield* prepareDefinition(use);
+  if ("exitCode" in prepared) return prepared.exitCode;
+  yield* authenticateDefinition(prepared.path, command);
   return 0 satisfies ExitCode;
 });
