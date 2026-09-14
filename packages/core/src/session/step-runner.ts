@@ -138,8 +138,9 @@ export const makeStepRunner = (
                 ).pipe(
                   Stream.provideContext(selected.context),
                   Stream.mapError(modelTurnError),
-                  // Void has no JSON encoding, yet Providers stringify the result and the
-                  // Transcript requires JSON, so Void becomes null. Any other non-JSON encoding
+                  // A top-level `undefined` (Void, Schema.Undefined) has no JSON encoding, yet
+                  // Providers stringify the result and the Transcript requires JSON, so it
+                  // becomes null. Any other non-JSON encoding
                   // stays as produced: makeTranscript rejects it at save instead of the Session
                   // committing a silently altered Message.
                   Stream.map((part) =>
