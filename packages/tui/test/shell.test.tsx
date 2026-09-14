@@ -174,7 +174,8 @@ describe("TUI shell", () => {
         approvalId: "approval-1",
         toolCallId: "call-1",
         name: "lookup",
-        params: { query: "weather" },
+        // A decoded value need not be JSON (a bigint here); the prompt must still render.
+        params: { query: "weather", limit: 10n },
         requirement: "tool",
         approve: () =>
           Effect.sync(() => {
@@ -205,7 +206,8 @@ describe("TUI shell", () => {
 
     setup!.mockInput.pressEnter({ meta: true });
     const prompt = await setup!.waitForFrame((frame) => frame.includes("Tool lookup (tool)"));
-    expect(prompt).toContain('"query": "weather"');
+    expect(prompt).toContain("weather");
+    expect(prompt).toContain("10");
     expect(prompt).toContain("y approve • n deny • a allow for this Session");
     setup!.mockInput.pressKey("y");
     const frame = await setup!.waitForFrame((candidate) =>

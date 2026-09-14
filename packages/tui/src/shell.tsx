@@ -1,6 +1,6 @@
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { render, useKeyboard } from "@opentui/solid";
-import { Match } from "effect";
+import { Inspectable, Match } from "effect";
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import type {
   ApprovalDecision,
@@ -40,7 +40,7 @@ const footer = (current: SessionState): string => {
 
 const Approval = (props: { readonly approval: ApprovalPrompt }) => (
   <box border title="Approval required">
-    <text>{`Tool ${props.approval.name} (${props.approval.requirement})\n${JSON.stringify(props.approval.params, null, 2)}`}</text>
+    <text>{`Tool ${props.approval.name} (${props.approval.requirement})\n${Inspectable.toStringUnknown(props.approval.params, 0)}`}</text>
   </box>
 );
 
