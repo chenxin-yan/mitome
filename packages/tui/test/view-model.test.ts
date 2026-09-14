@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createSession, makeProvider, memoryTranscripts, StoreError } from "@mitome/core";
 import type { TranscriptStore, TranscriptSummary, TurnEvent } from "@mitome/core";
-import { Effect, Layer, Match, Stream } from "effect";
+import { Context, Effect, Layer, Match, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 import { makeSessionManager } from "../src/session-manager.js";
 import type { SessionManager, SessionResource } from "../src/session-manager.js";
@@ -433,23 +433,50 @@ describe("session view model", () => {
     await viewModel.dispose();
   }, 5_000);
 
-  test("bounds disposal while a Session switch is stuck", async () => {
-    const viewModel = makeSessionViewModel(scriptedSession([]), {
+  test("dispose interrupts a pending Session open and releases what it acquired", async () => {
+    class Pending extends Context.Service<Pending, object>()("Pending") {}
+    let acquired = false;
+    let released = false;
+    const unsupported = () => Effect.die("not used");
+    const provider = makeProvider("test", [] as const, undefined, () =>
+      Layer.succeed(LanguageModel.LanguageModel, {
+        generateText: unsupported,
+        generateObject: unsupported,
+        streamText: unsupported,
+      }),
+    );
+    const manager = makeSessionManager({
+      agent: {
+        providers: [provider],
+        model: "test/default",
+        extensions: [
+          {
+            resource: Layer.effect(
+              Pending,
+              Effect.gen(function* () {
+                yield* Effect.addFinalizer(() => Effect.sync(() => void (released = true)));
+                acquired = true;
+                return yield* Effect.never;
+              }),
+            ),
+          },
+        ],
+      },
+      message: "",
       transcripts: undefined,
-      open: () => Effect.promise(() => new Promise<SessionResource>(() => {})),
     });
+    const viewModel = makeSessionViewModel(scriptedSession([]), manager);
 
     expect(viewModel.newSession()).toBe(true);
+    await waitFor(() => acquired);
     const started = performance.now();
     await viewModel.dispose();
-    expect(performance.now() - started).toBeLessThan(2_500);
-  }, 5_000);
+
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(released).toBe(true);
+  });
 
   test("closes a Session opened mid-switch when disposed first", async () => {
-    let releaseOpen!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      releaseOpen = resolve;
-    });
     let nextCloses = 0;
     const next: SessionResource = {
       ...scriptedSession([]),
@@ -459,17 +486,12 @@ describe("session view model", () => {
     };
     const viewModel = makeSessionViewModel(scriptedSession([]), {
       transcripts: undefined,
-      open: () =>
-        Effect.promise(async () => {
-          await gate;
-          return next;
-        }),
+      open: () => Effect.succeed(next),
     });
 
+    // The open settles synchronously; dispose lands before the switch observes it.
     expect(viewModel.newSession()).toBe(true);
-    const disposing = viewModel.dispose();
-    releaseOpen();
-    await disposing;
+    await viewModel.dispose();
     expect(nextCloses).toBe(1);
   });
 
