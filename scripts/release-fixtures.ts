@@ -175,6 +175,7 @@ import { openai } from "@mitome/providers/openai";
 import { openaiCompatible } from "@mitome/providers/openai-compatible";
 import { codex } from "@mitome/providers/openai-codex";
 import { bearer, http } from "@mitome/channels/http";
+import { telegram } from "@mitome/channels/telegram";
 import { instructions } from "@mitome/sdk/extensions";
 
 if (sdkEffect.createSession !== core.createSession) throw new Error("SDK Effect facade duplicated the Core runtime.");
@@ -182,6 +183,8 @@ if (openai().id !== "openai" || codex().id !== "openai-codex") throw new Error("
 if (openaiCompatible({ id: "local", baseUrl: "http://localhost" }).id !== "local") throw new Error("OpenAI-compatible package was not installed.");
 const channel = http({ auth: bearer({ secret: "owner" }), routes: core.memoryRoutes() });
 if (channel.kind !== "channel" || channel.name !== "http" || channel.handle === undefined) throw new Error("HTTP Channel package was not installed.");
+const chat = telegram({ token: "fixture", allow: [1], routes: core.memoryRoutes() });
+if (chat.kind !== "channel" || chat.name !== "telegram" || chat.serve === undefined) throw new Error("Telegram Channel package was not installed.");
 // Built through the real published LanguageModel.make constructor; generateText is unused here.
 const provider = makeProvider("fixture", [] as const, undefined, () => Layer.effect(LanguageModel.LanguageModel, LanguageModel.make({
   streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "ok" })),

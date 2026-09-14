@@ -1,0 +1,148 @@
+---
+title: "@mitome/channels/telegram"
+---
+
+Telegram Channel: long-polls a bot's updates and answers each allowed sender's message with one
+reply per Turn. The [Telegram](/docs/telegram) guide describes the chat behavior.
+
+## Interfaces
+
+### TelegramOptions
+
+Options for `telegram()`.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/telegram/index.ts"
+  name="TelegramOptions"
+/>
+
+### TelegramApi
+
+The Bot API methods the Channel calls, typed to the fields it uses. `telegram()` builds the
+`fetch`-based one from its token; tests and other transports pass their own through `api`.
+`getUpdates` receives the signal the Channel aborts on shutdown so an in-flight long poll ends at
+once. A rejected `getUpdates` makes the Channel back off and poll again, honouring
+[`TelegramApiError.retryAfterMs`](#telegramapierror) when present; a rejected `sendMessage` or
+`answerCallbackQuery` loses that one reply.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/telegram/api.ts"
+  name="TelegramApi"
+/>
+
+### GetUpdatesParams
+
+Parameters of `getUpdates`; `timeout` is the long-poll wait in seconds.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/telegram/api.ts"
+  name="GetUpdatesParams"
+/>
+
+### SendMessageParams
+
+Parameters of `sendMessage`.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/telegram/api.ts"
+  name="SendMessageParams"
+/>
+
+### AnswerCallbackQueryParams
+
+Parameters of `answerCallbackQuery`; `text` is shown to the user as a notification.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/telegram/api.ts"
+  name="AnswerCallbackQueryParams"
+/>
+
+### TelegramUpdate
+
+One Bot API update; the Channel reads `message` and `callback_query` only.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/telegram/api.ts"
+  name="TelegramUpdate"
+/>
+
+### TelegramMessage
+
+A Telegram message, reduced to the fields the Channel reads; `text` is absent on media.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/telegram/api.ts"
+  name="TelegramMessage"
+/>
+
+### TelegramCallbackQuery
+
+An inline-keyboard press; `message` is the prompt the keyboard was attached to.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/telegram/api.ts"
+  name="TelegramCallbackQuery"
+/>
+
+### TelegramInlineKeyboard
+
+An inline keyboard: rows of buttons whose `callback_data` comes back in a callback query.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/telegram/api.ts"
+  name="TelegramInlineKeyboard"
+/>
+
+### TelegramUser
+
+A Telegram user, reduced to the field the Channel reads.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/telegram/api.ts"
+  name="TelegramUser"
+/>
+
+### TelegramChat
+
+A Telegram chat, reduced to the field the Channel reads.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/telegram/api.ts"
+  name="TelegramChat"
+/>
+
+## Classes
+
+### TelegramApiError
+
+```ts
+class TelegramApiError extends Data.TaggedError("TelegramApiError")<{
+  readonly method: string;
+  readonly description: string;
+  readonly retryAfterMs?: number | undefined;
+}> {}
+```
+
+The Bot API answered `ok: false`, or its response could not be read. It never carries the token.
+`retryAfterMs` is set when Telegram asked to wait before retrying (`429`); the poll loop honours
+it. A custom [`TelegramApi`](#telegramapi) rejects `getUpdates` with it to request the same
+back-off.
+
+## Functions
+
+### telegram
+
+```ts
+function telegram(options: TelegramOptions): ChannelHost;
+```
+
+Creates the Telegram Channel Host. `serve` long-polls `getUpdates` until the signal aborts, then
+interrupts running Turns and resolves; it never rejects because of a transport error. Only senders
+in `allow` are answered, and the Route key is `(name, user id, chat[/thread])`, so a Session is
+never shared across users of one group. One Turn runs per Route at a time; a message that arrives
+meanwhile is answered `Still working on your previous message.` and dropped. The Model's text is
+sent as one message when the Turn completes, `/new` forgets the Route, and a failed Turn is one
+sanitized line. Pending Approvals live in memory for the Turn only; a decision must come from the
+Turn's own user in the Turn's own chat, and a stale or repeated one never re-executes a Tool.
+
+Returns a [`ChannelHost`](/docs/reference/api/core#channelhost).

@@ -6,7 +6,6 @@
 
 import {
   createSession,
-  type ApprovalResolutionError,
   type ChannelHost,
   type ChannelHostContext,
   type RouteKey,
@@ -16,7 +15,7 @@ import {
   type TurnEvent,
 } from "@mitome/core";
 import { Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
-import type { Scope } from "effect";
+import { createPendingApprovals } from "../shared/pending-approvals.js";
 import { createRouteLock } from "../shared/route-lock.js";
 import type { Authenticator } from "./auth.js";
 import { encodeFrame, toWireEvent, type WireTurnEvent } from "./sse.js";
@@ -112,13 +111,9 @@ const methodNotAllowed = (): Response =>
 const malformedBody = (): Response => text(400, "Malformed request body");
 const payloadTooLarge = (): Response => text(413, "Payload Too Large");
 
-interface PendingApproval {
-  readonly turnId: string;
-  readonly approvalId: string;
-  readonly principal: string;
-  readonly approve: () => Effect.Effect<void, ApprovalResolutionError>;
-  readonly deny: (reason?: string) => Effect.Effect<void, ApprovalResolutionError>;
-}
+// Both ids are opaque strings, so no separator is safe; the array encoding cannot collide.
+const pendingId = (turnId: string, approvalId: string): string =>
+  JSON.stringify([turnId, approvalId]);
 
 type ApprovalRequiredEvent = Extract<TurnEvent, { readonly type: "approval-required" }>;
 
@@ -136,35 +131,14 @@ export const http = (options: HttpOptions): ChannelHost => {
   const interactive = options.approvals === "interactive";
   const approvalTimeoutMs = options.approvalTimeoutMs ?? 300_000;
   const withLock = createRouteLock();
-  const pending = new Map<string, Map<string, PendingApproval>>();
   const encoder = new TextEncoder();
 
   // Stable, Model-visible text; it never carries exception details.
   const defaultDenial = `Approval denied: the http Channel "${name}" does not resolve Approvals (set approvals: "interactive" or list the Tool under approvals.allow)`;
-  const timeoutDenial = `Approval denied: the http Channel "${name}" received no decision before the Approval timed out`;
-
-  const takePending = (turnId: string, approvalId: string): PendingApproval | undefined => {
-    const byTurn = pending.get(turnId);
-    const entry = byTurn?.get(approvalId);
-    if (byTurn === undefined || entry === undefined) return undefined;
-    byTurn.delete(approvalId);
-    if (byTurn.size === 0) pending.delete(turnId);
-    return entry;
-  };
-
-  const registerPending = (
-    entry: PendingApproval,
-    sessionScope: Scope.Scope,
-  ): Effect.Effect<void> => {
-    const byTurn = pending.get(entry.turnId) ?? new Map<string, PendingApproval>();
-    byTurn.set(entry.approvalId, entry);
-    pending.set(entry.turnId, byTurn);
-    // The timer dies with the Session scope, so an interrupted Turn leaves no timer behind.
-    return Effect.suspend(() => {
-      const timedOut = takePending(entry.turnId, entry.approvalId);
-      return timedOut === undefined ? Effect.void : Effect.ignore(timedOut.deny(timeoutDenial));
-    }).pipe(Effect.delay(approvalTimeoutMs), Effect.forkIn(sessionScope), Effect.asVoid);
-  };
+  const pending = createPendingApprovals(
+    approvalTimeoutMs,
+    `Approval denied: the http Channel "${name}" received no decision before the Approval timed out`,
+  );
 
   const loadTranscript = (
     context: ChannelHostContext,
@@ -199,11 +173,6 @@ export const http = (options: HttpOptions): ChannelHost => {
       Effect.scoped(
         Effect.gen(function* () {
           const sessionScope = yield* Effect.scope;
-          yield* Effect.addFinalizer(() =>
-            Effect.sync(() => {
-              pending.delete(turnId);
-            }),
-          );
           const transcript = yield* loadTranscript(context, key);
           const session = yield* createSession(context.agent, {
             transcripts: context.transcripts,
@@ -226,14 +195,9 @@ export const http = (options: HttpOptions): ChannelHost => {
               : options.routes.set(key, session.transcript().id);
           const resolveApproval = (event: ApprovalRequiredEvent): Effect.Effect<void> =>
             interactive
-              ? registerPending(
-                  {
-                    turnId,
-                    approvalId: event.approvalId,
-                    principal: key.principal,
-                    approve: event.approve,
-                    deny: event.deny,
-                  },
+              ? pending.register(
+                  pendingId(turnId, event.approvalId),
+                  { key, approve: event.approve, deny: event.deny },
                   sessionScope,
                 )
               : Effect.ignore(event.deny(defaultDenial));
@@ -323,11 +287,12 @@ export const http = (options: HttpOptions): ChannelHost => {
     if (raw === undefined) return payloadTooLarge();
     const body = decodeDecision(raw);
     if (Option.isNone(body)) return malformedBody();
-    const entry = pending.get(turnId)?.get(approvalId);
+    const id = pendingId(turnId, approvalId);
+    const entry = pending.peek(id);
     if (entry === undefined) return notFound();
     // IDs are correlation, not authorization: only the Turn's own principal may decide.
-    if (entry.principal !== principal) return text(403, "Forbidden");
-    takePending(turnId, approvalId);
+    if (entry.key.principal !== principal) return text(403, "Forbidden");
+    pending.take(id);
     const decision =
       body.value.decision === "approve"
         ? entry.approve()

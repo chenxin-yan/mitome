@@ -1,10 +1,10 @@
 ---
 title: Channels
-description: Serve an Agent over plain HTTP with the first-party http Channel, stream Turns as SSE, and resolve Approvals from a client.
+description: Serve an Agent over plain HTTP with the first-party http Channel, stream Turns as SSE, and resolve Approvals from a client; the Telegram Channel has its own page.
 icon: Radio
 ---
 
-A [Channel](/docs/concepts#host) is a Host that connects an external surface to the Agent. `@mitome/channels` ships first-party Channels, each on its own subpath; `@mitome/channels/http` is a generic HTTP Channel for an application or consumer client that has no messaging platform in between. [`mitome serve`](/docs/cli#serving-channels) runs it; the [Hosts](/docs/hosts#kind-channel) page describes the contract it implements.
+A [Channel](/docs/concepts#host) is a Host that connects an external surface to the Agent. `@mitome/channels` ships first-party Channels, each on its own subpath; `@mitome/channels/http` is a generic HTTP Channel for an application or consumer client that has no messaging platform in between, and [`@mitome/channels/telegram`](/docs/telegram) connects a Telegram bot. [`mitome serve`](/docs/cli#serving-channels) runs them; the [Hosts](/docs/hosts#kind-channel) page describes the contract they implement. This page covers the HTTP Channel.
 
 ```sh
 npm install @mitome/sdk @mitome/channels
@@ -170,6 +170,7 @@ The HTTP Channel deliberately does not offer, and `v: 1` of the envelope does no
 
 ## Next
 
+- [Telegram](/docs/telegram): the same Route and Approval model on a chat surface.
 - [Hosts](/docs/hosts#kind-channel): the Channel contract and how `mitome serve` mounts it.
 - [Approvals](/docs/approvals): who decides that a Tool may run.
 - [`@mitome/channels/http` reference](/docs/reference/api/channels-http).

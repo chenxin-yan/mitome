@@ -9,6 +9,7 @@
     "providers-openai-compatible",
     "providers-openai-codex",
     "channels-http",
+    "channels-telegram",
     "tui"
   ]
 }

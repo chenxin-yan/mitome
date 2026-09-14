@@ -1,0 +1,7 @@
+---
+"@mitome/channels": minor
+---
+
+Add `@mitome/channels/telegram`. `telegram({ token, allow, routes, approvals?, approvalTimeoutMs?, name?, api? })` is a `kind: "channel"` Host exposing `serve` only: it long-polls the Bot API, so it needs no public URL, and stops cleanly when `mitome serve` aborts its signal. Only Telegram user ids in `allow` are answered; anyone else gets no reply and starts no Session. Each chat, and each forum topic, is a Route keyed `(name, user id, chat[/thread])` that resumes across restarts through the configured Route store; `/new` forgets the Route and keeps the previous Transcript in the store. One Turn runs per Route at a time and a message arriving meanwhile is answered `Still working on your previous message.` and dropped. The Model's text is sent as one message when the Turn completes, split at Telegram's 4096-character limit; a failed Turn is one sanitized line. Pending Approvals are denied by default with a stable Model-visible reason; `approvals: "interactive"` posts an Approve/Deny inline keyboard whose press must come from the Turn's own user in the Turn's own chat and thread, answers stale or repeated presses without re-executing, bypasses the busy-Route rejection, and denies after `approvalTimeoutMs` (default five minutes). There is no channel auto-approve mode. `api` injects a `TelegramApi` transport; `getUpdates` failures back off (honouring `retry_after`) and never stop the Channel.
+
+The pending-Approval registry both Channels use now lives in one shared module; the HTTP Channel's behavior is unchanged.

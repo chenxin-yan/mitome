@@ -18,6 +18,7 @@
     "cli",
     "tui",
     "channels",
+    "telegram",
     "---Advanced---",
     "effect",
     "hosts",

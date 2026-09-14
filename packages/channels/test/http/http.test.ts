@@ -6,16 +6,13 @@ import { bearer, http } from "../../src/http/index.js";
 import {
   agentWith,
   contextFor,
-  decisionRequest,
   echoModel,
-  frameReader,
   hangingModel,
   makeTestProvider,
   promptText,
-  readFrames,
   toolModel,
-  turnRequest,
-} from "./support.js";
+} from "../support/agent.js";
+import { decisionRequest, frameReader, readFrames, turnRequest } from "./support.js";
 
 const auth = bearer({ "alice-token": "alice", "bob-token": "bob" });
 const alice = (conversation: string): RouteKey => ({

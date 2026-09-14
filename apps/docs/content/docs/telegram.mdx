@@ -1,0 +1,113 @@
+---
+title: Telegram
+description: Talk to an Agent from Telegram with the first-party telegram Channel, allowlisted by user id, resuming each chat, and approving Tools from an inline keyboard.
+icon: Send
+---
+
+`@mitome/channels/telegram` connects a Telegram bot to the Agent. It is a [Channel](/docs/concepts#host) exposing `serve`: it long-polls the Bot API for updates, so it needs no public URL, and [`mitome serve`](/docs/cli#serving-channels) runs it. The [Channels](/docs/channels) page covers the HTTP Channel and what both share.
+
+```sh
+npm install @mitome/sdk @mitome/channels
+```
+
+## Set it up
+
+1. Open [@BotFather](https://t.me/BotFather) in Telegram, send `/newbot`, and copy the token it gives you.
+2. Find your own Telegram user id: message [@userinfobot](https://t.me/userinfobot), or read `message.from.id` from any update. It is a number such as `123456789`.
+3. Declare the Channel:
+
+```ts title="index.ts"
+import { defineMitome, fileTranscripts } from "@mitome/sdk";
+import { fileRoutes } from "@mitome/core";
+import { telegram } from "@mitome/channels/telegram";
+import { agent } from "./agent";
+
+export default defineMitome({
+  agent,
+  transcripts: fileTranscripts(),
+  hosts: [
+    telegram({
+      token: process.env.TELEGRAM_BOT_TOKEN!,
+      allow: [123456789],
+      routes: fileRoutes(),
+    }),
+  ],
+});
+```
+
+`telegram()` takes these options and returns a `kind: "channel"` Host exposing `serve` only:
+
+| Option | Meaning |
+| `token` | The bot token from @BotFather. |
+| `allow` | Telegram **user ids** allowed to talk to the Agent, as numbers or their decimal string form (`123456789` or `"123456789"`). Required; an empty list allows nobody. |
+| `routes` | The [Route](/docs/hosts#routes) store: `fileRoutes()` survives restarts, `memoryRoutes()` does not. |
+| `approvals?` | `"deny"` (default) or `"interactive"`; see [Approvals](#approvals). |
+| `approvalTimeoutMs?` | How long an `"interactive"` Approval may wait for a decision before it is denied. Defaults to five minutes. |
+| `name?` | The Channel name, unique in the Mitome Definition. Defaults to `"telegram"`. |
+| `api?` | A [`TelegramApi`](/docs/reference/api/channels-telegram#telegramapi) transport replacing the built-in `fetch` one; tests pass a fake here. |
+
+Then run it:
+
+```sh
+mitome serve            # Serving Channel "telegram"
+```
+
+Send the bot a message. Anyone whose user id is not in `allow` gets **no reply at all**: silence is the denial, and no Session starts for them. Text messages only; photos, stickers, and other media are ignored.
+
+## Conversations
+
+Each chat is a [Route](/docs/hosts#routes) keyed `(name, user id, chat id)`, so a chat resumes where it left off across restarts when `routes` is `fileRoutes()`. In a group, every allowed user has their own Route in that group, and in a forum topic the thread id is part of the key (`<chat>/<thread>`), so two users of one group never share a Session and the reply goes back to the topic it came from.
+
+- `/new` forgets the Route: the next message starts a fresh Transcript, and the previous one stays in the Transcript store.
+- `/start` answers with a one-line hint and starts nothing.
+- Any other text is a user Message and runs one Turn. The Model's text is sent as **one message** when the Turn completes; there is no streaming. A reply longer than Telegram's 4096-character limit is sent in several messages, and a Turn whose Model wrote no text sends nothing.
+- One Turn runs per Route at a time. A message that arrives while a Turn is still running is answered `Still working on your previous message.` and dropped; it is never queued.
+- A Turn that fails answers with one line: the Turn error's own message, or `Something went wrong; try again.` Raw exception text never reaches the chat.
+
+The Route advances only after the Transcript was saved, and before the reply is sent, so a message the bot answered is a message the next Turn remembers.
+
+## Approvals
+
+The Channel resolves the [Approvals](/docs/approvals#who-approves-by-default) Core asks it for, and only those: a Tool call that is unflagged, or that the Agent's `approvals.allow` covers, runs without a prompt.
+
+By default every pending Approval is denied with a stable reason the Model sees:
+
+```
+Approval denied: the telegram Channel "telegram" does not resolve Approvals (set approvals: "interactive" or list the Tool under approvals.allow)
+```
+
+There is no channel auto-approve option. To run unattended, say so once in the Agent Definition with `approvals: { allow: [...] }`.
+
+### `approvals: "interactive"`
+
+With `approvals: "interactive"`, the bot posts a prompt in the chat with an **Approve** / **Deny** inline keyboard:
+
+```
+Tool deploy (tool) wants to run: {"target":"staging"}
+[ Approve ] [ Deny ]
+```
+
+The `(tool)` part is the [requirement](/docs/approvals#resolving-an-approval): `tool` for a Tool the author flagged, `policy` for an Agent `ask` rule, `predicate-error` when the Tool's `needsApproval` predicate failed. Pressing **Approve** runs the Tool and the Turn continues; **Deny** rejects it with `Approval denied by the user.` Either way the Turn's final reply arrives as usual.
+
+A press is honoured only from the user whose Turn is waiting, in the chat and thread that Turn runs in. Another allowlisted member of the same group, or the same user pressing from a different chat, is told `This Approval is not yours to decide.` and nothing changes; ids are correlation, not authorization. A press on a prompt that was already decided, timed out, or belongs to a Turn that ended is told `This Approval is no longer pending.` and never re-executes a Tool. Because a decision must reach a Turn that is currently holding its Route, it is never rejected as "still working".
+
+An Approval nobody answers within `approvalTimeoutMs` (default five minutes) is denied with a stable timeout reason. Pending Approvals live in the process for the lifetime of their Turn only: shutdown or a restart forgets them, and the old keyboard then answers "no longer pending".
+
+## Polling and shutdown
+
+`serve` calls `getUpdates` in a loop with a 30-second long poll. A failed poll, whether the network, a `5xx`, or a `429`, is a pause before the next one, honouring Telegram's `retry_after` when it sends one, and `serve` never rejects because of it. When `mitome serve` shuts down, the in-flight poll is aborted, running Turns are interrupted (their Sessions close and pending Approvals are dropped), and `serve` resolves.
+
+Run one instance per bot token: Telegram delivers each update to one consumer, so two processes polling the same token would each see part of the conversation.
+
+## Not promised
+
+- **Webhooks.** Long polling only.
+- **Streaming or edited replies.** One message per Turn, after it completes.
+- **Media.** Non-text messages are ignored; Tool activity is not shown in the chat.
+- **Durable pending Approvals.** They are forgotten when the Turn ends or the process restarts.
+
+## Next
+
+- [Channels](/docs/channels): the HTTP Channel and the Route model both share.
+- [Approvals](/docs/approvals): who decides that a Tool may run.
+- [`@mitome/channels/telegram` reference](/docs/reference/api/channels-telegram).
