@@ -103,7 +103,7 @@ describe("Codex Credential freshness", () => {
     }),
   );
 
-  it.effect("reuses the Credential another caller rotated after a stale 401", () =>
+  it.effect("reuses an already-rotated Credential after a stale 401 without locking", () =>
     Effect.gen(function* () {
       const endpoint = tokenEndpoint();
       const rejected = credential("rejected-access");
