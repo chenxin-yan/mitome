@@ -77,8 +77,8 @@ const createSessionImpl: (
     extensionContexts.set(extension, context);
   }
   const toolExecution = yield* ToolExecution.makeToolExecution(compiled, extensionContexts);
-  const modelResolver = ModelResolver.makeModelResolver(compiled.providers, sessionScope);
-  const stepRunner = StepRunner.makeStepRunner(compiled, extensionContexts, toolExecution);
+  const resolveModel = ModelResolver.makeModelResolver(compiled.providers, sessionScope);
+  const runStep = StepRunner.makeStepRunner(compiled, extensionContexts, toolExecution);
   const transcriptId = crypto.randomUUID();
   const sessionId = crypto.randomUUID();
   const parentTranscriptId = sessionOptions.transcript?.id;
@@ -138,7 +138,7 @@ const createSessionImpl: (
         const qualifiedModelId = turnOptions?.model ?? definition.model;
         isTurnActive = true;
         return Stream.unwrap(
-          modelResolver.resolve(qualifiedModelId).pipe(
+          resolveModel(qualifiedModelId).pipe(
             Effect.flatMap((selected) =>
               beginHookPhase(
                 compiled.extensions,
@@ -158,7 +158,7 @@ const createSessionImpl: (
               ).pipe(
                 hookTurnError("Turn start Hook failed"),
                 Effect.map((turnHooks) =>
-                  stepRunner.run(Prompt.concat(history, message), selected).pipe(
+                  runStep(Prompt.concat(history, message), selected).pipe(
                     Stream.mapEffect((event) => {
                       if (event.type !== "turn-complete") return Effect.succeed(event);
                       return turnHooks.end.pipe(

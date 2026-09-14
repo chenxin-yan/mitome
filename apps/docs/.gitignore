@@ -15,5 +15,4 @@ node_modules
 /playwright/.cache/
 .tanstack
 
-.source
 .wrangler

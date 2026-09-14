@@ -1,9 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, ConfigProvider, Effect, Exit, Schema, Stream } from "effect";
+import { Cause, Effect, Exit, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import { FetchHttpClient } from "effect/unstable/http";
 import { createSession, credentialDescriptor } from "@mitome/core";
-import { agent, sse } from "../support.js";
+import { agent, fakeFetch, runWithKey, sse } from "../support.js";
 import { openaiCompatible } from "../../src/openai-compatible/index.js";
 
 type Json = typeof Schema.Json.Type;
@@ -18,21 +17,7 @@ interface FollowUpRequest {
 }
 
 const key = "MITOME_OPENAI_COMPATIBLE_TEST_KEY";
-const fakeFetch =
-  (handle: (request: Request) => Response | Promise<Response>): typeof globalThis.fetch =>
-  async (input, init) =>
-    handle(new Request(input, init));
-const run = <A, E>(
-  effect: Effect.Effect<A, E>,
-  fetch: typeof globalThis.fetch = globalThis.fetch,
-  config: Record<string, string> = { [key]: "synthetic-key" },
-) =>
-  Effect.runPromise(
-    effect.pipe(
-      Effect.provideService(FetchHttpClient.Fetch, fetch),
-      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config)),
-    ),
-  );
+const run = runWithKey(key);
 const chunk = (delta: JsonObject, finishReason: string | null = null) => ({
   id: "chatcmpl-test",
   model: "gpt-4o-mini",
@@ -62,10 +47,8 @@ describe("openaiCompatible", () => {
       readonly stream: boolean;
       readonly authorization: string | null;
     }> = [];
-    let releaseSecond!: () => void;
-    const secondReleased = new Promise<void>((resolve) => (releaseSecond = resolve));
-    let firstChunk!: () => void;
-    const firstChunkSent = new Promise<void>((resolve) => (firstChunk = resolve));
+    const { promise: secondReleased, resolve: releaseSecond } = Promise.withResolvers<void>();
+    const { promise: firstChunkSent, resolve: firstChunk } = Promise.withResolvers<void>();
     const fetch = fakeFetch(async (request) => {
       expect(new URL(request.url).pathname).toBe("/v1/chat/completions");
       // SAFETY: this controlled client request is emitted from the compatible request schema.
@@ -98,8 +81,7 @@ describe("openaiCompatible", () => {
       baseUrl: "https://test.invalid/v1/",
     });
     const events: Array<unknown> = [];
-    let firstOutput!: () => void;
-    const output = new Promise<void>((resolve) => (firstOutput = resolve));
+    const { promise: output, resolve: firstOutput } = Promise.withResolvers<void>();
     const turn = run(
       Effect.scoped(
         Effect.gen(function* () {

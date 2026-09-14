@@ -151,24 +151,16 @@ const definitionNeedsReconcile = async (path: string): Promise<boolean> => {
   }
 
   let lockWorkspace: JsonObject | undefined;
-  const lockPath = join(directory, "bun.lock");
-  let hasLock = true;
   try {
-    await stat(lockPath);
+    // SAFETY: bun.lock is JSONC (trailing commas and comments); parsing yields only JSON values.
+    const lock = decodeJsonObject(
+      Bun.JSONC.parse(await readFile(join(directory, "bun.lock"), "utf8")) as Schema.Json,
+    );
+    const workspaces =
+      lock?.workspaces === undefined ? undefined : decodeJsonObject(lock.workspaces);
+    lockWorkspace = workspaces?.[""] === undefined ? undefined : decodeJsonObject(workspaces[""]);
   } catch (error) {
     if (!isEnoent(error)) return true;
-    hasLock = false;
-  }
-  if (hasLock) {
-    try {
-      // bun.lock is JSONC; Bun's jsonc import handles trailing commas and comments.
-      const lock = decodeJsonObject((await import(lockPath, { with: { type: "jsonc" } })).default);
-      const workspaces =
-        lock?.workspaces === undefined ? undefined : decodeJsonObject(lock.workspaces);
-      lockWorkspace = workspaces?.[""] === undefined ? undefined : decodeJsonObject(workspaces[""]);
-    } catch {
-      return true;
-    }
   }
   if (lockWorkspace !== undefined && !sameDependencies(manifest, lockWorkspace)) return true;
   return missingDependency(directory, manifest);

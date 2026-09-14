@@ -1,0 +1,19 @@
+---
+title: "@mitome/tui"
+---
+
+Interactive terminal Host built on OpenTUI.
+
+## Functions
+
+### tui
+
+```ts
+function tui(): InteractiveHost;
+```
+
+Creates the interactive terminal Host. It needs a TTY on both stdin and stdout and reports
+otherwise through `unsupported()`, letting the CLI fall back to one-shot output. OpenTUI loads
+only when `run` is called. Requires Bun.
+
+Returns an [`InteractiveHost`](/docs/reference/api/sdk-effect#interactivehost).

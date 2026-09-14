@@ -1,9 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { Effect, Layer, Result, Schema, Stream } from "effect";
-import { LanguageModel } from "effect/unstable/ai";
-import { makeProvider } from "@mitome/core";
+import { Result, Schema, Stream } from "effect";
 import { defineAgent, defineExtension, withSession, type InputSchema } from "../src/index.js";
 import { defineAgent as defineEffectAgent } from "../src/effect.js";
+import { makeTestProvider } from "./provider.js";
 
 const Action = Schema.Struct({ action: Schema.String });
 
@@ -34,26 +33,18 @@ const defaultingSchema: InputSchema<{
 const approvalModel = () => {
   let calls = 0;
   return {
-    provider: makeProvider("test", [] as const, undefined, () =>
-      Layer.effect(
-        LanguageModel.LanguageModel,
-        LanguageModel.make({
-          generateText: () => Effect.succeed([]),
-          streamText: () => {
-            calls += 1;
-            if (calls === 1) {
-              return Stream.succeed({
-                type: "tool-call" as const,
-                id: "call-approval",
-                name: "dangerous",
-                params: { action: "delete" },
-              });
-            }
-            return Stream.succeed({ type: "text-delta" as const, id: "done", delta: "reused" });
-          },
-        }),
-      ),
-    ),
+    provider: makeTestProvider(() => {
+      calls += 1;
+      if (calls === 1) {
+        return Stream.succeed({
+          type: "tool-call" as const,
+          id: "call-approval",
+          name: "dangerous",
+          params: { action: "delete" },
+        });
+      }
+      return Stream.succeed({ type: "text-delta" as const, id: "done", delta: "reused" });
+    }),
     calls: () => calls,
   };
 };
@@ -457,9 +448,7 @@ describe("@mitome/sdk Tool Approval", () => {
         message: "Approval is no longer pending (the Turn ended or the request is missing)",
       });
 
-      const next = [];
-      for await (const event of session.runTurn("second")) next.push(event);
-      return next;
+      return Array.fromAsync(session.runTurn("second"));
     });
 
     expect(handlerCalls).toBe(0);

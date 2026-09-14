@@ -9,8 +9,7 @@
     "resolveJsonModule": true,
     "noUncheckedSideEffectImports": true,
     "paths": {
-      "@/*": ["./src/*"],
-      "collections/*": ["./.source/*"]
+      "@/*": ["./src/*"]
     }
   }
 }

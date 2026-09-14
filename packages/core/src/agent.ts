@@ -207,6 +207,12 @@ interface CompiledExtensions {
   readonly requiredHandlerNames: Set<string>;
 }
 
+const validatorFields = [
+  ["toolInputValidators", "inputValidator", "input"],
+  ["toolResultValidators", "resultValidator", "result"],
+  ["toolFailureValidators", "failureValidator", "failure"],
+] as const;
+
 const compileExtensions = (
   extensionValues: typeof Schema.Unknown.Type,
   issues: Array<string>,
@@ -274,30 +280,14 @@ const compileExtensions = (
       }
     }
 
-    for (const [name, validator] of Object.entries(extension.toolInputValidators ?? {})) {
-      const compiledTool = tools.get(name);
-      if (compiledTool === undefined || compiledTool.owner !== extension) {
-        issues.push(`Tool input validator has no matching Tool: ${name}`);
-      } else {
-        tools.set(name, { ...compiledTool, inputValidator: validator });
-      }
-    }
-
-    for (const [name, validator] of Object.entries(extension.toolResultValidators ?? {})) {
-      const compiledTool = tools.get(name);
-      if (compiledTool === undefined || compiledTool.owner !== extension) {
-        issues.push(`Tool result validator has no matching Tool: ${name}`);
-      } else {
-        tools.set(name, { ...compiledTool, resultValidator: validator });
-      }
-    }
-
-    for (const [name, validator] of Object.entries(extension.toolFailureValidators ?? {})) {
-      const compiledTool = tools.get(name);
-      if (compiledTool === undefined || compiledTool.owner !== extension) {
-        issues.push(`Tool failure validator has no matching Tool: ${name}`);
-      } else {
-        tools.set(name, { ...compiledTool, failureValidator: validator });
+    for (const [source, field, kind] of validatorFields) {
+      for (const [name, validator] of Object.entries(extension[source] ?? {})) {
+        const compiledTool = tools.get(name);
+        if (compiledTool === undefined || compiledTool.owner !== extension) {
+          issues.push(`Tool ${kind} validator has no matching Tool: ${name}`);
+        } else {
+          tools.set(name, { ...compiledTool, [field]: validator });
+        }
       }
     }
 

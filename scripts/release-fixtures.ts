@@ -68,19 +68,13 @@ try {
     }
   }
 
-  const storeDirectory = join(rootDirectory, "node_modules", ".bun");
   const effectVersion: string = (await Bun.file(join(rootDirectory, "package.json")).json())
     .workspaces.catalog.effect;
-  const installedPackage = async (name: string, version: string): Promise<string> => {
-    // The store can hold several versions on dev machines; pin to the catalog one.
-    for await (const entry of new Bun.Glob(`**/node_modules/${name}/package.json`).scan({
-      cwd: storeDirectory,
-    })) {
-      const manifest: { version?: unknown } = await Bun.file(join(storeDirectory, entry)).json();
-      if (manifest.version === version) return dirname(join(storeDirectory, entry));
-    }
-    throw new Error(`Cannot find installed ${name}@${version}.`);
-  };
+  const installedEffectManifest = Bun.resolveSync("effect/package.json", rootDirectory);
+  const installedEffectVersion: string = (await Bun.file(installedEffectManifest).json()).version;
+  if (installedEffectVersion !== effectVersion) {
+    throw new Error(`Installed Effect ${installedEffectVersion} is not catalog ${effectVersion}.`);
+  }
   const dependencies = Object.fromEntries(
     await Promise.all(
       publicPackages.map(async (name) => [packageName(name), `file:${await archiveFor(name)}`]),
@@ -99,7 +93,7 @@ try {
     }),
   );
   const effectDirectory = join(temporaryDirectory, "vendor", "effect");
-  await cp(await installedPackage("effect", effectVersion), effectDirectory, {
+  await cp(dirname(installedEffectManifest), effectDirectory, {
     recursive: true,
     dereference: true,
   });
@@ -118,8 +112,6 @@ try {
   for (const name of publicPackages) {
     const destination =
       name === "create-mitome" ? join(nodeModules, name) : join(nodeModules, "@mitome", name);
-    await mkdir(destination, { recursive: true });
-    await run(["tar", "-xzf", await archiveFor(name), "-C", destination, "--strip-components=1"]);
     const manifest = await Bun.file(join(destination, "package.json")).json();
     if (/"(?:catalog|workspace):/.test(JSON.stringify(manifest))) {
       throw new Error(`${name} tarball retains a workspace-only dependency protocol.`);

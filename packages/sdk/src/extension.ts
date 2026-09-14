@@ -349,20 +349,7 @@ const adaptHooks = <Resource>(
 };
 
 /** Any Promise Tool regardless of its input, output, failure, or Resource types. */
-export type AnyTool = {
-  /** @internal */
-  readonly [ToolTypeId]?: {
-    readonly input: any;
-    readonly output: any;
-    readonly failure: any;
-    readonly resource: any;
-  };
-  readonly name: string;
-  readonly description?: string;
-  readonly inputSchema: InputSchema<any>;
-  readonly outputSchema?: OutputSchema<any>;
-  readonly failureSchema?: OutputSchema<any>;
-  readonly needsApproval?: Tool<any, any>["needsApproval"];
+export type AnyTool = Omit<Tool<any, any, any, any>, "handler"> & {
   /** Erased handler; see `Tool.handler` for the contract. */
   readonly handler: (...args: never[]) => Promise<any>;
 };
@@ -492,29 +479,27 @@ export function defineExtension<
   const resource =
     service === undefined
       ? undefined
-      : Layer.effectContext(
-          Effect.map(
-            Effect.acquireRelease(
-              // @effect-diagnostics-next-line unknownInEffectCatch:off
-              Effect.tryPromise({
-                try: () => definition.setup!(),
-                catch: (cause) => cause,
-              }),
-              (value, exit) => {
-                if (definition.dispose === undefined) return Effect.void;
-                const run = Effect.promise(() => definition.dispose!(value));
-                // On failure exits a disposer defect would replace the primary
-                // cause; log it instead so the original tagged error survives.
-                return Exit.isFailure(exit)
-                  ? run.pipe(
-                      Effect.catchCause((cause) =>
-                        Effect.logWarning("Extension dispose failed", cause),
-                      ),
-                    )
-                  : run;
-              },
-            ),
-            (value) => Context.make(service, value),
+      : Layer.effect(
+          service,
+          Effect.acquireRelease(
+            // @effect-diagnostics-next-line unknownInEffectCatch:off
+            Effect.tryPromise({
+              try: () => definition.setup!(),
+              catch: (cause) => cause,
+            }),
+            (value, exit) => {
+              if (definition.dispose === undefined) return Effect.void;
+              const run = Effect.promise(() => definition.dispose!(value));
+              // On failure exits a disposer defect would replace the primary
+              // cause; log it instead so the original tagged error survives.
+              return Exit.isFailure(exit)
+                ? run.pipe(
+                    Effect.catchCause((cause) =>
+                      Effect.logWarning("Extension dispose failed", cause),
+                    ),
+                  )
+                : run;
+            },
           ),
         );
 

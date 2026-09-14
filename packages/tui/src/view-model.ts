@@ -22,19 +22,6 @@ export interface SessionState {
   readonly notice?: string | undefined;
 }
 
-export interface SessionViewModel {
-  readonly getState: () => SessionState;
-  readonly subscribe: (listener: (state: SessionState) => void) => () => void;
-  readonly submit: (text: string) => boolean;
-  readonly interrupt: () => boolean;
-  readonly openTranscriptPicker: () => boolean;
-  readonly closeTranscriptPicker: () => boolean;
-  readonly moveTranscriptSelection: (offset: number) => boolean;
-  readonly resumeTranscript: () => boolean;
-  readonly newSession: () => boolean;
-  readonly dispose: () => Promise<void>;
-}
-
 interface ActiveRun {
   readonly fiber: Fiber.Fiber<void, unknown>;
   readonly historyLength: number;
@@ -77,10 +64,9 @@ const activity = (event: TurnEvent): string | undefined => {
   }
 };
 
-export const makeSessionViewModel = (
-  initialSession: SessionResource,
-  manager: SessionManager,
-): SessionViewModel => {
+export type SessionViewModel = ReturnType<typeof makeSessionViewModel>;
+
+export const makeSessionViewModel = (initialSession: SessionResource, manager: SessionManager) => {
   let session = initialSession;
   let state: SessionState = { phase: "idle", turns: [] };
   let active: ActiveRun | undefined;
@@ -323,7 +309,7 @@ export const makeSessionViewModel = (
 
   return {
     getState: () => state,
-    subscribe: (listener) => {
+    subscribe: (listener: (state: SessionState) => void) => {
       listeners.add(listener);
       listener(state);
       return () => listeners.delete(listener);

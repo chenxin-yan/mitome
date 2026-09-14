@@ -1,0 +1,1037 @@
+---
+title: "@mitome/core"
+---
+
+Effect-native Host and Provider authoring surface. Application code should prefer `@mitome/sdk`
+or `@mitome/sdk/effect`; Core carries a weaker stability guarantee.
+
+## Classes
+
+### AgentDefinitionError
+
+The Agent Definition cannot compile: duplicate Provider ids, a malformed or unregistered Default
+Model, conflicting Extension or Tool names, Tool handlers without a matching Tool, or malformed
+`approvals` rules. `issues` lists every problem found, not just the first.
+
+```ts
+class AgentDefinitionError extends Error {
+  readonly _tag: "AgentDefinitionError";
+  /** Every problem found, at least one. */
+  readonly issues: readonly [string, ...string[]];
+  /** Every issue, one per line. */
+  readonly message: string;
+}
+```
+
+### ApprovalResolutionError
+
+An Approval decision could not be applied: it was already resolved, or (`reason: "not-pending"`)
+its Turn has ended. Decisions are one-shot.
+
+```ts
+class ApprovalResolutionError extends Error {
+  readonly _tag: "ApprovalResolutionError";
+  readonly reason?: "not-pending";
+  /** Description derived from `reason`. */
+  readonly message: string;
+}
+```
+
+### SessionBusyError
+
+Overlapping `Session.runTurn()` while a Turn is active.
+
+```ts
+class SessionBusyError extends Error {
+  readonly _tag: "SessionBusyError";
+  /** Fixed description; the error carries no fields. */
+  readonly message: string;
+}
+```
+
+### SessionReleasedError
+
+Turn requested on a Session whose scope has already closed.
+
+```ts
+class SessionReleasedError extends Error {
+  readonly _tag: "SessionReleasedError";
+  /** Fixed description; the error carries no fields. */
+  readonly message: string;
+}
+```
+
+### StoreError
+
+A Transcript store operation failed. From `save` or a mid-Turn `appendEvent`, the Turn fails
+before commit. From the `appendEvent` of the final `response-complete` record, the Turn is already
+committed and the failure surfaces to the consumer instead of `response-complete`.
+
+```ts
+class StoreError extends Error {
+  readonly _tag: "StoreError";
+  readonly message: string;
+  readonly cause?: unknown;
+}
+```
+
+### TranscriptNotFound
+
+No Transcript exists for the requested id.
+
+```ts
+class TranscriptNotFound extends Error {
+  readonly _tag: "TranscriptNotFound";
+  readonly id: string;
+}
+```
+
+### TurnError
+
+A model, Tool, or Extension Hook failed while completing a Turn.
+
+```ts
+class TurnError extends Error {
+  readonly _tag: "TurnError";
+  readonly message: string;
+  readonly cause: unknown;
+}
+```
+
+## Interfaces
+
+### AgentDefinition
+
+A user-authored declaration of exactly one Agent: its Providers, Default Model, and Extensions.
+Create it with [`defineAgent`](/docs/reference/api/core#defineagent); a Session compiles it once
+when it starts.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="AgentDefinition" />
+
+### ApprovalRules
+
+Tool-name patterns per decision: an exact Tool name or a prefix followed by one `*` (`"*"` alone
+matches every Tool). A Tool matched by several lists resolves `deny` over `ask` over `allow`.
+Known Tool names of the Extensions are offered as completions; any string is accepted.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="ApprovalRules" />
+
+### AuthCapability
+
+Host-facing contract implemented by a Provider's Auth capability module.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="AuthCapability" />
+
+### AuthenticateOptions
+
+Host-facing options passed to an Auth capability's authenticate function.
+
+<auto-type-table
+  path="../../../../../../packages/core/src/index.ts"
+  name="AuthenticateOptions"
+/>
+
+### ChannelHost
+
+A Host that connects an external surface to the Agent. It must expose `handle`, `serve`, or
+both; [`defineMitome`](/docs/reference/api/core#definemitome) rejects a Channel Host with neither.
+`mitome [message]` ignores Channel Hosts; `mitome serve` runs them.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="ChannelHost" />
+
+### ChannelHostContext
+
+What a Channel Host receives to run Sessions for one Mitome Definition.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="ChannelHostContext" />
+
+### CompiledAgent
+
+The validated form of an Agent Definition that a Session runs: Providers by id, Tools by name,
+and every Extension's Instructions joined into the system prompt.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="CompiledAgent" />
+
+### CompiledTool
+
+One Tool after compilation, joined with the Extension that owns it and its validators.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="CompiledTool" />
+
+### CreateSessionOptions
+
+Persistence and seeding for [`createSession`](/docs/reference/api/core#createsession).
+
+<auto-type-table
+  path="../../../../../../packages/core/src/index.ts"
+  name="CreateSessionOptions"
+/>
+
+### Extension
+
+A reusable unit an Agent Definition includes to add Tools, contribute Instructions, or
+participate in the Agent lifecycle. Identity is the object reference; `name` only labels
+diagnostics, and two different named Extensions with the same name conflict.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="Extension" />
+
+### ExtensionHooks
+
+Effect-native lifecycle Hooks. Start Hooks run in Agent Definition order and end Hooks in
+reverse; a failing Hook fails the Turn (or Session start) with
+[`TurnError`](/docs/reference/api/core#turnerror). Failures in `sessionEnd` are logged rather than
+propagated, so Session release can finish.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="ExtensionHooks" />
+
+### HostContext
+
+What an interactive Host receives: the Channel Host context plus the staged first Message.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="HostContext" />
+
+### InteractiveHost
+
+A Host that owns a TTY process, such as `@mitome/tui`. `mitome [message]` runs the first
+interactive Host in Definition order whose `unsupported()` returns undefined and otherwise falls
+back to one-shot output.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="InteractiveHost" />
+
+### MakeTranscriptOptions
+
+Input to [`makeTranscript`](/docs/reference/api/core#maketranscript).
+
+<auto-type-table
+  path="../../../../../../packages/core/src/index.ts"
+  name="MakeTranscriptOptions"
+/>
+
+### MitomeDefinition
+
+The composition root pairing one Agent Definition with its Hosts and Transcript persistence. A
+Mitome Definition module exports it as default;
+[`defineMitome`](/docs/reference/api/core#definemitome) creates it.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="MitomeDefinition" />
+
+### Provider
+
+A configured model Provider with non-secret catalog hints. Create one with
+[`makeProvider`](/docs/reference/api/core#makeprovider); its Credential and provisioning behaviour
+stay hidden from the value.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="Provider" />
+
+### RouteKey
+
+Identifies one external conversation on a Channel.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="RouteKey" />
+
+### Routes
+
+Effect-native Route store: maps an external conversation to its latest Transcript so the next
+Message resumes where it left off. Every Session mints a fresh Transcript id and resume forks, so
+a Channel advances the Route after each committed Turn. Channels receive the store through their
+own factory options, not through
+[`ChannelHostContext`](/docs/reference/api/core#channelhostcontext).
+
+Ceiling: Transcript save and Route advance are two separate writes with no transaction across
+them. A Channel must not report success to its surface before both have landed, and must
+tolerate a stale pointer: a Route may name a Transcript that no longer loads, or lag one Turn
+behind the store, in which case the Channel resumes from what it can load or starts fresh.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="Routes" />
+
+### Session
+
+A live, process-bound interaction with one Agent, obtained from
+[`createSession`](/docs/reference/api/core#createsession) inside a Scope.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="Session" />
+
+### ToolContribution
+
+Type-level record of one Tool's input, output, and expected failure types.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="ToolContribution" />
+
+### ToolExecutionDenied
+
+The Tool result the Model receives when a `preTool` Hook vetoes or a Host denies a Tool call.
+
+<auto-type-table
+  path="../../../../../../packages/core/src/index.ts"
+  name="ToolExecutionDenied"
+/>
+
+### ToolHookContext
+
+The Tool call a `preTool` Hook observes.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="ToolHookContext" />
+
+### ToolResultHookContext
+
+The Tool result a `postTool` Hook observes; `isFailure` marks an expected failure value.
+
+<auto-type-table
+  path="../../../../../../packages/core/src/index.ts"
+  name="ToolResultHookContext"
+/>
+
+### TranscriptEventRecord
+
+One appended Turn event, ordered by `seq` within the Session that produced it.
+
+<auto-type-table
+  path="../../../../../../packages/core/src/index.ts"
+  name="TranscriptEventRecord"
+/>
+
+### TranscriptStore
+
+Effect-native persistence contract. Sessions call `save` and `appendEvent`; Hosts call `load` and
+`list` to resume. Adapters own their concurrency policy: concurrent resumes are independent forks.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="TranscriptStore" />
+
+### TurnOptions
+
+Per-Turn overrides for `Session.runTurn`.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="TurnOptions" />
+
+## Type Aliases
+
+### AnyExtension
+
+```ts
+type AnyExtension = Extension<any, unknown, any> | Extension<never, any, any>;
+```
+
+Any Extension regardless of its Resource. Layer's ROut is contravariant while hook/handler
+Effects are covariant in R, so no single parameterization accepts every Extension; the union's
+arms cover both variance directions.
+
+### AnyProvider
+
+```ts
+type AnyProvider = Provider<string, ReadonlyArray<string>>;
+```
+
+Any configured Provider, for code that holds Providers without knowing their catalog.
+
+### ApprovalPolicy
+
+```ts
+type ApprovalPolicy<Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>> =
+  ApprovalRules<Extensions> | ApprovalPolicyCallback<Extensions>;
+```
+
+The Agent author's sparse Approval override: Tools it does not mention keep their author's
+`needsApproval` default. `deny` and `ask` always hold; `allow` only bypasses the Tool default and
+never an Extension veto or `"ask"`.
+
+### ApprovalPolicyCall
+
+```ts
+type ApprovalPolicyCall<
+  Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
+> = [KnowsEveryToolName<Extensions>] extends [true]
+  ? KnownToolCall<
+      ContributionsOf<Extensions[number]>,
+      KnownToolNames<ContributionsOf<Extensions[number]>>
+    >
+  : { readonly name: string; readonly params: unknown; readonly toolCallId: string };
+```
+
+The Tool call an `approvals` callback decides on; `params` is the decoded Tool input. When every
+Extension's Tool names are known at the type level, comparing `name` narrows `params` to that
+Tool's input; one Extension typed without contributions leaves `name: string` and
+`params: unknown` for the whole call, since its Tools reach the callback too. `KnownToolCall`
+distributes over the known names to a union of `{ name; params; toolCallId }` objects, one per
+Tool.
+
+### ApprovalPolicyCallback
+
+```ts
+type ApprovalPolicyCallback<
+  Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
+> = (call: ApprovalPolicyCall<Extensions>) => ApprovalPolicyDecision | undefined;
+```
+
+Synchronous, param-aware Approval rule. Throwing, returning a Promise or Effect, or returning
+anything other than a decision or `undefined` fails the Turn before the Tool runs.
+
+### ApprovalPolicyDecision
+
+```ts
+type ApprovalPolicyDecision = "allow" | "ask" | "deny";
+```
+
+The Agent author's opinion on one Tool call; `undefined` defers to the Tool's `needsApproval`.
+
+### ApprovalRequirement
+
+```ts
+type ApprovalRequirement = "tool" | "policy" | "predicate-error";
+```
+
+Why a Tool call paused for Approval: the Tool author's `needsApproval` (`tool`), the Agent's
+`approvals` or an Extension `preTool` `"ask"` (`policy`), or a `needsApproval` predicate that
+failed and therefore fails closed (`predicate-error`).
+
+### CredentialDescriptor
+
+```ts
+type CredentialDescriptor = string | { readonly capability: { readonly module: string } };
+```
+
+An environment variable name, or a reference to the module exporting an
+[`AuthCapability`](/docs/reference/api/core#authcapability). The decoded type of
+[`CredentialDescriptorSchema`](/docs/reference/api/core#credentialdescriptorschema).
+
+### Host
+
+```ts
+type Host = InteractiveHost | ChannelHost;
+```
+
+Connects people to the Agent through one surface; discriminated by `kind`.
+
+### Json
+
+```ts
+type Json =
+  null | boolean | number | string | ReadonlyArray<Json> | { readonly [key: string]: Json };
+```
+
+A JSON-serializable value.
+
+### QualifiedModelId
+
+```ts
+type QualifiedModelId<Value extends AnyProvider> =
+  Value extends Provider<infer Id, infer ModelIds>
+    ? `${Id}/${ModelIds[number] | (string & {})}`
+    : never;
+```
+
+A Provider-qualified Model id, written as `provider/model`. The catalog ids complete in an
+editor, but any `provider/model` string under a registered Provider is accepted.
+
+### ToolContributions
+
+```ts
+type ToolContributions = Readonly<Record<string, ToolContribution<unknown, unknown, unknown>>>;
+```
+
+The Tools an Extension advertises at the type level, keyed by Tool name.
+
+### ToolFailureValidator
+
+```ts
+type ToolFailureValidator = (failure: ToolOutput) => Effect.Effect<ToolOutput, unknown>;
+```
+
+Revalidates an expected failure value, including after `postTool` transforms.
+
+### ToolInput
+
+```ts
+type ToolInput = Tool.Parameters<Tool.Any>;
+```
+
+Decoded parameters of any Tool call.
+
+### ToolInputValidator
+
+```ts
+type ToolInputValidator = (input: ToolInput) => Effect.Effect<ToolInput, unknown>;
+```
+
+Decodes raw Tool params before Hooks, approval predicates, and handlers see them.
+
+### ToolOutput
+
+```ts
+type ToolOutput = Tool.HandlerResult<Tool.Any>["result"];
+```
+
+Result value of any Tool handler.
+
+### ToolResultValidator
+
+```ts
+type ToolResultValidator = (result: ToolOutput) => Effect.Effect<ToolOutput, unknown>;
+```
+
+Revalidates a successful Tool result, including after `postTool` transforms.
+
+### Transcript
+
+The durable, ordered record of a Session's committed Messages. It may outlive the Session and
+seed new ones; a resumed Session gets a new id with `parentTranscriptId` pointing at its seed. The
+decoded type of [`TranscriptSchema`](/docs/reference/api/core#transcriptschema).
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="Transcript" />
+
+### TranscriptId
+
+```ts
+type TranscriptId = string;
+```
+
+Identifies a Transcript; a UUID when Mitome generates it.
+
+### TranscriptMessage
+
+```ts
+type TranscriptMessage =
+  | { readonly role: "system"; readonly content: string; readonly options?: ProviderOptions }
+  | {
+      readonly role: "user";
+      readonly content: ReadonlyArray<UserPart>;
+      readonly options?: ProviderOptions;
+    }
+  | {
+      readonly role: "assistant";
+      readonly content: ReadonlyArray<AssistantPart>;
+      readonly options?: ProviderOptions;
+    }
+  | {
+      readonly role: "tool";
+      readonly content: ReadonlyArray<ToolPart>;
+      readonly options?: ProviderOptions;
+    };
+```
+
+One committed Message of a Transcript, the decoded type of
+[`TranscriptMessageSchema`](/docs/reference/api/core#transcriptmessageschema). `UserPart`,
+`AssistantPart`, and `ToolPart` name the unexported part unions: a user part is `text` or `file`;
+an assistant part is `text`, `reasoning`, `file`, `tool-call`, `tool-result`, or
+`tool-approval-request`; a tool part is `tool-result` or `tool-approval-response`. Each part
+carries a `type` discriminant and optional `options`, and file `data` is stored as
+`{ encoding: "string" | "base64" | "url"; value: string }`. `ProviderOptions` is Effect's
+`Prompt.ProviderOptions`.
+
+### TranscriptSummary
+
+One row of `TranscriptStore.list`: id, lineage, ISO timestamps, message count, and a single-line
+preview of the first user Message. The decoded type of
+[`TranscriptSummarySchema`](/docs/reference/api/core#transcriptsummaryschema).
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="TranscriptSummary" />
+
+### TurnEvent
+
+```ts
+type TurnEvent =
+  | { readonly type: "model-output"; readonly text: string }
+  | { readonly type: "reasoning"; readonly text: string }
+  | {
+      readonly type: "tool-call";
+      readonly id: string;
+      readonly name: string;
+      readonly params: unknown;
+    }
+  | {
+      readonly type: "tool-result";
+      readonly id: string;
+      readonly name: string;
+      readonly result: unknown;
+      readonly isFailure: boolean;
+    }
+  | {
+      readonly type: "approval-required";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+      readonly name: string;
+      readonly params: unknown;
+      readonly requirement: ApprovalRequirement;
+      /** Lets the Tool call run. One-shot: resolving again or after the Turn ended fails. */
+      readonly approve: () => Effect.Effect<void, ApprovalResolutionError>;
+      /** Rejects the Tool call; the Model sees `reason`. One-shot like `approve`. */
+      readonly deny: (reason?: string) => Effect.Effect<void, ApprovalResolutionError>;
+    }
+  | {
+      readonly type: "response-complete";
+      readonly finishReason?: Response.FinishReason | undefined;
+      readonly usage?: Response.Usage | undefined;
+    };
+```
+
+One event emitted while a Turn runs. `approval-required` pauses the Turn until `approve` or
+`deny` resolves; `response-complete` is the final event of a successful Turn and is emitted only
+after the Transcript save succeeded.
+
+### TurnEventDto
+
+```ts
+type TurnEventDto =
+  | { readonly type: "model-output"; readonly text: string }
+  | { readonly type: "reasoning"; readonly text: string }
+  | {
+      readonly type: "tool-call";
+      readonly id: string;
+      readonly name: string;
+      readonly params: Json;
+    }
+  | {
+      readonly type: "tool-result";
+      readonly id: string;
+      readonly name: string;
+      readonly result: Json;
+      readonly isFailure: boolean;
+    }
+  | {
+      readonly type: "approval-required";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+      readonly name: string;
+      readonly params: Json;
+      readonly requirement: ApprovalRequirement;
+    }
+  | {
+      readonly type: "approval-resolved";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+      readonly approved: boolean;
+      readonly reason?: string | undefined;
+    }
+  | {
+      readonly type: "response-complete";
+      readonly finishReason?:
+        | "stop"
+        | "length"
+        | "content-filter"
+        | "tool-calls"
+        | "error"
+        | "pause"
+        | "other"
+        | "unknown"
+        | undefined;
+      readonly usage?:
+        | {
+            readonly inputTokens: {
+              readonly uncached?: number | undefined;
+              readonly total?: number | undefined;
+              readonly cacheRead?: number | undefined;
+              readonly cacheWrite?: number | undefined;
+            };
+            readonly outputTokens: {
+              readonly total?: number | undefined;
+              readonly text?: number | undefined;
+              readonly reasoning?: number | undefined;
+            };
+          }
+        | undefined;
+    };
+```
+
+Serializable form of a Turn event. Approval callbacks are dropped, `approval-resolved` records
+each decision, and Tool params or results that are not JSON become `null`. Persisted through
+`TranscriptStore.appendEvent` inside a
+[`TranscriptEventRecord`](/docs/reference/api/core#transcripteventrecord).
+
+### ValidProviderId
+
+```ts
+type ValidProviderId<Id extends string> = Id &
+  (Id extends "" | `${string}/${string}` ? never : unknown);
+```
+
+Constrains a Provider id literal so it can form a Qualified Model id.
+
+Shaped as an intersection rather than a bare conditional so it stays idempotent:
+`Id & ValidProviderId<Id>` collapses back to `ValidProviderId<Id>`, which is what lets wrapper
+factories forward an unresolved `Id` into [`makeProvider`](/docs/reference/api/core#makeprovider).
+
+## Variables
+
+### compileAgentDefinition
+
+```ts
+const compileAgentDefinition: (
+  definition: unknown,
+) => Effect.Effect<CompiledAgent, AgentDefinitionError>;
+```
+
+Validates an unknown value as an Agent Definition and resolves it into a
+[`CompiledAgent`](/docs/reference/api/core#compiledagent). Sessions call this when they start; a
+Host may call it earlier to surface
+[`AgentDefinitionError`](/docs/reference/api/core#agentdefinitionerror) before opening a Session.
+A Provider not created by this copy of Core is a defect, not an issue.
+
+### configDirectoryMessage
+
+```ts
+const configDirectoryMessage: "Set MITOME_HOME, XDG_CONFIG_HOME, APPDATA (on Windows), or HOME.";
+```
+
+The canonical remedy shown when no config root is set.
+
+### CredentialDescriptorSchema
+
+```ts
+const CredentialDescriptorSchema: Schema.Union<
+  [Schema.String, Schema.Struct<{ capability: Schema.Struct<{ module: Schema.String }> }>]
+>;
+```
+
+Provider-owned credential metadata available without starting a Session: an environment
+variable name, or a reference to an OAuth capability module. The string arm is checked against
+`^[A-Za-z_][A-Za-z0-9_]*$`. Decodes to
+[`CredentialDescriptor`](/docs/reference/api/core#credentialdescriptor).
+
+### TranscriptEventRecordSchema
+
+```ts
+const TranscriptEventRecordSchema: Schema.Struct<{
+  transcriptId: Schema.String;
+  sessionId: Schema.String;
+  seq: Schema.Natural;
+  version: Schema.Literal<1>;
+  event: typeof TurnEventDtoSchema;
+}>;
+```
+
+Records decode independently. A tail without `response-complete` is not a corrupt log: the Turn
+was interrupted, or committed and then failed to append its final record. Event records are
+observability data and have no Session replay contract; the Transcript snapshot is authoritative.
+Decodes to [`TranscriptEventRecord`](/docs/reference/api/core#transcripteventrecord).
+
+### TranscriptEventRecordVersion
+
+```ts
+const TranscriptEventRecordVersion: 1;
+```
+
+The `version` written into every event record this version of Mitome produces.
+
+### TranscriptMessageSchema
+
+```ts
+const TranscriptMessageSchema: Schema.Codec<TranscriptMessage>;
+```
+
+Schema of one committed Message; file data is stored as a string, base64, or URL. Decodes to
+[`TranscriptMessage`](/docs/reference/api/core#transcriptmessage).
+
+Part unions per role:
+
+- `UserPart`: `text` or `file`.
+- `AssistantPart`: `text`, `reasoning`, `file`, `tool-call`, `tool-result`, or
+  `tool-approval-request`.
+- `ToolPart`: `tool-result` or `tool-approval-response`.
+
+A `file` part carries `mediaType`, an optional `fileName`, and
+`data: { encoding: "string" | "base64" | "url"; value: string }`; `base64` values must decode
+and `url` values must parse as absolute URLs. `tool-call` and `tool-result` parts carry `params`
+and `result` as [`Json`](/docs/reference/api/core#json) plus an optional `providerExecuted` flag.
+
+### TranscriptSchema
+
+```ts
+const TranscriptSchema: Schema.Struct<{
+  schemaVersion: Schema.Literal<1>;
+  id: Schema.String;
+  parentTranscriptId: Schema.optional<Schema.String>;
+  messages: Schema.$Array<typeof TranscriptMessageSchema>;
+}>;
+```
+
+Schema of a Transcript. Stored bytes are a trust boundary: store adapters decode with it before
+returning a Transcript. Decodes to [`Transcript`](/docs/reference/api/core#transcript).
+
+### TranscriptSchemaVersion
+
+```ts
+const TranscriptSchemaVersion: 1;
+```
+
+The `schemaVersion` written into every Transcript this version of Mitome produces.
+
+### TranscriptSummarySchema
+
+```ts
+const TranscriptSummarySchema: Schema.Struct<{
+  id: Schema.String;
+  parentTranscriptId: Schema.optional<Schema.String>;
+  createdAt: Schema.String;
+  updatedAt: Schema.String;
+  messageCount: Schema.Natural;
+  preview: Schema.String;
+}>;
+```
+
+Schema of one `TranscriptStore.list` row. Decodes to
+[`TranscriptSummary`](/docs/reference/api/core#transcriptsummary).
+
+### TurnEventDtoSchema
+
+```ts
+const TurnEventDtoSchema: Schema.Codec<TurnEventDto>;
+```
+
+Schema of the serializable Turn event persisted through `TranscriptStore.appendEvent`. Decodes to
+[`TurnEventDto`](/docs/reference/api/core#turneventdto).
+
+## Functions
+
+### configDirectory
+
+```ts
+function configDirectory(
+  env?: Readonly<Record<string, string | undefined>>,
+  platform?: string,
+): string | undefined;
+```
+
+Resolves Mitome's shared config directory (`$MITOME_HOME` verbatim, else
+`$XDG_CONFIG_HOME/mitome`, with APPDATA/HOME fallbacks). Consumers store their own files under
+it: the CLI's default `index.ts` and `.env`, and provider-owned credential stores like
+`auth.json`. Undefined when no config root is set. `env`/`platform` are injectable so tests need
+no process globals; they default to `process.env` and `process.platform`.
+
+### createHostSession
+
+```ts
+function createHostSession(
+  context: ChannelHostContext,
+): Effect.Effect<Session, AgentDefinitionError | TurnError, Scope.Scope>;
+```
+
+Opens the scoped Session a Host runs for its context; closing the Scope ends the Session.
+Equivalent to [`createSession`](/docs/reference/api/core#createsession) with the context's `agent`
+and `transcripts`.
+
+Returns an Effect yielding a [`Session`](/docs/reference/api/core#session).
+
+### createSession
+
+```ts
+function createSession<const Definition extends AgentDefinition>(
+  definition: Definition,
+  options?: CreateSessionOptions,
+): Effect.Effect<Session<ProvidersOf<Definition>>, AgentDefinitionError | TurnError, Scope.Scope>;
+```
+
+Compiles the Agent Definition, acquires Extension Resources, and runs `sessionStart` Hooks. The
+Session lives until the enclosing Scope closes, which runs `sessionEnd` Hooks and releases
+Resources in reverse Agent Definition order. `ProvidersOf<Definition>` is the Definition's
+`providers` tuple, so `runTurn` overrides are checked against its catalogs.
+
+Returns an Effect yielding a [`Session`](/docs/reference/api/core#session); fails with
+[`AgentDefinitionError`](/docs/reference/api/core#agentdefinitionerror) when the Definition does
+not compile and [`TurnError`](/docs/reference/api/core#turnerror) when Extension setup or a
+`sessionStart` Hook fails.
+
+### credentialDescriptor
+
+```ts
+function credentialDescriptor(provider: AnyProvider): CredentialDescriptor | undefined;
+```
+
+Returns a Provider's declarative Credential metadata without provisioning a Model.
+
+Returns a [`CredentialDescriptor`](/docs/reference/api/core#credentialdescriptor), or `undefined`
+when the Provider declared none or was not created by this copy of Core.
+
+### defineAgent
+
+```ts
+function defineAgent<
+  const Providers extends ReadonlyArray<unknown>,
+  const DefaultModel extends QualifiedModelId<Extract<NoInfer<Providers[number]>, AnyProvider>>,
+>(
+  definition: {
+    readonly providers: Providers;
+    readonly model: DefaultModel;
+    readonly extensions?: undefined;
+    readonly approvals?: ApprovalPolicy | undefined;
+  } & ([Providers[number]] extends [AnyProvider] ? unknown : never),
+): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, readonly []>;
+
+function defineAgent<
+  const Providers extends ReadonlyArray<unknown>,
+  const DefaultModel extends QualifiedModelId<Extract<NoInfer<Providers[number]>, AnyProvider>>,
+  const Extensions extends ReadonlyArray<AnyExtension>,
+>(
+  definition: {
+    readonly providers: Providers;
+    readonly model: DefaultModel;
+    readonly extensions: Extensions;
+    readonly approvals?: ApprovalPolicy<NoInfer<Extensions>> | undefined;
+  } & ([Providers[number]] extends [AnyProvider] ? unknown : never),
+): AgentDefinition<Extract<Providers, ReadonlyArray<AnyProvider>>, DefaultModel, Extensions>;
+```
+
+Declares an Agent from its Providers, Default Model, and optional Extensions. The Default Model
+is checked against the registered Providers' catalogs at the type level while still accepting
+any `provider/model` id for a registered Provider, because catalogs are hints, not allow-lists.
+In both overloads `DefaultModel` is constrained to
+[`QualifiedModelId`](/docs/reference/api/core#qualifiedmodelid) of the given Providers, and a
+`providers` element that is not a Provider makes the call a type error. The second overload
+declares an Agent with Extensions; its `approvals` completions know those Extensions' Tool names.
+
+Returns an [`AgentDefinition`](/docs/reference/api/core#agentdefinition) with `extensions`
+defaulted to `[]` when omitted.
+
+### defineExtension
+
+```ts
+function defineExtension<const LayerValue extends Layer.Layer<any, any, never>>(
+  extension: ToolkitlessExtension<LayerValue> & {
+    readonly resource: LayerValue;
+  } & (0 extends 1 & LayerValue ? never : unknown),
+): Extension<Layer.Success<LayerValue>, Layer.Error<LayerValue>>;
+
+function defineExtension(extension: ResourceFreeToolkitlessExtension): Extension<never, never>;
+
+function defineExtension<const ToolkitValue extends Toolkit.Any>(
+  extension: ToolkitExtension<ToolkitValue>,
+): Extension<never, never, ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>>;
+
+function defineExtension<
+  const LayerValue extends Layer.Layer<any, any, never>,
+  const ToolkitValue extends Toolkit.Any,
+>(
+  extension: ResourcefulToolkitExtension<LayerValue, ToolkitValue> &
+    (0 extends 1 & LayerValue ? never : unknown),
+): Extension<
+  Layer.Success<LayerValue>,
+  Layer.Error<LayerValue>,
+  ToolkitContributions<Toolkit.ToolsByName<Toolkit.Tools<ToolkitValue>>>
+>;
+```
+
+Declares an Effect-native Extension. Each overload accepts the
+[`Extension`](/docs/reference/api/core#extension) fields that make sense for its shape and rejects
+the rest at the type level:
+
+- Resource, no Tools: Hooks use a Resource `Layer`. The Layer is built when a Session starts and
+  released, in reverse order, when its scope closes. A Layer typed `any` is rejected.
+- No Resource, no Tools: Instructions and Hooks only.
+- Tools, no Resource: contributes an Effect `Toolkit`. Every Tool needs a handler, and handlers
+  may not require services the Extension does not provide.
+- Resource and Tools: Toolkit handlers and Hooks share one Resource `Layer`. Service requirements
+  the Layer does not satisfy are rejected at the type level.
+
+The value is returned unchanged; the overloads exist to compute the Extension's Resource, error,
+and [`ToolContributions`](/docs/reference/api/core#toolcontributions) types.
+
+### defineMitome
+
+```ts
+function defineMitome<const Agent extends AgentDefinition>(
+  definition: Omit<MitomeDefinition<Agent>, "hosts"> & { readonly hosts?: ReadonlyArray<Host> },
+): MitomeDefinition<Agent>;
+```
+
+Creates a Mitome Definition. `hosts` defaults to none and may hold any number of Hosts. A value
+that is not a Host (typically a factory that was not called), an unknown `kind`, a Channel Host
+without `handle` or `serve`, a Channel Host named `.` or `..` or with a lone surrogate in its
+name, or two Channel Hosts sharing a name throws with the offending Host named.
+
+Returns a [`MitomeDefinition`](/docs/reference/api/core#mitomedefinition).
+
+### fileRoutes
+
+```ts
+function fileRoutes(directory?: string): Routes;
+```
+
+Creates a disk-backed Route store rooted at `directory` or `<config>/routes`, one file per
+conversation, so Routes survive a restart. Writes are atomic per Route; the two-write ceiling
+documented on [`Routes`](/docs/reference/api/core#routes) still applies between Transcript save
+and Route advance. Throws when `directory` is omitted and no config root is set.
+
+Returns a [`Routes`](/docs/reference/api/core#routes) store.
+
+### fileTranscripts
+
+```ts
+function fileTranscripts(directory?: string): TranscriptStore;
+```
+
+Creates a disk-backed store rooted at `directory`, defaulting to `<config-dir>/transcripts`. Throws
+when `directory` is omitted and no config root is set.
+
+Returns a [`TranscriptStore`](/docs/reference/api/core#transcriptstore).
+
+### makeProvider
+
+```ts
+function makeProvider<const Id extends string, const ModelIds extends ReadonlyArray<string>>(
+  id: ValidProviderId<Id>,
+  modelIds: ModelIds,
+  credential: CredentialDescriptor | undefined,
+  provision: (modelId: string) => Layer.Layer<LanguageModel.LanguageModel, unknown, never>,
+): Provider<Id, ModelIds>;
+```
+
+Creates a configured Provider without exposing credentials or provisioning behavior. `id` must be
+non-empty and contain no `/`, and a string `credential` must be a valid environment variable
+name; either violation throws a `TypeError` at runtime, because Provider factories may forward an
+id typed as plain string. `provision` builds the `LanguageModel` layer for one Model id when a
+Session first uses that Model.
+
+Returns a [`Provider`](/docs/reference/api/core#provider).
+
+### makeTranscript
+
+```ts
+function makeTranscript(input: MakeTranscriptOptions): Transcript;
+```
+
+Encodes Model Prompt messages into a Transcript. Throws when a message cannot be represented, so
+the Transcript never silently loses data.
+
+Returns a [`Transcript`](/docs/reference/api/core#transcript) stamped with the current
+[`TranscriptSchemaVersion`](/docs/reference/api/core#transcriptschemaversion).
+
+### memoryRoutes
+
+```ts
+function memoryRoutes(): Routes;
+```
+
+In-memory Route store for tests or a Channel that may forget its conversations on restart.
+Contents live as long as the returned value.
+
+Returns a [`Routes`](/docs/reference/api/core#routes) store.
+
+### memoryTranscripts
+
+```ts
+function memoryTranscripts(): TranscriptStore;
+```
+
+In-memory store for tests or a shared store without disk writes. Contents live as long as the
+returned value; event records are discarded.
+
+Returns a [`TranscriptStore`](/docs/reference/api/core#transcriptstore).
+
+### promptFromTranscript
+
+```ts
+function promptFromTranscript(transcript: Transcript): Prompt.Prompt;
+```
+
+Decodes a Transcript back into the Model Prompt that seeds a Session.
+
+### summarizeTranscript
+
+```ts
+function summarizeTranscript(
+  transcript: Transcript,
+): Pick<TranscriptSummary, "messageCount" | "preview">;
+```
+
+Derives the `messageCount` and `preview` fields of a
+[`TranscriptSummary`](/docs/reference/api/core#transcriptsummary) from a Transcript. The preview
+is the whitespace-collapsed text of the first user Message, cut at 100 characters, or `""` when
+there is none.

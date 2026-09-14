@@ -1,13 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Predicate, Schema, Stream } from "effect";
-import { AiError, LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
-import {
-  type AgentDefinition,
-  createSession,
-  defineExtension,
-  makeProvider,
-} from "../../src/index.js";
-import { makeTestProvider } from "../support/provider.js";
+import { Effect, Predicate, Schema, Stream } from "effect";
+import { AiError, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { type AgentDefinition, createSession, defineExtension } from "../../src/index.js";
+import { makeStreamingTestProvider, makeTestProvider } from "../support/provider.js";
 
 const makeToolModel = () => {
   let calls = 0;
@@ -176,27 +171,19 @@ describe("createSession Tool Turn", () => {
       let preToolParams: unknown;
       let postToolParams: unknown;
       let handlerInput: unknown;
-      const provider = makeProvider("test", [] as const, undefined, () =>
-        Layer.effect(
-          LanguageModel.LanguageModel,
-          LanguageModel.make({
-            generateText: () => Effect.succeed([]),
-            streamText: () => {
-              modelCalls += 1;
-              return Stream.succeed(
-                modelCalls === 1
-                  ? {
-                      type: "tool-call" as const,
-                      id: "call-1",
-                      name: "count",
-                      params: { count: "1" },
-                    }
-                  : { type: "text-delta" as const, id: "done", delta: "done" },
-              );
-            },
-          }),
-        ),
-      );
+      const provider = makeStreamingTestProvider(() => {
+        modelCalls += 1;
+        return Stream.succeed(
+          modelCalls === 1
+            ? {
+                type: "tool-call" as const,
+                id: "call-1",
+                name: "count",
+                params: { count: "1" },
+              }
+            : { type: "text-delta" as const, id: "done", delta: "done" },
+        );
+      });
       const count = Tool.make("count", {
         parameters: Schema.Struct({ count: Schema.NumberFromString }),
         success: Schema.Number,
@@ -247,27 +234,19 @@ describe("createSession Tool Turn", () => {
       const order: Array<string> = [];
       const validationFailure = new Error("invalid input");
       let modelCalls = 0;
-      const provider = makeProvider("test", [] as const, undefined, () =>
-        Layer.effect(
-          LanguageModel.LanguageModel,
-          LanguageModel.make({
-            generateText: () => Effect.succeed([]),
-            streamText: () => {
-              modelCalls += 1;
-              return Stream.succeed(
-                modelCalls === 1
-                  ? {
-                      type: "tool-call" as const,
-                      id: "call-1",
-                      name: "echo",
-                      params: { text: "hello" },
-                    }
-                  : { type: "text-delta" as const, id: "done", delta: "done" },
-              );
-            },
-          }),
-        ),
-      );
+      const provider = makeStreamingTestProvider(() => {
+        modelCalls += 1;
+        return Stream.succeed(
+          modelCalls === 1
+            ? {
+                type: "tool-call" as const,
+                id: "call-1",
+                name: "echo",
+                params: { text: "hello" },
+              }
+            : { type: "text-delta" as const, id: "done", delta: "done" },
+        );
+      });
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),
         success: Schema.String,
@@ -325,20 +304,13 @@ describe("createSession Tool Turn", () => {
     Effect.gen(function* () {
       const order: Array<string> = [];
       const defect = new Error("validator defect");
-      const provider = makeProvider("test", [] as const, undefined, () =>
-        Layer.effect(
-          LanguageModel.LanguageModel,
-          LanguageModel.make({
-            generateText: () => Effect.succeed([]),
-            streamText: () =>
-              Stream.succeed({
-                type: "tool-call" as const,
-                id: "call-1",
-                name: "echo",
-                params: { text: "hello" },
-              }),
-          }),
-        ),
+      const provider = makeStreamingTestProvider(() =>
+        Stream.succeed({
+          type: "tool-call" as const,
+          id: "call-1",
+          name: "echo",
+          params: { text: "hello" },
+        }),
       );
       const echo = Tool.make("echo", {
         parameters: Schema.Struct({ text: Schema.String }),

@@ -122,11 +122,7 @@ describe("@mitome/sdk", () => {
     let caught: unknown;
 
     try {
-      await withSession(definition, async (session) => {
-        for await (const _event of session.runTurn("Hi")) {
-          // The stream fails before producing an event.
-        }
-      });
+      await withSession(definition, (session) => Array.fromAsync(session.runTurn("Hi")));
     } catch (error) {
       caught = error;
     }
@@ -197,13 +193,9 @@ describe("@mitome/sdk", () => {
 
     expect(definition.extensions).toEqual([]);
 
-    const events = await withSession(definition, async (session) => {
-      const collected = [];
-      for await (const event of session.runTurn("Hi")) {
-        collected.push(event);
-      }
-      return collected;
-    });
+    const events = await withSession(definition, (session) =>
+      Array.fromAsync(session.runTurn("Hi")),
+    );
 
     expect(events).toEqual([
       { type: "model-output", text: "hello" },

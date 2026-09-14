@@ -16,14 +16,11 @@ describe("createSession Tool serialization", () => {
       let active = 0;
       let maxActive = 0;
       const log: Array<string> = [];
-      let startFirst!: () => void;
-      let releaseFirst!: () => void;
-      let startPostFirst!: () => void;
-      let releasePostFirst!: () => void;
-      const firstStarted = new Promise<void>((resolve) => (startFirst = resolve));
-      const firstReleased = new Promise<void>((resolve) => (releaseFirst = resolve));
-      const postFirstStarted = new Promise<void>((resolve) => (startPostFirst = resolve));
-      const postFirstReleased = new Promise<void>((resolve) => (releasePostFirst = resolve));
+      const { promise: firstStarted, resolve: startFirst } = Promise.withResolvers<void>();
+      const { promise: firstReleased, resolve: releaseFirst } = Promise.withResolvers<void>();
+      const { promise: postFirstStarted, resolve: startPostFirst } = Promise.withResolvers<void>();
+      const { promise: postFirstReleased, resolve: releasePostFirst } =
+        Promise.withResolvers<void>();
       const first = Tool.make("first", { parameters: Schema.Struct({}), success: Schema.String });
       const second = Tool.make("second", { parameters: Schema.Struct({}), success: Schema.String });
       // The real streamText resolves the tool calls; the Session's

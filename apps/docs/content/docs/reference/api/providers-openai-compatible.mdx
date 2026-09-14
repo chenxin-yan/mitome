@@ -1,0 +1,55 @@
+---
+title: "@mitome/providers/openai-compatible"
+---
+
+Provider for a separately identified OpenAI-compatible endpoint.
+
+## Interfaces
+
+### OpenAiCompatibleOptions
+
+Options for `openaiCompatible()`. `Id` is the literal Provider id and defaults to `string`.
+
+<auto-type-table
+  path="../../../../../../packages/providers/src/openai-compatible/index.ts"
+  name="OpenAiCompatibleOptions"
+/>
+
+## Type Aliases
+
+### KnownModelId
+
+```ts
+type KnownModelId = (typeof knownModelIds)[number];
+```
+
+Never inhabited; see [`knownModelIds`](/docs/reference/api/providers-openai-compatible#knownmodelids).
+
+## Variables
+
+### knownModelIds
+
+```ts
+const knownModelIds: readonly [];
+```
+
+Empty: compatible endpoints share no catalog, so every endpoint-native Model id is accepted as-is.
+
+## Functions
+
+### openaiCompatible
+
+```ts
+function openaiCompatible<const Id extends string>(
+  options: OpenAiCompatibleOptions<Id> & { readonly id: ValidProviderId<Id> },
+): Provider<ValidProviderId<Id>, readonly []>;
+```
+
+Creates a configured Provider for an OpenAI-compatible endpoint. `id` becomes the prefix of the
+endpoint's Qualified Model ids, so it must be non-empty and contain no `/`
+([`ValidProviderId`](/docs/reference/api/core#validproviderid) enforces this at the type level
+and `makeProvider` at runtime; for a valid literal `ValidProviderId<Id>` is just `Id`). Trailing slashes on `baseUrl` are removed. When `apiKeyEnv` is
+set, the key is read from the environment when a Session provisions a Model; when it is omitted,
+requests carry no API key.
+
+Returns a [`Provider`](/docs/reference/api/sdk#provider) with an empty Model catalog.

@@ -103,10 +103,7 @@ const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefiniti
   (value.transcripts === undefined ||
     (value.transcripts instanceof Object && isTranscriptStore(value.transcripts)));
 
-if (!(loaded instanceof Object)) {
-  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
-}
-if (!isMitomeDefinition(loaded)) {
+if (!(loaded instanceof Object) || !isMitomeDefinition(loaded)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
 const channelNames = new Set<string>();
@@ -326,11 +323,6 @@ if (forceExit !== undefined) {
   process.exit(130);
 }
 if (Exit.isFailure(exit)) {
-  const squashed = Cause.squash(exit.cause);
-  if (!(squashed instanceof Object)) {
-    process.stderr.write(`${String(squashed)}\n`);
-  } else {
-    process.stderr.write(`${errorMessage(squashed)}\n`);
-  }
+  process.stderr.write(`${describeFailure(Cause.squash(exit.cause))}\n`);
   process.exitCode = 1;
 }

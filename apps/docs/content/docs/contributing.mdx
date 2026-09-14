@@ -11,7 +11,7 @@ Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxi
 - `packages/core`, `packages/sdk`, `packages/providers`, `packages/tui`, `packages/cli`, `packages/create-mitome`: the published packages, one directory each, with tests under `test/`.
 - `apps/docs`: this site (fumadocs on TanStack Start); pages live in `apps/docs/content/docs`.
 - `docs/adr`: architecture decision records; `CONTEXT.md` at the root is the domain glossary every page and identifier follows.
-- `scripts`: repository tasks run with Bun; `tools/api-docs`: the API reference generator.
+- `scripts`: repository tasks run with Bun.
 - `.changeset`: pending release notes.
 
 ## Toolchain
@@ -31,22 +31,21 @@ Every change must pass, in this order:
 ```sh
 bun run check        # lint, format check, type check
 bun run test         # every package's tests
-bun run build:docs   # builds the site; regenerates the API reference first
+bun run build:docs   # builds the site
 ```
 
-`build:docs` fails on a dangling internal link and on any exported function, class, interface, type alias, or variable without a TSDoc comment, so it is the documentation gate as well. `bun run check:fix` applies lint and format fixes.
+`build:docs` fails on an internal link to a page that does not exist and on an `<auto-type-table>` whose type cannot be resolved, so it is the documentation gate as well. Anchors within a page are not checked. `bun run check:fix` applies lint and format fixes.
 
 `@mitome/tui` enumerates its test files explicitly in its `test` script because `.tsx` tests need the OpenTUI preload while the Host test must run without it; add new TUI test files there or they will not run.
 
 ## Generated artifacts
 
-Two artifacts are generated and git-ignored; do not edit them by hand. The third is hand-maintained and committed.
+One artifact is generated and git-ignored; do not edit it by hand. The second is hand-maintained and committed.
 
 | Artifact                                                                                          | Command                 | Source                                                                                                                                                             |
 | ------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | OpenAI Model catalog and `create-mitome` Model choices (`mitome init` falls back to them offline) | `bun run hints:refresh` | [models.dev](https://models.dev); the snapshot is committed at `scripts/models-dev.snapshot.json` and `hints:generate` uses it offline.                            |
 | Codex Model catalog                                                                               | none                    | Hand-maintained in `packages/providers/src/openai-codex/models.ts` because models.dev has no record for the ChatGPT service; update it when Codex releases change. |
-| API reference (`/docs/reference/api`)                                                             | `bun run api:generate`  | TSDoc on the eight public entry points. TypeDoc runs from `tools/api-docs`, which pins TypeScript 6 because TypeScript 7 has no compiler API.                      |
 
 ## Releasing
 

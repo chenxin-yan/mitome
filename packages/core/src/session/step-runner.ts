@@ -19,18 +19,11 @@ export type StepEvent =
       readonly usage?: Response.Usage | undefined;
     };
 
-export interface StepRunner {
-  readonly run: (
-    prompt: Prompt.Prompt,
-    selected: RuntimeModel,
-  ) => Stream.Stream<StepEvent, TurnError>;
-}
-
 export const makeStepRunner = (
   compiled: CompiledAgent,
   contexts: ExtensionContexts,
   toolExecution: ToolExecution,
-): StepRunner => {
+): ((prompt: Prompt.Prompt, selected: RuntimeModel) => Stream.Stream<StepEvent, TurnError>) => {
   const approvalEvents = (
     part: { readonly approvalId: string; readonly toolCallId: string },
     call: { readonly name: string; readonly params: unknown },
@@ -231,5 +224,5 @@ export const makeStepRunner = (
     );
   };
 
-  return { run };
+  return run;
 };

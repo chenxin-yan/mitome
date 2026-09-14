@@ -10,10 +10,6 @@ export interface RuntimeModel {
   readonly model: LanguageModel.Service;
 }
 
-export interface ModelResolver {
-  readonly resolve: (qualifiedModelId: string) => Effect.Effect<RuntimeModel, TurnError>;
-}
-
 const modelSetupTurnError = (cause: unknown) =>
   new TurnError({
     message: cause instanceof Error ? cause.message : String(cause),
@@ -23,49 +19,49 @@ const modelSetupTurnError = (cause: unknown) =>
 export const makeModelResolver = (
   providers: ReadonlyMap<string, AnyProvider>,
   scope: Scope.Scope,
-): ModelResolver => {
+): ((qualifiedModelId: string) => Effect.Effect<RuntimeModel, TurnError>) => {
   const models = new Map<string, RuntimeModel>();
 
-  const resolve: ModelResolver["resolve"] = Effect.fn("@mitome/core/ModelResolver.resolve")(
-    function* (qualifiedModelId) {
-      const parsed = parseQualifiedModelId(qualifiedModelId);
-      if (parsed === undefined) {
-        return yield* new TurnError({
-          message: `Malformed Qualified Model id: ${String(qualifiedModelId)}`,
-          cause: qualifiedModelId,
-        });
-      }
-      const provider = providers.get(parsed.providerId);
-      if (provider === undefined) {
-        return yield* new TurnError({
-          message: `Unregistered Provider id: ${parsed.providerId}`,
-          cause: qualifiedModelId,
-        });
-      }
+  const resolve = Effect.fn("@mitome/core/ModelResolver.resolve")(function* (
+    qualifiedModelId: string,
+  ) {
+    const parsed = parseQualifiedModelId(qualifiedModelId);
+    if (parsed === undefined) {
+      return yield* new TurnError({
+        message: `Malformed Qualified Model id: ${String(qualifiedModelId)}`,
+        cause: qualifiedModelId,
+      });
+    }
+    const provider = providers.get(parsed.providerId);
+    if (provider === undefined) {
+      return yield* new TurnError({
+        message: `Unregistered Provider id: ${parsed.providerId}`,
+        cause: qualifiedModelId,
+      });
+    }
 
-      const cached = models.get(qualifiedModelId);
-      if (cached !== undefined) return cached;
+    const cached = models.get(qualifiedModelId);
+    if (cached !== undefined) return cached;
 
-      // SAFETY: compileAgentDefinition rejects providers without Core metadata before creating a Session.
-      const metadata = getProviderMetadata(provider)!;
-      return yield* Effect.try({
-        try: () => metadata.provision(parsed.modelId),
-        catch: modelSetupTurnError,
-      }).pipe(
-        Effect.flatMap((layer) =>
-          Layer.buildWithScope(layer, scope).pipe(Effect.mapError(modelSetupTurnError)),
-        ),
-        Effect.map((context) => {
-          const selected = {
-            context,
-            model: Context.get(context, LanguageModel.LanguageModel),
-          };
-          models.set(qualifiedModelId, selected);
-          return selected;
-        }),
-      );
-    },
-  );
+    // SAFETY: compileAgentDefinition rejects providers without Core metadata before creating a Session.
+    const metadata = getProviderMetadata(provider)!;
+    return yield* Effect.try({
+      try: () => metadata.provision(parsed.modelId),
+      catch: modelSetupTurnError,
+    }).pipe(
+      Effect.flatMap((layer) =>
+        Layer.buildWithScope(layer, scope).pipe(Effect.mapError(modelSetupTurnError)),
+      ),
+      Effect.map((context) => {
+        const selected = {
+          context,
+          model: Context.get(context, LanguageModel.LanguageModel),
+        };
+        models.set(qualifiedModelId, selected);
+        return selected;
+      }),
+    );
+  });
 
-  return { resolve };
+  return resolve;
 };

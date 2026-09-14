@@ -24,10 +24,7 @@ const isMitomeDefinition = (value: DefinitionCandidate): value is MitomeDefiniti
   value.agent instanceof Object &&
   "extensions" in value.agent &&
   Array.isArray(value.agent.extensions);
-if (!(loaded instanceof Object)) {
-  throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
-}
-if (!isMitomeDefinition(loaded)) {
+if (!(loaded instanceof Object) || !isMitomeDefinition(loaded)) {
   throw new Error("The selected module must default-export defineMitome({ agent, hosts }).");
 }
 const definition = loaded;
@@ -61,10 +58,6 @@ try {
   );
   await Bun.write(outputPath, JSON.stringify(extensions));
 } catch (error) {
-  if (!(error instanceof Object)) {
-    process.stderr.write(`${String(error)}\n`);
-  } else {
-    process.stderr.write(`${errorMessage(error)}\n`);
-  }
+  process.stderr.write(`${error instanceof Object ? errorMessage(error) : String(error)}\n`);
   process.exit(1);
 }

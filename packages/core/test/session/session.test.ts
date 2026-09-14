@@ -401,8 +401,7 @@ describe("createSession", () => {
   it.effect("discards cancelled Turn history and reuses the Session", () =>
     Effect.gen(function* () {
       let calls = 0;
-      let start!: () => void;
-      const started = new Promise<void>((resolve) => (start = resolve));
+      const { promise: started, resolve: start } = Promise.withResolvers<void>();
       const model = makeTestProvider(() => {
         calls += 1;
         if (calls === 1) {

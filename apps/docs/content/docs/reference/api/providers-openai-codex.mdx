@@ -1,0 +1,124 @@
+---
+title: "@mitome/providers/openai-codex"
+---
+
+Best-effort Provider for a ChatGPT subscription through the unofficial Codex service endpoint.
+
+## Interfaces
+
+### CodexOptions
+
+Options for `codex()`.
+
+<auto-type-table
+  path="../../../../../../packages/providers/src/openai-codex/index.ts"
+  name="CodexOptions"
+/>
+
+### LoginOptions
+
+Options for `login`: Host I/O callbacks plus the directory that will hold `auth.json`. The I/O
+callbacks (`input`, `output`, `openBrowser`) and the OAuth overrides (`callbackPort`, `tokenUrl`)
+come from the shared PKCE login contract; `configDirectory` is Codex-specific.
+
+<auto-type-table
+  path="../../../../../../packages/providers/src/openai-codex/index.ts"
+  name="LoginOptions"
+/>
+
+### LogoutOptions
+
+Options for `logout`.
+
+<auto-type-table
+  path="../../../../../../packages/providers/src/openai-codex/index.ts"
+  name="LogoutOptions"
+/>
+
+## Type Aliases
+
+### KnownModelId
+
+```ts
+type KnownModelId = (typeof knownModelIds)[number];
+```
+
+One id from [`knownModelIds`](/docs/reference/api/providers-openai-codex#knownmodelids).
+
+### OAuthCredential
+
+```ts
+type OAuthCredential = {
+  readonly type: "oauth";
+  readonly access: string;
+  readonly refresh: string;
+  readonly expires: number;
+  readonly accountId: string;
+};
+```
+
+The stored ChatGPT OAuth Credential: access and refresh tokens, expiry, and account id. This is
+the decoded shape of the Codex entry in `auth.json`.
+
+## Variables
+
+### authenticate
+
+```ts
+const authenticate: AuthCapability["authenticate"];
+```
+
+Generic Host entry point satisfying Core's
+[`AuthCapability`](/docs/reference/api/core#authcapability) contract. Dispatches on
+`options.operation`: `"logout"` calls
+[`logout`](/docs/reference/api/providers-openai-codex#logout), anything else calls
+[`login`](/docs/reference/api/providers-openai-codex#login). The CLI reaches it through the
+Provider's Credential descriptor, which names this module.
+
+### knownModelIds
+
+```ts
+const knownModelIds: readonly [
+  "gpt-5.3-codex-spark",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.5",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+];
+```
+
+Codex Model ids from OpenAI's Codex documentation, offered as completions; not a closed catalog.
+
+## Functions
+
+### codex
+
+```ts
+function codex(options?: CodexOptions): Provider<"openai-codex", typeof knownModelIds>;
+```
+
+Creates the configured ChatGPT Codex Provider. Its Credential descriptor is a reference to this
+module's Auth capability rather than an environment variable, so `mitome` can run the OAuth login
+on the Provider's behalf.
+
+Returns a [`Provider`](/docs/reference/api/sdk#provider) with id `"openai-codex"`.
+
+### login
+
+```ts
+function login(options: LoginOptions): Promise<void>;
+```
+
+Runs Codex PKCE login and stores the resulting Credential in `auth.json` under
+`options.configDirectory`.
+
+### logout
+
+```ts
+function logout(options: LogoutOptions): Promise<void>;
+```
+
+Removes only the Codex Credential from `auth.json` under `options.configDirectory`; other
+Providers' entries are untouched.

@@ -406,16 +406,6 @@ const ptyOutput = (
 
 const ptyUnavailable = process.platform !== "linux" || !exists("/usr/bin/script");
 
-type StdoutReader = AsyncIterator<string>;
-
-const rest = async (reader: StdoutReader) => {
-  let output = "";
-  for (let next = await reader.next(); !next.done; next = await reader.next()) {
-    output += next.value;
-  }
-  return output;
-};
-
 beforeAll(() => {
   if (!exists(binary)) {
     throw new Error("Build @mitome/cli before running its subprocess tests");
@@ -832,7 +822,7 @@ describe("compiled mitome", () => {
         await delay(10);
       }
       process.kill(hostPid, signal);
-      const tail = await rest(reader);
+      const tail = await text(reader);
       expect(await exited(child)).toBe(130);
       expect(exists(signalProbe.cleanupDone)).toBe(true);
       expect(first.value + tail).not.toContain(" second");
