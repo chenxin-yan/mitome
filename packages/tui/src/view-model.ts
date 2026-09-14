@@ -87,6 +87,7 @@ export const makeSessionViewModel = (
   let switching: Promise<void> | undefined;
   let switchFiber: Fiber.Fiber<SessionResource, unknown> | undefined;
   let abandonSwitch: (() => void) | undefined;
+  let abandonTimer: ReturnType<typeof setTimeout> | undefined;
   let pickerRequest = 0;
   let disposed = false;
   // Reads `disposed` after an await; the wrapper stops TS/oxlint from stale
@@ -179,15 +180,22 @@ export const makeSessionViewModel = (
     return true;
   };
 
+  // The one way a pending Session open ends early, shared by Esc and dispose:
+  // interrupt the open Fiber so manager.open releases what it acquired. An
+  // uninterruptible open ignores the interrupt; give it the same 1s bound as
+  // other cleanup, then abandon the switch so idle (or exit) is reachable.
+  // One timer per switch, cleared when it settles so a prompt cancel (or
+  // dispose) does not hold the process open for the remaining bound.
+  const cancelSwitch = (): void => {
+    if (switchFiber === undefined) return;
+    Effect.runFork(Fiber.interrupt(switchFiber));
+    abandonTimer ??= setTimeout(() => abandonSwitch?.(), 1_000);
+  };
+
   const interrupt = (): boolean => {
-    // A stuck Session open must stay user-recoverable: Esc during switching
-    // interrupts the open Fiber instead of leaving the TUI wedged.
+    // A stuck Session open must stay user-recoverable instead of wedging the TUI.
     if (state.phase === "switching" && switchFiber !== undefined) {
-      Effect.runFork(Fiber.interrupt(switchFiber));
-      // An uninterruptible open ignores the interrupt; give it the same 1s
-      // bound as other cleanup, then abandon the switch so idle is reachable.
-      const abandon = abandonSwitch;
-      setTimeout(() => abandon?.(), 1_000);
+      cancelSwitch();
       return true;
     }
     if (active === undefined || state.phase !== "running" || active.completed()) return false;
@@ -263,6 +271,8 @@ export const makeSessionViewModel = (
           abandonSwitch = () => resolve(undefined);
         }),
       ]);
+      clearTimeout(abandonTimer);
+      abandonTimer = undefined;
       switchFiber = undefined;
       abandonSwitch = undefined;
       if (opened === undefined) {
@@ -333,7 +343,10 @@ export const makeSessionViewModel = (
       if (running !== undefined) {
         await bounded(Effect.runPromise(Fiber.interrupt(running.fiber)));
       }
-      if (switching !== undefined) await bounded(switching);
+      if (switching !== undefined) {
+        cancelSwitch();
+        await bounded(switching);
+      }
       await bounded(Effect.runPromise(session.close));
     },
   };

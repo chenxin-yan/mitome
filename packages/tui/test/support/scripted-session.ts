@@ -3,7 +3,12 @@ import { Effect, Stream } from "effect";
 import { Prompt } from "effect/unstable/ai";
 import type { SessionResource } from "../../src/session-manager.js";
 
-/** Replays one scripted event Stream per Turn; history grows exactly when response-complete is emitted, as a real Session's does. */
+/**
+ * Replays one scripted event Stream per Turn for rendering, activity, and keyboard checks.
+ * History grows on `response-complete`, the success path only: a real Session also commits
+ * when the Transcript save succeeds but the final event append fails, so commitment and
+ * failure semantics belong in tests that drive a real Session.
+ */
 export const scriptedSession = (
   scripts: ReadonlyArray<Stream.Stream<TurnEvent, never>>,
 ): SessionResource => {
