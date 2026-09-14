@@ -50,6 +50,72 @@ afterAll(async () => {
   await Promise.all(directories.map((path) => rm(path, { recursive: true, force: true })));
 });
 
+/**
+ * Two processes share one stored Credential and Turn concurrently against a backend that
+ * `accepts` an Authorization header or answers 401. Every refresh exchange takes long
+ * enough that the second process is past its optimistic read and waiting on the storage
+ * lock when the first rotates, so only the locked recheck can keep it from exchanging again.
+ */
+const raceRotation = async (
+  stored: ReturnType<typeof credential>,
+  accepts: (authorization: string | null) => boolean,
+) => {
+  const configDirectory = await directory(stored);
+  const refreshes: Array<string> = [];
+  let arrivals = 0;
+  let releaseBarrier!: () => void;
+  const barrier = new Promise<void>((resolve) => (releaseBarrier = resolve));
+  const tokenServer = await serve({
+    async fetch(request) {
+      if (new URL(request.url).pathname === "/barrier") {
+        arrivals += 1;
+        if (arrivals === 2) releaseBarrier();
+        await barrier;
+        return new Response("go");
+      }
+      const refresh = Schema.decodeUnknownSync(Schema.String)(
+        (await request.formData()).get("refresh_token"),
+      );
+      refreshes.push(refresh);
+      await setTimeout(6_000);
+      if (refresh !== stored.refresh) return new Response("stale refresh", { status: 400 });
+      return tokenResponse("race-account", "race-refresh");
+    },
+  });
+  const server = await serve({
+    fetch(request) {
+      const authorization = request.headers.get("authorization");
+      if (!accepts(authorization)) return new Response("", { status: 401 });
+      expect(authorization).toBe(`Bearer ${jwt("race-account")}`);
+      return new Response(
+        sse({ type: "response.output_item.added", output_index: 0, item: { type: "message" } }) +
+          sse({ type: "response.output_item.done", output_index: 0, item: { type: "message" } }) +
+          sse({ type: "response.completed" }),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    },
+  });
+  const source = new URL("../../dist/openai-codex/index.js", import.meta.url).href;
+  const core = new URL("../../node_modules/@mitome/core/dist/index.js", import.meta.url).href;
+  const child = () =>
+    spawnRuntime([
+      "-e",
+      `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const provider = codex(${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ providers: [provider], model: "openai-codex/gpt-5.4", extensions: [] }); yield* Stream.runDrain(session.runTurn("Hi")); })));`,
+    ]);
+  try {
+    const children = [child(), child()];
+    const exits = await Promise.all(children.map((process) => process.exited));
+    if (exits.some((code) => code !== 0)) {
+      for (const failed of children) console.error(await new Response(failed.stderr).text());
+    }
+    const auth = JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"));
+    return { exits, refreshes, auth };
+  } finally {
+    void server.stop(true);
+    void tokenServer.stop(true);
+  }
+};
+
 describe("Codex SSE", () => {
   test("streams real SSE bytes incrementally end to end", async () => {
     const configDirectory = await directory();
@@ -363,64 +429,26 @@ describe("Codex SSE", () => {
   });
 
   test("never reuses a stale rotating Credential across processes", async () => {
-    const configDirectory = await directory(credential("expired-access", "shared-refresh", 1));
-    const refreshes: Array<string> = [];
-    let arrivals = 0;
-    let releaseBarrier!: () => void;
-    const barrier = new Promise<void>((resolve) => (releaseBarrier = resolve));
-    const tokenServer = await serve({
-      async fetch(request) {
-        if (new URL(request.url).pathname === "/barrier") {
-          arrivals += 1;
-          if (arrivals === 2) releaseBarrier();
-          await barrier;
-          return new Response("go");
-        }
-        const refresh = Schema.decodeUnknownSync(Schema.String)(
-          (await request.formData()).get("refresh_token"),
-        );
-        refreshes.push(refresh);
-        await setTimeout(6_000);
-        if (refresh !== "shared-refresh") return new Response("stale refresh", { status: 400 });
-        return tokenResponse("race-account", "race-refresh");
+    const race = await raceRotation(credential("expired-access", "shared-refresh", 1), () => true);
+    expect(race.exits).toEqual([0, 0]);
+    expect(race.refreshes).toEqual(["shared-refresh"]);
+    expect(race.auth).toMatchObject({
+      "openai-codex": {
+        access: jwt("race-account"),
+        refresh: "race-refresh",
+        accountId: "race-account",
       },
     });
-    const server = await serve({
-      fetch(request) {
-        expect(request.headers.get("authorization")).toBe(`Bearer ${jwt("race-account")}`);
-        return new Response(
-          sse({ type: "response.output_item.added", output_index: 0, item: { type: "message" } }) +
-            sse({ type: "response.output_item.done", output_index: 0, item: { type: "message" } }) +
-            sse({ type: "response.completed" }),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      },
-    });
-    const source = new URL("../../dist/openai-codex/index.js", import.meta.url).href;
-    const core = new URL("../../node_modules/@mitome/core/dist/index.js", import.meta.url).href;
-    const child = () =>
-      spawnRuntime([
-        "-e",
-        `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const provider = codex(${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ providers: [provider], model: "openai-codex/gpt-5.4", extensions: [] }); yield* Stream.runDrain(session.runTurn("Hi")); })));`,
-      ]);
-    try {
-      const children = [child(), child()];
-      const exits = await Promise.all(children.map((process) => process.exited));
-      if (exits.some((code) => code !== 0)) {
-        for (const failed of children) console.error(await new Response(failed.stderr).text());
-      }
-      expect(exits).toEqual([0, 0]);
-      expect(refreshes).toEqual(["shared-refresh"]);
-      expect(JSON.parse(await readFile(join(configDirectory, "auth.json"), "utf8"))).toMatchObject({
-        "openai-codex": {
-          access: jwt("race-account"),
-          refresh: "race-refresh",
-          accountId: "race-account",
-        },
-      });
-    } finally {
-      void server.stop(true);
-      void tokenServer.stop(true);
-    }
+  }, 15_000);
+
+  test("reuses the Credential another process rotated after a stale 401", async () => {
+    const stale = credential("stale-access", "shared-refresh");
+    const race = await raceRotation(
+      stale,
+      (authorization) => authorization !== `Bearer ${stale.access}`,
+    );
+    expect(race.exits).toEqual([0, 0]);
+    expect(race.refreshes).toEqual(["shared-refresh"]);
+    expect(race.auth).toMatchObject({ "openai-codex": { refresh: "race-refresh" } });
   }, 15_000);
 });
