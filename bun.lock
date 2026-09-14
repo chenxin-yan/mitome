@@ -41,6 +41,8 @@
       "devDependencies": {
         "@cloudflare/vite-plugin": "^1.53.1",
         "@mitome/config": "workspace:*",
+        "@mitome/providers": "workspace:*",
+        "@mitome/sdk": "workspace:*",
         "@tailwindcss/vite": "^4.3.3",
         "@types/mdx": "^2.0.14",
         "@types/node": "catalog:",
@@ -50,6 +52,7 @@
         "tailwindcss": "^4.3.3",
         "typescript": "catalog:",
         "wrangler": "^4.125.0",
+        "zod": "^4.4.3",
       },
     },
     "packages/cli": {

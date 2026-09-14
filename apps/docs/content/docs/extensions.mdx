@@ -39,33 +39,7 @@ Your own Extension contributes Instructions through its `instructions` field, sh
 
 `setup` runs once when a Session starts and returns the Resource; `dispose` runs when the Session is released, on success, failure, and interruption alike. The scoped `tool` builder carries the Resource type into every handler:
 
-```ts
-import { z } from "zod";
-import { defineExtension } from "@mitome/sdk";
-
-interface Notes {
-  readonly values: Array<string>;
-}
-
-export const notes = defineExtension({
-  name: "notes",
-  instructions: "Save a note when the user asks you to remember something.",
-  setup: async (): Promise<Notes> => ({ values: [] }),
-  dispose: async (resource) => void resource.values.splice(0),
-  tools: ({ tool }) => [
-    tool({
-      name: "save_note",
-      description: "Save one note for this Session",
-      inputSchema: z.object({ text: z.string() }),
-      handler: async ({ text }, { resource, signal }) => {
-        signal.throwIfAborted();
-        resource.values.push(text);
-        return `Saved ${resource.values.length} note(s)`;
-      },
-    }),
-  ],
-});
-```
+<include lang="ts">../../examples/notes-extension.ts</include>
 
 A Resource is private to its Extension. Tools and Hooks that need the same Session state belong in one Extension. A resumed Transcript seeds a new Session, so `setup` runs again and the Resource starts fresh.
 
