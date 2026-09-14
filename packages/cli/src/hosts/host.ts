@@ -340,14 +340,17 @@ const program = Effect.scoped(
   }),
 );
 
-const root = Effect.runFork(program);
 let forceExit: ReturnType<typeof setTimeout> | undefined;
 const interrupt = (): void => {
   forceExit ??= setTimeout(() => process.exit(124), 1_000);
   Effect.runFork(Fiber.interrupt(root));
 };
+// Registered before the fork: runFork runs the Turn synchronously up to the first async
+// boundary, so output can reach the parent before this line. Signals dispatch from the
+// event loop, so `root` is assigned before interrupt can run.
 process.on("SIGINT", interrupt);
 process.on("SIGTERM", interrupt);
+const root = Effect.runFork(program);
 const exit = await Effect.runPromiseExit(Fiber.join(root));
 process.off("SIGINT", interrupt);
 process.off("SIGTERM", interrupt);
