@@ -226,10 +226,11 @@ export const telegram = (options: TelegramOptions): ChannelHost => {
               return event.type === "response-complete" ? advanceRoute : Effect.void;
             }),
             Effect.map(() => reply),
+            // Fixed text: a TurnError may carry the Provider's own message, and the chat is not the operator.
             Effect.catchTags({
-              TurnError: (error) => Effect.succeed(error.message),
-              SessionBusyError: (error) => Effect.succeed(error.message),
-              SessionReleasedError: (error) => Effect.succeed(error.message),
+              TurnError: () => Effect.succeed(failedReply),
+              SessionBusyError: () => Effect.succeed(failedReply),
+              SessionReleasedError: () => Effect.succeed(failedReply),
               // The Turn may already be committed when its final event record fails to append.
               StoreError: () =>
                 (session.history().length > committedMessages
