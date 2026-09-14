@@ -15,7 +15,6 @@
     "//#api:generate": {
       "dependsOn": ["@mitome/core#build"],
       "inputs": [
-        "$TURBO_ROOT$/scripts/generate-api-docs.ts",
         "$TURBO_ROOT$/tools/api-docs/*",
         "$TURBO_ROOT$/packages/sdk/src/**",
         "$TURBO_ROOT$/packages/providers/src/**",

@@ -8,7 +8,7 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   return (
-    <HomeLayout {...baseOptions()}>
+    <HomeLayout {...baseOptions}>
       <div className="flex flex-col flex-1 justify-center px-4 py-8 text-center">
         <h1 className="font-medium text-xl mb-4">Mitome</h1>
         <Link

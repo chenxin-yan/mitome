@@ -4,7 +4,7 @@ import { DefaultNotFound } from "fumadocs-ui/layouts/home/not-found";
 
 export function NotFound() {
   return (
-    <HomeLayout {...baseOptions()}>
+    <HomeLayout {...baseOptions}>
       <DefaultNotFound />
     </HomeLayout>
   );

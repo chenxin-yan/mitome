@@ -15,7 +15,7 @@ import { baseOptions } from "@/lib/layout.shared";
 import { gitConfig } from "@/lib/shared";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
 import { Suspense } from "react";
-import { useMDXComponents } from "@/components/mdx";
+import defaultMdxComponents from "fumadocs-ui/mdx";
 
 export const Route = createFileRoute("/docs/$")({
   component: Page,
@@ -37,7 +37,7 @@ const serverLoader = createServerFn({
 
     return {
       path: page.path,
-      markdownUrl: slugsToMarkdownPath(page.slugs).url,
+      markdownUrl: slugsToMarkdownPath(page.slugs),
       pageTree: await source.serializePageTree(source.getPageTree()),
     };
   });
@@ -72,7 +72,7 @@ const clientLoader = browserCollections.docs.createClientLoader({
           />
         </div>
         <DocsBody>
-          <MDX components={useMDXComponents()} />
+          <MDX components={defaultMdxComponents} />
         </DocsBody>
       </DocsPage>
     );
@@ -83,7 +83,7 @@ function Page() {
   const { path, pageTree, markdownUrl } = useFumadocsLoader(Route.useLoaderData());
 
   return (
-    <DocsLayout {...baseOptions()} tree={pageTree}>
+    <DocsLayout {...baseOptions} tree={pageTree}>
       <Suspense>{clientLoader.useContent(path, { markdownUrl, path })}</Suspense>
     </DocsLayout>
   );
