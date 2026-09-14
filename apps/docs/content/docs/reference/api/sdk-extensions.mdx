@@ -1,0 +1,39 @@
+---
+title: "@mitome/sdk/extensions"
+---
+
+First-party Extensions that ship with the SDK.
+
+## Interfaces
+
+### InstructionFilesOptions
+
+Options for `instructionFiles`.
+
+<auto-type-table
+  path="../../../../../../packages/sdk/src/extensions/index.ts"
+  name="InstructionFilesOptions"
+/>
+
+## Functions
+
+### instructionFiles
+
+```ts
+function instructionFiles(options?: InstructionFilesOptions): Extension;
+```
+
+Creates an Extension whose Instructions are read from files when the definition loads. A missing
+`paths` entry throws; missing `discover` names are skipped.
+
+Returns an [`Extension`](/docs/reference/api/sdk#extension).
+
+### instructions
+
+```ts
+function instructions(text: string): Extension;
+```
+
+Creates an Extension with a static inline Instructions fragment.
+
+Returns an [`Extension`](/docs/reference/api/sdk#extension).

@@ -1,0 +1,15 @@
+# Author the API reference with fumadocs-typescript
+
+The API reference is hand-authored MDX committed under `apps/docs/content/docs/reference/api`, one page per ADR-0047 entry point at the stable slugs the previous generator produced (`sdk`, `sdk-effect`, `sdk-extensions`, `core`, `providers-openai`, `providers-openai-compatible`, `providers-openai-codex`, `tui`). Every exported symbol of an entry point appears under its own `###` heading whose text is the symbol name, so the `#symbolname` anchors that guides link to are the same as before. Property tables for interfaces and object-shaped type aliases are not written by hand: an `<auto-type-table path=… name=… />` element names the source file and export, and `fumadocs-typescript`'s `remarkAutoTypeTable` plugin, registered in `apps/docs/source.config.ts`, replaces it at build time with a `TypeTable` generated from the type. `fumadocs-typescript` drives the TypeScript 7 native compiler through `typescript/unstable/sync` and bundles its own `typescript`, so the docs build uses the repository's TypeScript and nothing else. Classes, functions, and non-object type aliases are documented in prose with a signature code block, because the plugin renders object types only.
+
+This replaces the TypeDoc generator of ADR-0048. That generator needed a second project in `tools/api-docs/` with its own lockfile and a TypeScript 6 pin, a Turbo root task the docs `build` and `dev` depended on, and git-ignored output nobody could review. All of that is gone: there is no generate step, `bun run build:docs` compiles the reference like any other page, and reference changes are reviewed in pull requests alongside the source change that motivates them.
+
+Two guarantees of the generator are traded away. TypeDoc failed the build when a public export lacked a TSDoc comment; review carries that now, and the rule that every export appears under its own heading keeps the pages complete by convention rather than by tooling. TypeDoc also emitted one page per module automatically; a new entry point now needs a new page. In exchange, the prerender crawler of TanStack Start fails the build on any internal link that resolves to a 404, which the generated pages never exercised because they were created before Vite ran.
+
+## Consequences
+
+- `apps/docs` depends on `fumadocs-typescript`; the generator cache lives in `apps/docs/.fumadocs-typescript` and is git-ignored.
+- `apps/docs/source.config.ts` carries global MDX options only; collections stay declared with `fumadocs-mdx/macro` in `src/lib/source.ts`.
+- A public export is documented when its `###` section exists on the entry point's page; adding an export without one is a review finding, not a build failure.
+- A new entry point needs a new page under `reference/api` and an entry in that directory's `meta.json`.
+- Type tables read the source files of `packages/*/src` and resolve `@mitome/*` imports through the built declarations, so the docs build still depends on the package builds.

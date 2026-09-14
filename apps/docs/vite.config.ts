@@ -10,7 +10,9 @@ export default defineConfig({
     port: 3000,
   },
   plugins: [
-    fumadocsMdx(),
+    // Collections come from `fumadocs-mdx/macro`; source.config.ts only carries MDX options,
+    // so the `.source/` index files it would otherwise emit have no reader.
+    fumadocsMdx({ index: false }),
     tailwindcss(),
     cloudflare({ viteEnvironment: { name: "ssr" } }),
     tanstackStart({

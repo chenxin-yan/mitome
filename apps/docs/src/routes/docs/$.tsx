@@ -56,13 +56,7 @@ function Content({ path, markdownUrl }: { path: string; markdownUrl: string }) {
         <MarkdownCopyButton markdownUrl={markdownUrl} />
         <ViewOptionsPopover
           markdownUrl={markdownUrl}
-          // Pages under reference/api/ are generated and gitignored (ADR-0048);
-          // a content-path link would 404.
-          {...(path.startsWith("reference/api/")
-            ? {}
-            : {
-                githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/docs/content/docs/${path}`,
-              })}
+          githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/docs/content/docs/${path}`}
         />
       </div>
       <DocsBody>

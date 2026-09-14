@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0052
+---
+
 # Generate the API reference from TSDoc
 
 The documentation site carries a generated API reference for every published entry point: `@mitome/sdk`, `@mitome/sdk/effect`, `@mitome/sdk/extensions`, `@mitome/core`, the three `@mitome/providers/*` subpaths, and `@mitome/tui`. Each entry file declares its public import path with a `@module` tag, and TypeDoc with `typedoc-plugin-markdown` renders one page per module into `apps/docs/content/docs/reference/api/`. A small local plugin adds the `title` frontmatter fumadocs requires, flattens module names into stable slugs (`sdk-effect`, `providers-openai-codex`), rewrites cross-page links to rendered routes, and writes the sidebar `meta.json` in entry-point order. Documentation validation runs with warnings treated as errors, so an undocumented exported symbol fails the docs build instead of silently shipping a signature-only entry. `create-mitome/template` is `@internal` and has no reference page.
