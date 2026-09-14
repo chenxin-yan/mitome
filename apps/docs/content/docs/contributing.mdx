@@ -31,10 +31,10 @@ Every change must pass, in this order:
 ```sh
 bun run check        # lint, format check, type check
 bun run test         # every package's tests
-bun run build:docs   # builds the site; regenerates the API reference first
+bun run build:docs   # builds the site
 ```
 
-`build:docs` fails on a dangling internal link and on any exported function, class, interface, type alias, or variable without a TSDoc comment, so it is the documentation gate as well. `bun run check:fix` applies lint and format fixes.
+`build:docs` fails on an internal link to a page that does not exist and on an `<auto-type-table>` whose type cannot be resolved, so it is the documentation gate as well. Anchors within a page are not checked. `bun run check:fix` applies lint and format fixes.
 
 `@mitome/tui` enumerates its test files explicitly in its `test` script because `.tsx` tests need the OpenTUI preload while the Host test must run without it; add new TUI test files there or they will not run.
 

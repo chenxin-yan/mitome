@@ -4,11 +4,11 @@ The API reference is hand-authored MDX committed under `apps/docs/content/docs/r
 
 This replaces the TypeDoc generator of ADR-0048. That generator needed a second project in `tools/api-docs/` with its own lockfile and a TypeScript 6 pin, a Turbo root task the docs `build` and `dev` depended on, and git-ignored output nobody could review. All of that is gone: there is no generate step, `bun run build:docs` compiles the reference like any other page, and reference changes are reviewed in pull requests alongside the source change that motivates them.
 
-Two guarantees of the generator are traded away. TypeDoc failed the build when a public export lacked a TSDoc comment; review carries that now, and the rule that every export appears under its own heading keeps the pages complete by convention rather than by tooling. TypeDoc also emitted one page per module automatically; a new entry point now needs a new page. In exchange, the prerender crawler of TanStack Start fails the build on any internal link that resolves to a 404, which the generated pages never exercised because they were created before Vite ran.
+Two guarantees of the generator are traded away. TypeDoc failed the build when a public export lacked a TSDoc comment; review carries that now, and the rule that every export appears under its own heading keeps the pages complete by convention rather than by tooling. TypeDoc also emitted one page per module automatically; a new entry point now needs a new page. The prerender crawler of TanStack Start still fails the build on any internal link that resolves to a 404, and a table whose type cannot be resolved fails the MDX compile, so a page renamed or a type removed without updating the reference is caught at build time.
 
 ## Consequences
 
-- `apps/docs` depends on `fumadocs-typescript`; the generator cache lives in `apps/docs/.fumadocs-typescript` and is git-ignored.
+- `apps/docs` depends on `fumadocs-typescript`. The generator runs without a persistent cache: its cache key hashes only the file named in `path`, and the pages point at barrel entry files, so a cache would serve stale tables after an edit to a re-exported type.
 - `apps/docs/source.config.ts` carries global MDX options only; collections stay declared with `fumadocs-mdx/macro` in `src/lib/source.ts`.
 - A public export is documented when its `###` section exists on the entry point's page; adding an export without one is a review finding, not a build failure.
 - A new entry point needs a new page under `reference/api` and an entry in that directory's `meta.json`.

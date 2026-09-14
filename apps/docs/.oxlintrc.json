@@ -18,12 +18,5 @@
       "version": "19.2.6"
     }
   },
-  "ignorePatterns": [
-    ".output/",
-    ".tanstack/",
-    ".fumadocs-typescript/",
-    ".nitro/",
-    ".vercel/",
-    "src/routeTree.gen.ts"
-  ]
+  "ignorePatterns": [".output/", ".tanstack/", ".nitro/", ".vercel/", "src/routeTree.gen.ts"]
 }
