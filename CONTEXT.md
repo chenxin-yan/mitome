@@ -107,8 +107,20 @@ A user decision allowing one pending Tool call to execute; the Turn stays paused
 _Avoid_: Permission, confirmation
 
 **Host**:
-An Effect-native `@mitome/core` contract for a program that drives Sessions on a user's behalf: starting Turns, presenting events, and resolving Approvals. The Promise SDK accepts configured Host values opaquely so their Effect-native context does not leak into its surface.
+A module that connects people to the Agent through one surface, run by the CLI or by application code; it starts Turns, presents events, and resolves Approvals. Its kind is either interactive, owning a terminal for one person, or Channel. The Promise SDK accepts configured Host values opaquely so their Effect-native context does not leak into its surface.
 _Avoid_: Extension, Frontend, client, harness
+
+**Channel**:
+A Host kind that connects an external conversational surface, such as a messaging service, to the Agent; a Mitome Definition names each Channel uniquely.
+_Avoid_: Gateway, integration, bot, interactive Host
+
+**Route**:
+The mapping from one external conversation on a Channel to its latest Transcript, so that conversation resumes where it left off.
+_Avoid_: Thread, binding, Session (the live interaction)
+
+**Runner**:
+The CLI subprocess that loads a Mitome Definition and runs its Hosts or the one-shot printer. The code still calls it the Child Host; the rename is deferred.
+_Avoid_: Child Host (going forward), subprocess (bare), worker
 
 **Child Host**:
 The CLI's capability for delegating Host work — running a Turn, installing Agent Definition dependencies, or Provider authentication — to a separate Host process.

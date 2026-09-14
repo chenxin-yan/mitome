@@ -60,9 +60,9 @@ An Approval is a user decision that lets one pending Tool call execute. A Tool m
 
 ## Host
 
-A Host is a program that drives Sessions on a user's behalf: it starts Turns, presents events, and resolves Approvals. `@mitome/tui` is a Host, and so is the CLI's one-shot printer. When you embed the SDK, the callback you pass to `withSession` plays this role. A Mitome Definition declares at most one Host. Hosts are authored against `@mitome/core`.
+A Host is a program that drives Sessions on a user's behalf: it starts Turns, presents events, and resolves Approvals. `@mitome/tui` is a Host, and so is the CLI's one-shot printer. When you embed the SDK, the callback you pass to `withSession` plays this role. A Mitome Definition may declare several Hosts; each has a `kind`, `interactive` or `channel`. Hosts are authored against `@mitome/core`.
 
-The CLI runs a Mitome Definition in a **Child Host**: a separate process that imports the Definition, its Hosts, and its dependencies. A Definition is executable TypeScript, so that process has whatever filesystem, network, and Credential access the user has; run only Definitions you trust.
+The CLI runs a Mitome Definition in a **Runner**: a separate process that imports the Definition, its Hosts, and its dependencies. A Definition is executable TypeScript, so that process has whatever filesystem, network, and Credential access the user has; run only Definitions you trust.
 
 ## Provider
 

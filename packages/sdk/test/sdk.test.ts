@@ -15,8 +15,9 @@ describe("@mitome/sdk", () => {
       model: "test/default",
     });
 
+    // @ts-expect-error A Host factory is not a Host handle; only `{ kind }` values are accepted.
     expect(() => defineMitome({ agent, hosts: [() => undefined] })).toThrow(
-      "Host must be an object with a run function and optional unsupported function — did you forget to call the factory?",
+      "Host at index 0 must be an object with a kind — did you forget to call the factory?",
     );
   });
 

@@ -8,9 +8,15 @@ Each entry is symptom, cause, fix. Exact error texts are catalogued under [Error
 
 ## `mitome` printed one-shot output instead of opening the TUI
 
-**Cause.** One of: the Mitome Definition does not declare `hosts: [tui()]` (installing `@mitome/tui` alone changes nothing); stdout is not a TTY, for example under a pipe or in some IDE terminals, so the CLI implied `--print`; or the TUI reported `@mitome/tui requires an interactive terminal` because stdin or stdout is not a TTY. In the last case stderr shows `...; falling back to one-shot output.`
+**Cause.** One of: the Mitome Definition does not declare `hosts: [tui()]` (installing `@mitome/tui` alone changes nothing); stdout is not a TTY, for example under a pipe or in some IDE terminals, so the CLI implied `--print`; or the TUI reported `@mitome/tui requires an interactive terminal` because stdin or stdout is not a TTY. In the last case stderr shows `...; falling back to one-shot output.`, or `...; trying the next Host.` when another interactive Host follows it in `hosts`.
 
 **Fix.** Declare the Host and run `mitome` in a real terminal. The selection rules are under [Hosts](/docs/hosts#how-the-cli-picks-a-host).
+
+## `mitome` or `defineMitome` rejects a Host I declared
+
+**Cause.** Every Host needs `kind: "interactive"` or `kind: "channel"`; the message names the Host by index or name. `Host at index <n> must be an object with a kind` usually means an uncalled factory (`hosts: [tui]`). A Channel Host also needs a unique `name` and at least one of `handle` or `serve`.
+
+**Fix.** Call the factory (`tui()`), or fix the named Host against the contract under [Hosts](/docs/hosts#the-host-contract). The exact messages are under [Errors](/docs/reference/errors).
 
 ## `Ctrl-O` says `Transcript persistence is not configured.`
 

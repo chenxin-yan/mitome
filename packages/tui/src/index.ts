@@ -4,7 +4,7 @@
  * @module @mitome/tui
  */
 
-import type { Host } from "@mitome/core";
+import type { InteractiveHost } from "@mitome/core";
 import { Effect } from "effect";
 
 /**
@@ -12,7 +12,8 @@ import { Effect } from "effect";
  * otherwise through `unsupported()`, letting the CLI fall back to one-shot output. OpenTUI loads
  * only when `run` is called. Requires Bun.
  */
-export const tui = (): Host => ({
+export const tui = (): InteractiveHost => ({
+  kind: "interactive",
   unsupported: () =>
     process.stdin.isTTY === true && process.stdout.isTTY === true
       ? undefined

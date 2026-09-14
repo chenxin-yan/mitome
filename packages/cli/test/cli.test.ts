@@ -45,6 +45,8 @@ const definitionSource = (
     readonly block?: boolean;
     readonly tui?: boolean;
     readonly customHost?: boolean;
+    /** Literal `hosts` source; wins over `tui` and `customHost`. */
+    readonly hosts?: string;
     readonly transcripts?: boolean;
     readonly malformedTranscripts?: boolean;
     readonly signalProbe?: {
@@ -77,7 +79,7 @@ const agent = { providers: [provider], model: "test/default", extensions: ${
     }) } }]`
     : "[]"
 } };
-export default defineMitome({ agent, hosts: ${options.tui ? "[tui()]" : options.customHost ? "[{ run: async ({ message, transcripts }) => console.log(`CUSTOM_HOST ${message} ${transcripts !== undefined}`) }]" : "[]"}${options.transcripts ? ", transcripts: fileTranscripts()" : options.malformedTranscripts ? ", transcripts: {}" : ""} });
+export default defineMitome({ agent, hosts: ${options.hosts ?? (options.tui ? "[tui()]" : options.customHost ? '[{ kind: "interactive", run: async ({ message, transcripts }) => console.log(`CUSTOM_HOST ${message} ${transcripts !== undefined}`) }]' : "[]")}${options.transcripts ? ", transcripts: fileTranscripts()" : options.malformedTranscripts ? ", transcripts: {}" : ""} });
 `;
 
 const envDefinitionSource = (): string => `
@@ -206,7 +208,7 @@ const installTui = async (current: Fixture): Promise<void> => {
   );
   await writeFile(
     join(tui, "index.js"),
-    'export const tui = () => ({ unsupported: () => process.env.TERM_PROGRAM === "ghostty" ? undefined : "@mitome/tui currently supports Ghostty on Linux", run: ({ message }) => process.stdout.write(`TUI_MESSAGE ${JSON.stringify(message)}\\n`) });\n',
+    'export const tui = () => ({ kind: "interactive", unsupported: () => process.env.TERM_PROGRAM === "ghostty" ? undefined : "@mitome/tui currently supports Ghostty on Linux", run: ({ message }) => process.stdout.write(`TUI_MESSAGE ${JSON.stringify(message)}\\n`) });\n',
   );
 };
 
@@ -443,6 +445,81 @@ describe("compiled mitome", () => {
     expect(result).toMatchObject({ exitCode: 0 });
     expect(result.stdout).toContain("CUSTOM_HOST hello true");
     expect(result.stdout).not.toContain("falling back to one-shot output");
+  });
+
+  test("tries interactive Hosts in order and ignores Channel Hosts", async ({ skip }) => {
+    if (ptyUnavailable) skip();
+    const current = await fixture(
+      definitionSource("first", {
+        hosts: `[
+          { kind: "channel", name: "probe", serve: async () => console.log("CHANNEL_SERVED") },
+          { kind: "interactive", unsupported: () => "first Host needs Ghostty", run: async () => console.log("FIRST_HOST") },
+          { kind: "interactive", run: async ({ message }) => console.log(\`SECOND_HOST \${message}\`) },
+        ]`,
+      }),
+    );
+
+    const result = await ptyOutput(["hello", "--use", current.definition], current, "xterm");
+    expect(result).toMatchObject({ exitCode: 0 });
+    expect(result.stdout).toContain("first Host needs Ghostty; trying the next Host.");
+    expect(result.stdout).toContain("SECOND_HOST hello");
+    expect(result.stdout).not.toContain("FIRST_HOST");
+    expect(result.stdout).not.toContain("CHANNEL_SERVED");
+    expect(result.stdout).not.toContain("first second");
+
+    // Channel Hosts alone leave ordinary invocation on one-shot output.
+    const printed = await output(spawn("", ["hello", "--use", current.definition], current));
+    expect(printed).toMatchObject({ exitCode: 0, stdout: "first second\n", stderr: "" });
+  });
+
+  test.each([
+    [
+      "an uncalled Host factory",
+      "[() => undefined]",
+      "Host at index 0 must be an object with a kind — did you forget to call the factory?",
+    ],
+    [
+      "an unknown Host kind",
+      '[{ kind: "gateway", run: async () => undefined }]',
+      'Host at index 0 has unknown kind "gateway"; expected "interactive" or "channel".',
+    ],
+    [
+      "a Host kind JSON cannot serialize",
+      "[{ kind: 1n }]",
+      'Host at index 0 has a non-string kind; expected "interactive" or "channel".',
+    ],
+    [
+      "a Channel Host name that cannot be coerced",
+      '[{ kind: "channel", name: Object.create(null), serve: async () => undefined }]',
+      "Channel Host at index 0 must have a non-empty string name.",
+    ],
+    [
+      "a boxed Channel Host name",
+      '[{ kind: "channel", name: new String("telegram"), serve: async () => undefined }]',
+      "Channel Host at index 0 must have a non-empty string name.",
+    ],
+    [
+      "a Channel Host without handle or serve",
+      '[{ kind: "channel", name: "telegram" }]',
+      'Channel Host "telegram" must expose a handle or serve function.',
+    ],
+    [
+      "duplicate Channel Host names",
+      '[{ kind: "channel", name: "telegram", serve: async () => undefined }, { kind: "channel", name: "telegram", handle: async () => new Response() }]',
+      'Channel Host name "telegram" is declared more than once.',
+    ],
+  ])("rejects %s in the Runner loader", async (_, hosts, message) => {
+    // The fixture bypasses defineMitome so the loader's own validation is what rejects it.
+    const current = await fixture(
+      definitionSource("first", { hosts }).replace(
+        "export default defineMitome(",
+        "export default (",
+      ),
+    );
+
+    const result = await output(spawn("", ["hello", "--use", current.definition], current));
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain(message);
   });
 
   test("forces one-shot output for --print and non-TTY stdout when the TUI is configured", async ({
