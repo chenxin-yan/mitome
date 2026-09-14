@@ -25,33 +25,37 @@ const credential = (
   accountId: `${access}-account`,
 });
 
+type Exchange = (
+  current: OAuthCredential,
+  rejected: OAuthCredential,
+) => Effect.Effect<OAuthCredential, CredentialError>;
+
+/** A store whose Credential is always fresh, so only a Provider rejection reaches `exchange`. */
 const memoryCredentialStoreLayer = (
   initial: OAuthCredential,
-  refresh: (
-    current: OAuthCredential,
-    failedAccess: string | undefined,
-    expiredOnly: boolean,
-  ) => Effect.Effect<OAuthCredential, CredentialError> = (current) => Effect.succeed(current),
+  exchange: Exchange = (current) => Effect.succeed(current),
 ): Layer.Layer<CredentialStore> =>
   Layer.sync(CredentialStore, () => {
     let current = initial;
     return {
       loadCredential: Effect.sync(() => current),
-      refreshCredential: (failedAccess, expiredOnly) =>
-        refresh(current, failedAccess, expiredOnly).pipe(
-          Effect.tap((next) =>
-            Effect.sync(() => {
-              current = next;
-            }),
-          ),
-        ),
+      credential: (rejected) =>
+        rejected === undefined
+          ? Effect.sync(() => current)
+          : exchange(current, rejected).pipe(
+              Effect.tap((next) =>
+                Effect.sync(() => {
+                  current = next;
+                }),
+              ),
+            ),
     };
   });
 
 const failingCredentialStoreLayer = (error: CredentialError): Layer.Layer<CredentialStore> =>
   Layer.succeed(CredentialStore, {
     loadCredential: Effect.fail(error),
-    refreshCredential: () => Effect.fail(error),
+    credential: () => Effect.fail(error),
   });
 
 type JsonObject = { readonly [key: string]: typeof Schema.Json.Type };
@@ -87,8 +91,8 @@ const clientFor = (fetch: (request: TestRequest, url: URL) => TestResponse) =>
 const runWithLayer = (
   layer: Layer.Layer<CredentialStore>,
   fetch: (request: TestRequest, url: URL) => TestResponse,
+  client = clientFor(fetch),
 ) => {
-  const client = clientFor(fetch);
   return Effect.runPromise(
     Stream.runCollect(
       streamText("gpt-5.4", "https://codex.test/backend-api", "session-1", providerOptions),
@@ -99,27 +103,17 @@ const runWithLayer = (
 const run = (
   initial: OAuthCredential,
   fetch: (request: TestRequest, url: URL) => TestResponse,
-  refresh: (
+  exchange: (
     current: OAuthCredential,
-    failedAccess: string | undefined,
-    expiredOnly: boolean,
+    rejected: OAuthCredential,
     client: ReturnType<typeof HttpClient.make>,
   ) => Effect.Effect<OAuthCredential, CredentialError> = (current) => Effect.succeed(current),
 ) => {
   const client = clientFor(fetch);
-  return Effect.runPromise(
-    Stream.runCollect(
-      streamText("gpt-5.4", "https://codex.test/backend-api", "session-1", providerOptions),
-    ).pipe(
-      Effect.provide(
-        Layer.merge(
-          memoryCredentialStoreLayer(initial, (current, failedAccess, expiredOnly) =>
-            refresh(current, failedAccess, expiredOnly, client),
-          ),
-          Layer.succeed(HttpClient.HttpClient, client),
-        ),
-      ),
-    ),
+  return runWithLayer(
+    memoryCredentialStoreLayer(initial, (current, rejected) => exchange(current, rejected, client)),
+    fetch,
+    client,
   );
 };
 
@@ -349,30 +343,25 @@ describe("Codex transport", () => {
     expect(streamRequests).toBe(1);
   });
 
-  test("refreshes an expired Credential and retries once after a 401", async () => {
-    const proactive = credential("proactive-access");
-    const retried = credential("retried-access");
-    const refreshes: Array<{ failedAccess: string | undefined; expiredOnly: boolean }> = [];
+  test("names the rejected Credential to the store after a 401 and retries once", async () => {
+    const rejections: Array<string> = [];
     const authorizations: Array<string | undefined> = [];
 
     await run(
-      credential("expired-access", 1),
+      credential("first-access"),
       (request) => {
         authorizations.push(request.headers.authorization);
         return authorizations.length === 1 ? new Response("", { status: 401 }) : completed();
       },
-      (_current, failedAccess, expiredOnly) =>
+      (_current, rejected) =>
         Effect.sync(() => {
-          refreshes.push({ failedAccess, expiredOnly });
-          return refreshes.length === 1 ? proactive : retried;
+          rejections.push(rejected.access);
+          return credential("retried-access");
         }),
     );
 
-    expect(refreshes).toEqual([
-      { failedAccess: undefined, expiredOnly: true },
-      { failedAccess: "proactive-access", expiredOnly: false },
-    ]);
-    expect(authorizations).toEqual(["Bearer proactive-access", "Bearer retried-access"]);
+    expect(rejections).toEqual(["first-access"]);
+    expect(authorizations).toEqual(["Bearer first-access", "Bearer retried-access"]);
   });
 
   test("drains a 401 response before refreshing", async () => {
@@ -410,14 +399,16 @@ describe("Codex transport", () => {
 
     await expect(
       run(
-        credential("expired-access", 1),
-        () =>
-          Response.json({
-            access_token: claimlessAccess,
-            refresh_token: "refreshed-secret",
-            expires_in: 3_600,
-          }),
-        (_current, _failedAccess, _expiredOnly, client) =>
+        credential(),
+        (_request, url) =>
+          url.host === "auth.test"
+            ? Response.json({
+                access_token: claimlessAccess,
+                refresh_token: "refreshed-secret",
+                expires_in: 3_600,
+              })
+            : new Response("", { status: 401 }),
+        (_current, _rejected, client) =>
           token("https://auth.test/token", {}).pipe(
             Effect.provideService(HttpClient.HttpClient, client),
           ),

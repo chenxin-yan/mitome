@@ -1,7 +1,6 @@
 import { Effect, Schedule, Stream } from "effect";
 import { AiError, LanguageModel } from "effect/unstable/ai";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
-import { isExpired } from "../shared/oauth.js";
 import { CredentialStore } from "./credential-store.js";
 import { credentialError, httpError, requestFor } from "./request.js";
 import { decodeStream } from "./sse.js";
@@ -75,7 +74,7 @@ export const streamText = (
         if (response.status === 401) {
           return response.text.pipe(
             Effect.ignore,
-            Effect.andThen(store.refreshCredential(credential.access, false)),
+            Effect.andThen(store.credential(credential)),
             Effect.mapError(credentialError),
             Effect.flatMap((next) => execute(store, next, true)),
           );
@@ -89,10 +88,7 @@ export const streamText = (
   return Stream.unwrap(
     Effect.gen(function* () {
       const store = yield* CredentialStore;
-      const current = yield* store.loadCredential.pipe(Effect.mapError(credentialError));
-      const credential = (yield* isExpired(current))
-        ? yield* store.refreshCredential(undefined, true).pipe(Effect.mapError(credentialError))
-        : current;
+      const credential = yield* store.credential().pipe(Effect.mapError(credentialError));
       return yield* execute(store, credential, false);
     }),
   ).pipe(decodeStream);
