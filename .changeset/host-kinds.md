@@ -5,4 +5,6 @@
 "@mitome/cli": minor
 ---
 
-Make `Host` a union discriminated by `kind`: `interactive` Hosts own a terminal (`unsupported?`, `run`), and `channel` Hosts connect an external surface with a unique `name` plus `handle` and/or `serve`. A Mitome Definition may declare any number of Hosts; `mitome [message]` runs the first supported interactive Host in order and otherwise falls back to one-shot output, while Channel Hosts are validated but not yet served. `defineMitome` and the CLI reject a Host without a known `kind`, a Channel Host without `handle` or `serve`, or duplicate Channel names, naming the offending Host. `tui()` returns `kind: "interactive"`; the SDK types `hosts` as `{ kind }` handles so an uncalled factory fails compilation.
+`Host` is now a union discriminated by `kind`. Add `kind: "interactive"` to terminal Hosts and `kind: "channel"` plus a unique `name` to Channel Hosts. `defineMitome({ agent, hosts })` accepts multiple Hosts; the CLI runs the first supported interactive Host, and installing `@mitome/tui` does not activate it until `tui()` is registered.
+
+Add `mitome serve` to run every registered Channel Host. `handle` Hosts share one listener under `/<name>` using `--port` or port 3000, while `serve` Hosts receive an `AbortSignal`. Core also exports `Routes`, `memoryRoutes()`, and `fileRoutes()` for mapping channel routes to Transcripts.

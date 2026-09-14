@@ -2,4 +2,6 @@
 "@mitome/cli": patch
 ---
 
-`mitome auth login` and `mitome auth logout` no longer hang on a Mitome Definition that leaves an interval or server running: every disposable Child Host inspection exits as soon as its result is written and is bounded by a deadline, and the OAuth auth child exits as soon as `authenticate` returns. CLI diagnostics render an error whose `cause` points back at itself as `[circular cause]` instead of recursing.
+Add `mitome ext list`, which prints resolved Extension names and installed versions in Agent Definition order.
+
+`mitome auth login` and `mitome auth logout` now exit after authentication even when a Definition leaves background work running, and report specific errors for unavailable OAuth Providers or invalid capability modules. Circular diagnostic causes print as `[circular cause]` instead of recursing.

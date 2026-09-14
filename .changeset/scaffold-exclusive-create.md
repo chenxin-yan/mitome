@@ -1,5 +1,6 @@
 ---
 "create-mitome": patch
+"@mitome/cli": patch
 ---
 
-`create-mitome` and `mitome init` now enforce "never overwrites existing files" at creation: every scaffold file is created exclusively, so a name occupied by a symlink (including a dangling one) or by a file that appears after the preflight is refused instead of written through.
+`create-mitome` and `mitome init` no longer overwrite an existing path, including symlinks and files created during scaffolding. Generated `tsconfig.json` files now set `skipLibCheck: true`, so fresh projects type-check without adding `@types/node` for transitive declarations.

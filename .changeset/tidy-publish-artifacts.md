@@ -5,4 +5,4 @@
 "@mitome/tui": patch
 ---
 
-Annotate library builds with pure calls and declare `sideEffects: false` for consumer tree-shaking.
+Published libraries now declare themselves side-effect free, allowing bundlers to remove unused exports.

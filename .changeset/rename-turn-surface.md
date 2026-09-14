@@ -3,4 +3,4 @@
 "@mitome/sdk": minor
 ---
 
-Rename `Session.prompt` to `Session.runTurn` and `PromptOptions` to `TurnOptions`. Host authors receive the staged Message through `HostContext.message` instead of `HostContext.prompt`.
+Rename `Session.prompt` to `Session.runTurn` and `PromptOptions` to `TurnOptions`. Host authors now read the staged Message from `HostContext.message` instead of `HostContext.prompt`.

@@ -3,4 +3,4 @@
 "@mitome/sdk": minor
 ---
 
-Make Agent Definition `extensions` and SDK Extension `tools` optional with empty defaults. Move `withSession` options before its callback: use `withSession(agent, options, use)` or `withSession(agent, use)`.
+Agent `extensions` and SDK Extension `tools` are now optional and default to empty arrays. `withSession` is now callback-last: use `withSession(agent, options, use)` or `withSession(agent, use)`.
