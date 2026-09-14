@@ -4,3 +4,983 @@ title: "@mitome/sdk"
 
 Promise-first application surface: define Agents and Extensions, run Sessions, and persist
 Transcripts without any Effect type in a public signature.
+
+## Classes
+
+### AgentDefinitionError
+
+The Agent Definition cannot compile: duplicate Provider ids, a malformed or unregistered Default
+Model, conflicting Extension or Tool names, Tool handlers without a matching Tool, or malformed
+`approvals` rules. `issues` lists every problem found, not just the first.
+
+```ts
+class AgentDefinitionError extends Error {
+  readonly _tag: "AgentDefinitionError";
+  /** Every problem found, at least one. */
+  readonly issues: readonly [string, ...string[]];
+  /** Every issue, one per line. */
+  readonly message: string;
+}
+```
+
+### ApprovalResolutionError
+
+An Approval decision could not be applied: it was already resolved, or (`reason: "not-pending"`)
+its Turn has ended. Decisions are one-shot.
+
+```ts
+class ApprovalResolutionError extends Error {
+  readonly _tag: "ApprovalResolutionError";
+  readonly reason?: "not-pending";
+  /** Description derived from `reason`. */
+  readonly message: string;
+}
+```
+
+### SessionBusyError
+
+Overlapping `Session.runTurn()` while a Turn is active.
+
+```ts
+class SessionBusyError extends Error {
+  readonly _tag: "SessionBusyError";
+  /** Fixed description; the error carries no fields. */
+  readonly message: string;
+}
+```
+
+### SessionReleasedError
+
+Turn requested on a Session whose scope has already closed.
+
+```ts
+class SessionReleasedError extends Error {
+  readonly _tag: "SessionReleasedError";
+  /** Fixed description; the error carries no fields. */
+  readonly message: string;
+}
+```
+
+### StoreError
+
+A Transcript store operation failed. From `save` or a mid-Turn `appendEvent`, the Turn fails
+before commit. From the `appendEvent` of the final `response-complete` record, the Turn is already
+committed and the failure surfaces to the consumer instead of `response-complete`.
+
+```ts
+class StoreError extends Error {
+  readonly _tag: "StoreError";
+  readonly message: string;
+  /** The cause of the error. */
+  readonly cause?: unknown;
+}
+```
+
+### TranscriptNotFound
+
+No Transcript exists for the requested id.
+
+```ts
+class TranscriptNotFound extends Error {
+  readonly _tag: "TranscriptNotFound";
+  readonly id: string;
+}
+```
+
+### TurnError
+
+A model, Tool, or Extension Hook failed while completing a Turn.
+
+```ts
+class TurnError extends Error {
+  readonly _tag: "TurnError";
+  /** Names the failed stage, such as `Turn start Hook failed`, or the Model error's reason. */
+  readonly message: string;
+  /** The cause of the error. */
+  readonly cause: unknown;
+}
+```
+
+## Interfaces
+
+### AgentDefinition
+
+A user-authored declaration of exactly one Agent: its Providers, Default Model, and Extensions.
+Create it with [`defineAgent`](#defineagent); a Session compiles it once when it starts.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="AgentDefinition" />
+
+### ApprovalRules
+
+Tool-name patterns per decision: an exact Tool name or a prefix followed by one `*` (`"*"` alone
+matches every Tool). A Tool matched by several lists resolves `deny` over `ask` over `allow`.
+Known Tool names of the Extensions are offered as completions; any string is accepted.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="ApprovalRules" />
+
+### Extension
+
+A reusable unit an Agent Definition includes to add Tools, contribute Instructions, or
+participate in the Agent lifecycle. Identity is the object reference; `name` only labels
+diagnostics, and two different named Extensions with the same name conflict. Application code
+creates one with [`defineExtension`](#defineextension); the fields below are the Effect-native
+contract it produces, shared with `@mitome/core`.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="Extension" />
+
+### ExtensionDefinition
+
+Input to [`defineExtension`](#defineextension).
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="ExtensionDefinition" />
+
+### ExtensionHooksDefinition
+
+Promise lifecycle Hooks. Start Hooks run in Agent Definition order and end Hooks in reverse; a
+rejected Hook fails the Turn (or Session start) with [`TurnError`](#turnerror), except
+`sessionEnd`, whose rejection is logged so Session release always completes.
+
+<auto-type-table
+  path="../../../../../../packages/sdk/src/index.ts"
+  name="ExtensionHooksDefinition"
+/>
+
+### HookContext
+
+Passed to every Promise Hook and Tool handler.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="HookContext" />
+
+### MitomeDefinition
+
+The composition root pairing one Agent Definition with its Hosts; a Mitome Definition module
+exports it as default for the CLI to load. Hosts are shallow `kind` handles here because they are
+authored against `@mitome/core`.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="MitomeDefinition" />
+
+### Prompt
+
+The ordered Messages supplied to a Model for one Step.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="Prompt" />
+
+### Provider
+
+A configured model Provider with non-secret catalog hints. Provider packages such as
+[`@mitome/providers/openai`](/docs/reference/api/providers-openai) create these.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="Provider" />
+
+### Session
+
+The live Session handed to a [`withSession`](#withsession) callback; it is released when the
+callback settles.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="Session" />
+
+### StepEndContext
+
+`stepEnd` context: the response parts the Step emitted; failed Steps include partial parts.
+Extends [`HookContext`](#hookcontext).
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="StepEndContext" />
+
+### Tool
+
+A Promise Tool declared through a [`ToolBuilder`](#toolbuilder).
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="Tool" />
+
+### ToolApprovalContext
+
+Passed to a `needsApproval` predicate alongside the decoded input.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="ToolApprovalContext" />
+
+### ToolBuilder
+
+A Tool declaration function scoped to one Extension Resource. The `tools` callback of
+[`ExtensionDefinition`](#extensiondefinition) and [`defineAgent`](#defineagent) receives one as
+`scope.tool`; which overload applies depends on the schemas the definition declares.
+
+```ts
+interface ToolBuilder<Resource = never> {
+  /** With `outputSchema` and `failureSchema`: the handler returns `ok()` or `fail()`, both validated. */
+  <Input, Output, Failure, const Name extends string>(definition: {
+    readonly name: Name;
+    readonly description?: string;
+    readonly inputSchema: InputSchema<Input>;
+    readonly needsApproval?: Tool<Input>["needsApproval"];
+    readonly outputSchema: OutputSchema<Output>;
+    readonly failureSchema: OutputSchema<Failure>;
+    readonly handler: (
+      input: Input,
+      context: HookContext<Resource>,
+    ) => Promise<ToolSuccess<Output> | ToolFailure<Failure>>;
+  }): Tool<Input, Output, Failure, Resource, Name>;
+
+  /** With `outputSchema` only: the handler returns the output, which is validated. */
+  <Input, Output, const Name extends string>(definition: {
+    readonly name: Name;
+    readonly description?: string;
+    readonly inputSchema: InputSchema<Input>;
+    readonly needsApproval?: Tool<Input>["needsApproval"];
+    readonly outputSchema: OutputSchema<Output>;
+    readonly handler: (input: Input, context: HookContext<Resource>) => Promise<Output>;
+  }): Tool<Input, Output, never, Resource, Name>;
+
+  /** Without schemas: the output is inferred from the handler and passed through unvalidated. */
+  <Input, Output, const Name extends string>(definition: {
+    readonly name: Name;
+    readonly description?: string;
+    readonly inputSchema: InputSchema<Input>;
+    readonly needsApproval?: Tool<Input>["needsApproval"];
+    readonly handler: (input: Input, context: HookContext<Resource>) => Promise<Output>;
+  }): Tool<Input, Output, never, Resource, Name>;
+}
+```
+
+Returns a [`Tool`](#tool).
+
+### ToolContribution
+
+Type-level record of one Tool's input, output, and expected failure types.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="ToolContribution" />
+
+### ToolExecutionDenied
+
+The Tool result the Model receives when a `preTool` Hook vetoes or a Host denies a Tool call.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="ToolExecutionDenied" />
+
+### ToolFailure
+
+Expected failure of a Tool with a `failureSchema`; create it with [`fail`](#fail).
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="ToolFailure" />
+
+### ToolHookContext
+
+The Tool call a `preTool` Hook observes: its name and decoded input.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="ToolHookContext" />
+
+### ToolResultHookContext
+
+The Tool result a `postTool` Hook observes; `isFailure` marks an expected failure value. Extends
+[`ToolHookContext`](#toolhookcontext).
+
+<auto-type-table
+  path="../../../../../../packages/sdk/src/index.ts"
+  name="ToolResultHookContext"
+/>
+
+### ToolSuccess
+
+Expected success of a Tool with a `failureSchema`; create it with [`ok`](#ok).
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="ToolSuccess" />
+
+### TranscriptEventRecord
+
+One appended Turn event, ordered by `seq` within the Session that produced it.
+
+<auto-type-table
+  path="../../../../../../packages/sdk/src/index.ts"
+  name="TranscriptEventRecord"
+/>
+
+### TranscriptStore
+
+Promise-first persistence contract accepted by `@mitome/sdk`. [`fileTranscripts`](#filetranscripts)
+and [`memoryTranscripts`](#memorytranscripts) implement it; a custom store implements these four
+methods and rejects with any error to signal a [`StoreError`](#storeerror).
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="TranscriptStore" />
+
+### TurnOptions
+
+Per-Turn overrides for `Session.runTurn`.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="TurnOptions" />
+
+### Usage
+
+Token usage of a Step; every count is optional because Providers report different detail.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="Usage" />
+
+## Type Aliases
+
+### AnyExtension
+
+```ts
+type AnyExtension = Extension<any, unknown, any> | Extension<never, any, any>;
+```
+
+Any Extension regardless of its Resource. Layer's ROut is contravariant while hook/handler
+Effects are covariant in R, so no single parameterization accepts every Extension; the union's
+arms cover both variance directions.
+
+### AnyProvider
+
+```ts
+type AnyProvider = Provider<string, ReadonlyArray<string>>;
+```
+
+Any configured Provider, for code that holds Providers without knowing their catalog.
+
+### AnyTool
+
+```ts
+type AnyTool = Omit<Tool<any, any, any, any>, "handler"> & {
+  /** Erased handler; see `Tool.handler` for the contract. */
+  readonly handler: (...args: never[]) => Promise<any>;
+};
+```
+
+Any Promise Tool regardless of its input, output, failure, or Resource types.
+
+### ApprovalPolicy
+
+```ts
+type ApprovalPolicy<Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>> =
+  ApprovalRules<Extensions> | ApprovalPolicyCallback<Extensions>;
+```
+
+The Agent author's sparse Approval override: Tools it does not mention keep their author's
+`needsApproval` default. `deny` and `ask` always hold; `allow` only bypasses the Tool default and
+never an Extension veto or `"ask"`.
+
+### ApprovalPolicyCall
+
+```ts
+// Widened form; see below for when `name` and `params` narrow.
+type ApprovalPolicyCall<
+  Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
+> = {
+  readonly name: string;
+  readonly params: unknown;
+  readonly toolCallId: string;
+};
+```
+
+The Tool call an `approvals` callback decides on; `params` is the decoded Tool input. When every
+Extension's Tool names are known at the type level, comparing `name` narrows `params` to that
+Tool's input; one Extension typed without contributions leaves `name: string` and
+`params: unknown` for the whole call, since its Tools reach the callback too.
+
+### ApprovalPolicyCallback
+
+```ts
+type ApprovalPolicyCallback<
+  Extensions extends ReadonlyArray<AnyExtension> = ReadonlyArray<AnyExtension>,
+> = (call: ApprovalPolicyCall<Extensions>) => ApprovalPolicyDecision | undefined;
+```
+
+Synchronous, param-aware Approval rule. Throwing, returning a Promise or Effect, or returning
+anything other than a decision or `undefined` fails the Turn before the Tool runs.
+
+### ApprovalPolicyDecision
+
+```ts
+type ApprovalPolicyDecision = "allow" | "ask" | "deny";
+```
+
+The Agent author's opinion on one Tool call; `undefined` defers to the Tool's `needsApproval`.
+
+### ApprovalRequirement
+
+```ts
+type ApprovalRequirement = "tool" | "policy" | "predicate-error";
+```
+
+Why a Tool call paused for Approval: the Tool author's `needsApproval` (`tool`), the Agent's
+`approvals` or an Extension `preTool` `"ask"` (`policy`), or a `needsApproval` predicate that
+failed and therefore fails closed (`predicate-error`).
+
+### FinishReason
+
+```ts
+type FinishReason =
+  "stop" | "length" | "content-filter" | "tool-calls" | "error" | "pause" | "other" | "unknown";
+```
+
+Why the Model stopped generating in a Step.
+
+### InputSchema
+
+```ts
+type InputSchema<Input = unknown> =
+  (StandardSchemaV1<unknown, Input> & StandardJSONSchemaV1<unknown, Input>) | EffectSchema<Input>;
+```
+
+Schema for Tool input: a Standard Schema that also emits JSON Schema (zod v4 does), or an Effect
+Schema. The Model needs the JSON Schema; the validator decodes what it sends back. `EffectSchema`
+is a structural view of an Effect `Schema` so that no Effect type appears in this signature.
+
+### Json
+
+```ts
+type Json = null | boolean | number | string | ReadonlyArray<Json> | { [key: string]: Json };
+```
+
+A JSON-serializable value.
+
+### OutputSchema
+
+```ts
+type OutputSchema<Output = unknown> = StandardSchemaV1<unknown, Output> | EffectSchema<Output>;
+```
+
+Schema for a Tool's output or expected failure; validation only, no JSON Schema needed.
+
+### PromptMessage
+
+```ts
+type PromptMessage =
+  | { readonly role: "system"; readonly content: string; readonly options?: ProviderOptions }
+  | {
+      readonly role: "user";
+      readonly content: string | ReadonlyArray<Extract<PromptPart, { type: "text" | "file" }>>;
+      readonly options?: ProviderOptions;
+    }
+  | {
+      readonly role: "assistant";
+      readonly content:
+        | string
+        | ReadonlyArray<
+            Extract<
+              PromptPart,
+              {
+                type:
+                  | "text"
+                  | "reasoning"
+                  | "file"
+                  | "tool-call"
+                  | "tool-result"
+                  | "tool-approval-request";
+              }
+            >
+          >;
+      readonly options?: ProviderOptions;
+    }
+  | {
+      readonly role: "tool";
+      readonly content: ReadonlyArray<
+        Extract<PromptPart, { type: "tool-result" | "tool-approval-response" }>
+      >;
+      readonly options?: ProviderOptions;
+    };
+```
+
+One Message of a Model Prompt, by role; each role permits its own part types.
+
+### PromptPart
+
+```ts
+type PromptPart =
+  | { readonly type: "text"; readonly text: string; readonly options?: ProviderOptions }
+  | { readonly type: "reasoning"; readonly text: string; readonly options?: ProviderOptions }
+  | {
+      readonly type: "file";
+      readonly mediaType: string;
+      readonly fileName?: string;
+      readonly data: string | Uint8Array | URL;
+      readonly options?: ProviderOptions;
+    }
+  | {
+      readonly type: "tool-call";
+      readonly id: string;
+      readonly name: string;
+      readonly params: unknown;
+      readonly providerExecuted?: boolean;
+      readonly options?: ProviderOptions;
+    }
+  | {
+      readonly type: "tool-result";
+      readonly id: string;
+      readonly name: string;
+      readonly isFailure: boolean;
+      readonly result: unknown;
+      readonly providerExecuted?: boolean;
+      readonly options?: ProviderOptions;
+    }
+  | {
+      readonly type: "tool-approval-response";
+      readonly approvalId: string;
+      readonly approved: boolean;
+      readonly reason?: string;
+      readonly options?: ProviderOptions;
+    }
+  | {
+      readonly type: "tool-approval-request";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+      readonly options?: ProviderOptions;
+    };
+```
+
+One content part of a Model Prompt Message.
+
+### ProviderOptions
+
+```ts
+type ProviderOptions = Readonly<Record<string, Json>>;
+```
+
+Provider-specific options attached to a Message or part; opaque to Mitome.
+
+### QualifiedModelId
+
+```ts
+type QualifiedModelId<Value extends AnyProvider> =
+  Value extends Provider<infer Id, infer ModelIds>
+    ? `${Id}/${ModelIds[number] | (string & {})}`
+    : never;
+```
+
+A Provider-qualified Model id, written as `provider/model`. The Provider's catalog ids are offered
+as completions; any model id under a registered Provider is accepted.
+
+### ResponsePart
+
+```ts
+type ResponsePart =
+  | { readonly type: "text" | "reasoning"; readonly text: string }
+  | {
+      readonly type: "text-start" | "text-end" | "reasoning-start" | "reasoning-end";
+      readonly id: string;
+    }
+  | {
+      readonly type: "text-delta" | "reasoning-delta" | "tool-params-delta";
+      readonly id: string;
+      readonly delta: string;
+    }
+  | {
+      readonly type: "tool-params-start";
+      readonly id: string;
+      readonly name: string;
+      readonly providerExecuted?: boolean;
+    }
+  | { readonly type: "tool-params-end"; readonly id: string }
+  | {
+      readonly type: "tool-call";
+      readonly id: string;
+      readonly name: string;
+      readonly params: unknown;
+      readonly providerExecuted?: boolean;
+    }
+  | {
+      readonly type: "tool-result";
+      readonly id: string;
+      readonly name: string;
+      readonly result: unknown;
+      readonly isFailure: boolean;
+      readonly providerExecuted?: boolean;
+      readonly preliminary?: boolean;
+    }
+  | {
+      readonly type: "tool-approval-request";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+    }
+  | { readonly type: "file"; readonly mediaType: string; readonly data: Uint8Array }
+  | {
+      readonly type: "source";
+      readonly sourceType: "document";
+      readonly id: string;
+      readonly mediaType: string;
+      readonly title: string;
+      readonly fileName?: string;
+    }
+  | {
+      readonly type: "source";
+      readonly sourceType: "url";
+      readonly id: string;
+      readonly url: URL;
+      readonly title: string;
+    }
+  | {
+      readonly type: "response-metadata";
+      readonly id?: string;
+      readonly modelId?: string;
+      readonly timestamp?: unknown;
+      readonly request?: unknown;
+    }
+  | {
+      readonly type: "finish";
+      readonly reason: FinishReason;
+      readonly usage: Usage;
+      readonly response?: unknown;
+    }
+  | { readonly type: "error"; readonly error: unknown };
+```
+
+One streamed part of a Model response, as `stepEnd` receives them. Every variant also carries an
+optional `metadata?: ProviderOptions`.
+
+### SessionOptions
+
+```ts
+type SessionOptions =
+  | {
+      readonly transcripts?: TranscriptStore;
+      readonly transcript?: Transcript;
+      readonly resume?: never;
+    }
+  | {
+      readonly transcripts: TranscriptStore;
+      readonly resume: TranscriptId;
+      readonly transcript?: never;
+    };
+```
+
+Persistence and seeding for [`withSession`](#withsession): a `transcripts` store, a `transcript` to
+seed from, or a store plus the id to `resume`. Resuming loads that Transcript and forks a new one
+whose `parentTranscriptId` is the seed; an unknown id rejects with
+[`TranscriptNotFound`](#transcriptnotfound).
+
+### StandardSchema
+
+```ts
+type StandardSchema<Input = unknown, Output = Input> = StandardSchemaV1<Input, Output>;
+```
+
+Any Standard Schema v1 validator, such as a zod v4, valibot, or ArkType schema.
+
+### ToolContributionsOf
+
+```ts
+type ToolContributionsOf<Tools extends ReadonlyArray<AnyTool>> = {
+  readonly [Value in Tools[number] as Value["name"]]: ToolContribution<
+    ToolTypes<Value>["input"],
+    ToolTypes<Value>["output"],
+    ToolTypes<Value>["failure"]
+  >;
+};
+```
+
+Tool name to [`ToolContribution`](#toolcontribution) map derived from the Tools a builder
+returned. `ToolTypes` is the module-private brand a [`ToolBuilder`](#toolbuilder) stamps on each
+[`Tool`](#tool) to carry its input, output, and failure types.
+
+### Transcript
+
+The durable, ordered record of a Session's committed Messages. It may outlive the Session and seed
+new ones; a resumed Session gets a new id with `parentTranscriptId` pointing at its seed.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="Transcript" />
+
+### TranscriptId
+
+```ts
+type TranscriptId = string;
+```
+
+Identifies a Transcript; a UUID when Mitome generates it.
+
+### TranscriptMessage
+
+```ts
+type TranscriptMessage =
+  | { readonly role: "system"; readonly content: string; readonly options?: ProviderOptions }
+  | {
+      readonly role: "user";
+      readonly content: ReadonlyArray<TextPart | FilePart>;
+      readonly options?: ProviderOptions;
+    }
+  | {
+      readonly role: "assistant";
+      readonly content: ReadonlyArray<
+        | TextPart
+        | ReasoningPart
+        | FilePart
+        | ToolCallPart
+        | ToolResultPart
+        | ToolApprovalRequestPart
+      >;
+      readonly options?: ProviderOptions;
+    }
+  | {
+      readonly role: "tool";
+      readonly content: ReadonlyArray<ToolResultPart | ToolApprovalResponsePart>;
+      readonly options?: ProviderOptions;
+    };
+```
+
+One committed Message of a Transcript, decoded from the Transcript schema. The part shapes match
+[`PromptPart`](#promptpart) by `type`, with three differences a store adapter sees: `content` is
+always a part array, Tool `params` and `result` are [`Json`](#json) rather than `unknown`, and a
+file part's `data` is `{ encoding: "string" | "base64" | "url"; value: string }` instead of a
+`Uint8Array` or `URL`.
+
+### TranscriptSummary
+
+One row of `TranscriptStore.list`: id, lineage, ISO timestamps, message count, and a single-line
+preview of the first user Message.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="TranscriptSummary" />
+
+### TurnEvent
+
+```ts
+type TurnEvent =
+  | { readonly type: "model-output"; readonly text: string }
+  | { readonly type: "reasoning"; readonly text: string }
+  | {
+      readonly type: "tool-call";
+      readonly id: string;
+      readonly name: string;
+      readonly params: unknown;
+    }
+  | {
+      readonly type: "tool-result";
+      readonly id: string;
+      readonly name: string;
+      readonly result: unknown;
+      readonly isFailure: boolean;
+    }
+  | {
+      readonly type: "approval-required";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+      readonly name: string;
+      readonly params: unknown;
+      readonly requirement: ApprovalRequirement;
+      /** Lets the Tool call run. One-shot: resolving again or after the Turn ended rejects with `ApprovalResolutionError`. */
+      readonly approve: () => Promise<void>;
+      /** Rejects the Tool call; the Model sees `reason`. One-shot like `approve`. */
+      readonly deny: (reason?: string) => Promise<void>;
+    }
+  | {
+      readonly type: "response-complete";
+      readonly finishReason?: FinishReason;
+      readonly usage?: Usage;
+    };
+```
+
+One event from `Session.runTurn`: `model-output` and `reasoning` text, `tool-call` and
+`tool-result` activity, `approval-required` with Promise-returning decisions, and a final
+`response-complete`. Failures are thrown while iterating, not emitted as events. `approve` and
+`deny` reject with [`ApprovalResolutionError`](#approvalresolutionerror); the Effect-native form
+of the same union is [`TurnEvent`](/docs/reference/api/sdk-effect#turnevent) in `@mitome/sdk/effect`.
+
+### TurnEventDto
+
+```ts
+type TurnEventDto =
+  | { readonly type: "model-output"; readonly text: string }
+  | { readonly type: "reasoning"; readonly text: string }
+  | {
+      readonly type: "tool-call";
+      readonly id: string;
+      readonly name: string;
+      readonly params: Json;
+    }
+  | {
+      readonly type: "tool-result";
+      readonly id: string;
+      readonly name: string;
+      readonly result: Json;
+      readonly isFailure: boolean;
+    }
+  | {
+      readonly type: "approval-required";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+      readonly name: string;
+      readonly params: Json;
+      readonly requirement: ApprovalRequirement;
+    }
+  | {
+      readonly type: "approval-resolved";
+      readonly approvalId: string;
+      readonly toolCallId: string;
+      readonly approved: boolean;
+      readonly reason?: string;
+    }
+  | {
+      readonly type: "response-complete";
+      readonly finishReason?: FinishReason;
+      readonly usage?: Usage;
+    };
+```
+
+Serializable form of a Turn event, as `TranscriptStore.appendEvent` receives it inside a
+[`TranscriptEventRecord`](#transcripteventrecord). Approval callbacks are dropped,
+`approval-resolved` records each decision, and Tool params or results that are not JSON become
+`null`.
+
+## Variables
+
+### TranscriptSchemaVersion
+
+```ts
+const TranscriptSchemaVersion: 1;
+```
+
+The `schemaVersion` written into every Transcript this version of Mitome produces.
+
+## Functions
+
+### defineAgent
+
+```ts
+function defineAgent<
+  const Providers extends ReadonlyArray<AnyProvider>,
+  const DefaultModel extends QualifiedModelId<Providers[number]>,
+  const Extensions extends ReadonlyArray<AnyExtension> = readonly [],
+>(definition: {
+  readonly providers: Providers;
+  readonly model: DefaultModel;
+  readonly extensions?: Extensions;
+  readonly approvals?: ApprovalPolicy<Extensions>;
+}): AgentDefinition<Providers, DefaultModel, Extensions>;
+
+function defineAgent<
+  const Providers extends ReadonlyArray<AnyProvider>,
+  const DefaultModel extends QualifiedModelId<Providers[number]>,
+  const Extensions extends ReadonlyArray<AnyExtension> = readonly [],
+  const Tools extends ReadonlyArray<AnyTool> = readonly [],
+>(definition: {
+  readonly providers: Providers;
+  readonly model: DefaultModel;
+  readonly extensions?: Extensions;
+  readonly tools: (scope: { readonly tool: ToolBuilder<never> }) => Tools;
+  readonly approvals?: ApprovalPolicy<
+    readonly [...Extensions, Extension<never, unknown, ToolContributionsOf<Tools>>]
+  >;
+}): AgentDefinition<
+  Providers,
+  DefaultModel,
+  readonly [...Extensions, Extension<never, unknown, ToolContributionsOf<Tools>>]
+>;
+```
+
+Declares an Agent from its Providers, Default Model, and optional Extensions. The Default Model is
+a Qualified Model id (`provider/model`) whose prefix must name a registered Provider; catalog ids
+are offered as completions but any model id under that Provider is accepted. `approvals` offers
+the Extensions' Tool names as completions; see [`ApprovalPolicy`](#approvalpolicy).
+
+The second overload declares an Agent with one-off Tools that need no Resource. The `tools`
+builder becomes an anonymous Extension appended after `extensions`; use
+[`defineExtension`](#defineextension) when Tools need a Resource, Hooks, Instructions, or reuse. An
+`approvals` callback narrows `params` by inline Tool name only when it is written after `tools`;
+rule lists complete inline names in any order.
+
+Returns an [`AgentDefinition`](#agentdefinition). Definition problems surface as
+[`AgentDefinitionError`](#agentdefinitionerror) when a Session compiles it.
+
+### defineExtension
+
+```ts
+function defineExtension<Resource = never>(
+  definition: ExtensionDefinition<Resource, readonly []>,
+): Extension<Resource, unknown, ToolContributionsOf<readonly []>>;
+
+function defineExtension<Resource = never, const Tools extends ReadonlyArray<AnyTool>>(
+  definition: ExtensionDefinition<Resource, Tools> & {
+    readonly tools: (scope: { readonly tool: ToolBuilder<Resource> }) => Tools;
+  },
+): Extension<Resource, unknown, ToolContributionsOf<Tools>>;
+```
+
+Declares a Promise Extension without Tools: Instructions, Hooks, and an optional Resource. A
+Resource is private to its Extension, so put Hooks that share state in one Extension. The second
+overload declares a Promise Extension with Tools. Tool names must be unique within the Extension,
+and `dispose` requires `setup`; both throw at definition time.
+
+When `Resource` is anything other than `never`, `setup` is required; when it is `never`, `setup`
+and `dispose` must be omitted. The compiler enforces this on the `definition` parameter.
+
+Returns an [`Extension`](#extension).
+
+### defineMitome
+
+```ts
+function defineMitome<const Agent extends AgentDefinition>(definition: {
+  readonly agent: Agent;
+  readonly hosts?: ReadonlyArray<{ readonly kind: "interactive" | "channel" }>;
+  readonly transcripts?: TranscriptStore;
+}): MitomeDefinition<Agent>;
+```
+
+Creates a Mitome Definition. Omit `hosts` for one-shot use; a value that is not a Host, such as an
+uncalled factory, throws. Omit `transcripts` to write no Transcript data; when given, every Host
+shares that store.
+
+Returns a [`MitomeDefinition`](#mitomedefinition).
+
+### fail
+
+```ts
+function fail<const Failure>(error: Failure): ToolFailure<Failure>;
+```
+
+Wraps an expected failure the Model should see and react to; it is validated against
+`failureSchema`. Throwing instead is a defect and yields an opaque failed result.
+
+Returns a [`ToolFailure`](#toolfailure).
+
+### fileTranscripts
+
+```ts
+function fileTranscripts(directory?: string): TranscriptStore;
+```
+
+Disk-backed store rooted at `directory`, defaulting to `<config-dir>/transcripts`; files are
+created with mode 0600. Throws immediately when no directory is given and no config directory
+resolves (set `MITOME_HOME`).
+
+Returns a [`TranscriptStore`](#transcriptstore).
+
+### memoryTranscripts
+
+```ts
+function memoryTranscripts(): TranscriptStore;
+```
+
+In-memory store for tests or a shared store without disk writes. Contents live as long as the
+returned value; event records are discarded.
+
+Returns a [`TranscriptStore`](#transcriptstore).
+
+### ok
+
+```ts
+function ok<const Output>(value: Output): ToolSuccess<Output>;
+```
+
+Wraps a Tool result as an expected success; required when the Tool declares a `failureSchema`.
+
+Returns a [`ToolSuccess`](#toolsuccess).
+
+### withSession
+
+```ts
+function withSession<const Definition extends AgentDefinition, A>(
+  definition: Definition,
+  use: (session: Session<Definition["providers"]>) => Promise<A>,
+): Promise<A>;
+
+function withSession<const Definition extends AgentDefinition, A>(
+  definition: Definition,
+  options: SessionOptions,
+  use: (session: Session<Definition["providers"]>) => Promise<A>,
+): Promise<A>;
+```
+
+Opens a Session for the Agent Definition, runs the callback, and releases the Session afterwards,
+including on failure or interruption. The second overload opens the Session with persistence or
+seeding options; see [`SessionOptions`](#sessionoptions).
+
+Returns the callback's result.
+
+Throws the tagged Session errors: [`AgentDefinitionError`](#agentdefinitionerror) when the
+definition does not compile, [`TranscriptNotFound`](#transcriptnotfound) when `resume` names an
+unknown id, and [`TurnError`](#turnerror), [`StoreError`](#storeerror),
+[`SessionBusyError`](#sessionbusyerror), or [`SessionReleasedError`](#sessionreleasederror) while
+iterating a Turn. Errors thrown by the callback are rethrown unchanged.
