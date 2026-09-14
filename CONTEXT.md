@@ -122,6 +122,10 @@ _Avoid_: Gateway, integration, bot, interactive Host
 The mapping from one external conversation on a Channel to its latest Transcript, so that conversation resumes where it left off.
 _Avoid_: Thread, binding, Session (the live interaction)
 
+**Principal**:
+Who a Channel request acts as, as the surface identifies them: a user or account id resolved by authentication before anything else runs. It is part of every Route key and owns the pending Approvals of its Turns, so a conversation or Approval id alone never authorizes.
+_Avoid_: User (bare), token, client id
+
 **Runner**:
 The CLI subprocess that loads a Mitome Definition and runs its Hosts or the one-shot printer. The code still calls it the Child Host; the rename is deferred.
 _Avoid_: Child Host (going forward), subprocess (bare), worker
