@@ -1,10 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
-import { LanguageModel, type Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { Cause, Deferred, Effect, Exit, Fiber, Schema, Stream } from "effect";
+import { type Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import {
   type AgentDefinition,
   createSession,
-  makeProvider,
   type TranscriptEventRecord,
   TranscriptEventRecordSchema,
   TranscriptNotFound,
@@ -129,17 +128,10 @@ describe("Session event log", () => {
     Effect.gen(function* () {
       const appended = yield* Deferred.make<void>();
       const records: Array<TranscriptEventRecord> = [];
-      const provider = makeProvider("test", [] as const, undefined, () =>
-        Layer.effect(
-          LanguageModel.LanguageModel,
-          LanguageModel.make({
-            generateText: () => Effect.succeed([]),
-            streamText: () =>
-              Stream.concat(
-                Stream.succeed({ type: "text-delta", id: "partial", delta: "partial" }),
-                Stream.never,
-              ),
-          }),
+      const provider = makeStreamingTestProvider(() =>
+        Stream.concat(
+          Stream.succeed({ type: "text-delta", id: "partial", delta: "partial" }),
+          Stream.never,
         ),
       );
       const session = yield* createSession(
@@ -322,27 +314,19 @@ describe("Session event log", () => {
   it.effect("records Approval requests and outcomes without resolution closures", () =>
     Effect.gen(function* () {
       let calls = 0;
-      const provider = makeProvider("test", [] as const, undefined, () =>
-        Layer.effect(
-          LanguageModel.LanguageModel,
-          LanguageModel.make({
-            generateText: () => Effect.succeed([]),
-            streamText: () => {
-              calls += 1;
-              return Stream.succeed(
-                calls === 1
-                  ? {
-                      type: "tool-call" as const,
-                      id: "call-1",
-                      name: "dangerous",
-                      params: { action: "delete" },
-                    }
-                  : { type: "text-delta" as const, id: "done", delta: "continued" },
-              );
-            },
-          }),
-        ),
-      );
+      const provider = makeStreamingTestProvider(() => {
+        calls += 1;
+        return Stream.succeed(
+          calls === 1
+            ? {
+                type: "tool-call" as const,
+                id: "call-1",
+                name: "dangerous",
+                params: { action: "delete" },
+              }
+            : { type: "text-delta" as const, id: "done", delta: "continued" },
+        );
+      });
       const dangerous = Tool.make("dangerous", {
         parameters: Schema.Struct({ action: Schema.String }),
         success: Schema.String,

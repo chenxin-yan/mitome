@@ -21,6 +21,10 @@ const StoredTranscriptFileSchema = Schema.Struct({
   updatedAt: Schema.String,
 });
 type StoredTranscriptFile = typeof StoredTranscriptFileSchema.Type;
+const decodeStoredTranscriptFile = Schema.decodeEffect(
+  Schema.fromJsonString(StoredTranscriptFileSchema),
+  { onExcessProperty: "error" },
+);
 
 const transcriptSuffix = ".transcript.json";
 const eventsSuffix = ".events.jsonl";
@@ -50,13 +54,9 @@ const decodeStoredTranscript = (
   path: string,
   contents: string,
 ): Effect.Effect<StoredTranscriptFile, StoreError> =>
-  Effect.try({
-    try: () =>
-      Schema.decodeUnknownSync(StoredTranscriptFileSchema, { onExcessProperty: "error" })(
-        JSON.parse(contents),
-      ),
-    catch: (cause) => storeError(`Invalid Transcript store file: ${path}.`, cause),
-  });
+  decodeStoredTranscriptFile(contents).pipe(
+    Effect.mapError((cause) => storeError(`Invalid Transcript store file: ${path}.`, cause)),
+  );
 
 const idFromFileName = (
   name: string,
@@ -89,14 +89,6 @@ const readStoredTranscript = (
   }).pipe(Effect.flatMap((contents) => decodeStoredTranscript(path, contents)));
 };
 
-const readStoredTranscriptIfPresent = (
-  directory: string,
-  id: TranscriptId,
-): Effect.Effect<StoredTranscriptFile | undefined, StoreError> =>
-  Effect.catchTag(readStoredTranscript(directory, id), "TranscriptNotFound", () =>
-    Effect.succeed(undefined),
-  );
-
 const validateTranscriptId = (
   path: string,
   expected: TranscriptId,
@@ -122,7 +114,9 @@ export const fileTranscripts = (
     Effect.gen(function* () {
       yield* ensureDirectory(directory);
       const path = join(directory, fileName(transcript.id, transcriptSuffix));
-      const previous = yield* readStoredTranscriptIfPresent(directory, transcript.id);
+      const previous = yield* readStoredTranscript(directory, transcript.id).pipe(
+        Effect.catchTag("TranscriptNotFound", () => Effect.succeed(undefined)),
+      );
       if (previous !== undefined) {
         yield* validateTranscriptId(path, transcript.id, previous.transcript.id);
       }

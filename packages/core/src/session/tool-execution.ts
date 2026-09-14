@@ -52,21 +52,16 @@ export interface ToolExecution {
 type PreparedCall =
   | {
       readonly _tag: "Ready";
-      readonly pipeline: ToolPipeline;
       readonly params: ToolInput;
       readonly veto: string | undefined;
       readonly requirement: ApprovalRequirement | undefined;
     }
   | {
       readonly _tag: "InputFailure";
-      readonly pipeline: ToolPipeline;
-      readonly params: ToolInput;
       readonly reason: string;
     }
   | {
       readonly _tag: "TurnFailure";
-      readonly pipeline: ToolPipeline;
-      readonly params: ToolInput;
       readonly method: string;
       readonly message: string;
       readonly cause: unknown;
@@ -358,12 +353,10 @@ export const makeToolExecution = (
                   Effect.catchCause(interruptOrFailure),
                 );
           if (Predicate.isTagged(input, "InputFailure")) {
-            return PreparedCall.InputFailure({ pipeline, params, reason: input.reason });
+            return PreparedCall.InputFailure({ reason: input.reason });
           }
           if (Predicate.isTagged(input, "Failure")) {
             return PreparedCall.TurnFailure({
-              pipeline,
-              params,
               method: tool.name,
               message: "Tool input validator failed",
               cause: input.cause,
@@ -371,10 +364,10 @@ export const makeToolExecution = (
           }
           const gated = yield* gate(tool.name, input.value, context.toolCallId);
           if (Predicate.isTagged(gated, "Failure")) {
-            return PreparedCall.TurnFailure({ pipeline, params: input.value, ...gated });
+            return PreparedCall.TurnFailure(gated);
           }
           const ready = (requirement: ApprovalRequirement | undefined, veto?: string) =>
-            PreparedCall.Ready({ pipeline, params: input.value, veto, requirement });
+            PreparedCall.Ready({ params: input.value, veto, requirement });
           if (Predicate.isTagged(gated, "Denied")) return ready(undefined, gated.reason);
           if (gated.decision === "ask") return ready("policy");
           if (gated.decision === "allow") return ready(undefined);

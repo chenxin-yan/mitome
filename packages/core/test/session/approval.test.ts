@@ -1,38 +1,30 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Logger, Schema, Stream } from "effect";
-import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
+import { Deferred, Effect, Fiber, Logger, Schema, Stream } from "effect";
+import { Tool, Toolkit } from "effect/unstable/ai";
 import {
   type AgentDefinition,
   type ExtensionHooks,
   createSession,
-  makeProvider,
   type TurnEvent,
 } from "../../src/index.js";
+import { makeStreamingTestProvider } from "../support/provider.js";
 
 const approvalModel = () => {
   let calls = 0;
   let prompt: unknown;
-  const provider = makeProvider("test", [] as const, undefined, () =>
-    Layer.effect(
-      LanguageModel.LanguageModel,
-      LanguageModel.make({
-        generateText: () => Effect.succeed([]),
-        streamText: (options) => {
-          calls += 1;
-          if (calls === 1) {
-            return Stream.succeed({
-              type: "tool-call" as const,
-              id: "call-approval",
-              name: "dangerous",
-              params: { action: "delete" },
-            });
-          }
-          prompt = options.prompt;
-          return Stream.succeed({ type: "text-delta" as const, id: "done", delta: "continued" });
-        },
-      }),
-    ),
-  );
+  const provider = makeStreamingTestProvider((options) => {
+    calls += 1;
+    if (calls === 1) {
+      return Stream.succeed({
+        type: "tool-call" as const,
+        id: "call-approval",
+        name: "dangerous",
+        params: { action: "delete" },
+      });
+    }
+    prompt = options.prompt;
+    return Stream.succeed({ type: "text-delta" as const, id: "done", delta: "continued" });
+  });
   return { provider, calls: () => calls, prompt: () => prompt };
 };
 

@@ -6,9 +6,9 @@ import { makeModelResolver } from "../../src/session/model-resolver.js";
 describe("ModelResolver", () => {
   it.effect("translates malformed Qualified Model ids", () =>
     Effect.gen(function* () {
-      const resolver = makeModelResolver(new Map(), yield* Effect.scope);
+      const resolve = makeModelResolver(new Map(), yield* Effect.scope);
 
-      expect(yield* Effect.flip(resolver.resolve("malformed"))).toMatchObject({
+      expect(yield* Effect.flip(resolve("malformed"))).toMatchObject({
         _tag: "TurnError",
         message: "Malformed Qualified Model id: malformed",
         cause: "malformed",
@@ -22,9 +22,9 @@ describe("ModelResolver", () => {
       const provider = makeProvider("test", [] as const, undefined, () => {
         throw failure;
       });
-      const resolver = makeModelResolver(new Map([[provider.id, provider]]), yield* Effect.scope);
+      const resolve = makeModelResolver(new Map([[provider.id, provider]]), yield* Effect.scope);
 
-      expect(yield* Effect.flip(resolver.resolve("test/model"))).toMatchObject({
+      expect(yield* Effect.flip(resolve("test/model"))).toMatchObject({
         _tag: "TurnError",
         message: "provision failed",
         cause: failure,

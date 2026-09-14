@@ -15,6 +15,9 @@ const RouteFileSchema = Schema.Struct({
   conversation: Schema.String,
   transcriptId: Schema.String,
 });
+const decodeRouteFile = Schema.decodeEffect(Schema.fromJsonString(RouteFileSchema), {
+  onExcessProperty: "error",
+});
 
 const routeSuffix = ".route.json";
 const temporaryPrefix = ".route-";
@@ -70,13 +73,9 @@ export const fileRoutes = (directory: string = defaultRouteDirectory()): Routes 
         }
       });
       if (contents === undefined) return undefined;
-      const stored = yield* Effect.try({
-        try: () =>
-          Schema.decodeUnknownSync(RouteFileSchema, { onExcessProperty: "error" })(
-            JSON.parse(contents),
-          ),
-        catch: (cause) => storeError(`Invalid Route store file: ${path}.`, cause),
-      });
+      const stored = yield* decodeRouteFile(contents).pipe(
+        Effect.mapError((cause) => storeError(`Invalid Route store file: ${path}.`, cause)),
+      );
       if (encodeRouteKey(stored) !== encodeRouteKey(key)) {
         return yield* storeError(`Route key in ${path} does not match its file name.`);
       }
