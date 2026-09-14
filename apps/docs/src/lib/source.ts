@@ -20,7 +20,17 @@ export function markdownPathToSlugs(segs: string[]) {
 }
 
 export function slugsToMarkdownPath(slugs: string[]) {
-  return `${docsRoute}/${slugs.length ? slugs.join("/") : "index"}.md`;
+  const segments = [...slugs];
+  if (segments.length === 0) {
+    segments.push("index.md");
+  } else {
+    segments[segments.length - 1] += ".md";
+  }
+
+  return {
+    segments,
+    url: `${docsRoute}/${segments.join("/")}`,
+  };
 }
 
 export async function getLLMText(page: (typeof source)["$inferPage"]) {
