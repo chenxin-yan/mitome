@@ -68,8 +68,8 @@ How the CLI decides between a Host and one-shot output is under [Hosts](/docs/ho
 | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | `0`    | The command completed; an interactive Host returned.                                                                              |
 | `1`    | Any failure. The message is printed to stderr; the [errors reference](/docs/reference/errors#cli-messages) lists the common ones. |
-| `130`  | One-shot output interrupted with `Ctrl-C`; the Turn is not committed.                                                             |
-| `124`  | One-shot output did not stop within one second of `Ctrl-C` and was killed.                                                        |
+| `130`  | Interrupted by `Ctrl-C` or `SIGTERM`: one-shot output does not commit the Turn; `mitome serve` stopped its Channels gracefully.   |
+| `124`  | Shutdown timed out and the process was killed: one-shot output after one second, `mitome serve` after five seconds.               |
 
 Two messages are informational and do not change the exit status on their own:
 

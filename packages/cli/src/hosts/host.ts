@@ -156,21 +156,38 @@ if (mode === "serve") {
   for (const channel of channels) {
     if (channel.handle !== undefined) handlers.set(channel.name, channel.handle);
   }
-  // A listener that fails to bind throws here and ends the process before any Channel runs.
-  const server =
-    handlers.size === 0
-      ? undefined
-      : Bun.serve({
-          port,
-          fetch: (request) => {
-            const url = new URL(request.url);
-            const [, name = "", ...rest] = url.pathname.split("/");
-            const handle = handlers.get(name);
-            if (handle === undefined) return new Response("Not Found", { status: 404 });
-            url.pathname = `/${rest.join("/")}`;
-            return handle(context, new Request(url.href, request));
-          },
-        });
+  // Channel names may contain spaces or Unicode, so the first segment arrives percent-encoded.
+  const decodeMount = (segment: string): string | undefined => {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return undefined;
+    }
+  };
+  const listen = () => {
+    try {
+      return Bun.serve({
+        port,
+        fetch: (request) => {
+          const url = new URL(request.url);
+          const [, segment = "", ...rest] = url.pathname.split("/");
+          const name = decodeMount(segment);
+          const handle = name === undefined ? undefined : handlers.get(name);
+          if (handle === undefined) return new Response("Not Found", { status: 404 });
+          url.pathname = `/${rest.join("/")}`;
+          return handle(context, new Request(url.href, request));
+        },
+      });
+    } catch (error) {
+      const mounted = [...handlers.keys()].map((name) => `"${name}"`).join(", ");
+      process.stderr.write(
+        `Cannot listen on port ${port} for Channel ${mounted}: ${describeFailure(error)}\n`,
+      );
+      process.exit(1);
+    }
+  };
+  // A listener that fails to bind ends the process before any Channel runs.
+  const server = handlers.size === 0 ? undefined : listen();
   const controller = new AbortController();
   const running = new Map<string, Promise<void>>();
   // Pending Promises alone do not keep the event loop alive until a signal arrives.
@@ -228,7 +245,7 @@ if (mode === "serve") {
   for (const channel of channels) {
     const mount =
       server !== undefined && channel.handle !== undefined
-        ? ` at http://localhost:${server.port}/${channel.name}`
+        ? ` at http://localhost:${server.port}/${encodeURIComponent(channel.name)}`
         : "";
     process.stderr.write(`Serving Channel "${channel.name}"${mount}\n`);
   }

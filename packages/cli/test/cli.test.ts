@@ -547,6 +547,29 @@ describe("compiled mitome", () => {
     await expect(fetch(`http://localhost:${port}/echo`)).rejects.toThrow();
   });
 
+  test("mounts a Channel whose name needs percent-encoding", async () => {
+    const current = await fixture(
+      definitionSource("first", {
+        hosts: `[${serveChannels.echo.replace('name: "echo"', 'name: "team echo"')}]`,
+      }),
+    );
+    const serve = startServe(current);
+    const port = listeningPort(await serve.stderr.until('Serving Channel "team echo"'));
+    try {
+      expect(serve.stderr.text()).toContain(`http://localhost:${port}/team%20echo`);
+      const answered = await fetch(`http://localhost:${port}/team%20echo/inbox`, {
+        method: "POST",
+        body: "hello",
+      });
+      expect(answered.status).toBe(200);
+      expect(await answered.text()).toBe("ECHO POST /inbox first second");
+      expect((await fetch(`http://localhost:${port}/team%2/inbox`)).status).toBe(404);
+    } finally {
+      serve.child.kill("SIGTERM");
+      await exited(serve.child);
+    }
+  });
+
   test("runs a serve-only Channel until SIGINT without opening a listener", async () => {
     const current = await fixture(
       definitionSource("first", { hosts: `[${serveChannels.steady}]` }),
@@ -617,6 +640,7 @@ describe("compiled mitome", () => {
         spawn("", ["serve", "--port", String(port), "--use", current.definition], current),
       );
       expect(busy.exitCode).not.toBe(0);
+      expect(busy.stderr).toContain(`Cannot listen on port ${port} for Channel "echo":`);
       expect(busy.stderr).toContain(`port ${port} in use`);
     } finally {
       occupied.child.kill("SIGTERM");
