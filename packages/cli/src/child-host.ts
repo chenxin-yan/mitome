@@ -33,6 +33,10 @@ const embed = (source: string): string => source.replace(diagnosticsImport, diag
 const hostSource: string = embed(definitionHost);
 const authHostSource: string = authHost;
 const extensionsHostSource: string = embed(extensionsHost);
+// A probe or auth program's lifetime is owned here, not by the program: it exits as soon
+// as its module body finishes, so an Agent Definition that leaves an interval or server
+// running at import cannot keep the child alive after its work is done.
+const exitAfterBody = (source: string): string => `${source}\nprocess.exit(0);`;
 // process.execPath is the compiled mitome binary; BUN_BE_BUN re-executes it as plain Bun.
 const childEnv = { ...process.env, BUN_BE_BUN: "1" };
 
@@ -114,9 +118,7 @@ interface JsonHostOptions {
 }
 
 // Runs a disposable inspection program that writes its JSON result to the trailing argv
-// path. The program's lifetime is owned here, not by each program: it exits as soon as
-// its module body finishes, so an Agent Definition that leaves an interval or server
-// running cannot keep the probe alive, and `timeout` bounds a body that never finishes.
+// path; `timeout` bounds a body that never finishes.
 const runJsonHost = async (
   prefix: string,
   source: string,
@@ -127,14 +129,7 @@ const runJsonHost = async (
   const output = join(directory, "output.json");
   try {
     const child = Bun.spawn(
-      [
-        process.execPath,
-        options.envFlag,
-        "--eval",
-        `${source}\nprocess.exit(0);`,
-        ...arguments_,
-        output,
-      ],
+      [process.execPath, options.envFlag, "--eval", exitAfterBody(source), ...arguments_, output],
       { env: childEnv, stdout: "ignore", stderr: options.stderr, timeout: options.timeout },
     );
     const exitCode = await child.exited;
@@ -245,7 +240,7 @@ const runOAuthAuth = async (
       process.execPath,
       "--no-env-file",
       "--eval",
-      authHostSource,
+      exitAfterBody(authHostSource),
       path,
       "",
       command,
