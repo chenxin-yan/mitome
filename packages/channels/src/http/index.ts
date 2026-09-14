@@ -47,7 +47,13 @@ export interface HttpOptions {
 const TurnRequestBody = Schema.fromJsonString(
   Schema.Struct({
     message: Schema.String,
-    model: Schema.optional(Schema.TemplateLiteral([Schema.String, "/", Schema.String])),
+    // Core's Qualified Model id: a non-empty Provider id, one slash, a non-empty Model id. The
+    // template literal alone also accepts "/" and "test/", so the pattern narrows it.
+    model: Schema.optional(
+      Schema.TemplateLiteral([Schema.String, "/", Schema.String]).check(
+        Schema.isPattern(/^[^/]+\/.+$/),
+      ),
+    ),
   }),
 );
 const DecisionBody = Schema.fromJsonString(
@@ -86,7 +92,6 @@ interface PendingApproval {
   readonly turnId: string;
   readonly approvalId: string;
   readonly principal: string;
-  readonly conversation: string;
   readonly approve: () => Effect.Effect<void, ApprovalResolutionError>;
   readonly deny: (reason?: string) => Effect.Effect<void, ApprovalResolutionError>;
 }
@@ -194,7 +199,6 @@ export const http = (options: HttpOptions): ChannelHost => {
                     turnId,
                     approvalId: event.approvalId,
                     principal: key.principal,
-                    conversation: key.conversation,
                     approve: event.approve,
                     deny: event.deny,
                   },

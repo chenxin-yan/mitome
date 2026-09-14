@@ -207,11 +207,11 @@ describe("http Channel Turns", () => {
     expect(await status(turnRequest("chat-1", "alice-token", JSON.stringify({ text: "x" })))).toBe(
       400,
     );
-    expect(
-      await status(
-        turnRequest("chat-1", "alice-token", JSON.stringify({ message: "x", model: "nomodel" })),
-      ),
-    ).toBe(400);
+    for (const model of ["nomodel", "/", "/model", "test/"]) {
+      expect(
+        await status(turnRequest("chat-1", "alice-token", JSON.stringify({ message: "x", model }))),
+      ).toBe(400);
+    }
     expect(
       await status(
         new Request("http://channel.test/conversations/chat-1/turns", {
