@@ -105,6 +105,14 @@ export type MixedCallIsUntyped = Expect<
     { readonly name: string; readonly params: unknown; readonly toolCallId: string }
   >
 >;
+// A conditionally selected Extension (`cond ? files : widened`) may resolve to the widened arm at
+// runtime, so one slot holding a union with an untyped alternative also leaves the call untyped.
+export type ConditionalSlotIsUntyped = Expect<
+  Equal<
+    ApprovalPolicyCall<readonly [typeof files | typeof widened]>,
+    { readonly name: string; readonly params: unknown; readonly toolCallId: string }
+  >
+>;
 // Without any known name the call is untyped.
 defineAgent({
   providers: [model],

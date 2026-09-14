@@ -37,19 +37,20 @@ type KnownToolCall<Contributions, Name extends string> = Name extends unknown
       readonly toolCallId: string;
     }
   : never;
+// Distributes over each Extension alternative before combining names, so a conditionally selected
+// slot (`typeof files | Extension`) yields `boolean` rather than hiding the widened arm's Tools.
+type KnowsToolNames<Value> = Value extends unknown
+  ? [KnownToolNames<ContributionsOf<Value>>] extends [never]
+    ? false
+    : true
+  : never;
 // The callback runs for every Tool, so `name` may only be a closed union when each Extension in
 // the tuple has known names; one widened Extension (or no Extension) hides Tools the union misses.
 type KnowsEveryToolName<Extensions extends ReadonlyArray<AnyExtension>> = [
   Extensions[number],
 ] extends [never]
   ? false
-  : {
-      readonly [Index in keyof Extensions]: [
-        KnownToolNames<ContributionsOf<Extensions[Index]>>,
-      ] extends [never]
-        ? false
-        : true;
-    }[number];
+  : KnowsToolNames<Extensions[number]>;
 
 /**
  * The Tool call an `approvals` callback decides on; `params` is the decoded Tool input. When every
