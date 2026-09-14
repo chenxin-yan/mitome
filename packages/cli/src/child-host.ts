@@ -96,31 +96,38 @@ const exportProbeSource = [
   "const loaded = await import(process.argv[1]);",
   'const names = Object.entries(loaded).filter(([, value]) => typeof value === "function").map(([name]) => name);',
   "await Bun.write(process.argv[2], JSON.stringify(names));",
-  "process.exit(0);",
 ].join("\n");
 
 interface JsonHostOptions {
+  readonly envFlag: string;
   readonly stderr: "ignore" | "inherit";
-  readonly timeout?: number;
+  readonly timeout: number;
 }
 
+// Runs a disposable inspection program that writes its JSON result to the trailing argv
+// path. The program's lifetime is owned here, not by each program: it exits as soon as
+// its module body finishes, so an Agent Definition that leaves an interval or server
+// running cannot keep the probe alive, and `timeout` bounds a body that never finishes.
 const runJsonHost = async (
   prefix: string,
-  command: ReadonlyArray<string>,
+  source: string,
+  arguments_: ReadonlyArray<string>,
   options: JsonHostOptions,
 ): Promise<{ readonly exitCode: ExitCode; readonly output: string }> => {
   const directory = await mkdtemp(join(tmpdir(), prefix));
   const output = join(directory, "output.json");
   try {
-    const spawnOptions = {
-      env: childEnv,
-      stdout: "ignore" as const,
-      stderr: options.stderr,
-    };
-    const child =
-      options.timeout === undefined
-        ? Bun.spawn([...command, output], spawnOptions)
-        : Bun.spawn([...command, output], { ...spawnOptions, timeout: options.timeout });
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        options.envFlag,
+        "--eval",
+        `${source}\nprocess.exit(0);`,
+        ...arguments_,
+        output,
+      ],
+      { env: childEnv, stdout: "ignore", stderr: options.stderr, timeout: options.timeout },
+    );
     const exitCode = await child.exited;
     return {
       exitCode,
@@ -137,22 +144,22 @@ const listExports = async (
 ): Promise<ReadonlyArray<string>> => {
   const moduleUrl = pathToFileURL(Bun.resolveSync(packageName, directory)).href;
   // The names travel via file rather than stdout: importing the package may print.
-  const result = await runJsonHost(
-    "mitome-exports-",
-    [process.execPath, "--no-env-file", "--eval", exportProbeSource, moduleUrl],
-    { stderr: "ignore", timeout: 5000 },
-  );
+  const result = await runJsonHost("mitome-exports-", exportProbeSource, [moduleUrl], {
+    envFlag: "--no-env-file",
+    stderr: "ignore",
+    timeout: 5000,
+  });
   if (result.exitCode !== 0) throw new Error(`Could not inspect ${packageName} exports.`);
   return Schema.decodeSync(ExportNamesFromJson)(result.output);
 };
 
 const inspectExtensions = async (path: string): Promise<ExtensionListResult> => {
-  const result = await runJsonHost(
-    "mitome-extensions-",
-    [process.execPath, configEnvFlag(), "--eval", extensionsHostSource, path],
+  const result = await runJsonHost("mitome-extensions-", extensionsHostSource, [path], {
+    envFlag: configEnvFlag(),
+    stderr: "inherit",
     // Importing and compiling an Agent Definition may take substantially longer than an export probe.
-    { stderr: "inherit", timeout: 30_000 },
-  );
+    timeout: 30_000,
+  });
   if (result.exitCode !== 0) return { exitCode: result.exitCode, extensions: [] };
   return {
     exitCode: result.exitCode,
@@ -204,11 +211,11 @@ const inspectProviderAuthentication = async (
 ): Promise<ReadonlyArray<ProviderAuthentication>> => {
   // The descriptor travels via file rather than stdout: importing the Agent Definition
   // may print, and stdout stays ignored so nothing leaks into the message flow.
-  const result = await runJsonHost(
-    "mitome-auth-",
-    [process.execPath, "--no-env-file", "--eval", authHostSource, path],
-    { stderr: "inherit" },
-  );
+  const result = await runJsonHost("mitome-auth-", authHostSource, [path], {
+    envFlag: "--no-env-file",
+    stderr: "inherit",
+    timeout: 30_000,
+  });
   if (result.exitCode !== 0) throw new Error("Could not inspect Agent Definition authentication.");
   const authentication = Schema.decodeResult(ProviderAuthenticationsFromJson, {
     onExcessProperty: "error",

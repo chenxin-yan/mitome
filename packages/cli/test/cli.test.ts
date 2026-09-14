@@ -150,6 +150,16 @@ export default defineMitome({
 });
 `;
 
+const persistentAuthDefinitionSource = (): string => `
+import { Layer } from "effect";
+import { LanguageModel } from "effect/unstable/ai";
+import { defineMitome, makeProvider } from "@mitome/core";
+
+setInterval(() => {}, 60_000);
+const provider = makeProvider("test", [], "TEST_API_KEY", () => Layer.succeed(LanguageModel.LanguageModel, {}));
+export default defineMitome({ agent: { providers: [provider], model: "test/default", extensions: [] }, hosts: [] });
+`;
+
 type Fixture = {
   readonly root: string;
   readonly definition: string;
@@ -1071,6 +1081,14 @@ describe("compiled mitome", () => {
       stdout: "config-extension\tunknown\n",
       stderr: "",
     });
+  });
+
+  test("inspects Provider authentication and exits despite active handles", async () => {
+    const current = await fixture(persistentAuthDefinitionSource());
+
+    expect(
+      await output(spawn("", ["auth", "logout", "--use", current.definition], current)),
+    ).toEqual({ exitCode: 0, stdout: "", stderr: "" });
   });
 
   test("runs one Turn end to end", async () => {

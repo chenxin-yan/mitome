@@ -87,7 +87,6 @@ try {
     })),
   );
   await Bun.write(outputPath, JSON.stringify(extensions));
-  process.exit(0);
 } catch (error) {
   if (!(error instanceof Object)) {
     process.stderr.write(`${String(error)}\n`);
