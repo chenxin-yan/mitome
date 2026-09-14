@@ -1,12 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { Effect, Schema, Stream } from "effect";
-import { Response } from "effect/unstable/ai";
+import { Effect, Stream } from "effect";
+import { AiError, Response } from "effect/unstable/ai";
 import { TurnError, defineAgent, defineMitome, withSession } from "../src/index.js";
 import { makeDeterministicProvider, makeTestProvider } from "./provider.js";
-
-class ModelFailure extends Schema.TaggedError<ModelFailure>()("ModelFailure", {
-  message: Schema.String,
-}) {}
 
 describe("@mitome/sdk", () => {
   test("rejects a Host factory that was not called", () => {
@@ -113,7 +109,11 @@ describe("@mitome/sdk", () => {
   });
 
   test("throws tagged Turn errors with their original cause", async () => {
-    const cause = new ModelFailure({ message: "model failed" });
+    const cause = AiError.make({
+      module: "test",
+      method: "streamText",
+      reason: new AiError.UnknownError({ description: "model failed" }),
+    });
     const definition = defineAgent({
       providers: [makeTestProvider(() => Stream.fail(cause))],
       model: "test/default",

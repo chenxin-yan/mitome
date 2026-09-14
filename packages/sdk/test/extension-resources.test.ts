@@ -412,35 +412,7 @@ describe("@mitome/sdk Extension resources", () => {
       // postTool forces the validateResult re-encoding path as well.
       hooks: { postTool: (context) => Effect.succeed(context.result) },
     });
-    let calls = 0;
-    const model = makeTestProvider((options) => {
-      calls += 1;
-      if (calls === 2)
-        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-      const call = Response.makePart("tool-call", {
-        id: "call-1",
-        name: "native-echo",
-        params: { text: "hi" },
-        providerExecuted: false,
-      });
-      return Stream.concat(
-        Stream.succeed(call),
-        Stream.unwrap(
-          options.toolkit!.handle("native-echo", { text: "hi" }).pipe(
-            Effect.map((results) =>
-              Stream.map(results, (result) =>
-                Response.makePart("tool-result", {
-                  id: call.id,
-                  name: call.name,
-                  providerExecuted: false,
-                  ...result,
-                }),
-              ),
-            ),
-          ),
-        ),
-      );
-    });
+    const model = makeToolModel("native-echo", 2, { text: "hi" }).provider;
 
     const events = await withSession(
       defineAgent({ providers: [model], model: "test/default", extensions: [native] }),

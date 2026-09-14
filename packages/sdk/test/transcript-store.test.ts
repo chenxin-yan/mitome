@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { Stream } from "effect";
-import { Response } from "effect/unstable/ai";
+import { AiError, Response } from "effect/unstable/ai";
 import {
   defineAgent,
   memoryTranscripts,
@@ -156,7 +156,15 @@ test("failed and interrupted Turns leave stored Transcripts unchanged", async ()
   let calls = 0;
   const definition = definitionWith(() => {
     calls += 1;
-    if (calls === 2) return Stream.fail(new Error("failed"));
+    if (calls === 2) {
+      return Stream.fail(
+        AiError.make({
+          module: "test",
+          method: "streamText",
+          reason: new AiError.UnknownError({ description: "failed" }),
+        }),
+      );
+    }
     if (calls === 3) {
       return Stream.concat(
         Stream.succeed(Response.makePart("text-delta", { id: "partial", delta: "partial" })),

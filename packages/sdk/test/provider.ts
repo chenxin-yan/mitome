@@ -1,40 +1,36 @@
 import { Effect, Layer, Ref, Schema, Stream } from "effect";
-import { LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { AiError, LanguageModel, Prompt, Response } from "effect/unstable/ai";
 import { makeProvider } from "@mitome/core";
 import type { InputSchema, StandardSchema } from "../src/index.js";
 
-interface TestModelOptions {
-  readonly prompt: Prompt.Prompt;
-  readonly toolkit?: Toolkit.WithHandler<Record<string, Tool.Any>>;
-}
-
-type TestModelStream = Stream.Stream<Response.AnyPart, object, object>;
+type TestStreamText = (
+  options: LanguageModel.ProviderOptions,
+) => Stream.Stream<Response.StreamPartEncoded, AiError.AiError>;
 
 export const stringSchema: StandardSchema<unknown, string> = Schema.toStandardSchemaV1(
   Schema.String,
 );
 export const jsonStringSchema: InputSchema<string> = Schema.String;
 
-// Deliberately raw Service fake (bypasses LanguageModel.make's tool-call pipeline)
-// so tests can reach the Service-level toolkit directly. Sibling copy:
-// packages/core/test/support/provider.ts.
-export const testLanguageModel = (
-  streamText: (options: TestModelOptions) => TestModelStream,
-): LanguageModel.Service => {
-  // SAFETY: The raw fake is only exercised through streamText; the tests never call the
-  // other LanguageModel service methods, and this preserves direct toolkit access.
-  return { streamText } as LanguageModel.Service;
-};
+// Built through the real LanguageModel.make so every Tool Call runs Core's preparation
+// (input validation, Hooks, Approval) exactly as it does under a real Provider.
+const testLanguageModel = (streamText: TestStreamText) =>
+  LanguageModel.make({
+    streamText,
+    generateText: () => Effect.die("generateText is not used by these tests"),
+  });
 
-export const makeTestProvider = (
-  streamText: (options: TestModelOptions) => TestModelStream,
-  name = "test",
-) =>
+export const makeTestProvider = (streamText: TestStreamText, name = "test") =>
   makeProvider(name, [] as const, undefined, () =>
-    Layer.succeed(LanguageModel.LanguageModel, testLanguageModel(streamText)),
+    Layer.effect(LanguageModel.LanguageModel, testLanguageModel(streamText)),
   );
 
-export const makeToolModel = (name = "echo", doneAt = 2) => {
+/** Emits one Tool Call per Step until `doneAt`, then a final text Step. */
+export const makeToolModel = (
+  name = "echo",
+  doneAt = 2,
+  params: Response.ToolCallPartEncoded["params"] = "hello",
+) => {
   let calls = 0;
   let secondPrompt: Prompt.Prompt | undefined;
   const provider = makeTestProvider((options) => {
@@ -43,29 +39,7 @@ export const makeToolModel = (name = "echo", doneAt = 2) => {
       secondPrompt = options.prompt;
       return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
     }
-    const call = Response.makePart("tool-call", {
-      id: `call-${calls}`,
-      name,
-      params: "hello",
-      providerExecuted: false,
-    });
-    return Stream.concat(
-      Stream.succeed(call),
-      Stream.unwrap(
-        options.toolkit!.handle(name, "hello").pipe(
-          Effect.map((results) =>
-            Stream.map(results, (result) =>
-              Response.makePart("tool-result", {
-                id: call.id,
-                name: call.name,
-                providerExecuted: false,
-                ...result,
-              }),
-            ),
-          ),
-        ),
-      ),
-    );
+    return Stream.succeed({ type: "tool-call", id: `call-${calls}`, name, params });
   });
   return { provider, calls: () => calls, prompt: () => secondPrompt };
 };
@@ -77,12 +51,10 @@ export const makeDeterministicProvider = (output: string) =>
     const layer = Layer.effect(
       LanguageModel.LanguageModel,
       Effect.acquireRelease(
-        Effect.succeed(
-          testLanguageModel(() =>
-            Stream.fromEffect(Ref.update(calls, (count) => count + 1)).pipe(
-              Stream.map(() =>
-                Response.makePart("text-delta", { id: "deterministic", delta: output }),
-              ),
+        testLanguageModel(() =>
+          Stream.fromEffect(Ref.update(calls, (count) => count + 1)).pipe(
+            Stream.map(() =>
+              Response.makePart("text-delta", { id: "deterministic", delta: output }),
             ),
           ),
         ),
