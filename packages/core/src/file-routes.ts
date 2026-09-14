@@ -1,7 +1,8 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
 import { configDirectory, configDirectoryMessage } from "./config.js";
+import { replaceFile } from "./file-replace.js";
 import { encodeRouteKey } from "./routes.js";
 import type { RouteKey, Routes } from "./routes.js";
 import { StoreError } from "./transcript-store.js";
@@ -92,18 +93,7 @@ export const fileRoutes = (directory: string = defaultRouteDirectory()): Routes 
         ...key,
         transcriptId,
       });
-      const temporary = join(directory, `${temporaryPrefix}${process.pid}-${crypto.randomUUID()}`);
-      // A write that fails after creating the file (ENOSPC) must not leave the key on disk.
-      yield* attempt("write", temporary, () =>
-        writeFile(temporary, `${JSON.stringify(encoded)}\n`, { flag: "wx", mode: 0o600 }),
-      ).pipe(
-        Effect.andThen(attempt("replace", path, () => rename(temporary, path))),
-        Effect.ensuring(
-          Effect.ignore(
-            attempt("remove temporary file", temporary, () => rm(temporary, { force: true })),
-          ),
-        ),
-      );
+      yield* replaceFile(attempt, path, temporaryPrefix, `${JSON.stringify(encoded)}\n`);
     }),
   clear: (key) =>
     Effect.gen(function* () {

@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "@effect/vitest";
@@ -102,6 +102,27 @@ describe("fileRoutes", () => {
         const files = yield* Effect.promise(() => readdir(directory));
         expect(files).toHaveLength(2);
         expect(files.every((name) => name.endsWith(".route.json") && name.length < 255)).toBe(true);
+      }),
+    ),
+  );
+
+  it.effect("keeps the stored Route and leaves no temporary file when a write fails", () =>
+    withDirectory((directory) =>
+      Effect.gen(function* () {
+        const store = fileRoutes(directory);
+        yield* store.set(key, "transcript-1");
+
+        yield* Effect.promise(() => chmod(directory, 0o500));
+        const failure = yield* Effect.flip(store.set(key, "transcript-2")).pipe(
+          Effect.ensuring(Effect.promise(() => chmod(directory, 0o700))),
+        );
+        expect(failure).toBeInstanceOf(StoreError);
+        expect(failure.message).toContain("could not write");
+
+        expect(yield* Effect.promise(() => readdir(directory))).toEqual([
+          expect.stringMatching(/\.route\.json$/),
+        ]);
+        expect(yield* store.get(key)).toBe("transcript-1");
       }),
     ),
   );

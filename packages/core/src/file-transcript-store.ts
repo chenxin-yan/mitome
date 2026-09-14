@@ -1,7 +1,8 @@
-import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
 import { configDirectory, configDirectoryMessage } from "./config.js";
+import { replaceFile } from "./file-replace.js";
 import { TranscriptSchema } from "./transcript.js";
 import type { TranscriptId } from "./transcript.js";
 import {
@@ -133,17 +134,7 @@ export const fileTranscripts = (
         updatedAt: now,
       };
       const encoded = Schema.encodeUnknownSync(StoredTranscriptFileSchema)(stored);
-      const temporary = join(directory, `${temporaryPrefix}${process.pid}-${crypto.randomUUID()}`);
-      yield* attempt("write", temporary, () =>
-        writeFile(temporary, `${JSON.stringify(encoded)}\n`, { flag: "wx", mode: 0o600 }),
-      );
-      yield* attempt("replace", path, () => rename(temporary, path)).pipe(
-        Effect.ensuring(
-          Effect.ignore(
-            attempt("remove temporary file", temporary, () => rm(temporary, { force: true })),
-          ),
-        ),
-      );
+      yield* replaceFile(attempt, path, temporaryPrefix, `${JSON.stringify(encoded)}\n`);
     }),
   load: (id) =>
     Effect.gen(function* () {
