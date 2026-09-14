@@ -232,7 +232,13 @@ export const makeToolExecution = (
           // The callback is synchronous by contract, so a Promise or Effect is an invalid decision.
           // A throw is wrapped so its text never reaches a user-facing description (ADR-0044).
           const decision = yield* Effect.try({
-            try: () => policy({ name, params, toolCallId }),
+            try: () => {
+              const result = policy({ name, params, toolCallId });
+              // An accidentally async callback is rejected below; swallow its own rejection so the
+              // stray Promise cannot surface as an unhandled rejection and kill the Host process.
+              if (Predicate.isPromise(result)) result.catch(() => undefined);
+              return result;
+            },
             catch: (cause) => new ApprovalPolicyError({ message: "Approval policy threw", cause }),
           }).pipe(
             Effect.filterOrFail(

@@ -422,6 +422,14 @@ describe("ToolExecution Approval policy merge", () => {
             message: "Approval policy returned an invalid decision",
           },
         },
+        {
+          // Vitest fails the run on an unhandled rejection, so this also guards the stray Promise.
+          approvals: () => Promise.reject(new Error("async policy failure")),
+          cause: {
+            _tag: "ApprovalPolicyError",
+            message: "Approval policy returned an invalid decision",
+          },
+        },
       ];
       for (const current of cases) {
         const fixture = makeFixture({ needsApproval: false, approvals: current.approvals });
