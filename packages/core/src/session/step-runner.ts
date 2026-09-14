@@ -1,4 +1,4 @@
-import { Effect, Predicate, Schema, Stream } from "effect";
+import { Effect, Predicate, Stream } from "effect";
 import { Prompt } from "effect/unstable/ai";
 import type { Response, Tool } from "effect/unstable/ai";
 import type { CompiledAgent } from "../agent.js";
@@ -138,8 +138,13 @@ export const makeStepRunner = (
                 ).pipe(
                   Stream.provideContext(selected.context),
                   Stream.mapError(modelTurnError),
+                  // A top-level `undefined` (Void, Schema.Undefined) has no JSON encoding, yet
+                  // Providers stringify the result and the Transcript requires JSON, so it
+                  // becomes null. Any other non-JSON encoding
+                  // stays as produced: makeTranscript rejects it at save instead of the Session
+                  // committing a silently altered Message.
                   Stream.map((part) =>
-                    part.type === "tool-result" && !Schema.is(Schema.Json)(part.encodedResult)
+                    part.type === "tool-result" && part.encodedResult === undefined
                       ? { ...part, encodedResult: null }
                       : part,
                   ),

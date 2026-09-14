@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
+import { LanguageModel, type Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
 import {
   type AgentDefinition,
   createSession,
@@ -10,7 +10,11 @@ import {
   TranscriptNotFound,
   type TranscriptStore,
 } from "../../src/index.js";
-import { makeDeterministicProvider, makeTestProvider } from "../support/provider.js";
+import {
+  makeDeterministicProvider,
+  makeStreamingTestProvider,
+  makeTestProvider,
+} from "../support/provider.js";
 
 const makeRecordingStore = (
   records: Array<TranscriptEventRecord>,
@@ -258,6 +262,61 @@ describe("Session event log", () => {
         },
       ]);
     }),
+  );
+
+  it.effect(
+    "keeps a non-JSON Tool result out of the Transcript while the event record nulls it",
+    () =>
+      Effect.gen(function* () {
+        const when = new Date("2026-08-24T00:00:00.000Z");
+        const prompts: Array<Prompt.Prompt> = [];
+        let calls = 0;
+        const provider = makeStreamingTestProvider((options) => {
+          calls += 1;
+          prompts.push(options.prompt);
+          return Stream.succeed(
+            calls === 1
+              ? { type: "tool-call" as const, id: "call-1", name: "when", params: {} }
+              : { type: "text-delta" as const, id: "done", delta: "done" },
+          );
+        });
+        // Schema.Date encodes to a Date instance, which is not JSON.
+        const whenTool = Tool.make("when", { parameters: Schema.Struct({}), success: Schema.Date });
+        const records: Array<TranscriptEventRecord> = [];
+        const session = yield* createSession(
+          {
+            providers: [provider],
+            model: "test/default",
+            extensions: [
+              {
+                name: "tools",
+                toolkit: Toolkit.make(whenTool),
+                handlers: { when: () => Effect.succeed(when) },
+              },
+            ],
+          },
+          { transcripts: makeRecordingStore(records) },
+        );
+
+        const exit = yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
+
+        // The next Model Prompt carries the encoded result as the Tool produced it.
+        const toolMessage = prompts[1]!.content.find((message) => message.role === "tool");
+        expect(toolMessage?.content).toEqual([
+          expect.objectContaining({ type: "tool-result", id: "call-1", result: when }),
+        ]);
+        // The Transcript refuses to commit it rather than store an altered Message.
+        expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toMatch(/Expected JSON value/);
+        expect(session.history()).toEqual([]);
+        // The write-only event record degrades it to null.
+        expect(records.map(({ event }) => event)).toContainEqual({
+          type: "tool-result",
+          id: "call-1",
+          name: "when",
+          result: null,
+          isFailure: false,
+        });
+      }),
   );
 
   it.effect("records Approval requests and outcomes without resolution closures", () =>
