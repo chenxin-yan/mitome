@@ -1,20 +1,12 @@
-import { Console, Effect, Runtime } from "effect";
-
-export class CliError extends Error {
-  override readonly [Runtime.errorReported] = false;
-}
-
-export type ExitCode = number;
-
+// Shared by the embedded Runner programs: child-host.ts splices this file's text in place
+// of each program's import, so it must stay free of imports. The parent CLI cannot share
+// it (see support.ts).
 interface ErrorDetails {
   readonly _tag?: string;
   readonly message?: string;
   readonly cause?: Error | ErrorDetails;
 }
 
-// Duplicates hosts/diagnostics.ts, which the embedded programs receive as spliced text.
-// Bun's bundler refuses one file imported both as a module and `with { type: "text" }`,
-// so the parent keeps this copy; keep the two in step.
 // JSON.stringify throws on BigInt values and circular structures; a throwing
 // formatter would mask the error being reported, so fall back to Bun's renderer.
 const safeJson = (value: Error | ErrorDetails | null): string => {
@@ -26,7 +18,7 @@ const safeJson = (value: Error | ErrorDetails | null): string => {
 };
 
 // User-thrown errors may point `cause` back at themselves; `seen` stops that recursion.
-const errorMessage = (
+export const errorMessage = (
   error: Error | ErrorDetails,
   seen: Set<Error | ErrorDetails> = new Set(),
 ): string => {
@@ -42,15 +34,3 @@ const errorMessage = (
   if (cause === undefined) return head;
   return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause, seen) : safeJson(cause)}`;
 };
-
-export const attempt = <A>(promise: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: promise,
-    catch: (error) => {
-      if (!(error instanceof Object)) return new CliError(String(error));
-      return new CliError(errorMessage(error));
-    },
-  }).pipe(Effect.tapError((error) => Console.error(error.message)));
-
-export const fail = (message: string) =>
-  Console.error(message).pipe(Effect.andThen(Effect.fail(new CliError(message))));

@@ -4,6 +4,7 @@
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ChannelHost, Host, MitomeDefinition, TurnEvent } from "@mitome/core";
+import { errorMessage } from "./diagnostics.js";
 
 const definitionPath = process.argv[1]!;
 const mode = process.argv[2];
@@ -118,40 +119,6 @@ loaded.hosts.forEach((host, index) => {
   }
   channelNames.add(host.name);
 });
-
-interface ErrorDetails {
-  readonly _tag?: string;
-  readonly message?: string;
-  readonly cause?: Error | ErrorDetails;
-}
-
-// JSON.stringify throws on BigInt values and circular structures; a throwing
-// formatter would mask the error being reported, so fall back to Bun's renderer.
-const safeJson = (value: Error | ErrorDetails | null): string => {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return Bun.inspect(value);
-  }
-};
-
-// User-thrown errors may point `cause` back at themselves; `seen` stops that recursion.
-const errorMessage = (
-  error: Error | ErrorDetails,
-  seen: Set<Error | ErrorDetails> = new Set(),
-): string => {
-  if (seen.has(error)) return "[circular cause]";
-  seen.add(error);
-  const head =
-    "_tag" in error && "message" in error
-      ? `${String(error._tag)}: ${String(error.message)}`
-      : error instanceof Error
-        ? error.message
-        : safeJson(error);
-  const cause = error.cause;
-  if (cause === undefined) return head;
-  return `${head}\n  cause: ${cause !== null && cause instanceof Object ? errorMessage(cause, seen) : safeJson(cause)}`;
-};
 
 const describeFailure = (cause: unknown): string =>
   cause instanceof Object ? errorMessage(cause) : String(cause);

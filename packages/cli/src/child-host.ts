@@ -20,10 +20,19 @@ import authHost from "./hosts/auth-host.ts" with { type: "text" };
 // @ts-expect-error Bun text import (see above).
 // oxlint-disable-next-line import/default
 import extensionsHost from "./hosts/extensions-host.ts" with { type: "text" };
+// @ts-expect-error Bun text import (see above).
+// oxlint-disable-next-line import/default
+import diagnostics from "./hosts/diagnostics.ts" with { type: "text" };
 
-const hostSource: string = definitionHost;
+// The embedded programs run from `--eval` and cannot resolve a relative import of the
+// CLI's own modules, so the shared diagnostics source takes the place of that import.
+const diagnosticsSource: string = diagnostics;
+const diagnosticsImport = 'import { errorMessage } from "./diagnostics.js";';
+const embed = (source: string): string => source.replace(diagnosticsImport, diagnosticsSource);
+
+const hostSource: string = embed(definitionHost);
 const authHostSource: string = authHost;
-const extensionsHostSource: string = extensionsHost;
+const extensionsHostSource: string = embed(extensionsHost);
 // process.execPath is the compiled mitome binary; BUN_BE_BUN re-executes it as plain Bun.
 const childEnv = { ...process.env, BUN_BE_BUN: "1" };
 
