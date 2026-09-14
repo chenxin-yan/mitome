@@ -87,6 +87,7 @@ export const makeSessionViewModel = (
   let switching: Promise<void> | undefined;
   let switchFiber: Fiber.Fiber<SessionResource, unknown> | undefined;
   let abandonSwitch: (() => void) | undefined;
+  let abandonTimer: ReturnType<typeof setTimeout> | undefined;
   let pickerRequest = 0;
   let disposed = false;
   // Reads `disposed` after an await; the wrapper stops TS/oxlint from stale
@@ -183,11 +184,12 @@ export const makeSessionViewModel = (
   // interrupt the open Fiber so manager.open releases what it acquired. An
   // uninterruptible open ignores the interrupt; give it the same 1s bound as
   // other cleanup, then abandon the switch so idle (or exit) is reachable.
+  // One timer per switch, cleared when it settles so a prompt cancel (or
+  // dispose) does not hold the process open for the remaining bound.
   const cancelSwitch = (): void => {
     if (switchFiber === undefined) return;
     Effect.runFork(Fiber.interrupt(switchFiber));
-    const abandon = abandonSwitch;
-    setTimeout(() => abandon?.(), 1_000);
+    abandonTimer ??= setTimeout(() => abandonSwitch?.(), 1_000);
   };
 
   const interrupt = (): boolean => {
@@ -269,6 +271,8 @@ export const makeSessionViewModel = (
           abandonSwitch = () => resolve(undefined);
         }),
       ]);
+      clearTimeout(abandonTimer);
+      abandonTimer = undefined;
       switchFiber = undefined;
       abandonSwitch = undefined;
       if (opened === undefined) {
