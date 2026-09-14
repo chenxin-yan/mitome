@@ -55,7 +55,7 @@ Every Session mints a fresh Transcript id, and resuming forks, so a Channel need
 
 The ceiling: saving a Transcript and advancing its Route are two writes with no transaction between them. A Channel must not report success to its surface before both have landed, and must tolerate a stale pointer by resuming from what it can still load or starting fresh.
 
-Hosts never construct or discover a store; they use the one the Mitome Definition composed, so every Host resumes from the same place.
+Hosts never construct or discover a store; they use the one the Mitome Definition composed, so every Host resumes from the same place. `@mitome/channels/http` is the first-party Channel built on this contract; the [Channels](/docs/channels) page documents it.
 
 ## A minimal Host
 

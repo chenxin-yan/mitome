@@ -8,6 +8,7 @@
     "providers-openai",
     "providers-openai-compatible",
     "providers-openai-codex",
+    "channels-http",
     "tui"
   ]
 }

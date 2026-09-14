@@ -1,0 +1,81 @@
+---
+title: "@mitome/channels/http"
+---
+
+Generic HTTP Channel: `POST /conversations/:id/turns` streams one Turn as Server-Sent Events. The
+[Channels](/docs/channels) guide describes the wire contract.
+
+## Interfaces
+
+### HttpOptions
+
+Options for `http()`.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/http/index.ts"
+  name="HttpOptions"
+/>
+
+### TurnFrame
+
+The JSON `data` of every SSE frame `http()` writes.
+
+<auto-type-table
+  path="../../../../../../packages/channels/src/http/index.ts"
+  name="TurnFrame"
+/>
+
+## Type Aliases
+
+### Authenticator
+
+```ts
+type Authenticator = (request: Request) => Promise<string | undefined>;
+```
+
+Resolves the principal a request acts as, or `undefined` when it is unauthenticated. `http()` runs
+it before anything else: an unauthenticated request is answered `401` before the Route store or a
+Provider is touched.
+
+### WireTurnEvent
+
+```ts
+type WireTurnEvent =
+  | Exclude<TurnEventDto, { readonly type: "approval-resolved" }>
+  | { readonly type: "error"; readonly message: string };
+```
+
+One Turn event as it crosses the wire: the serializable
+[`TurnEventDto`](/docs/reference/api/core#turneventdto) shape without the persisted-only
+`approval-resolved`, plus `error` for a Turn that failed after the stream started. Tool `params`
+and `result` values that are not JSON arrive as `null`. Public Turn events drop the encoded Tool
+result, so this mapping is written by hand rather than reusing Core's DTO converter.
+
+## Functions
+
+### bearer
+
+```ts
+function bearer(tokens: Readonly<Record<string, string>>): Authenticator;
+```
+
+Bearer-token authenticator. `tokens` maps each accepted token to the principal it acts as, so
+`Authorization: Bearer <token>` resolves to that principal; a missing header, another scheme, or an
+unknown token is unauthenticated.
+
+### http
+
+```ts
+function http(options: HttpOptions): ChannelHost;
+```
+
+Creates the HTTP Channel Host. `handle` answers `POST /conversations/:id/turns` with a
+`text/event-stream` of [`TurnFrame`](#turnframe)s for one Turn and, with
+`approvals: "interactive"`, `POST /turns/:turnId/approvals/:approvalId` with an Approval decision.
+Authentication runs first; the Route key is `(name, principal, conversation)`, so a conversation
+id is never authorization. One Turn runs per Route at a time (`409` on overlap), a client
+disconnect interrupts the Turn and closes its Session, and after the stream started a failure is
+one final `error` frame rather than a changed status. Pending Approvals live in memory for the
+Turn only.
+
+Returns a [`ChannelHost`](/docs/reference/api/core#channelhost).

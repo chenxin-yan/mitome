@@ -17,6 +17,7 @@
     "configuration",
     "cli",
     "tui",
+    "channels",
     "---Advanced---",
     "effect",
     "hosts",
