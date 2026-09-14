@@ -4,7 +4,7 @@
  *
  * @internal
  */
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import packageJson from "../package.json" with { type: "json" };
 
@@ -93,6 +93,9 @@ const tsconfigSource = `${JSON.stringify(
       moduleResolution: "NodeNext",
       strict: true,
       noEmit: true,
+      // Effect's transitive declarations (msgpackr) reference Node globals; a fresh project
+      // has no @types/node, so checking them would fail before any user code is reached.
+      skipLibCheck: true,
     },
     // The README suggests adding an embed module beside index.ts; check every source file.
     include: ["**/*.ts"],
@@ -135,7 +138,7 @@ export const projectPlan = (options: ScaffoldOptions): FileMap =>
 export const ensureEmpty = async (directory: string, files: Iterable<string>): Promise<void> => {
   for (const file of files) {
     const path = join(directory, file);
-    const exists = await stat(path).then(
+    const exists = await lstat(path).then(
       () => true,
       (error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") return false;
@@ -151,6 +154,12 @@ export const writeScaffold = async (directory: string, plan: FileMap): Promise<v
 
   await mkdir(directory, { recursive: true });
   await Promise.all(
-    [...plan].map(([file, contents]) => writeFile(join(directory, file), contents)),
+    [...plan].map(([file, contents]) => {
+      const path = join(directory, file);
+      // Exclusive creation is the guarantee; the preflight above is only the friendly diagnostic.
+      return writeFile(path, contents, { flag: "wx" }).catch((error: NodeJS.ErrnoException) => {
+        throw error.code === "EEXIST" ? new Error(`${path} already exists`) : error;
+      });
+    }),
   );
 };
