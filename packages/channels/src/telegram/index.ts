@@ -348,11 +348,8 @@ export const telegram = (options: TelegramOptions): ChannelHost => {
           }
         }),
       );
-      const fiber = Effect.runFork(poll);
-      if (signal.aborted) fiber.interruptUnsafe();
-      else signal.addEventListener("abort", () => fiber.interruptUnsafe(), { once: true });
-      // Interruption closes the scope, which interrupts every Turn fiber and their Sessions.
-      return new Promise((resolve) => fiber.addObserver(() => resolve()));
+      // Abort interrupts the poll fiber; closing its scope interrupts every Turn and its Session.
+      return Effect.runPromiseExit(poll, { signal }).then(() => undefined);
     },
   };
 };

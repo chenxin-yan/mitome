@@ -1,4 +1,5 @@
 import type { ChannelHost, ChannelHostContext } from "@mitome/core";
+import { vi } from "vitest";
 import type {
   AnswerCallbackQueryParams,
   GetUpdatesParams,
@@ -9,11 +10,7 @@ import type {
 
 /** Polls `predicate` until it holds; the Channel answers asynchronously through the fake API. */
 export const waitFor = async (predicate: () => boolean, timeoutMs = 2000): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error("Condition not met in time");
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
+  await vi.waitUntil(predicate, { timeout: timeoutMs, interval: 5 });
 };
 
 /**
