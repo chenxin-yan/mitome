@@ -3,7 +3,15 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const rootDirectory = resolve(import.meta.dir, "..");
-const publicPackages = ["core", "sdk", "providers", "tui", "cli", "create-mitome"] as const;
+const publicPackages = [
+  "core",
+  "sdk",
+  "providers",
+  "channels",
+  "tui",
+  "cli",
+  "create-mitome",
+] as const;
 type PublicPackage = (typeof publicPackages)[number];
 const packageName = (name: PublicPackage): string =>
   name === "create-mitome" ? name : `@mitome/${name}`;
@@ -116,7 +124,7 @@ try {
     if (/"(?:catalog|workspace):/.test(JSON.stringify(manifest))) {
       throw new Error(`${name} tarball retains a workspace-only dependency protocol.`);
     }
-    if (["core", "sdk", "providers"].includes(name)) {
+    if (["core", "sdk", "providers", "channels"].includes(name)) {
       if (manifest.dependencies?.effect !== effectVersion) {
         throw new Error(`${name} tarball does not install exact Effect ${effectVersion}.`);
       }
@@ -131,6 +139,7 @@ try {
       join(nodeModules, "@mitome", "core"),
       join(nodeModules, "@mitome", "sdk"),
       join(nodeModules, "@mitome", "providers"),
+      join(nodeModules, "@mitome", "channels"),
       join(nodeModules, "@effect", "ai-openai"),
       join(nodeModules, "@effect", "ai-openai-compat"),
     ].map((directory) => Bun.resolveSync("effect/package.json", directory)),

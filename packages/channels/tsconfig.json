@@ -1,0 +1,8 @@
+{
+  "extends": "@mitome/config/tsconfig.lib.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}
