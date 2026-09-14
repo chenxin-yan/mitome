@@ -103,10 +103,17 @@ const interruptOrFailure = (cause: Cause.Cause<unknown>) =>
     ? Effect.interrupt
     : Effect.succeed({ _tag: "Failure" as const, cause: Cause.squash(cause) });
 
+// One Tool Call's input in both shapes: `encoded` is what the Model produced and what the
+// Tool's own parameters schema decodes; `decoded` is the value Hooks and Approval observed.
+type ToolCallInput = {
+  readonly encoded: ToolInput;
+  readonly decoded: ToolInput;
+};
+
 type ToolPipeline = {
   readonly compiled: CompiledTool;
   readonly execute: (
-    params: ToolInput,
+    input: ToolCallInput,
   ) => Effect.Effect<Stream.Stream<Tool.HandlerResult<Tool.Any>>, AiError.AiError>;
 };
 
@@ -268,15 +275,20 @@ export const makeToolExecution = (
 
       const pipelines = Object.fromEntries(
         compiledTools.map((compiledTool) => {
-          const { failureValidator, owner, resultValidator, tool } = compiledTool;
+          const { failureValidator, inputValidator, owner, resultValidator, tool } = compiledTool;
           const execute: ToolPipeline["execute"] = Effect.fn("@mitome/core/ToolPipeline.execute")(
-            function* (params) {
+            function* ({ decoded, encoded }) {
+              // Effect's handle decodes with the Tool's own parameters schema, so a native Tool
+              // must receive the encoded params or a transforming schema would decode twice. An
+              // Extension input validator replaces that decode: its Tools declare loose
+              // parameters and the handler receives the validator's value.
+              const handlerInput = inputValidator === undefined ? encoded : decoded;
               // The whole Tool Call runs in the owning Extension's context: the handler
               // plus any schema decode/encode services from its Resource.
               const results = yield* provideExtension(
                 owner,
                 contexts,
-                baseHandle(tool.name, params).pipe(
+                baseHandle(tool.name, handlerInput).pipe(
                   Effect.flatMap((stream) =>
                     Stream.runCollect(
                       // Collection keeps the handler stream and Hooks inside
@@ -304,7 +316,7 @@ export const makeToolExecution = (
                         contexts,
                         postTool({
                           name: tool.name,
-                          params,
+                          params: decoded,
                           result,
                           isFailure: handlerResult.isFailure,
                         }),
@@ -427,7 +439,7 @@ export const makeToolExecution = (
           }
           // Hooks, Approval, and the handler all see the one decoded value from preparation.
           return prepared.veto === undefined
-            ? yield* pipeline.execute(prepared.params)
+            ? yield* pipeline.execute({ encoded: params, decoded: prepared.params })
             : Stream.succeed(failureResult(prepared.veto));
         })) as Toolkit.WithHandler<Record<string, Tool.Any>>["handle"];
 

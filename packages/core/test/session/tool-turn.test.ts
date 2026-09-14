@@ -170,6 +170,78 @@ describe("createSession Tool Turn", () => {
     }),
   );
 
+  it.effect("decodes a native transforming parameters schema once for Hooks and the handler", () =>
+    Effect.gen(function* () {
+      let modelCalls = 0;
+      let preToolParams: unknown;
+      let postToolParams: unknown;
+      let handlerInput: unknown;
+      const provider = makeProvider("test", [] as const, undefined, () =>
+        Layer.effect(
+          LanguageModel.LanguageModel,
+          LanguageModel.make({
+            generateText: () => Effect.succeed([]),
+            streamText: () => {
+              modelCalls += 1;
+              return Stream.succeed(
+                modelCalls === 1
+                  ? {
+                      type: "tool-call" as const,
+                      id: "call-1",
+                      name: "count",
+                      params: { count: "1" },
+                    }
+                  : { type: "text-delta" as const, id: "done", delta: "done" },
+              );
+            },
+          }),
+        ),
+      );
+      const count = Tool.make("count", {
+        parameters: Schema.Struct({ count: Schema.NumberFromString }),
+        success: Schema.Number,
+      });
+      const session = yield* createSession({
+        providers: [provider],
+        model: "test/default",
+        extensions: [
+          {
+            name: "count",
+            toolkit: Toolkit.make(count),
+            handlers: {
+              count: (params) =>
+                Effect.sync(() => {
+                  handlerInput = params;
+                  return 2;
+                }),
+            },
+            hooks: {
+              preTool: ({ params }) => Effect.sync(() => void (preToolParams = params)),
+              postTool: ({ params, result }) =>
+                Effect.sync(() => {
+                  postToolParams = params;
+                  return result;
+                }),
+            },
+          },
+        ],
+      });
+
+      const events = yield* Stream.runCollect(session.runTurn("Hi"));
+
+      expect(preToolParams).toEqual({ count: 1 });
+      expect(handlerInput).toEqual({ count: 1 });
+      expect(postToolParams).toEqual({ count: 1 });
+      expect([...events]).toContainEqual({
+        type: "tool-result",
+        id: "call-1",
+        name: "count",
+        result: 2,
+        isFailure: false,
+      });
+    }),
+  );
+
   it.effect("returns input validation failures to the model without executing the Tool", () =>
     Effect.gen(function* () {
       const order: Array<string> = [];

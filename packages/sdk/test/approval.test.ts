@@ -230,12 +230,19 @@ describe("@mitome/sdk Tool Approval", () => {
       },
     };
     let preToolParams: unknown;
+    let policyParams: unknown;
+    let predicateInput: unknown;
     let approvalParams: unknown;
     let handlerInput: unknown;
     let postToolParams: unknown;
     const definition = defineAgent({
       providers: [fixture.provider],
       model: "test/default",
+      // Deferring to the Tool lets both the Agent policy and the predicate observe the input.
+      approvals: ({ params }) => {
+        policyParams = params;
+        return undefined;
+      },
       extensions: [
         defineExtension({
           name: "dangerous",
@@ -243,7 +250,10 @@ describe("@mitome/sdk Tool Approval", () => {
             tool({
               name: "dangerous",
               inputSchema: countingSchema,
-              needsApproval: true,
+              needsApproval: async (input) => {
+                predicateInput = input;
+                return true;
+              },
               handler: async (input) => {
                 handlerInput = input;
                 return "done";
@@ -276,6 +286,8 @@ describe("@mitome/sdk Tool Approval", () => {
     const decoded = { action: "delete", decode: 1 };
     expect(decodes).toBe(1);
     expect(preToolParams).toEqual(decoded);
+    expect(policyParams).toEqual(decoded);
+    expect(predicateInput).toEqual(decoded);
     expect(approvalParams).toEqual(decoded);
     expect(handlerInput).toEqual(decoded);
     expect(postToolParams).toEqual(decoded);
