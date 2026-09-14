@@ -14,7 +14,12 @@
   ],
   "type": "module",
   "sideEffects": false,
-  "exports": {},
+  "exports": {
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "default": "./dist/http/index.js"
+    }
+  },
   "publishConfig": {
     "access": "public"
   },
