@@ -22,6 +22,17 @@ const stubManager: SessionManager = {
   open: () => Effect.die("not used"),
 };
 
+const testProvider = (streamText: LanguageModel.Service["streamText"]) => {
+  const unsupported = () => Effect.die("not used");
+  return makeProvider("test", [] as const, undefined, () =>
+    Layer.succeed(LanguageModel.LanguageModel, {
+      generateText: unsupported,
+      generateObject: unsupported,
+      streamText,
+    }),
+  );
+};
+
 describe("session view model", () => {
   test("streams output, shows tool activity, auto-approves, and supports multiple Turns", async () => {
     let approvals = 0;
@@ -74,10 +85,7 @@ describe("session view model", () => {
   });
 
   test("rejects interruption after response-complete", async () => {
-    let finish!: () => void;
-    const finished = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
+    const { promise: finished, resolve: finish } = Promise.withResolvers<void>();
     const events: [TurnEvent, TurnEvent] = [
       { type: "model-output", text: "done" },
       { type: "response-complete" },
@@ -131,14 +139,8 @@ describe("session view model", () => {
   });
 
   test("drops the Turn and reports the failure when transcript persistence fails", async () => {
-    const unsupported = () => Effect.die("not used");
-    const provider = makeProvider("test", [] as const, undefined, () =>
-      Layer.succeed(LanguageModel.LanguageModel, {
-        generateText: unsupported,
-        generateObject: unsupported,
-        streamText: () =>
-          Stream.succeed(Response.makePart("text-delta", { id: "saved", delta: "kept" })),
-      }),
+    const provider = testProvider(() =>
+      Stream.succeed(Response.makePart("text-delta", { id: "saved", delta: "kept" })),
     );
     const store: TranscriptStore = {
       save: () => Effect.fail(new StoreError({ message: "save failed" })),
@@ -170,14 +172,8 @@ describe("session view model", () => {
   });
 
   test("keeps the Turn committed when only the final event append fails", async () => {
-    const unsupported = () => Effect.die("not used");
-    const provider = makeProvider("test", [] as const, undefined, () =>
-      Layer.succeed(LanguageModel.LanguageModel, {
-        generateText: unsupported,
-        generateObject: unsupported,
-        streamText: () =>
-          Stream.succeed(Response.makePart("text-delta", { id: "saved", delta: "kept" })),
-      }),
+    const provider = testProvider(() =>
+      Stream.succeed(Response.makePart("text-delta", { id: "saved", delta: "kept" })),
     );
     const store: TranscriptStore = {
       save: () => Effect.void,
@@ -215,25 +211,18 @@ describe("session view model", () => {
 
   test("drives a real Session across interruption and later Turns", async () => {
     let calls = 0;
-    const unsupported = () => Effect.die("not used");
-    const provider = makeProvider("test", [] as const, undefined, () =>
-      Layer.succeed(LanguageModel.LanguageModel, {
-        generateText: unsupported,
-        generateObject: unsupported,
-        streamText: () => {
-          calls += 1;
-          const output = Match.value(calls).pipe(
-            Match.when(1, () => "partial"),
-            Match.when(2, () => "recovered"),
-            Match.orElse(() => "again"),
-          );
-          const part = Stream.succeed(
-            Response.makePart("text-delta", { id: String(calls), delta: output }),
-          );
-          return calls === 1 ? Stream.concat(part, Stream.never) : part;
-        },
-      }),
-    );
+    const provider = testProvider(() => {
+      calls += 1;
+      const output = Match.value(calls).pipe(
+        Match.when(1, () => "partial"),
+        Match.when(2, () => "recovered"),
+        Match.orElse(() => "again"),
+      );
+      const part = Stream.succeed(
+        Response.makePart("text-delta", { id: String(calls), delta: output }),
+      );
+      return calls === 1 ? Stream.concat(part, Stream.never) : part;
+    });
 
     await Effect.runPromise(
       Effect.scoped(
@@ -269,22 +258,15 @@ describe("session view model", () => {
 
   test("lists, resumes, and starts new Sessions without changing prior Transcripts", async () => {
     const seenPrompts: Array<string> = [];
-    const unsupported = () => Effect.die("not used");
-    const provider = makeProvider("test", [] as const, undefined, () =>
-      Layer.succeed(LanguageModel.LanguageModel, {
-        generateText: unsupported,
-        generateObject: unsupported,
-        streamText: (options: { readonly prompt: unknown }) => {
-          seenPrompts.push(JSON.stringify(options.prompt));
-          return Stream.succeed(
-            Response.makePart("text-delta", {
-              id: String(seenPrompts.length),
-              delta: `answer ${seenPrompts.length}`,
-            }),
-          );
-        },
-      }),
-    );
+    const provider = testProvider((options: { readonly prompt: unknown }) => {
+      seenPrompts.push(JSON.stringify(options.prompt));
+      return Stream.succeed(
+        Response.makePart("text-delta", {
+          id: String(seenPrompts.length),
+          delta: `answer ${seenPrompts.length}`,
+        }),
+      );
+    });
     const transcripts = memoryTranscripts();
     const manager = makeSessionManager({
       agent: { providers: [provider], model: "test/default", extensions: [] },
@@ -406,10 +388,8 @@ describe("session view model", () => {
   });
 
   test("drops a stale Transcript list response after the picker closes", async () => {
-    let resolveList!: (summaries: ReadonlyArray<TranscriptSummary>) => void;
-    const pending = new Promise<ReadonlyArray<TranscriptSummary>>((resolve) => {
-      resolveList = resolve;
-    });
+    const { promise: pending, resolve: resolveList } =
+      Promise.withResolvers<ReadonlyArray<TranscriptSummary>>();
     const unused = () => Effect.die("not used");
     const viewModel = makeSessionViewModel(scriptedSession([]), {
       transcripts: {
@@ -481,14 +461,7 @@ describe("session view model", () => {
     class Pending extends Context.Service<Pending, object>()("Pending") {}
     let acquired = false;
     let released = false;
-    const unsupported = () => Effect.die("not used");
-    const provider = makeProvider("test", [] as const, undefined, () =>
-      Layer.succeed(LanguageModel.LanguageModel, {
-        generateText: unsupported,
-        generateObject: unsupported,
-        streamText: () => Stream.die("not used"),
-      }),
-    );
+    const provider = testProvider(() => Stream.die("not used"));
     const manager = makeSessionManager({
       agent: {
         providers: [provider],

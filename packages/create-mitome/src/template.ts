@@ -38,10 +38,7 @@ export const modelChoices = (
   { label: "Custom model ID", value: customModel },
 ];
 
-export const validateModelId = (model: string): string | undefined => {
-  const trimmed = model.trim();
-  return trimmed === "" ? undefined : trimmed;
-};
+export const validateModelId = (model: string): string | undefined => model.trim() || undefined;
 
 const definitionSource = (
   { flavor, provider, model }: ScaffoldOptions,
@@ -55,15 +52,6 @@ const definitionSource = (
   const providerFactory = provider === "openai" ? "openai()" : "codex()";
   return `import { defineAgent, defineMitome, fileTranscripts } from ${JSON.stringify(sdk)};\nimport { instructionFiles } from "@mitome/sdk/extensions";\n${providerImport}\n\nconst agent = defineAgent({\n  providers: [${providerFactory}],\n  model: ${JSON.stringify(`${provider}/${model}`)},\n  extensions: [instructionFiles(${instructionFilesOptions})],\n});\n\nexport default defineMitome({\n  agent,\n  transcripts: fileTranscripts(),\n});\n`;
 };
-
-const agentDefinitionSource = (options: ScaffoldOptions): string =>
-  definitionSource(options, '{ paths: ["./instructions.md"] }');
-
-const defaultAgentDefinitionSource = (options: Omit<ScaffoldOptions, "flavor">): string =>
-  definitionSource(
-    { ...options, flavor: "promise" },
-    '{ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] }',
-  );
 
 const instructionsSource = "You are a helpful Agent.\n";
 
@@ -120,7 +108,13 @@ export const defaultAgentPlanFiles = ["index.ts", "AGENTS.md", "package.json"] a
 
 export const defaultAgentPlan = (options: Omit<ScaffoldOptions, "flavor">): FileMap =>
   new Map([
-    ["index.ts", defaultAgentDefinitionSource(options)],
+    [
+      "index.ts",
+      definitionSource(
+        { ...options, flavor: "promise" },
+        '{ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] }',
+      ),
+    ],
     ["AGENTS.md", instructionsSource],
     ["package.json", agentPackageSource()],
   ]);
@@ -128,7 +122,7 @@ export const defaultAgentPlan = (options: Omit<ScaffoldOptions, "flavor">): File
 export const projectPlan = (options: ScaffoldOptions): FileMap =>
   new Map([
     ["package.json", agentPackageSource(options.flavor)],
-    ["index.ts", agentDefinitionSource(options)],
+    ["index.ts", definitionSource(options, '{ paths: ["./instructions.md"] }')],
     ["instructions.md", instructionsSource],
     ["tsconfig.json", tsconfigSource],
     [".gitignore", gitignoreSource],
