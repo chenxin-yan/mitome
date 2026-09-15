@@ -8,6 +8,7 @@ import {
   fail,
   ok,
   type ExtensionHooksDefinition,
+  type ResourceContext,
   type ToolBuilder,
 } from "../src/index.js";
 
@@ -79,9 +80,15 @@ defineExtension({
   },
 });
 
-// Resource inferred from setup flows into hooks and tool handlers.
+// Resource inferred from `resource` flows into hooks and tool handlers. `resource` is declared
+// first: TypeScript reads context-sensitive properties in order and fixes Resource at `tools`.
 const resourceInferenceExtension = defineExtension({
   name: "resource-inference",
+  resource: async ({ defer }) => {
+    defer(() => undefined);
+    defer(async () => undefined);
+    return { db: "connection", cache: 1 };
+  },
   tools: ({ tool }) => [
     tool({
       name: "query",
@@ -96,7 +103,6 @@ const resourceInferenceExtension = defineExtension({
       handler: async () => true,
     }),
   ],
-  setup: async () => ({ db: "connection", cache: 1 }),
   hooks: {
     sessionStart: async ({ resource }) => {
       const db: string = resource.db;
@@ -115,7 +121,7 @@ defineExtension<{ readonly db: string }>({
       handler: async (_input, { resource }) => resource.db,
     }),
   ],
-  setup: async () => ({ db: "connection" }),
+  resource: async () => ({ db: "connection" }),
 });
 
 defineExtension<{ readonly db: string }>({
@@ -129,13 +135,13 @@ defineExtension<{ readonly db: string }>({
       handler: async (_input, { resource }) => String(resource.cache),
     }),
   ],
-  setup: async () => ({ db: "connection" }),
+  resource: async () => ({ db: "connection" }),
 });
 
-// @ts-expect-error dispose requires setup.
+// @ts-expect-error A Resource used by a Hook requires `resource`.
 defineExtension({
-  name: "dispose-without-setup",
-  dispose: async (resource: string) => void resource,
+  name: "resource-without-acquisition",
+  hooks: { sessionStart: async ({ resource }: { resource: string }) => void resource },
 });
 
 const inferredOutputExtension = defineExtension({
@@ -186,7 +192,7 @@ const sharedTools = (tool: ToolBuilder<{ readonly db: string }>) => [
 ];
 defineExtension({
   name: "shared-tools",
-  setup: async () => ({ db: "connection" }),
+  resource: async () => ({ db: "connection" }),
   tools: ({ tool }) => sharedTools(tool),
 });
 defineExtension({
@@ -204,6 +210,34 @@ export type InferenceFormatInput = Expect<
 >;
 export type InferenceEnabledOutput = Expect<
   Equal<InferenceContributions["enabled"]["output"], boolean>
+>;
+type ResourceOf<Value> = Value extends import("@mitome/core").Extension<
+  infer Resource,
+  infer _Error,
+  infer _Contributions extends import("@mitome/core").ToolContributions
+>
+  ? Resource
+  : never;
+// A deferring callback declared after `tools` still infers once its parameter is annotated.
+const annotatedResourceExtension = defineExtension({
+  name: "annotated-resource",
+  tools: ({ tool }) => [
+    tool({
+      name: "query",
+      inputSchema: Schema.String,
+      handler: async (_input, { resource }) => resource.db,
+    }),
+  ],
+  resource: async ({ defer }: ResourceContext) => {
+    defer(() => undefined);
+    return { db: "connection" };
+  },
+});
+export type AnnotatedResourceIsInferred = Expect<
+  Equal<ResourceOf<typeof annotatedResourceExtension>, { db: string }>
+>;
+export type ResourceIsInferredFromResourceField = Expect<
+  Equal<ResourceOf<typeof resourceInferenceExtension>, { db: string; cache: number }>
 >;
 type ResourceContributions = ContributionsOf<typeof resourceInferenceExtension>;
 export type ResourceContributionKeys = Expect<
@@ -227,7 +261,7 @@ export type SdkToolkitlessContributionsAreEmpty = Expect<
 >;
 const sdkResourceToolkitlessExtension = defineExtension<{ readonly db: string }>({
   name: "sdk-resource-toolkitless",
-  setup: async () => ({ db: "connection" }),
+  resource: async () => ({ db: "connection" }),
 });
 export type SdkResourceToolkitlessContributionsAreEmpty = Expect<
   Equal<keyof ContributionsOf<typeof sdkResourceToolkitlessExtension>, never>

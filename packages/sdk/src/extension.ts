@@ -39,7 +39,7 @@ export type OutputSchema<Output = unknown> =
 
 /** Passed to every Promise Hook and Tool handler. */
 export interface HookContext<Resource = never> {
-  /** The Extension's Resource from `setup`; `never` for Extensions without one. */
+  /** The Extension's Resource from `resource`; `never` for Extensions without one. */
   readonly resource: Resource;
   /** Aborts when the Turn is interrupted, so external work can stop with it. */
   readonly signal: AbortSignal;
@@ -272,7 +272,7 @@ const promiseHook = Effect.fn("@mitome/sdk/promiseHook")(function* <A, Resource>
   resource: Context.Service<Resource, Resource> | undefined,
 ) {
   // SAFETY: The public defineExtension overload only permits a missing Resource service when
-  // neither setup nor any Hook/Tool declares a Resource, so callbacks cannot observe this value.
+  // neither `resource` nor any Hook/Tool declares a Resource, so callbacks cannot observe this value.
   const value = resource === undefined ? (undefined as Resource) : yield* Effect.service(resource);
   // @effect-diagnostics-next-line unknownInEffectCatch:off
   return yield* Effect.tryPromise({
@@ -376,10 +376,21 @@ export interface ExtensionDefinition<
   /** Declares Tools with a builder whose handlers receive this Extension's Resource. */
   readonly tools?: (scope: { readonly tool: ToolBuilder<Resource> }) => Tools;
   readonly hooks?: ExtensionHooksDefinition<Resource>;
-  /** Acquires the Resource once when a Session starts; required whenever Hooks or Tools use one. */
-  readonly setup?: () => Promise<Resource>;
-  /** Releases the Resource when the Session is released, including on failure and interruption; requires `setup`. */
-  readonly dispose?: (resource: Resource) => Promise<void>;
+  /**
+   * Acquires the Resource once when a Session starts; required whenever Hooks or Tools use one.
+   * Call `defer` after each step succeeds: cleanups run in reverse registration order when the
+   * Session is released, including on failure and interruption, and even when a later step throws.
+   *
+   * Declare `resource` before `tools` and `hooks`, or annotate its parameter with
+   * `ResourceContext`; TypeScript otherwise fixes the Resource type to `never` before it reads
+   * the callback's return type.
+   */
+  readonly resource?: (context: ResourceContext) => Promise<Resource>;
+}
+
+/** Passed to `resource`; `defer` registers cleanup for a step that just succeeded. */
+export interface ResourceContext {
+  readonly defer: (cleanup: () => void | Promise<void>) => void;
 }
 
 /**
@@ -389,13 +400,10 @@ export interface ExtensionDefinition<
 export function defineExtension<Resource = never>(
   definition: ExtensionDefinition<Resource, readonly []> &
     ([Resource] extends [never]
-      ? { readonly setup?: undefined; readonly dispose?: undefined }
-      : { readonly setup: () => Promise<Resource> }),
+      ? unknown
+      : { readonly resource: (context: ResourceContext) => Promise<Resource> }),
 ): NoInfer<Extension<Resource, unknown, ToolContributionsOf<readonly []>>>;
-/**
- * Declares a Promise Extension with Tools. Tool names must be unique within the Extension, and
- * `dispose` requires `setup`; both throw at definition time.
- */
+/** Declares a Promise Extension with Tools. Tool names must be unique within the Extension. */
 export function defineExtension<
   Resource = never,
   const Tools extends ReadonlyArray<AnyTool> = [Resource] extends [never]
@@ -405,8 +413,8 @@ export function defineExtension<
   definition: ExtensionDefinition<Resource, Tools> & {
     readonly tools: (scope: { readonly tool: ToolBuilder<Resource> }) => Tools;
   } & ([Resource] extends [never]
-      ? { readonly setup?: undefined; readonly dispose?: undefined }
-      : { readonly setup: () => Promise<Resource> }),
+      ? unknown
+      : { readonly resource: (context: ResourceContext) => Promise<Resource> }),
 ): NoInfer<Extension<Resource, unknown, ToolContributionsOf<Tools>>>;
 export function defineExtension<
   Resource = never,
@@ -414,11 +422,6 @@ export function defineExtension<
 >(
   definition: ExtensionDefinition<Resource, Tools>,
 ): Extension<Resource, unknown, ToolContributionsOf<Tools>> {
-  if (definition.dispose !== undefined && definition.setup === undefined) {
-    throw new Error(
-      `Extension "${definition.name ?? "<anonymous>"}" declares dispose without setup`,
-    );
-  }
   const names = new Set<string>();
   const definitions = (
     definition.tools === undefined ? [] : definition.tools({ tool: toolBuilder })
@@ -433,7 +436,8 @@ export function defineExtension<
     };
   });
 
-  const service = definition.setup === undefined ? undefined : ResourceService;
+  const acquire = definition.resource;
+  const service = acquire === undefined ? undefined : ResourceService;
   const hooks = adaptHooks(definition.hooks, service);
   const tools = definitions.map(({ tool, input }) => {
     const needsApproval = tool.needsApproval;
@@ -477,30 +481,42 @@ export function defineExtension<
   const toolFailureValidators = validators(({ failure }) => failure);
 
   const resource =
-    service === undefined
+    acquire === undefined
       ? undefined
       : Layer.effect(
-          service,
-          Effect.acquireRelease(
-            // @effect-diagnostics-next-line unknownInEffectCatch:off
-            Effect.tryPromise({
-              try: () => definition.setup!(),
-              catch: (cause) => cause,
-            }),
-            (value, exit) => {
-              if (definition.dispose === undefined) return Effect.void;
-              const run = Effect.promise(() => definition.dispose!(value));
-              // On failure exits a disposer defect would replace the primary
+          ResourceService,
+          Effect.gen(function* () {
+            const cleanups: Array<() => void | Promise<void>> = [];
+            // Registered before acquisition runs so steps deferred before a later step throws
+            // still release; the Layer Scope orders Extensions in reverse Definition order.
+            yield* Effect.addFinalizer((exit) => {
+              const run = Effect.promise(async () => {
+                let failure: { readonly cause: unknown } | undefined;
+                for (const cleanup of cleanups.toReversed()) {
+                  try {
+                    await cleanup();
+                  } catch (cause) {
+                    failure ??= { cause };
+                  }
+                }
+                if (failure !== undefined) throw failure.cause;
+              });
+              // On failure exits a cleanup defect would replace the primary
               // cause; log it instead so the original tagged error survives.
               return Exit.isFailure(exit)
                 ? run.pipe(
                     Effect.catchCause((cause) =>
-                      Effect.logWarning("Extension dispose failed", cause),
+                      Effect.logWarning("Extension Resource cleanup failed", cause),
                     ),
                   )
                 : run;
-            },
-          ),
+            });
+            // @effect-diagnostics-next-line unknownInEffectCatch:off
+            return yield* Effect.tryPromise({
+              try: () => acquire({ defer: (cleanup) => void cleanups.push(cleanup) }),
+              catch: (cause) => cause,
+            });
+          }),
         );
 
   return {
