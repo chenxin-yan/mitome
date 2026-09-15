@@ -1,3 +1,7 @@
+---
+status: reaffirmed by ADR-0053
+---
+
 # Remove Extension dependency injection
 
 Extension dependency injection is removed: Extensions no longer declare `dependencies` or `provides`, Promise Tool declarations no longer name cross-Extension service dependencies, and Promise Hooks and Tool handlers no longer expose `getService`. Agent Definition compilation neither auto-includes nor topologically orders Extensions. Resources are acquired in Agent Definition order and remain private to their owning Extension.
