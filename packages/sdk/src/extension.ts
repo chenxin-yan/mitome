@@ -516,7 +516,11 @@ export function defineExtension<
               try: () => acquire({ defer: (cleanup) => void cleanups.push(cleanup) }),
               catch: (cause) => cause,
             });
-          }),
+          }).pipe(
+            // The Promise cannot be cancelled; interrupting here would run the finalizer
+            // over a partial `cleanups` list and leak whatever `acquire` opens afterwards.
+            Effect.uninterruptible,
+          ),
         );
 
   return {

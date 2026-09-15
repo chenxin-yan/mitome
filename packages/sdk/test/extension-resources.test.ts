@@ -1,5 +1,16 @@
 import { describe, expect, test } from "vitest";
-import { Cause, Context, Effect, Exit, Layer, Result, Schema, SchemaGetter, Stream } from "effect";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Result,
+  Schema,
+  SchemaGetter,
+  Stream,
+} from "effect";
 import { Response, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import {
   createSession,
@@ -179,6 +190,44 @@ describe("@mitome/sdk Extension resources", () => {
       "release:second:db",
       "release:first",
     ]);
+  });
+
+  test("keeps acquisition uninterruptible so cleanups deferred after an interrupt still run", async () => {
+    const log: Array<string> = [];
+    let openBus!: () => void;
+    const busOpened = new Promise<void>((resolve) => {
+      openBus = resolve;
+    });
+    const extension = defineExtension({
+      name: "slow",
+      resource: async ({ defer }) => {
+        log.push("acquire:db");
+        defer(() => void log.push("release:db"));
+        await busOpened;
+        log.push("acquire:bus");
+        defer(() => void log.push("release:bus"));
+        return "resource";
+      },
+    });
+    const definition = defineAgent({
+      providers: [textModel()],
+      model: "test/default",
+      extensions: [extension],
+    });
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(Effect.scoped(createSession(definition)));
+        yield* Effect.yieldNow;
+        expect(log).toEqual(["acquire:db"]);
+        yield* Effect.forkChild(Fiber.interrupt(fiber));
+        yield* Effect.yieldNow;
+        openBus();
+        yield* Fiber.await(fiber);
+      }),
+    );
+
+    expect(log).toEqual(["acquire:db", "acquire:bus", "release:bus", "release:db"]);
   });
 
   test("provides each Extension only its own resource to Hooks and Tool handlers", async () => {
