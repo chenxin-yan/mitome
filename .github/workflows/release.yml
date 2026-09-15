@@ -18,6 +18,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - uses: jdx/mise-action@v4
       - id: release
         name: Detect a merged version change
         shell: bash
@@ -33,7 +34,6 @@ jobs:
           previous_version=$(node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version' <<<"$previous")
           test "$current_version" != "$previous_version" || exit 0
           echo "version=$current_version" >> "$GITHUB_OUTPUT"
-      - uses: jdx/mise-action@v4
       - run: bun install --frozen-lockfile
       # Version PRs only. Publishing stays in the publish job so Bun packs catalogs.
       - uses: changesets/action@v2
@@ -58,49 +58,28 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
-      # Bun version comes from packageManager in package.json.
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-      - name: Verify release tag matches source
-        run: test "${RELEASE_TAG#v}" = "$(node -p 'require("./packages/core/package.json").version')"
+      - uses: jdx/mise-action@v4
       - run: bun install --frozen-lockfile
       - run: bun run build:pkgs
       - run: bun run test:release
       # build:release cross-compiles a binary into every platform package.
       - run: bun run --cwd packages/cli build:release
-      - name: Pack packages in dependency order
+      # Bun packs (rewriting catalog:/workspace:), npm publishes (OIDC). Skipping
+      # already-published versions keeps a re-run after partial failure safe.
+      - name: Pack and publish packages in dependency order
         shell: bash
         run: |
           set -euo pipefail
           mkdir packages-to-publish
           for dir in packages/core packages/sdk packages/providers packages/channels packages/tui packages/cli/npm/cli-* packages/cli packages/create-mitome; do
-            cp LICENSE "$dir/"
-            (cd "$dir" && bun pm pack --destination "$GITHUB_WORKSPACE/packages-to-publish" --ignore-scripts)
-          done
-      - name: Publish or verify packages in dependency order
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          publish_archive() {
-            local archive=$1 name=$2
+            name=$(node -p "require('./$dir/package.json').name")
             if npm view "${name}@${RELEASE_TAG#v}" version >/dev/null 2>&1; then
               echo "Already published: ${name}"
-            else
-              npm publish "$archive" --access public
+              continue
             fi
-          }
-
-          for dir in packages/core packages/sdk packages/providers packages/channels packages/tui packages/cli/npm/cli-* packages/cli packages/create-mitome; do
-            package_dir=$(basename "$dir")
-            if test "$package_dir" = create-mitome; then
-              archive="packages-to-publish/create-mitome-${RELEASE_TAG#v}.tgz"
-            else
-              archive="packages-to-publish/mitome-${package_dir}-${RELEASE_TAG#v}.tgz"
-            fi
-            publish_archive "$archive" "$(node -p "require('./$dir/package.json').name")"
+            cp LICENSE "$dir/"
+            archive=$(cd "$dir" && bun pm pack --quiet --destination "$GITHUB_WORKSPACE/packages-to-publish" --ignore-scripts)
+            npm publish "$archive" --access public
           done
       - name: Create version tag if needed
         shell: bash
@@ -133,7 +112,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
+      - uses: jdx/mise-action@v4
       - run: bun install --frozen-lockfile
       - run: bun run build:docs
       - name: Deploy docs to Cloudflare Workers
