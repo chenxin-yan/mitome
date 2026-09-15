@@ -84,6 +84,27 @@ describe("@mitome/sdk Extension resources", () => {
     expect(log).toEqual(["release:bus", "release:db"]);
   });
 
+  test("runs cleanups deferred while the Session is releasing", async () => {
+    const log: Array<string> = [];
+    const extension = defineExtension({
+      name: "late",
+      resource: async ({ defer }) => {
+        defer(() => {
+          log.push("release:db");
+          defer(() => void log.push("release:late"));
+        });
+        return "late";
+      },
+    });
+
+    await withSession(
+      defineAgent({ providers: [textModel()], model: "test/default", extensions: [extension] }),
+      async () => undefined,
+    );
+
+    expect(log).toEqual(["release:db", "release:late"]);
+  });
+
   test("cleans acquired resources before acquisition and startup Hook failures escape", async () => {
     const acquireFailure = new Error("acquire failed");
     const hookFailure = new Error("hook failed");

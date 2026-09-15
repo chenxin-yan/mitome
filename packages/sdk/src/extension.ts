@@ -492,7 +492,12 @@ export function defineExtension<
             yield* Effect.addFinalizer((exit) => {
               const run = Effect.promise(async () => {
                 let failure: { readonly cause: unknown } | undefined;
-                for (const cleanup of cleanups.toReversed()) {
+                // Drain rather than snapshot: a cleanup may `defer` more work while releasing.
+                for (
+                  let cleanup = cleanups.pop();
+                  cleanup !== undefined;
+                  cleanup = cleanups.pop()
+                ) {
                   try {
                     await cleanup();
                   } catch (cause) {
