@@ -3,7 +3,8 @@
   "plugins": ["typescript", "unicorn", "oxc", "eslint", "promise", "import", "jsdoc"],
   "jsPlugins": [
     { "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" },
-    { "name": "anti-slop-effect", "specifier": "./tools/oxlint/anti-slop/effect/index.ts" }
+    { "name": "anti-slop-effect", "specifier": "./tools/oxlint/anti-slop/effect/index.ts" },
+    { "name": "mitome", "specifier": "./tools/oxlint/no-export-star.ts" }
   ],
   "categories": {
     "correctness": "error"
@@ -43,6 +44,12 @@
     "anti-slop-effect/prefer-effect-match": "error"
   },
   "overrides": [
+    {
+      "files": ["packages/*/src/**"],
+      "rules": {
+        "mitome/no-export-star": "error"
+      }
+    },
     {
       "files": ["**/test/**", "**/*.test.*"],
       "rules": {

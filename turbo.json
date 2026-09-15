@@ -25,14 +25,20 @@
       "outputs": []
     },
     "lint": {
-      "dependsOn": ["^build", "//#hints:generate"],
+      "dependsOn": ["^build", "//#hints:generate", "//#lint:root"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.oxlintrc.json", "$TURBO_ROOT$/tools/oxlint/**"],
       "outputs": []
     },
     "lint:fix": {
-      "dependsOn": ["^build", "//#hints:generate"],
+      "dependsOn": ["^build", "//#hints:generate", "//#lint:root:fix"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.oxlintrc.json"],
       "outputs": [],
+      "cache": false
+    },
+    "//#lint:root": {
+      "inputs": ["scripts/**", "tools/**", ".oxlintrc.json"]
+    },
+    "//#lint:root:fix": {
       "cache": false
     },
     "//#fmt": {},
