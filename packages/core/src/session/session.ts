@@ -72,7 +72,7 @@ const createSessionImpl: (
     if (extension.resource === undefined) continue;
     // SAFETY: contexts are intentionally heterogeneous and indexed by their owning Extension.
     const context = (yield* Layer.build(extension.resource).pipe(
-      hookTurnError("Extension setup failed"),
+      hookTurnError("Extension Resource acquisition failed"),
     )) as Context.Context<any>;
     extensionContexts.set(extension, context);
   }

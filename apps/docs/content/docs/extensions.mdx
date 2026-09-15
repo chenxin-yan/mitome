@@ -37,11 +37,38 @@ Your own Extension contributes Instructions through its `instructions` field, sh
 
 ## A Resource with Tools
 
-`setup` runs once when a Session starts and returns the Resource; `dispose` runs when the Session is released, on success, failure, and interruption alike. The scoped `tool` builder carries the Resource type into every handler:
+`resource` runs once when a Session starts and returns the Resource. Call `defer` after each step that needs undoing: the cleanups run in reverse registration order when the Session is released, on success, failure, and interruption alike, and even when a later step of `resource` throws, so a half-acquired Resource never leaks. The scoped `tool` builder carries the Resource type into every handler:
 
 <include lang="ts">../../examples/notes-extension.ts</include>
 
-A Resource is private to its Extension. Tools and Hooks that need the same Session state belong in one Extension. A resumed Transcript seeds a new Session, so `setup` runs again and the Resource starts fresh.
+Declare `resource` before `tools` and `hooks`. TypeScript infers the Resource type from its return value, and with the other order it fixes the type to `never` first; annotating the parameter with `ResourceContext` lifts that restriction.
+
+A Resource is private to its Extension. Tools and Hooks that need the same Session state belong in one Extension. A resumed Transcript seeds a new Session, so `resource` runs again and the Resource starts fresh.
+
+### Sharing a service between Extensions
+
+When two Extensions need the same service, create it where the Agent Definition is composed and pass it into each Extension's factory. The application owns its lifetime; each Extension's own `resource` stays private.
+
+```ts
+const db = await openDb();
+const notes = ({ db }: { readonly db: Db }) =>
+  defineExtension({ tools: ({ tool }) => noteTools(tool, db) });
+const agent = defineAgent({ providers, model, extensions: [notes({ db }), memory({ db })] });
+```
+
+### Test doubles
+
+Keep the definition in a plain object and spread it with a replacement `resource`:
+
+```ts
+const definition = {
+  resource: async (): Promise<Notes> => openNotes(),
+  tools: ({ tool }: { readonly tool: ToolBuilder<Notes> }) => noteTools(tool),
+};
+export const notes = defineExtension(definition);
+export const notesWith = (fake: Notes) =>
+  defineExtension({ ...definition, resource: async () => fake });
+```
 
 ## Hooks
 
@@ -50,7 +77,7 @@ Hooks let an Extension observe or transform the run. Every Hook receives a conte
 | Hook                          | Contract                                                                                             |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `sessionStart(context)`       | Runs once after every Extension's Resource is acquired.                                              |
-| `sessionEnd(context)`         | Runs when the Session is released, before Resources are disposed.                                    |
+| `sessionEnd(context)`         | Runs when the Session is released, before Resources are released.                                    |
 | `turnStart(message, context)` | Observes the user Message that starts a Turn.                                                        |
 | `turnEnd(message, context)`   | Observes the user Message after its Turn completed.                                                  |
 | `stepStart(prompt, context)`  | Observes the Model Prompt before one Step.                                                           |

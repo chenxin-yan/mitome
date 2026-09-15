@@ -119,7 +119,7 @@ const noteTools = (tool: ToolBuilder<Notes>) => [
 ];
 
 export const notes = defineExtension({
-  setup: async (): Promise<Notes> => ({ values: [] }),
+  resource: async (): Promise<Notes> => ({ values: [] }),
   tools: ({ tool }) => noteTools(tool),
 });
 ```

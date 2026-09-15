@@ -113,13 +113,13 @@ export const notes = defineExtension({
 
 The pieces map onto the Promise surface like this:
 
-| Promise SDK                           | Effect API                                                                      |
-| ------------------------------------- | ------------------------------------------------------------------------------- |
-| `setup` / `dispose` returning a value | `resource`: a `Layer` whose services Hooks and handlers `yield*`                |
-| `tools: ({ tool }) => [...]`          | `toolkit: Toolkit.make(...)` plus a `handlers` record keyed by Tool name        |
-| `inputSchema` / `outputSchema`        | `parameters` / `success` on `Tool.make`; `failure` declares an expected failure |
-| `needsApproval`                       | `needsApproval` on `Tool.make`                                                  |
-| Promise Hooks with `{ resource }`     | Hooks that are Effects requiring the Resource service                           |
+| Promise SDK                          | Effect API                                                                      |
+| ------------------------------------ | ------------------------------------------------------------------------------- |
+| `resource: async ({ defer }) => ...` | `resource`: a `Layer` whose services Hooks and handlers `yield*`                |
+| `tools: ({ tool }) => [...]`         | `toolkit: Toolkit.make(...)` plus a `handlers` record keyed by Tool name        |
+| `inputSchema` / `outputSchema`       | `parameters` / `success` on `Tool.make`; `failure` declares an expected failure |
+| `needsApproval`                      | `needsApproval` on `Tool.make`                                                  |
+| Promise Hooks with `{ resource }`    | Hooks that are Effects requiring the Resource service                           |
 
 A Tool whose `dependencies` or handler need a service that the `resource` Layer does not provide is rejected at the type level. The Hook names and their contracts are the same as on the [Extensions](/docs/extensions#hooks) page; a failing Hook fails the Turn with `TurnError`.
 

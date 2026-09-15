@@ -8,8 +8,11 @@ interface Notes {
 export const notes = defineExtension({
   name: "notes",
   instructions: "Save a note when the user asks you to remember something.",
-  setup: async (): Promise<Notes> => ({ values: [] }),
-  dispose: async (resource) => void resource.values.splice(0),
+  resource: async ({ defer }): Promise<Notes> => {
+    const notes: Notes = { values: [] };
+    defer(() => void notes.values.splice(0));
+    return notes;
+  },
   tools: ({ tool }) => [
     tool({
       name: "save_note",

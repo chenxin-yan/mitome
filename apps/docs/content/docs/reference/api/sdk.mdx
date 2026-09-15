@@ -172,6 +172,13 @@ A configured model Provider with non-secret catalog hints. Provider packages suc
 
 <auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="Provider" />
 
+### ResourceContext
+
+Passed to `resource` on [`ExtensionDefinition`](#extensiondefinition); `defer` registers cleanup
+for a step that just succeeded.
+
+<auto-type-table path="../../../../../../packages/sdk/src/index.ts" name="ResourceContext" />
+
 ### Session
 
 The live Session handed to a [`withSession`](#withsession) callback; it is released when the
@@ -887,8 +894,8 @@ Returns an [`AgentDefinition`](#agentdefinition). Definition problems surface as
 function defineExtension<Resource = never>(
   definition: ExtensionDefinition<Resource, readonly []> &
     ([Resource] extends [never]
-      ? { readonly setup?: undefined; readonly dispose?: undefined }
-      : { readonly setup: () => Promise<Resource> }),
+      ? unknown
+      : { readonly resource: (context: ResourceContext) => Promise<Resource> }),
 ): NoInfer<Extension<Resource, unknown, ToolContributionsOf<readonly []>>>;
 
 function defineExtension<
@@ -900,18 +907,22 @@ function defineExtension<
   definition: ExtensionDefinition<Resource, Tools> & {
     readonly tools: (scope: { readonly tool: ToolBuilder<Resource> }) => Tools;
   } & ([Resource] extends [never]
-      ? { readonly setup?: undefined; readonly dispose?: undefined }
-      : { readonly setup: () => Promise<Resource> }),
+      ? unknown
+      : { readonly resource: (context: ResourceContext) => Promise<Resource> }),
 ): NoInfer<Extension<Resource, unknown, ToolContributionsOf<Tools>>>;
 ```
 
 Declares a Promise Extension without Tools: Instructions, Hooks, and an optional Resource. A
 Resource is private to its Extension, so put Hooks that share state in one Extension. The second
-overload declares a Promise Extension with Tools. Tool names must be unique within the Extension,
-and `dispose` requires `setup`; both throw at definition time.
+overload declares a Promise Extension with Tools. Tool names must be unique within the Extension;
+a duplicate throws at definition time.
 
-When `Resource` is anything other than `never`, `setup` is required; when it is `never`, `setup`
-and `dispose` must be omitted. The compiler enforces this on the `definition` parameter.
+When `Resource` is anything other than `never`, `resource` is required; the compiler enforces this
+on the `definition` parameter. `resource` receives a [`ResourceContext`](#resourcecontext) whose
+`defer` registers cleanup for each step that succeeded; cleanups run in reverse registration order
+when the Session is released, even when a later step throws. Declare `resource` before `tools` and
+`hooks`, or annotate its parameter with `ResourceContext`, so the Resource type is inferred from
+its return value.
 
 Returns an [`Extension`](#extension).
 

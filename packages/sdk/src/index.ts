@@ -46,6 +46,7 @@ export type {
   HookContext,
   InputSchema,
   OutputSchema,
+  ResourceContext,
   StandardSchema,
   StepEndContext,
   Tool,

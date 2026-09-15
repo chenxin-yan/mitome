@@ -1,5 +1,16 @@
 import { describe, expect, test } from "vitest";
-import { Cause, Context, Effect, Exit, Layer, Result, Schema, SchemaGetter, Stream } from "effect";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Result,
+  Schema,
+  SchemaGetter,
+  Stream,
+} from "effect";
 import { Response, Tool as AiTool, Toolkit } from "effect/unstable/ai";
 import {
   createSession,
@@ -15,17 +26,15 @@ const textModel = () =>
   );
 
 describe("@mitome/sdk Extension resources", () => {
-  test("acquires resources before sessionStart in Agent Definition order and disposes them in reverse", async () => {
+  test("acquires resources before sessionStart in Agent Definition order and releases them in reverse", async () => {
     const log: Array<string> = [];
     const extension = (name: string) =>
       defineExtension({
         name,
-        setup: async () => {
-          log.push(`setup:${name}`);
+        resource: async ({ defer }) => {
+          log.push(`acquire:${name}`);
+          defer(() => void log.push(`release:${name}`));
           return name;
-        },
-        dispose: async (resource) => {
-          log.push(`dispose:${resource}`);
         },
         hooks: {
           sessionStart: async ({ resource }) => {
@@ -44,37 +53,75 @@ describe("@mitome/sdk Extension resources", () => {
     );
 
     expect(log).toEqual([
-      "setup:first",
-      "setup:second",
-      "setup:third",
+      "acquire:first",
+      "acquire:second",
+      "acquire:third",
       "start:first",
       "start:second",
       "start:third",
-      "dispose:third",
-      "dispose:second",
-      "dispose:first",
+      "release:third",
+      "release:second",
+      "release:first",
     ]);
   });
 
-  test("cleans acquired resources before setup and startup Hook failures escape", async () => {
-    const setupFailure = new Error("setup failed");
+  test("runs deferred cleanups within one Extension in reverse registration order", async () => {
+    const log: Array<string> = [];
+    const extension = defineExtension({
+      name: "lifo",
+      resource: async ({ defer }) => {
+        defer(() => void log.push("release:db"));
+        defer(async () => void log.push("release:bus"));
+        return "lifo";
+      },
+    });
+
+    await withSession(
+      defineAgent({ providers: [textModel()], model: "test/default", extensions: [extension] }),
+      async () => undefined,
+    );
+
+    expect(log).toEqual(["release:bus", "release:db"]);
+  });
+
+  test("runs cleanups deferred while the Session is releasing", async () => {
+    const log: Array<string> = [];
+    const extension = defineExtension({
+      name: "late",
+      resource: async ({ defer }) => {
+        defer(() => {
+          log.push("release:db");
+          defer(() => void log.push("release:late"));
+        });
+        return "late";
+      },
+    });
+
+    await withSession(
+      defineAgent({ providers: [textModel()], model: "test/default", extensions: [extension] }),
+      async () => undefined,
+    );
+
+    expect(log).toEqual(["release:db", "release:late"]);
+  });
+
+  test("cleans acquired resources before acquisition and startup Hook failures escape", async () => {
+    const acquireFailure = new Error("acquire failed");
     const hookFailure = new Error("hook failed");
-    const setupLog: Array<string> = [];
+    const acquireLog: Array<string> = [];
     const first = defineExtension({
       name: "first",
-      setup: async () => {
-        setupLog.push("setup:first");
+      resource: async ({ defer }) => {
+        acquireLog.push("acquire:first");
+        defer(() => void acquireLog.push("release:first"));
         return "first";
-      },
-      dispose: async (resource) => {
-        setupLog.push(`dispose:${resource}`);
       },
     });
     const second = defineExtension({
       name: "second",
-      setup: async (): Promise<string> => {
-        setupLog.push("setup:second");
-        throw setupFailure;
+      resource: async (): Promise<string> => {
+        acquireLog.push("acquire:second");
+        throw acquireFailure;
       },
     });
 
@@ -87,19 +134,17 @@ describe("@mitome/sdk Extension resources", () => {
         }),
         async () => undefined,
       ),
-    ).rejects.toMatchObject({ _tag: "TurnError", cause: setupFailure });
-    expect(setupLog).toEqual(["setup:first", "setup:second", "dispose:first"]);
+    ).rejects.toMatchObject({ _tag: "TurnError", cause: acquireFailure });
+    expect(acquireLog).toEqual(["acquire:first", "acquire:second", "release:first"]);
 
     const hookLog: Array<string> = [];
     const extension = (name: string, fail = false) =>
       defineExtension({
         name,
-        setup: async () => {
-          hookLog.push(`setup:${name}`);
+        resource: async ({ defer }) => {
+          hookLog.push(`acquire:${name}`);
+          defer(() => void hookLog.push(`release:${name}`));
           return name;
-        },
-        dispose: async (resource) => {
-          hookLog.push(`dispose:${resource}`);
         },
         hooks: {
           sessionStart: async ({ resource }) => {
@@ -119,13 +164,91 @@ describe("@mitome/sdk Extension resources", () => {
       ),
     ).rejects.toMatchObject({ _tag: "TurnError", cause: hookFailure });
     expect(hookLog).toEqual([
-      "setup:first",
-      "setup:second",
+      "acquire:first",
+      "acquire:second",
       "start:first",
       "start:second",
-      "dispose:second",
-      "dispose:first",
+      "release:second",
+      "release:first",
     ]);
+  });
+
+  test("runs cleanups deferred before a partial acquisition failure and releases earlier Extensions", async () => {
+    const failure = new Error("bus failed");
+    const log: Array<string> = [];
+    const first = defineExtension({
+      name: "first",
+      resource: async ({ defer }) => {
+        log.push("acquire:first");
+        defer(() => void log.push("release:first"));
+        return "first";
+      },
+    });
+    const second = defineExtension({
+      name: "second",
+      resource: async ({ defer }): Promise<string> => {
+        log.push("acquire:second:db");
+        defer(() => void log.push("release:second:db"));
+        log.push("acquire:second:bus");
+        throw failure;
+      },
+    });
+
+    await expect(
+      withSession(
+        defineAgent({
+          providers: [textModel()],
+          model: "test/default",
+          extensions: [first, second],
+        }),
+        async () => undefined,
+      ),
+    ).rejects.toMatchObject({ _tag: "TurnError", cause: failure });
+    expect(log).toEqual([
+      "acquire:first",
+      "acquire:second:db",
+      "acquire:second:bus",
+      "release:second:db",
+      "release:first",
+    ]);
+  });
+
+  test("keeps acquisition uninterruptible so cleanups deferred after an interrupt still run", async () => {
+    const log: Array<string> = [];
+    let openBus!: () => void;
+    const busOpened = new Promise<void>((resolve) => {
+      openBus = resolve;
+    });
+    const extension = defineExtension({
+      name: "slow",
+      resource: async ({ defer }) => {
+        log.push("acquire:db");
+        defer(() => void log.push("release:db"));
+        await busOpened;
+        log.push("acquire:bus");
+        defer(() => void log.push("release:bus"));
+        return "resource";
+      },
+    });
+    const definition = defineAgent({
+      providers: [textModel()],
+      model: "test/default",
+      extensions: [extension],
+    });
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(Effect.scoped(createSession(definition)));
+        yield* Effect.yieldNow;
+        expect(log).toEqual(["acquire:db"]);
+        yield* Effect.forkChild(Fiber.interrupt(fiber));
+        yield* Effect.yieldNow;
+        openBus();
+        yield* Fiber.await(fiber);
+      }),
+    );
+
+    expect(log).toEqual(["acquire:db", "acquire:bus", "release:bus", "release:db"]);
   });
 
   test("provides each Extension only its own resource to Hooks and Tool handlers", async () => {
@@ -144,11 +267,11 @@ describe("@mitome/sdk Extension resources", () => {
           },
         }),
       ],
-      setup: async () => ({ name: "alpha", count: 1 }),
+      resource: async () => ({ name: "alpha", count: 1 }),
     });
     const beta = defineExtension({
       name: "beta",
-      setup: async () => ({ name: "beta", enabled: true }),
+      resource: async () => ({ name: "beta", enabled: true }),
       hooks: {
         sessionStart: async ({ resource }) => {
           const enabled: boolean = resource.enabled;
@@ -176,10 +299,15 @@ describe("@mitome/sdk Extension resources", () => {
     });
   });
 
-  test("provides the resource to every Hook and disposes after sessionEnd", async () => {
+  test("provides the resource to every Hook and releases after sessionEnd", async () => {
     const log: Array<string> = [];
     const extension = defineExtension({
       name: "all-hooks",
+      resource: async ({ defer }) => {
+        log.push("acquire");
+        defer(() => void log.push("release:res"));
+        return "res";
+      },
       tools: ({ tool }) => [
         tool({
           name: "res-tool",
@@ -191,13 +319,6 @@ describe("@mitome/sdk Extension resources", () => {
           },
         }),
       ],
-      setup: async () => {
-        log.push("setup");
-        return "res";
-      },
-      dispose: async (resource) => {
-        log.push(`dispose:${resource}`);
-      },
       hooks: {
         sessionStart: async ({ resource }) => void log.push(`sessionStart:${resource}`),
         sessionEnd: async ({ resource }) => void log.push(`sessionEnd:${resource}`),
@@ -227,7 +348,7 @@ describe("@mitome/sdk Extension resources", () => {
     );
 
     expect(log).toEqual([
-      "setup",
+      "acquire",
       "sessionStart:res",
       "turnStart:res",
       "stepStart:res",
@@ -241,7 +362,7 @@ describe("@mitome/sdk Extension resources", () => {
       "stepEnd:res",
       "turnEnd:res",
       "sessionEnd:res",
-      "dispose:res",
+      "release:res",
     ]);
   });
 
@@ -281,22 +402,15 @@ describe("@mitome/sdk Extension resources", () => {
     const { promise: handlerStarted, resolve: started } = Promise.withResolvers<void>();
     const { promise: handlerAborted, resolve: aborted } = Promise.withResolvers<void>();
     const model = makeToolModel("wait", 3).provider;
-    let disposed = 0;
+    let released = 0;
     const definition = defineAgent({
       providers: [model],
       model: "test/default",
       extensions: [
         defineExtension({
           name: "wait",
-          tools: ({ tool }) => [
-            tool({
-              name: "wait",
-              inputSchema: jsonStringSchema,
-              outputSchema: stringSchema,
-              handler: async (_input, { resource, signal }) => resource.wait(signal),
-            }),
-          ],
-          setup: async () => {
+          resource: async ({ defer }) => {
+            defer(() => void (released += 1));
             let waits = 0;
             return {
               wait: (signal: AbortSignal) => {
@@ -316,9 +430,14 @@ describe("@mitome/sdk Extension resources", () => {
               },
             };
           },
-          dispose: async () => {
-            disposed += 1;
-          },
+          tools: ({ tool }) => [
+            tool({
+              name: "wait",
+              inputSchema: jsonStringSchema,
+              outputSchema: stringSchema,
+              handler: async (_input, { resource, signal }) => resource.wait(signal),
+            }),
+          ],
         }),
       ],
     });
@@ -335,7 +454,7 @@ describe("@mitome/sdk Extension resources", () => {
     });
 
     expect(events.at(-1)).toEqual({ type: "response-complete" });
-    expect(disposed).toBe(1);
+    expect(released).toBe(1);
   });
 
   test("mixes an Effect-native resource Extension with an SDK resource Extension", async () => {
@@ -347,10 +466,10 @@ describe("@mitome/sdk Extension resources", () => {
         CoreResource,
         Effect.acquireRelease(
           Effect.sync(() => {
-            log.push("setup:core");
+            log.push("acquire:core");
             return "core";
           }),
-          (resource) => Effect.sync(() => void log.push(`dispose:${resource}`)),
+          (resource) => Effect.sync(() => void log.push(`release:${resource}`)),
         ),
       ),
       hooks: {
@@ -362,12 +481,10 @@ describe("@mitome/sdk Extension resources", () => {
     };
     const sdk = defineExtension({
       name: "sdk",
-      setup: async () => {
-        log.push("setup:sdk");
+      resource: async ({ defer }) => {
+        log.push("acquire:sdk");
+        defer(() => void log.push("release:sdk"));
         return "sdk";
-      },
-      dispose: async (resource) => {
-        log.push(`dispose:${resource}`);
       },
       hooks: { sessionStart: async ({ resource }) => void log.push(`start:${resource}`) },
     });
@@ -377,12 +494,12 @@ describe("@mitome/sdk Extension resources", () => {
       async () => undefined,
     );
     expect(log).toEqual([
-      "setup:core",
-      "setup:sdk",
+      "acquire:core",
+      "acquire:sdk",
       "start:core",
       "start:sdk",
-      "dispose:sdk",
-      "dispose:core",
+      "release:sdk",
+      "release:core",
     ]);
   });
 
@@ -429,17 +546,21 @@ describe("@mitome/sdk Extension resources", () => {
     expect(events.at(-1)).toEqual({ type: "response-complete" });
   });
 
-  test("keeps disposer failure loud with its original cause", async () => {
-    const disposeFailure = new Error("dispose failed");
+  test("keeps cleanup failure loud with its original cause and still runs earlier cleanups", async () => {
+    const cleanupFailure = new Error("cleanup failed");
+    const log: Array<string> = [];
     const definition = defineAgent({
       providers: [textModel()],
       model: "test/default",
       extensions: [
         defineExtension({
-          name: "failing-dispose",
-          setup: async () => "resource",
-          dispose: async () => {
-            throw disposeFailure;
+          name: "failing-cleanup",
+          resource: async ({ defer }) => {
+            defer(() => void log.push("release:db"));
+            defer(async () => {
+              throw cleanupFailure;
+            });
+            return "resource";
           },
         }),
       ],
@@ -459,19 +580,22 @@ describe("@mitome/sdk Extension resources", () => {
     if (Exit.isFailure(exit)) {
       const defect = Cause.findDefect(exit.cause);
       expect(Result.isSuccess(defect)).toBe(true);
-      if (Result.isSuccess(defect)) expect(defect.success).toBe(disposeFailure);
+      if (Result.isSuccess(defect)) expect(defect.success).toBe(cleanupFailure);
     }
+    expect(log).toEqual(["release:db"]);
   });
 
-  test("preserves the primary error when a disposer fails on a failed exit", async () => {
+  test("preserves the primary error when a cleanup fails on a failed exit", async () => {
     const primary = new Error("primary");
     const log: Array<string> = [];
     const extension = defineExtension({
-      name: "failing-dispose",
-      setup: async () => "resource",
-      dispose: async (resource) => {
-        log.push(`dispose:${resource}`);
-        throw new Error("dispose failed");
+      name: "failing-cleanup",
+      resource: async ({ defer }) => {
+        defer(() => {
+          log.push("release:resource");
+          throw new Error("cleanup failed");
+        });
+        return "resource";
       },
     });
 
@@ -483,6 +607,6 @@ describe("@mitome/sdk Extension resources", () => {
         },
       ),
     ).rejects.toBe(primary);
-    expect(log).toEqual(["dispose:resource"]);
+    expect(log).toEqual(["release:resource"]);
   });
 });

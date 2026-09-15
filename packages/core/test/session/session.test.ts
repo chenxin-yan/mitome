@@ -4,6 +4,7 @@ import { AiError, LanguageModel, Prompt, Response } from "effect/unstable/ai";
 import {
   type AgentDefinition,
   createSession,
+  defineExtension,
   makeProvider,
   StoreError,
   type TranscriptStore,
@@ -479,6 +480,36 @@ describe("createSession", () => {
         });
       }
       expect(session.history()).toEqual([]);
+    }),
+  );
+
+  it.effect("builds Extension Resources in Definition order and releases them in reverse", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDeterministicProvider("hello");
+      const log: Array<string> = [];
+      const extension = (name: string) =>
+        defineExtension({
+          name,
+          resource: Layer.effect(
+            Context.Service<string>(`test/${name}`),
+            Effect.acquireRelease(
+              Effect.sync(() => {
+                log.push(`acquire:${name}`);
+                return name;
+              }),
+              (resource) => Effect.sync(() => void log.push(`release:${resource}`)),
+            ),
+          ),
+        });
+      const definition: AgentDefinition = {
+        providers: [fixture.provider],
+        model: "test/default",
+        extensions: [extension("first"), extension("second")],
+      };
+
+      yield* Effect.scoped(createSession(definition));
+
+      expect(log).toEqual(["acquire:first", "acquire:second", "release:second", "release:first"]);
     }),
   );
 });
