@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { modelCatalog } from "../src/catalog.ts";
+import { modelCatalog, toolCapableOpenAiModels } from "../src/catalog.ts";
 
 const fallback = ["fallback-openai"];
 const payload = {
@@ -29,6 +29,25 @@ afterEach(async () => {
 });
 
 describe("models.dev catalog", () => {
+  test("reads limit.context per tool-capable model and never guesses a missing one", () => {
+    expect(
+      toolCapableOpenAiModels({
+        openai: {
+          models: {
+            windowed: { id: "windowed", tool_call: true, limit: { context: 128_000, output: 1 } },
+            unlimited: { id: "unlimited", tool_call: true },
+            malformed: { id: "malformed", tool_call: true, limit: { context: "128k" } },
+            noTools: { id: "no-tools", tool_call: false, limit: { context: 8_192 } },
+          },
+        },
+      }),
+    ).toEqual([
+      { id: "windowed", contextWindow: 128_000 },
+      { id: "unlimited", contextWindow: undefined },
+      { id: "malformed", contextWindow: undefined },
+    ]);
+  });
+
   test("uses a fresh cache without fetching", async () => {
     const path = await directory();
     await writeFile(

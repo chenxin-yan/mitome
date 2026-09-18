@@ -17,3 +17,15 @@ void contract;
 openaiCompatible({ id: "missing-base" });
 // @ts-expect-error Provider ids cannot contain the Model separator.
 openaiCompatible({ id: "bad/id", baseUrl: "http://localhost:1234" });
+// Declared context windows are keyed by endpoint-native Model id and must be numbers.
+openaiCompatible({
+  id: "windowed",
+  baseUrl: "http://localhost:1234",
+  models: { "llama-3.1-8b": { contextWindow: 128_000 } },
+});
+openaiCompatible({
+  id: "bad-window",
+  baseUrl: "http://localhost:1234",
+  // @ts-expect-error contextWindow is a token count, not a string.
+  models: { "llama-3.1-8b": { contextWindow: "128k" } },
+});

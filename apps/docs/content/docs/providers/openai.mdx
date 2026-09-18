@@ -47,3 +47,5 @@ Where the file lives, its permissions, and the precedence rules are on the [Conf
 ## Model catalog
 
 `knownModelIds` lists the Tool-capable OpenAI Models offered as completions and in `mitome init`. Any other Model id under `openai/` is accepted and checked by OpenAI at request time; see [Catalog, not entitlement](/docs/providers#catalog-not-entitlement).
+
+The same models.dev snapshot supplies each known Model's context window, so runtime consumers such as Compaction can see it. Model ids outside the snapshot have no known window; Mitome never guesses one.
