@@ -8,11 +8,7 @@ import { Effect, Stream } from "effect";
 import { Response } from "effect/unstable/ai";
 import { createSession } from "@mitome/core";
 import { defineExtension } from "../src/index.js";
-import {
-  type InstructionFilesOptions,
-  instructionFiles,
-  instructions,
-} from "../src/extensions/index.js";
+import { instructionFiles, instructions } from "../src/extensions/index.js";
 import { makeTestProvider } from "./provider.js";
 
 const cwd = process.cwd();
@@ -95,12 +91,8 @@ describe("@mitome/sdk/extensions", () => {
   });
 
   test("rejects a relative path without a base at runtime", () => {
-    // SAFETY: stands in for a JavaScript caller that the type contract cannot reach.
-    const untyped = JSON.parse(
-      '{"paths":["./fixtures/instructions.md"]}',
-    ) as InstructionFilesOptions;
-
-    expect(() => instructionFiles(untyped)).toThrow(
+    // @ts-expect-error relative paths need `base`; a JavaScript caller can still reach the runtime guard.
+    expect(() => instructionFiles({ paths: ["./fixtures/instructions.md"] })).toThrow(
       "instructionFiles() needs `base` to resolve a relative path: ./fixtures/instructions.md",
     );
   });
