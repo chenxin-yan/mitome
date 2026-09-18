@@ -61,9 +61,6 @@ export const toolCapableOpenAiModels = <Payload>(payload: Payload): Array<OpenAi
   });
 };
 
-export const toolCapableOpenAiIds = <Payload>(payload: Payload): Array<string> =>
-  toolCapableOpenAiModels(payload).map((model) => model.id);
-
 const readCache = async (path: string): Promise<CachedCatalog | undefined> => {
   try {
     const decoded = Schema.decodeResult(CachedCatalogFromJson, {
@@ -96,7 +93,7 @@ export const modelCatalog = async ({
   try {
     const response = await fetcher(catalogUrl, { signal: AbortSignal.timeout(fetchTimeout) });
     if (!response.ok) throw new Error(`models.dev returned ${response.status}`);
-    const catalog = toolCapableOpenAiIds(await response.json());
+    const catalog = toolCapableOpenAiModels(await response.json()).map((model) => model.id);
     if (catalog.length === 0) throw new Error("models.dev returned no OpenAI models");
     // An unwritable cache (e.g. read-only config dir) must not discard the fetched catalog.
     await writeCache(path, { openai: catalog, fetchedAt: now() }).catch(() => {});
