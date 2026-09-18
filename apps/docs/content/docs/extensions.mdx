@@ -25,12 +25,12 @@ Extensions are applied in the order you list them: Instructions are composed in 
 Two first-party Extensions in `@mitome/sdk/extensions` cover static Instructions:
 
 - `instructions(text)` contributes the text as-is.
-- `instructionFiles({ paths, discover })` reads files when the Mitome Definition loads. `paths` are resolved relative to the module that calls it and must exist. `discover` names bare filenames, such as `AGENTS.md`, looked up in every directory from the Git root down to the current working directory, or only the current directory when there is no Git root; missing ones are skipped.
+- `instructionFiles({ base, paths, discover })` reads files when the Mitome Definition loads. Relative `paths` are resolved against `base`, the calling module's `import.meta.url`, and must exist; absolute `paths` need no `base`, and the types reject a relative path without one. `discover` names bare filenames, such as `AGENTS.md`, looked up in every directory from the Git root down to the current working directory, or only the current directory when there is no Git root; missing ones are skipped.
 
 ```ts
 import { instructionFiles } from "@mitome/sdk/extensions";
 
-instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] });
+instructionFiles({ base: import.meta.url, paths: ["./AGENTS.md"], discover: ["AGENTS.md"] });
 ```
 
 Your own Extension contributes Instructions through its `instructions` field, shown below.

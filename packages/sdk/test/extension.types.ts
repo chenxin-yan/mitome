@@ -299,3 +299,23 @@ void defineEffectAgent({
   model: "test/default",
   extensions: [instructionFiles()],
 });
+void instructionFiles({ discover: ["AGENTS.md"] });
+void instructionFiles({
+  paths: [
+    "/etc/agent/AGENTS.md",
+    "C:\\agent\\AGENTS.md",
+    "c:/agent/AGENTS.md",
+    "\\\\server\\share\\AGENTS.md",
+  ],
+});
+void instructionFiles({ base: import.meta.url, paths: ["./AGENTS.md"], discover: ["AGENTS.md"] });
+// @ts-expect-error relative paths need `base`
+void instructionFiles({ paths: ["./AGENTS.md"] });
+// @ts-expect-error relative paths need `base`
+void instructionFiles({ paths: ["AGENTS.md"], discover: ["AGENTS.md"] });
+// @ts-expect-error a relative path containing `:/` is not a drive path
+void instructionFiles({ paths: ["./notes:/AGENTS.md"] });
+// @ts-expect-error a drive-relative path is not absolute
+void instructionFiles({ paths: ["C:AGENTS.md"] });
+// @ts-expect-error a runtime string is not proven absolute
+void instructionFiles({ paths: [String("./AGENTS.md")] });

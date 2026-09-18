@@ -42,8 +42,8 @@ describe("@mitome/sdk/extensions", () => {
               instructions("First."),
               instructions("Second."),
               defineExtension({ instructions: "Third." }),
-              instructionFiles({ paths: ["./fixtures/instructions.md"] }),
-              instructionFiles({ paths: ["./fixtures/instructions.md"] }),
+              instructionFiles({ base: import.meta.url, paths: ["./fixtures/instructions.md"] }),
+              instructionFiles({ base: import.meta.url, paths: ["./fixtures/instructions.md"] }),
             ],
           }),
           (session) => session.history(),
@@ -60,20 +60,51 @@ describe("@mitome/sdk/extensions", () => {
     ]);
   });
 
-  test("resolves explicit paths relative to the defining module", () => {
-    expect(instructionFiles({ paths: ["./fixtures/instructions.md"] })).toEqual({
+  test("resolves relative paths against the base module URL", () => {
+    expect(
+      instructionFiles({ base: import.meta.url, paths: ["./fixtures/instructions.md"] }),
+    ).toEqual({
       instructions: "Sibling instructions.\n",
     });
   });
 
-  test("resolves explicit paths from a bundled defining module", () => {
+  test("resolves relative paths for a wrapping helper against the base it forwards", () => {
+    const fromModule = (base: string, ...paths: Array<string>) => instructionFiles({ base, paths });
+    // A module URL in a different directory than this test; only the forwarded base can find the file.
+    const definingModule = new URL("./fixtures/agent.ts", import.meta.url).href;
+
+    expect(fromModule(definingModule, "./instructions.md")).toEqual({
+      instructions: "Sibling instructions.\n",
+    });
+  });
+
+  test("reads absolute paths without a base", () => {
+    // SAFETY: fileURLToPath returns an absolute path; only a literal proves that statically, and
+    // extension.types.ts covers the literal contract.
+    const absolute = fileURLToPath(
+      new URL("./fixtures/instructions.md", import.meta.url),
+    ) as `/${string}`;
+
+    expect(instructionFiles({ paths: [absolute] })).toEqual({
+      instructions: "Sibling instructions.\n",
+    });
+  });
+
+  test("rejects a relative path without a base at runtime", () => {
+    // @ts-expect-error relative paths need `base`; a JavaScript caller can still reach the runtime guard.
+    expect(() => instructionFiles({ paths: ["./fixtures/instructions.md"] })).toThrow(
+      "instructionFiles() needs `base` to resolve a relative path: ./fixtures/instructions.md",
+    );
+  });
+
+  test("resolves relative paths from a bundled defining module", () => {
     const root = temporaryDirectory();
     const entry = join(root, "agent.ts");
     const bundle = join(root, "agent.mjs");
     writeFileSync(join(root, "instructions.md"), "Bundled instructions.");
     writeFileSync(
       entry,
-      `import { instructionFiles } from ${JSON.stringify(fileURLToPath(new URL("../src/extensions/index.ts", import.meta.url)))};\nconsole.log(JSON.stringify(instructionFiles({ paths: ["./instructions.md"] })));\n`,
+      `import { instructionFiles } from ${JSON.stringify(fileURLToPath(new URL("../src/extensions/index.ts", import.meta.url)))};\nconsole.log(JSON.stringify(instructionFiles({ base: import.meta.url, paths: ["./instructions.md"] })));\n`,
     );
     execFileSync("bun", ["build", entry, "--outfile", bundle, "--target", "node"]);
 
@@ -86,16 +117,20 @@ describe("@mitome/sdk/extensions", () => {
     process.chdir(fileURLToPath(new URL("./fixtures", import.meta.url)));
 
     expect(
-      instructionFiles({ paths: ["./fixtures/instructions.md"], discover: ["instructions.md"] }),
+      instructionFiles({
+        base: import.meta.url,
+        paths: ["./fixtures/instructions.md"],
+        discover: ["instructions.md"],
+      }),
     ).toEqual({
       instructions: "Sibling instructions.\n",
     });
   });
 
   test("fails synchronously with the resolved path for a missing explicit file", () => {
-    expect(() => instructionFiles({ paths: ["./fixtures/missing.md"] })).toThrow(
-      /fixtures[\\/]missing\.md/,
-    );
+    expect(() =>
+      instructionFiles({ base: import.meta.url, paths: ["./fixtures/missing.md"] }),
+    ).toThrow(/fixtures[\\/]missing\.md/);
   });
 
   test("discovers all repository matches outermost-first", () => {

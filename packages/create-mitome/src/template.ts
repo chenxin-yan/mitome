@@ -112,7 +112,7 @@ export const defaultAgentPlan = (options: Omit<ScaffoldOptions, "flavor">): File
       "index.ts",
       definitionSource(
         { ...options, flavor: "promise" },
-        '{ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] }',
+        '{ base: import.meta.url, paths: ["./AGENTS.md"], discover: ["AGENTS.md"] }',
       ),
     ],
     ["AGENTS.md", instructionsSource],
@@ -122,7 +122,10 @@ export const defaultAgentPlan = (options: Omit<ScaffoldOptions, "flavor">): File
 export const projectPlan = (options: ScaffoldOptions): FileMap =>
   new Map([
     ["package.json", agentPackageSource(options.flavor)],
-    ["index.ts", definitionSource(options, '{ paths: ["./instructions.md"] }')],
+    [
+      "index.ts",
+      definitionSource(options, '{ base: import.meta.url, paths: ["./instructions.md"] }'),
+    ],
     ["instructions.md", instructionsSource],
     ["tsconfig.json", tsconfigSource],
     [".gitignore", gitignoreSource],

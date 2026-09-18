@@ -3,41 +3,65 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Extension } from "@mitome/core";
 
-/** Options for `instructionFiles`. */
-export interface InstructionFilesOptions {
-  /** Files to read, resolved relative to the module that calls `instructionFiles`. */
-  readonly paths?: ReadonlyArray<string>;
-  /** Bare filenames looked up in every directory from the git root down to the working directory. */
-  readonly discover?: ReadonlyArray<string>;
-}
+type Letter =
+  | "a"
+  | "b"
+  | "c"
+  | "d"
+  | "e"
+  | "f"
+  | "g"
+  | "h"
+  | "i"
+  | "j"
+  | "k"
+  | "l"
+  | "m"
+  | "n"
+  | "o"
+  | "p"
+  | "q"
+  | "r"
+  | "s"
+  | "t"
+  | "u"
+  | "v"
+  | "w"
+  | "x"
+  | "y"
+  | "z";
+type DriveLetter = Letter | Uppercase<Letter>;
 
-const sourcePath = (fileName: string): string =>
-  fileName.startsWith("file:") ? fileURLToPath(fileName) : fileName;
+/**
+ * A path that is absolute on some platform: POSIX-rooted, Windows-rooted or UNC, or a Windows
+ * drive path. The runtime still applies the host `isAbsolute`, so a Windows form on POSIX throws.
+ */
+type AbsolutePath =
+  | `/${string}`
+  | `\\${string}`
+  | `${DriveLetter}:/${string}`
+  | `${DriveLetter}:\\${string}`;
 
-const callingModule = (): string => {
-  // V8/Bun invokes this global hook without a receiver; preserve it across synchronous capture.
-  // oxlint-disable-next-line @typescript-eslint/unbound-method
-  const previous = Error.prepareStackTrace;
-  try {
-    let stack: ReadonlyArray<NodeJS.CallSite> = [];
-    Error.prepareStackTrace = (_, callsites) => {
-      stack = callsites;
-      return callsites;
-    };
-    const error = new Error();
-    Error.captureStackTrace(error, instructionFiles);
-    void error.stack;
-    for (const callsite of stack) {
-      const fileName = callsite.getFileName() ?? callsite.getScriptNameOrSourceURL();
-      if (fileName === null) continue;
-      const path = sourcePath(fileName);
-      if (isAbsolute(path)) return path;
+/**
+ * Options for `instructionFiles`. Relative `paths` need `base`, the calling module's
+ * `import.meta.url`; absolute `paths` and `discover` do not.
+ */
+export type InstructionFilesOptions =
+  | {
+      /** The calling module's `import.meta.url`; relative `paths` resolve against its directory. */
+      readonly base: string;
+      /** Files to read, resolved against `base`. */
+      readonly paths?: ReadonlyArray<string>;
+      /** Bare filenames looked up in every directory from the git root down to the working directory. */
+      readonly discover?: ReadonlyArray<string>;
     }
-  } finally {
-    Error.prepareStackTrace = previous;
-  }
-  throw new Error("Could not resolve the module calling instructionFiles().");
-};
+  | {
+      readonly base?: never;
+      /** Absolute files to read. */
+      readonly paths?: ReadonlyArray<AbsolutePath>;
+      /** Bare filenames looked up in every directory from the git root down to the working directory. */
+      readonly discover?: ReadonlyArray<string>;
+    };
 
 const discoveryDirectories = (): ReadonlyArray<string> => {
   const cwd = process.cwd();
@@ -52,10 +76,17 @@ const discoveryDirectories = (): ReadonlyArray<string> => {
   return directories.reverse();
 };
 
-const explicitPaths = (paths: ReadonlyArray<string> | undefined): ReadonlyArray<string> => {
-  if (paths === undefined) return [];
-  const caller = dirname(callingModule());
-  return paths.map((path) => resolve(caller, path));
+const explicitPaths = ({ base, paths = [] }: InstructionFilesOptions): ReadonlyArray<string> => {
+  if (base !== undefined) {
+    const directory = dirname(fileURLToPath(base));
+    return paths.map((path) => resolve(directory, path));
+  }
+  for (const path of paths) {
+    if (!isAbsolute(path)) {
+      throw new Error(`instructionFiles() needs \`base\` to resolve a relative path: ${path}`);
+    }
+  }
+  return paths.map((path) => resolve(path));
 };
 
 const discoveredPaths = (names: ReadonlyArray<string>): ReadonlyArray<string> => {
@@ -79,7 +110,7 @@ const discoveredPaths = (names: ReadonlyArray<string>): ReadonlyArray<string> =>
  * `paths` entry throws; missing `discover` names are skipped.
  */
 export function instructionFiles(options: InstructionFilesOptions = {}): Extension {
-  const paths = explicitPaths(options.paths);
+  const paths = explicitPaths(options);
   const files = [
     ...paths,
     ...discoveredPaths(options.discover ?? []).filter((path) => !paths.includes(path)),
