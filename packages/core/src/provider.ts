@@ -36,9 +36,19 @@ export type QualifiedModelId<Value extends AnyProvider> =
     ? `${Id}/${ModelIds[number] | (string & {})}`
     : never;
 
+/** Non-secret facts a Provider knows about one Provider-native Model id. */
+export interface ModelMetadata {
+  /** Context window in tokens, as the Provider reports it; hints, not an entitlement check. */
+  readonly contextWindow: number;
+}
+
+/** Per-Model metadata keyed by Provider-native Model id; ids without an entry stay unknown. */
+export type ModelMetadataMap = { readonly [modelId: string]: ModelMetadata };
+
 interface ProviderMetadata {
   readonly credential: CredentialDescriptor | undefined;
   readonly provision: (modelId: string) => Layer.Layer<LanguageModel.LanguageModel, unknown, never>;
+  readonly models: ModelMetadataMap;
 }
 
 const providerMetadata = new WeakMap<object, ProviderMetadata>();
@@ -49,6 +59,7 @@ export const makeProvider = <const Id extends string, const ModelIds extends Rea
   modelIds: ModelIds,
   credential: CredentialDescriptor | undefined,
   provision: (modelId: string) => Layer.Layer<LanguageModel.LanguageModel, unknown, never>,
+  models: ModelMetadataMap = {},
 ): Provider<Id, ModelIds> => {
   // Runtime checks because Provider factories may forward an id typed as plain string.
   if (id.length === 0 || id.includes("/")) {
@@ -60,7 +71,7 @@ export const makeProvider = <const Id extends string, const ModelIds extends Rea
 
   const provider: Provider<Id, ModelIds> = { [ProviderTypeId]: ProviderTypeId, id, modelIds };
   Object.defineProperty(provider, ProviderTypeId, { enumerable: false });
-  providerMetadata.set(provider, { credential, provision });
+  providerMetadata.set(provider, { credential, provision, models });
   return provider;
 };
 

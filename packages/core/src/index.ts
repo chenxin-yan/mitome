@@ -48,7 +48,14 @@ export type {
 export { credentialDescriptor, makeProvider } from "./provider.js";
 export { memoryRoutes } from "./routes.js";
 export type { RouteKey, Routes } from "./routes.js";
-export type { AnyProvider, Provider, QualifiedModelId, ValidProviderId } from "./provider.js";
+export type {
+  AnyProvider,
+  ModelMetadata,
+  ModelMetadataMap,
+  Provider,
+  QualifiedModelId,
+  ValidProviderId,
+} from "./provider.js";
 export {
   ApprovalResolutionError,
   SessionBusyError,

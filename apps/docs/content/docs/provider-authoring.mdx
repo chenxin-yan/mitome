@@ -11,7 +11,7 @@ A [Provider](/docs/concepts#provider) is a configured integration through which 
 ## `makeProvider`
 
 ```ts
-makeProvider(id, modelIds, credential, provision);
+makeProvider(id, modelIds, credential, provision, models?);
 ```
 
 | Argument     | Type                                                                    | Meaning                                                                                                                                                                                   |
@@ -20,8 +20,9 @@ makeProvider(id, modelIds, credential, provision);
 | `modelIds`   | `readonly string[]`, usually `[...] as const`                           | The Model catalog: hints for editor completion and `mitome init`. Not a closed list; any `acme/<model>` is accepted and the service decides at request time.                              |
 | `credential` | environment variable name, `undefined`, or `{ capability: { module } }` | How `mitome auth login` collects the Credential. See below.                                                                                                                               |
 | `provision`  | `(modelId) => Layer<LanguageModel, unknown, never>`                     | Builds the Effect `LanguageModel` Layer for one Model id. Called when a Turn selects a Model; the Layer must resolve everything it needs, including the Credential, without requirements. |
+| `models`     | `{ [modelId]: { contextWindow } }`, optional                            | Context window in tokens per Provider-native Model id, for runtime consumers such as Compaction. Ids without an entry have no known window; Core never guesses one.                       |
 
-The returned `Provider` value exposes only `id` and `modelIds`. Credential metadata and `provision` stay behind the constructor, so an Agent Definition can be inspected or logged without leaking anything.
+The returned `Provider` value exposes only `id` and `modelIds`. Credential metadata, `provision`, and `models` stay behind the constructor, so an Agent Definition can be inspected or logged without leaking anything.
 
 ## Credential forms
 

@@ -28,6 +28,7 @@ const agent = defineAgent({
 | `id`        | yes      | Stable Provider id. It becomes the prefix of every qualified Model id; it may not be empty or contain `/`. |
 | `baseUrl`   | yes      | Chat Completions API root of the endpoint.                                                                 |
 | `apiKeyEnv` | no       | Environment variable holding the endpoint's API key. Omit it for endpoints that need none.                 |
+| `models`    | no       | Context window per endpoint-native Model id, `{ "llama-3.1-8b": { contextWindow: 128000 } }`.              |
 
 ```ts
 const together = openaiCompatible({
@@ -42,6 +43,18 @@ When `apiKeyEnv` is set, `mitome auth login` prompts for that variable like any 
 ## Empty catalog
 
 Compatible endpoints share no Model list, so this Provider's `knownModelIds` is empty and every Model id you write after `id/` is passed to the endpoint as-is. You get no completions for the `model` field; the endpoint reports unknown Models at request time.
+
+## Context windows
+
+Because there is no shared catalog, Mitome cannot know how large each Model's context window is. Declare it per Model id in `models` so runtime consumers such as Compaction can see it; Model ids you leave out have no known window and Mitome never guesses one.
+
+```ts
+const local = openaiCompatible({
+  id: "local",
+  baseUrl: "http://127.0.0.1:8080/v1",
+  models: { "llama-3.1-8b": { contextWindow: 128_000 } },
+});
+```
 
 ## Not for Codex
 

@@ -5,7 +5,15 @@ import { getProviderMetadata, parseQualifiedModelId } from "../provider.js";
 import type { AnyProvider } from "../provider.js";
 import { TurnError } from "./errors.js";
 
+/** One Model selected for a Turn, with identity and Provider-declared facts alongside its service. */
 export interface RuntimeModel {
+  /** Qualified Model id the Turn selected. */
+  readonly id: string;
+  readonly providerId: string;
+  /** Provider-native Model id after the first `/`. */
+  readonly modelId: string;
+  /** Provider metadata; undefined when the Provider declares no window for this Model id. */
+  readonly contextWindow: number | undefined;
   readonly context: Context.Context<LanguageModel.LanguageModel>;
   readonly model: LanguageModel.Service;
 }
@@ -53,7 +61,11 @@ export const makeModelResolver = (
         Layer.buildWithScope(layer, scope).pipe(Effect.mapError(modelSetupTurnError)),
       ),
       Effect.map((context) => {
-        const selected = {
+        const selected: RuntimeModel = {
+          id: qualifiedModelId,
+          providerId: parsed.providerId,
+          modelId: parsed.modelId,
+          contextWindow: metadata.models[parsed.modelId]?.contextWindow,
           context,
           model: Context.get(context, LanguageModel.LanguageModel),
         };

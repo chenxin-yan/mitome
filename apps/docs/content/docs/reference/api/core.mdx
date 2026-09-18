@@ -215,6 +215,13 @@ Mitome Definition module exports it as default;
 
 <auto-type-table path="../../../../../../packages/core/src/index.ts" name="MitomeDefinition" />
 
+### ModelMetadata
+
+Non-secret facts a Provider knows about one Provider-native Model id: today its `contextWindow`
+in tokens. Hints for runtime consumers such as Compaction, not an entitlement check.
+
+<auto-type-table path="../../../../../../packages/core/src/index.ts" name="ModelMetadata" />
+
 ### Provider
 
 A configured model Provider with non-secret catalog hints. Create one with
@@ -409,6 +416,15 @@ type Json =
 ```
 
 A JSON-serializable value.
+
+### ModelMetadataMap
+
+```ts
+type ModelMetadataMap = { readonly [modelId: string]: ModelMetadata };
+```
+
+Per-Model metadata keyed by Provider-native Model id. Ids without an entry have no known
+`contextWindow`; Core never guesses one.
 
 ### QualifiedModelId
 
@@ -970,6 +986,7 @@ function makeProvider<const Id extends string, const ModelIds extends ReadonlyAr
   modelIds: ModelIds,
   credential: CredentialDescriptor | undefined,
   provision: (modelId: string) => Layer.Layer<LanguageModel.LanguageModel, unknown, never>,
+  models?: ModelMetadataMap,
 ): Provider<Id, ModelIds>;
 ```
 
@@ -977,7 +994,10 @@ Creates a configured Provider without exposing credentials or provisioning behav
 non-empty and contain no `/`, and a string `credential` must be a valid environment variable
 name; either violation throws a `TypeError` at runtime, because Provider factories may forward an
 id typed as plain string. `provision` builds the `LanguageModel` layer for one Model id when a
-Session first uses that Model.
+Session first uses that Model. `models` declares
+[`ModelMetadata`](/docs/reference/api/core#modelmetadata) per Provider-native Model id; it is
+stored with the Credential and provisioner, never on the returned value, and ids it omits have no
+known `contextWindow`.
 
 Returns a [`Provider`](/docs/reference/api/core#provider).
 

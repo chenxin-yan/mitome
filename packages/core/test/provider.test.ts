@@ -31,6 +31,7 @@ describe("makeProvider", () => {
       ["known"] as const,
       "EXAMPLE_API_KEY",
       () => stubLayer,
+      { known: { contextWindow: 128_000 } },
     );
 
     expect(provider).toEqual({ id: "example", modelIds: ["known"] });
