@@ -1,3 +1,7 @@
+---
+status: compaction deferral reversed by ADR-0055
+---
+
 # Compose Transcript persistence explicitly
 
 Transcript persistence is an optional, named part of the Mitome Definition: `defineMitome({ agent, hosts, transcripts })`. A declared `TranscriptStore` is passed to every Host through `HostContext`; omitting it means no Transcript snapshots or event records are written. Built-in Hosts never discover or construct a store. This keeps persistence visible at the composition root, gives one-shot and interactive Hosts the same resume source, and preserves the explicit-composition rule established by ADR-0039.

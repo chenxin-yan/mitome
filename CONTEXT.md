@@ -27,12 +27,36 @@ One user, Agent, or Tool contribution to a Session.
 _Avoid_: Prompt, request
 
 **Model Prompt**:
-The ordered Messages supplied to a Model for one Step, including the Agent's Instructions and committed Session history.
+The ordered Messages supplied to a Model for one Step, derived from the Agent's Instructions, the selected Branch's history and applicable Checkpoint, and the current Turn's Messages.
 _Avoid_: User Message, input (bare)
 
 **Transcript**:
-The durable, ordered record of a Session's committed messages; it may outlive the Session that produced it and seed new Sessions.
+The durable record of a Session's committed Messages and associated Compaction state; it may outlive the Session that produced it and seed new Sessions.
 _Avoid_: Session (the live interaction), history (bare), log
+
+**History tree**:
+The ancestry of a Session's Messages, preserving alternate continuations as Branches.
+_Avoid_: Transcript (the committed record), execution log
+
+**Branch**:
+One path through a History tree, representing a continuation from shared earlier Messages.
+_Avoid_: Session, fork (the operation), workspace
+
+**Branch summary**:
+Information deliberately carried from an abandoned Branch into a new continuation.
+_Avoid_: Checkpoint, Compaction, recovery record
+
+**Execution state**:
+The recoverable state of unfinished Agent work, including Step progress, Tool intent and outcomes, pending Approvals, and cancellation decisions.
+_Avoid_: Transcript, Checkpoint, Resource
+
+**Compaction**:
+Replacing a prefix of a Session's committed Messages with a summary in the Model Prompt, leaving the Transcript's Messages intact.
+_Avoid_: Summarization (the act of producing the summary), truncation, context pruning
+
+**Checkpoint**:
+The durable summary and retained boundary a Compaction produces for compatible Branch ancestry; the Model Prompt is derived from the applicable Checkpoint.
+_Avoid_: Compaction entry, snapshot, summary (bare)
 
 **Step**:
 One model generation within a Turn; a Turn may require multiple Steps to resolve Tool calls.
@@ -87,7 +111,7 @@ A collection of configured Tools that an Extension may contribute.
 _Avoid_: Extension
 
 **Hook**:
-Extension behavior attached to a named point in the Agent lifecycle, with an explicit contract to observe, transform, or veto.
+Extension behavior attached to a named point in the Agent lifecycle, with an explicit contract to observe, transform, veto, or propose.
 _Avoid_: Middleware, event listener
 
 **Tool**:
