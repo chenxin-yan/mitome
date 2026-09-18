@@ -8,12 +8,28 @@ First-party Extensions that ship with the SDK.
 
 ### InstructionFilesOptions
 
-Options for `instructionFiles`.
+```ts
+type InstructionFilesOptions =
+  | {
+      readonly base: string;
+      readonly paths?: ReadonlyArray<string>;
+      readonly discover?: ReadonlyArray<string>;
+    }
+  | {
+      readonly base?: never;
+      readonly paths?: ReadonlyArray<AbsolutePath>;
+      readonly discover?: ReadonlyArray<string>;
+    };
 
-<auto-type-table
-  path="../../../../../../packages/sdk/src/extensions/index.ts"
-  name="InstructionFilesOptions"
-/>
+// POSIX-rooted, Windows-rooted or UNC, or a Windows drive path (`DriveLetter` is `a`-`z`, `A`-`Z`).
+type AbsolutePath =
+  `/${string}` | `\\${string}` | `${DriveLetter}:/${string}` | `${DriveLetter}:\\${string}`;
+```
+
+Options for `instructionFiles`. Relative `paths` need `base`, the calling module's `import.meta.url`,
+and resolve against its directory; absolute `paths` and `discover` do not. The host platform's
+`path.isAbsolute` still applies at runtime, so a Windows form on POSIX throws. `discover` names bare
+filenames looked up in every directory from the git root down to the working directory.
 
 ## Functions
 

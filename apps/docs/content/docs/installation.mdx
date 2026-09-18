@@ -51,7 +51,9 @@ import { openai } from "@mitome/providers/openai";
 const agent = defineAgent({
   providers: [openai()],
   model: "openai/gpt-5.4-mini",
-  extensions: [instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })],
+  extensions: [
+    instructionFiles({ base: import.meta.url, paths: ["./AGENTS.md"], discover: ["AGENTS.md"] }),
+  ],
 });
 
 export default defineMitome({

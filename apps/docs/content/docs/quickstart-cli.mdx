@@ -40,7 +40,9 @@ import { openai } from "@mitome/providers/openai";
 const agent = defineAgent({
   providers: [openai()],
   model: "openai/gpt-5.4-mini",
-  extensions: [instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })],
+  extensions: [
+    instructionFiles({ base: import.meta.url, paths: ["./AGENTS.md"], discover: ["AGENTS.md"] }),
+  ],
 });
 
 export default defineMitome({
@@ -52,7 +54,7 @@ export default defineMitome({
 - `defineAgent` declares the Agent itself: its Providers, its Default Model as a `provider/model` id, and its Extensions. This value is what an application embeds.
 - `openai()` is the Provider chosen during `mitome init`. Pick another and the import path and the `model` prefix change; nothing else does. [Providers](/docs/providers) lists them.
 - `defineMitome` is the composition root the CLI loads: it pairs that Agent with the Hosts that run it and the store that persists its Transcripts.
-- `instructionFiles` is a first-party Extension that reads `AGENTS.md` next to the Mitome Definition module, plus any `AGENTS.md` in the directories from the Git root down to your current directory (only the current directory when there is no Git root), and adds the text to the Agent's Instructions. Edit `<config-dir>/AGENTS.md` to change how the Agent behaves.
+- `instructionFiles` is a first-party Extension that reads `./AGENTS.md` relative to `base`, the Mitome Definition module's own `import.meta.url`, plus any `AGENTS.md` in the directories from the Git root down to your current directory (only the current directory when there is no Git root), and adds the text to the Agent's Instructions. Edit `<config-dir>/AGENTS.md` to change how the Agent behaves.
 - `fileTranscripts()` saves each completed Turn under `<config-dir>/transcripts`. Remove the line to keep nothing on disk.
 
 ## 5. Add the terminal UI

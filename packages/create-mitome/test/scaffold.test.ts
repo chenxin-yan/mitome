@@ -40,7 +40,7 @@ describe("scaffold plans", () => {
     expect(plan.get("index.ts")).toContain('from "@mitome/sdk";');
     expect(plan.get("index.ts")).toContain('model: "openai-codex/gpt-5.6"');
     expect(plan.get("index.ts")).toContain(
-      'instructionFiles({ paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })',
+      'instructionFiles({ base: import.meta.url, paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })',
     );
     expect(plan.get("AGENTS.md")).toBe("You are a helpful Agent.\n");
     expect(JSON.parse(plan.get("package.json")!)).toMatchObject({
@@ -61,7 +61,9 @@ describe("scaffold plans", () => {
       ".gitignore",
       "README.md",
     ]);
-    expect(plan.get("index.ts")).toContain('instructionFiles({ paths: ["./instructions.md"] })');
+    expect(plan.get("index.ts")).toContain(
+      'instructionFiles({ base: import.meta.url, paths: ["./instructions.md"] })',
+    );
     expect(plan.get("instructions.md")).toBe("You are a helpful Agent.\n");
     expect(JSON.parse(plan.get("package.json")!)).toMatchObject({
       dependencies: { effect: rootPackage.workspaces.catalog.effect },
