@@ -11,7 +11,7 @@ Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxi
 - `packages/core`, `packages/sdk`, `packages/providers`, `packages/tui`, `packages/cli`, `packages/create-mitome`: the published packages, one directory each, with tests under `test/`.
 - `apps/docs`: this site (fumadocs on TanStack Start); pages live in `apps/docs/content/docs`.
 - `docs/adr`: architecture decision records; `CONTEXT.md` at the root is the domain glossary every page and identifier follows.
-- `scripts`: repository tasks run with Bun.
+- `scripts`: a private workspace for repository tooling and release fixture tests.
 - `.changeset`: pending release notes.
 
 ## Toolchain
@@ -30,7 +30,7 @@ Every change must pass, in this order:
 
 ```sh
 bun run check        # lint, format check, type check
-bun run test         # every package's tests
+bun run test         # all workspace tests, including release tooling and install fixtures
 bun run build:docs   # builds the site
 ```
 

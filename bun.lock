@@ -228,6 +228,18 @@
         "@mitome/core": "workspace:*",
       },
     },
+    "scripts": {
+      "name": "@mitome/scripts",
+      "devDependencies": {
+        "@mitome/channels": "workspace:*",
+        "@mitome/cli": "workspace:*",
+        "@mitome/core": "workspace:*",
+        "@mitome/providers": "workspace:*",
+        "@mitome/sdk": "workspace:*",
+        "@mitome/tui": "workspace:*",
+        "create-mitome": "workspace:*",
+      },
+    },
   },
   "catalog": {
     "@effect/ai-openai": "4.0.0-rc.108",
@@ -558,6 +570,8 @@
     "@mitome/docs": ["@mitome/docs@workspace:apps/docs"],
 
     "@mitome/providers": ["@mitome/providers@workspace:packages/providers"],
+
+    "@mitome/scripts": ["@mitome/scripts@workspace:scripts"],
 
     "@mitome/sdk": ["@mitome/sdk@workspace:packages/sdk"],
 

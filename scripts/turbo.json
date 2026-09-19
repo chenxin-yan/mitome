@@ -1,0 +1,9 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "cache": false,
+      "passThroughEnv": ["MITOME_RELEASE_ARTIFACTS"]
+    }
+  }
+}

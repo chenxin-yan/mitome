@@ -2,25 +2,36 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: "Exact source commit to verify"
+        type: string
+        required: true
 
 permissions:
   contents: read
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: ci-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
       - name: Cache Turborepo
         uses: actions/cache@v4
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          key: ${{ runner.os }}-turbo-${{ inputs.ref || github.sha }}
           restore-keys: |
             ${{ runner.os }}-turbo-
       - uses: jdx/mise-action@v4
       - run: bun install --frozen-lockfile
-      - run: bunx turbo run lint //#fmt check:types //#check:types build test
-      - run: bun run test:release
+      - run: bunx turbo run lint //#fmt check:types //#check:types build
+      - run: bun run test

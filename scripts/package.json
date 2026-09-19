@@ -1,0 +1,17 @@
+{
+  "name": "@mitome/scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test . && bun release-fixtures.ts"
+  },
+  "devDependencies": {
+    "@mitome/channels": "workspace:*",
+    "@mitome/cli": "workspace:*",
+    "@mitome/core": "workspace:*",
+    "@mitome/providers": "workspace:*",
+    "@mitome/sdk": "workspace:*",
+    "@mitome/tui": "workspace:*",
+    "create-mitome": "workspace:*"
+  }
+}

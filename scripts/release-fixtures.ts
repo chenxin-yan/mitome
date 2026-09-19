@@ -1,25 +1,22 @@
 import { cp, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { checkArchives, releasePackages } from "./release.ts";
 
 const rootDirectory = resolve(import.meta.dir, "..");
-const publicPackages = [
-  "core",
-  "sdk",
-  "providers",
-  "channels",
-  "tui",
-  "cli",
-  "create-mitome",
-] as const;
-type PublicPackage = (typeof publicPackages)[number];
-const packageName = (name: PublicPackage): string =>
-  name === "create-mitome" ? name : `@mitome/${name}`;
+const packages = releasePackages();
+const publicPackages = packages.flatMap((pkg) =>
+  pkg.name.startsWith("@mitome/cli-") ? [] : [basename(pkg.directory)],
+);
+const packageName = (name: string): string => (name === "create-mitome" ? name : `@mitome/${name}`);
 const packageVersion: string = (
   await Bun.file(join(rootDirectory, "packages", "core", "package.json")).json()
 ).version;
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "mitome-release-fixtures-"));
-const archivesDirectory = join(temporaryDirectory, "archives");
+const suppliedArchives = process.env.MITOME_RELEASE_ARTIFACTS;
+const archivesDirectory = suppliedArchives
+  ? resolve(suppliedArchives)
+  : join(temporaryDirectory, "archives");
 const consumerDirectory = join(temporaryDirectory, "consumer");
 
 const run = async (
@@ -41,7 +38,7 @@ const run = async (
   if ((await child.exited) !== 0) throw new Error(`Command failed: ${command.join(" ")}`);
 };
 
-const archiveFor = async (name: PublicPackage): Promise<string> => {
+const archiveFor = async (name: string): Promise<string> => {
   const files = await readdir(archivesDirectory);
   const stem = name === "create-mitome" ? name : `mitome-${name}`;
   const archive = files.find((file) => file === `${stem}-${packageVersion}.tgz`);
@@ -50,13 +47,17 @@ const archiveFor = async (name: PublicPackage): Promise<string> => {
 };
 
 try {
-  for (const name of publicPackages) {
-    // The root LICENSE is the single source; tarballs need a per-package copy.
-    await cp(join(rootDirectory, "LICENSE"), join(rootDirectory, "packages", name, "LICENSE"));
-    await run(
-      [process.execPath, "pm", "pack", "--destination", archivesDirectory, "--ignore-scripts"],
-      join(rootDirectory, "packages", name),
-    );
+  if (suppliedArchives) {
+    checkArchives(packages, archivesDirectory);
+  } else {
+    for (const name of publicPackages) {
+      // The root LICENSE is the single source; tarballs need a per-package copy.
+      await cp(join(rootDirectory, "LICENSE"), join(rootDirectory, "packages", name, "LICENSE"));
+      await run(
+        [process.execPath, "pm", "pack", "--destination", archivesDirectory, "--ignore-scripts"],
+        join(rootDirectory, "packages", name),
+      );
+    }
   }
   for (const name of publicPackages) {
     const archive = await archiveFor(name);
@@ -234,6 +235,36 @@ if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke 
   }
   await symlink(nodeModules, join(createdDirectory, "node_modules"), "dir");
   await run([process.execPath, "x", "tsc", "-p", join(createdDirectory, "tsconfig.json")]);
+  if (suppliedArchives) {
+    const cliConsumer = join(temporaryDirectory, "cli-consumer");
+    await mkdir(cliConsumer);
+    const platforms = Object.fromEntries(
+      packages.flatMap((pkg) =>
+        pkg.name.startsWith("@mitome/cli-")
+          ? [[pkg.name, `file:${join(archivesDirectory, pkg.archive)}`]]
+          : [],
+      ),
+    );
+    await writeFile(
+      join(cliConsumer, "package.json"),
+      JSON.stringify({
+        name: "cli-release-fixture",
+        private: true,
+        dependencies: { "@mitome/cli": `file:${await archiveFor("cli")}` },
+        overrides: platforms,
+      }),
+    );
+    await run(["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"], cliConsumer);
+    const child = Bun.spawn(["node", join(cliConsumer, "node_modules/.bin/mitome"), "--version"], {
+      cwd: cliConsumer,
+      stdout: "pipe",
+      stderr: "inherit",
+    });
+    const output = await new Response(child.stdout).text();
+    if ((await child.exited) !== 0 || output.trim() !== `mitome v${packageVersion}`) {
+      throw new Error(`Installed CLI binary failed: ${output}`);
+    }
+  }
   console.log("Release tarball/install fixtures passed.");
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });
