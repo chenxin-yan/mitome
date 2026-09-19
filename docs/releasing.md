@@ -61,16 +61,16 @@ Recovery is limited to commits containing the release tooling. A dispatch from a
 ## Local checks (no publishing)
 
 ```sh
-bun run test:release-tools
-bun run build:pkgs
-bun run test:release
+bun run test
 bun run --cwd packages/cli build:release
 artifacts=$(mktemp -d)
 node scripts/release.ts pack "$artifacts"
-bun run test:release "$artifacts"
+MITOME_RELEASE_ARTIFACTS="$artifacts" bun run test
 ```
 
-The supplied-artifact fixture also installs the packed CLI with npm and executes its launcher. CI exercises Linux x64/glibc; cross-compiling and checking the other tarballs does not prove runtime compatibility on every target. The scripts never upload unless explicitly invoked with `publish`.
+`bun run test` runs every workspace's tests, including the private `scripts/` workspace's release tooling and tarball/install fixtures. Turbo builds their workspace dependencies first. Script tests are uncached because the fixtures also inspect temporary artifacts outside the workspace.
+
+With `MITOME_RELEASE_ARTIFACTS` set, the same command checks the supplied tarballs instead of packing new JS archives, and also installs the packed CLI with npm and executes its launcher. CI exercises Linux x64/glibc; cross-compiling and checking the other tarballs does not prove runtime compatibility on every target. The scripts never upload unless explicitly invoked with `publish`.
 
 ## Sources
 

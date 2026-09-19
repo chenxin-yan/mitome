@@ -3,21 +3,22 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { checkArchives, releasePackages, unpublishedPackages } from "./release.ts";
 
+const root = resolve(import.meta.dir, "..");
 const packages = releasePackages();
 
 test("the cohort and dependency order are checked, including drift in a platform version", () => {
   const directory = mkdtempSync(join(tmpdir(), "release-cohort-"));
   try {
     for (const pkg of packages) {
-      const destination = join(directory, pkg.directory.slice(process.cwd().length + 1));
+      const destination = join(directory, relative(root, pkg.directory));
       mkdirSync(destination, { recursive: true });
       cpSync(join(pkg.directory, "package.json"), join(destination, "package.json"));
     }
     mkdirSync(join(directory, ".changeset"));
-    cpSync(".changeset/config.json", join(directory, ".changeset/config.json"));
+    cpSync(join(root, ".changeset/config.json"), join(directory, ".changeset/config.json"));
     expect(releasePackages(directory).map((pkg) => pkg.name)).toEqual(
       packages.map((pkg) => pkg.name),
     );
@@ -110,6 +111,7 @@ test("publishing rejects a source that differs from npm's GitHub provenance befo
     "node",
     ["scripts/release.ts", "publish", "/nonexistent-release-artifacts"],
     {
+      cwd: root,
       encoding: "utf8",
       env: { ...process.env, GITHUB_SHA: "0".repeat(40) },
     },
@@ -119,7 +121,7 @@ test("publishing rejects a source that differs from npm's GitHub provenance befo
 });
 
 test("the uploader's Node entry point works without installing dependencies", () => {
-  expect(execFileSync("node", ["scripts/release.ts", "version"], { encoding: "utf8" }).trim()).toBe(
-    packages[0]!.version,
-  );
+  expect(
+    execFileSync("node", ["scripts/release.ts", "version"], { cwd: root, encoding: "utf8" }).trim(),
+  ).toBe(packages[0]!.version);
 });

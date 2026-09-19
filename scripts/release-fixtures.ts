@@ -13,7 +13,7 @@ const packageVersion: string = (
   await Bun.file(join(rootDirectory, "packages", "core", "package.json")).json()
 ).version;
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "mitome-release-fixtures-"));
-const suppliedArchives = process.argv[2];
+const suppliedArchives = process.env.MITOME_RELEASE_ARTIFACTS;
 const archivesDirectory = suppliedArchives
   ? resolve(suppliedArchives)
   : join(temporaryDirectory, "archives");

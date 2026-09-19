@@ -125,7 +125,9 @@ jobs:
       - run: bun run build:pkgs
       - run: bun run --cwd packages/cli build:release
       - run: node scripts/release.ts pack "$RUNNER_TEMP/release-packages"
-      - run: bun run test:release "$RUNNER_TEMP/release-packages"
+      - run: bun run test
+        env:
+          MITOME_RELEASE_ARTIFACTS: ${{ runner.temp }}/release-packages
       - uses: actions/upload-artifact@v7
         id: upload
         with:
