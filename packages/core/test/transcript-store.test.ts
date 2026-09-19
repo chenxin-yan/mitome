@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import { Prompt, Response } from "effect/unstable/ai";
 import {
@@ -66,17 +66,19 @@ describe("memoryTranscripts", () => {
     Effect.gen(function* () {
       const store = memoryTranscripts();
       const first = makeTranscript({ id: "child", parentTranscriptId: "parent", messages: [] });
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
       yield* store.save(first);
-      const [before] = yield* store.list();
 
+      vi.setSystemTime(new Date("2026-01-02T00:00:00.000Z"));
       yield* store.save(first);
       const [after] = yield* store.list();
 
       expect(after).toMatchObject({
         parentTranscriptId: "parent",
-        createdAt: before!.createdAt,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-02T00:00:00.000Z",
       });
-    }),
+    }).pipe(Effect.ensuring(Effect.sync(() => vi.useRealTimers()))),
   );
 
   it.effect("fails a missing load with TranscriptNotFound", () =>

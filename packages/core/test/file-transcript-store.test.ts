@@ -171,15 +171,19 @@ describe("fileTranscripts", () => {
       Effect.gen(function* () {
         const transcript = makeTranscript({ id: "transcript-1", messages: [] });
         const first = fileTranscripts(directory);
+        vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
         yield* first.save(transcript);
-        const [before] = yield* first.list();
 
         const second = fileTranscripts(directory);
+        vi.setSystemTime(new Date("2026-01-02T00:00:00.000Z"));
         yield* second.save(transcript);
         const [after] = yield* second.list();
 
-        expect(after!.createdAt).toBe(before!.createdAt);
-      }),
+        expect(after).toMatchObject({
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        });
+      }).pipe(Effect.ensuring(Effect.sync(() => vi.useRealTimers()))),
     ),
   );
 
@@ -187,13 +191,25 @@ describe("fileTranscripts", () => {
     withDirectory((directory) =>
       Effect.gen(function* () {
         yield* Effect.promise(() => writeFile(join(directory, "broken.transcript.json"), "{"));
-        const corrupt = yield* Effect.flip(fileTranscripts(directory).list());
-        expect(corrupt).toBeInstanceOf(StoreError);
-        expect(corrupt.message).toContain("broken.transcript.json");
-
+        const store = fileTranscripts(directory);
+        const invalidName = yield* Effect.flip(store.list());
+        expect(invalidName).toBeInstanceOf(StoreError);
+        expect(invalidName.message).toBe(
+          `Invalid Transcript store file name: ${join(directory, "broken.transcript.json")}.`,
+        );
         yield* Effect.promise(() => rm(join(directory, "broken.transcript.json")));
+
+        yield* store.save(makeTranscript({ id: "broken", messages: [] }));
+        const [name] = yield* Effect.promise(() => readdir(directory));
+        const path = join(directory, name!);
+        yield* Effect.promise(() => writeFile(path, "{"));
+        const corrupt = yield* Effect.flip(store.list());
+        expect(corrupt).toBeInstanceOf(StoreError);
+        expect(corrupt.message).toBe(`Invalid Transcript store file: ${path}.`);
+
+        yield* Effect.promise(() => rm(path));
         yield* Effect.promise(() => writeFile(join(directory, "foreign.txt"), "not mitome"));
-        expect(yield* fileTranscripts(directory).list()).toEqual([]);
+        expect(yield* store.list()).toEqual([]);
       }),
     ),
   );

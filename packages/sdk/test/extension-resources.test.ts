@@ -398,7 +398,7 @@ describe("@mitome/sdk Extension resources", () => {
     expect(Exit.isFailure(exit)).toBe(true);
   });
 
-  test("keeps a resource live across Turn cancellation and passes the Session AbortSignal", async () => {
+  test("keeps a resource live across Turn cancellation and passes the Turn AbortSignal", async () => {
     const { promise: handlerStarted, resolve: started } = Promise.withResolvers<void>();
     const { promise: handlerAborted, resolve: aborted } = Promise.withResolvers<void>();
     const model = makeToolModel("wait", 3).provider;
@@ -450,7 +450,10 @@ describe("@mitome/sdk Extension resources", () => {
       await iterator.return?.();
       await handlerAborted;
       await pending.catch(() => undefined);
-      return Array.fromAsync(session.runTurn("second"));
+      expect(released).toBe(0);
+      const completed = await Array.fromAsync(session.runTurn("second"));
+      expect(released).toBe(0);
+      return completed;
     });
 
     expect(events.at(-1)).toEqual({ type: "response-complete" });

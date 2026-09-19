@@ -60,14 +60,6 @@ describe("@mitome/sdk/extensions", () => {
     ]);
   });
 
-  test("resolves relative paths against the base module URL", () => {
-    expect(
-      instructionFiles({ base: import.meta.url, paths: ["./fixtures/instructions.md"] }),
-    ).toEqual({
-      instructions: "Sibling instructions.\n",
-    });
-  });
-
   test("resolves relative paths for a wrapping helper against the base it forwards", () => {
     const fromModule = (base: string, ...paths: Array<string>) => instructionFiles({ base, paths });
     // A module URL in a different directory than this test; only the forwarded base can find the file.

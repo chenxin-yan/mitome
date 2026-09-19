@@ -447,15 +447,15 @@ describe("Extension Hooks", () => {
             {
               name: "first",
               hooks: {
-                sessionEnd: Effect.sync(() => void sessionLog.push("first")).pipe(
-                  Effect.andThen(Effect.fail(new HookFailure({ message: "sessionEnd" }))),
-                ),
+                sessionEnd: Effect.sync(() => void sessionLog.push("first")),
               },
             },
             {
               name: "second",
               hooks: {
-                sessionEnd: Effect.sync(() => void sessionLog.push("second")),
+                sessionEnd: Effect.sync(() => void sessionLog.push("second")).pipe(
+                  Effect.andThen(Effect.fail(new HookFailure({ message: "sessionEnd" }))),
+                ),
               },
             },
           ],
@@ -474,21 +474,21 @@ describe("Extension Hooks", () => {
           {
             name: "first",
             hooks: {
-              stepEnd: () =>
-                Effect.sync(() => void turnLog.push("step:first")).pipe(
-                  Effect.andThen(Effect.fail(new HookFailure({ message: "stepEnd" }))),
-                ),
-              turnEnd: () =>
-                Effect.sync(() => void turnLog.push("turn:first")).pipe(
-                  Effect.andThen(Effect.fail(new HookFailure({ message: "turnEnd" }))),
-                ),
+              stepEnd: () => Effect.sync(() => void turnLog.push("step:first")),
+              turnEnd: () => Effect.sync(() => void turnLog.push("turn:first")),
             },
           },
           {
             name: "second",
             hooks: {
-              stepEnd: () => Effect.sync(() => void turnLog.push("step:second")),
-              turnEnd: () => Effect.sync(() => void turnLog.push("turn:second")),
+              stepEnd: () =>
+                Effect.sync(() => void turnLog.push("step:second")).pipe(
+                  Effect.andThen(Effect.fail(new HookFailure({ message: "stepEnd" }))),
+                ),
+              turnEnd: () =>
+                Effect.sync(() => void turnLog.push("turn:second")).pipe(
+                  Effect.andThen(Effect.fail(new HookFailure({ message: "turnEnd" }))),
+                ),
             },
           },
         ],
