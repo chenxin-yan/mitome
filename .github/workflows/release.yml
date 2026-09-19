@@ -3,107 +3,198 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      release-sha:
+        description: "Optional full source SHA for finalize-only recovery; defaults to the current commit"
+        type: string
+      finalize-only:
+        description: "Only repair the tag, GitHub release, and docs for a fully published version"
+        type: boolean
+        default: false
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+permissions: {}
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 
 jobs:
-  version-pr:
-    runs-on: ubuntu-latest
+  select-mode:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     outputs:
-      release-version: ${{ steps.release.outputs.version }}
+      mode: ${{ inputs.finalize-only && 'finalize' || steps.select.outputs.mode }}
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@v4
-      - id: release
-        name: Detect a merged version change
-        shell: bash
+          persist-credentials: false
+      - name: Select release source
+        id: source
+        env:
+          REQUESTED_SHA: ${{ inputs.release-sha || github.sha }}
         run: |
           set -euo pipefail
-          before="${{ github.event.before }}"
-          if ! previous=$(git show "$before:packages/core/package.json"); then
-            echo "::error::Could not read packages/core/package.json at $before" >&2
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$REQUESTED_SHA" origin/main
+          git checkout --detach "$REQUESTED_SHA"
+          echo "sha=$REQUESTED_SHA" >> "$GITHUB_OUTPUT"
+      - uses: jdx/mise-action@v4
+      - name: Read release version
+        id: version
+        run: |
+          version=$(node scripts/release.ts version)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - run: bun install --frozen-lockfile
+      - uses: changesets/action/select-mode@v2
+        id: select
+      - name: Guard recovery mode
+        env:
+          MODE: ${{ steps.select.outputs.mode }}
+          FINALIZE_ONLY: ${{ inputs.finalize-only }}
+          RELEASE_SHA: ${{ steps.source.outputs.sha }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$FINALIZE_ONLY" != true && "$RELEASE_SHA" != "$GITHUB_SHA" ]]; then
+            echo "::error::Uploads must use the event SHA for npm provenance. Re-run the original release instead."
             exit 1
           fi
-          # All public packages are one Changesets fixed group, so core represents the release version.
-          current_version=$(node -p 'require("./packages/core/package.json").version')
-          previous_version=$(node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version' <<<"$previous")
-          test "$current_version" != "$previous_version" || exit 0
-          echo "version=$current_version" >> "$GITHUB_OUTPUT"
-      - run: bun install --frozen-lockfile
-      # Version PRs only. Publishing stays in the publish job so Bun packs catalogs.
-      - uses: changesets/action@v2
-        with:
-          version-script: bun run version-packages
-          commit-message: "chore(release): version packages"
-          pr-title: "chore(release): version packages"
-          push-with-git-cli: true
+          if [[ "$MODE" = version && "$FINALIZE_ONLY" = true ]]; then
+            echo "::error::Finalization requires a versioned commit with no pending changesets."
+            exit 1
+          fi
+          if [[ "$MODE" = publish || "$FINALIZE_ONLY" = true ]]; then
+            if existing=$(git rev-parse --verify "refs/tags/v$RELEASE_VERSION^{commit}" 2>/dev/null); then
+              test "$existing" = "$RELEASE_SHA"
+            fi
+          fi
 
-  publish:
-    needs: version-pr
-    if: needs.version-pr.outputs.release-version != ''
+  verify:
+    needs: select-mode
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.select-mode.outputs.sha }}
+    permissions:
+      contents: read
+
+  version:
+    needs: [select-mode, verify]
+    if: needs.select-mode.outputs.mode == 'version'
     runs-on: ubuntu-24.04
-    environment: release
+    timeout-minutes: 10
     permissions:
       contents: write
-      id-token: write
-    env:
-      RELEASE_SHA: ${{ github.sha }}
-      RELEASE_TAG: v${{ needs.version-pr.outputs.release-version }}
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.select-mode.outputs.sha }}
+          persist-credentials: false
+      - uses: jdx/mise-action@v4
+      - run: bun install --frozen-lockfile
+      - uses: changesets/action/version@v2
+        with:
+          pr-base-branch: main
+          script: bun run version-packages
+          commit-message: "chore(release): version packages"
+          pr-title: "chore(release): version packages"
+
+  pack:
+    needs: [select-mode, verify]
+    if: needs.select-mode.outputs.mode == 'publish'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.select-mode.outputs.sha }}
+          persist-credentials: false
       - uses: jdx/mise-action@v4
       - run: bun install --frozen-lockfile
       - run: bun run build:pkgs
-      - run: bun run test:release
-      # build:release cross-compiles a binary into every platform package.
       - run: bun run --cwd packages/cli build:release
-      # Bun packs (rewriting catalog:/workspace:), npm publishes (OIDC). Skipping
-      # already-published versions keeps a re-run after partial failure safe.
-      - name: Pack and publish packages in dependency order
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir packages-to-publish
-          for dir in packages/core packages/sdk packages/providers packages/channels packages/tui packages/cli/npm/cli-* packages/cli packages/create-mitome; do
-            name=$(node -p "require('./$dir/package.json').name")
-            if npm view "${name}@${RELEASE_TAG#v}" version >/dev/null 2>&1; then
-              echo "Already published: ${name}"
-              continue
-            fi
-            cp LICENSE "$dir/"
-            archive=$(cd "$dir" && bun pm pack --quiet --destination "$GITHUB_WORKSPACE/packages-to-publish" --ignore-scripts)
-            npm publish "$archive" --access public
-          done
-      - name: Create version tag if needed
-        shell: bash
-        run: |
-          set -euo pipefail
-          existing="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" | cut -f1)"
-          if [[ -z "$existing" ]]; then
-            git tag "$RELEASE_TAG" "$RELEASE_SHA"
-            git push origin "refs/tags/$RELEASE_TAG"
-          else
-            # A pre-existing tag must point at the verified release source.
-            test "$existing" = "$RELEASE_SHA"
-          fi
-      - name: Create the tagged release if needed
+      - run: node scripts/release.ts pack "$RUNNER_TEMP/release-packages"
+      - run: bun run test:release "$RUNNER_TEMP/release-packages"
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: release-packages-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-packages
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  publish:
+    needs: [select-mode, pack]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.select-mode.outputs.sha }}
+          persist-credentials: false
+      - uses: jdx/mise-action@v4
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.pack.outputs.artifact-id }}
+          path: ${{ runner.temp }}/release-packages
+          merge-multiple: true
+          digest-mismatch: error
+      # No dependency installation, builds, packing, or package lifecycle hooks in this job.
+      - run: node scripts/release.ts publish "$RUNNER_TEMP/release-packages"
+
+  finalize:
+    needs: [select-mode, verify, publish]
+    if: >-
+      always() && !cancelled() && needs.verify.result == 'success' &&
+      (needs.publish.result == 'success' || needs.select-mode.outputs.mode == 'finalize')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_SHA: ${{ needs.select-mode.outputs.sha }}
+      RELEASE_TAG: v${{ needs.select-mode.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.select-mode.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@v4
+      - run: node scripts/release.ts verify-published
+      - name: Finalize the cohort release
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
           set -euo pipefail
+          if existing=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}" 2>/dev/null); then
+            test "$existing" = "$RELEASE_SHA"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$RELEASE_TAG" -f sha="$RELEASE_SHA"
+          fi
           gh release view "$RELEASE_TAG" >/dev/null 2>&1 ||
-            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG"
+            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --generate-notes
 
   deploy-docs:
-    needs: publish
+    needs: [select-mode, finalize]
+    if: always() && !cancelled() && needs.finalize.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -111,6 +202,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.select-mode.outputs.sha }}
           persist-credentials: false
       - uses: jdx/mise-action@v4
       - run: bun install --frozen-lockfile
