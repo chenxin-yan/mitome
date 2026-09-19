@@ -375,12 +375,15 @@ describe("Codex transport", () => {
         requests += 1;
         if (requests > 1) return completed();
         return new Response(
-          new ReadableStream({
-            pull(controller) {
-              drained = true;
-              controller.close();
+          new ReadableStream(
+            {
+              pull(controller) {
+                drained = true;
+                controller.close();
+              },
             },
-          }),
+            { highWaterMark: 0 },
+          ),
           { status: 401 },
         );
       },

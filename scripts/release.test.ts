@@ -99,6 +99,7 @@ test("tarballs must match the cohort, contain platform binaries, and resolve wor
     expect(() => checkArchives([platform], archives)).toThrow();
     pack(platform.version, "catalog:");
     expect(() => checkArchives([platform], archives)).toThrow("retains workspace protocols");
+    pack(platform.version, "1.0.0");
     writeFileSync(join(archives, "unexpected.tgz"), "unexpected");
     expect(() => checkArchives([platform], archives)).toThrow();
   } finally {

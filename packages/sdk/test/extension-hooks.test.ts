@@ -218,6 +218,14 @@ describe("@mitome/sdk Extension Hooks", () => {
       model: "test/default",
       extensions: [
         defineExtension({
+          name: "later",
+          hooks: {
+            stepEnd: async () => {
+              laterCompleted = true;
+            },
+          },
+        }),
+        defineExtension({
           name: "blocking",
           hooks: {
             stepEnd: (_prompt, { signal }) =>
@@ -234,14 +242,6 @@ describe("@mitome/sdk Extension Hooks", () => {
               }),
           },
         }),
-        defineExtension({
-          name: "later",
-          hooks: {
-            stepEnd: async () => {
-              laterCompleted = true;
-            },
-          },
-        }),
       ],
     });
 
@@ -249,6 +249,7 @@ describe("@mitome/sdk Extension Hooks", () => {
       const iterator = session.runTurn("Hi")[Symbol.asyncIterator]();
       expect(await iterator.next()).toMatchObject({ value: { type: "model-output" } });
       await hookStarted;
+      expect(laterCompleted).toBe(false);
       await iterator.return?.();
     });
 

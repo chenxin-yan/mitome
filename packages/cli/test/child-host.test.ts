@@ -34,8 +34,15 @@ test("runEmbeddedHost forwards dispatch inputs", async () => {
     env: { ...process.env, HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "xdg") },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const [stdout, stderr] = await Promise.all([text(child.stdout), text(child.stderr)]);
-  const exitCode = await new Promise((done) => child.once("exit", done));
+  const exited = new Promise<number | null>((resolve, reject) => {
+    child.once("exit", resolve);
+    child.once("error", reject);
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    text(child.stdout),
+    text(child.stderr),
+    exited,
+  ]);
 
   expect(stderr).toBe("");
   expect(exitCode).toBe(0);
