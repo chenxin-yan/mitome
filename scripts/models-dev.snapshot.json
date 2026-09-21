@@ -29,6 +29,10 @@
       "contextWindow": 128000
     },
     {
+      "id": "gpt-6-astra",
+      "contextWindow": 1050000
+    },
+    {
       "id": "gpt-5.6-terra",
       "contextWindow": 1050000
     },
