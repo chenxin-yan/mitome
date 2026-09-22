@@ -2,6 +2,16 @@
 
 All public packages, including the eight platform binaries, share one Changesets fixed version. The GitHub release uses one `vVERSION` tag. Bun packs workspace/catalog dependencies; npm uploads the resulting tarballs using trusted publishing.
 
+## Changesets in pull requests
+
+For changes that need a release, run `bun run changeset` from the repository root, select the affected public packages and semver bumps, and write a user-facing summary. Commit the generated `.changeset/*.md` file with the change. Changesets expands the fixed release group during versioning; do not manually bump every package. Preview the pending release with `bun run changeset status --verbose`.
+
+Docs, tests, and tooling changes that do not affect published behavior may omit a changeset. Explain that decision in the PR; reviewers still decide whether a release and the selected version bumps are appropriate. An empty changeset (`bun run changeset --empty`) is optional, not required.
+
+[`Changeset Status`](../.github/workflows/changeset-status.yml) uses the official `pr-status` and `pr-comment` actions to create/update a non-blocking PR comment, including on fork PRs. Missing changesets do not fail the check. It skips `changeset-release/` branches because versioning consumes changesets; normal CI still verifies those PRs.
+
+The reminder uses `pull_request_target`, reads PR files without executing them, and isolates comment write permission in a separate job with no checkout. Do not add PR-head checkout, dependency installation, or project scripts to this workflow. Use this workflow **or** the hosted Changeset Bot, not both, to avoid duplicate reminders. Do not make the reminder a required merge check.
+
 ## Normal flow
 
 1. Include a changeset with releasable changes and merge the PR.
@@ -78,3 +88,4 @@ With `MITOME_RELEASE_ARTIFACTS` set, the same command checks the supplied tarbal
 - [npm trusted publishing requirements and allowed actions](https://docs.npmjs.com/trusted-publishers)
 - [GitHub bot-created PR workflow approval](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow)
 - [Investigation and baseline comparison with Crust](research/release-ci-comparison.md)
+- [PR reminder recommendations and source review](research/changesets-pr-status.md)

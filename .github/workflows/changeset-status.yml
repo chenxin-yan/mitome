@@ -1,0 +1,37 @@
+name: Changeset Status
+
+on:
+  pull_request_target:
+
+permissions: {}
+
+concurrency:
+  group: changeset-status-${{ github.event.pull_request.number }}
+
+jobs:
+  pr-status:
+    if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      comment-body: ${{ steps.pr-status.outputs.comment-body }}
+    steps:
+      # Keep the base checkout: pull_request_target must not execute PR code.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: changesets/action/pr-status@v2
+        id: pr-status
+
+  pr-comment:
+    needs: pr-status
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: changesets/action/pr-comment@v2
+        with:
+          body: ${{ needs.pr-status.outputs.comment-body }}
