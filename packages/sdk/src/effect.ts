@@ -1,6 +1,6 @@
 /**
- * Curated Effect-native application surface: the same Agent, Extension, and Session contracts as
- * `@mitome/sdk` with Effect, Stream, Layer, and Schema types exposed.
+ * Curated Effect-native application surface: the Agent and Extension contracts of `@mitome/sdk`
+ * with Effect, Stream, Layer, and Schema types exposed, plus native Sessions and Turns.
  *
  * @module @mitome/sdk/effect
  */
@@ -9,7 +9,9 @@ export {
   AgentDefinitionError,
   ApprovalResolutionError,
   SessionBusyError,
+  SessionFencedError,
   SessionReleasedError,
+  SessionSaveError,
   StoreError,
   TranscriptEventRecordSchema,
   TranscriptEventRecordVersion,
@@ -18,13 +20,14 @@ export {
   TranscriptSchema,
   TranscriptSchemaVersion,
   TranscriptSummarySchema,
+  Turn,
   TurnError,
   TurnEventDtoSchema,
-  createSession,
   defineAgent,
   defineExtension,
   defineMitome,
   fileTranscripts,
+  makeSession,
   makeTranscript,
   memoryTranscripts,
   promptFromTranscript,
@@ -42,7 +45,6 @@ export type {
   ApprovalRules,
   ChannelHost,
   ChannelHostContext,
-  CreateSessionOptions,
   Extension,
   ExtensionHooks,
   Host,
@@ -54,6 +56,8 @@ export type {
   Provider,
   QualifiedModelId,
   Session,
+  SessionOptions,
+  SessionStore,
   ToolContribution,
   ToolContributions,
   ToolExecutionDenied,
@@ -72,5 +76,5 @@ export type {
   TranscriptSummary,
   TurnEvent,
   TurnEventDto,
-  TurnOptions,
+  TurnSnapshot,
 } from "@mitome/core";

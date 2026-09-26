@@ -3,7 +3,7 @@ import { AiError } from "effect/unstable/ai";
 
 const coreModuleName = "@mitome/core";
 
-/** Overlapping `Session.runTurn()` while a Turn is active. */
+/** `Session.run` while another Turn of the same Session is active, including a nested call. */
 export class SessionBusyError extends Schema.TaggedError<SessionBusyError>()(
   "SessionBusyError",
   {},
@@ -14,7 +14,7 @@ export class SessionBusyError extends Schema.TaggedError<SessionBusyError>()(
   }
 }
 
-/** Turn requested on a Session whose scope has already closed. */
+/** Use of a Session whose allocating Scope has closed or is closing. */
 export class SessionReleasedError extends Schema.TaggedError<SessionReleasedError>()(
   "SessionReleasedError",
   {},
@@ -22,6 +22,35 @@ export class SessionReleasedError extends Schema.TaggedError<SessionReleasedErro
   /** Fixed description; the error carries no fields. */
   override get message(): string {
     return "Session scope has been released";
+  }
+}
+
+/**
+ * A Turn's save outcome is unknown, so the Session rejects further Turns rather than assume
+ * nothing was written. Only reconciliation can settle it; this Session cannot.
+ */
+export class SessionFencedError extends Schema.TaggedError<SessionFencedError>()(
+  "SessionFencedError",
+  {},
+) {
+  /** Fixed description; the error carries no fields. */
+  override get message(): string {
+    return "Session is fenced by a Turn whose save outcome is unknown";
+  }
+}
+
+/**
+ * A `SessionStore` save failed. `not-written` asserts nothing was saved, so committed history is
+ * unchanged and the Session stays usable; `unknown` makes no such claim and fences the Session.
+ */
+export class SessionSaveError extends Schema.TaggedError<SessionSaveError>()("SessionSaveError", {
+  outcome: Schema.Literals(["not-written", "unknown"]),
+}) {
+  /** Description derived from `outcome`. */
+  override get message(): string {
+    return this.outcome === "not-written"
+      ? "Session save failed without writing"
+      : "Session save outcome is unknown";
   }
 }
 

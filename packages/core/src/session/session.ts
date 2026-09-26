@@ -1,234 +1,225 @@
-import { Context, Effect, Layer, Scope, Stream } from "effect";
-import { Prompt } from "effect/unstable/ai";
-import { AgentDefinitionError, compileAgentDefinition } from "../agent.js";
-import type { AgentDefinition } from "../agent.js";
-import type { AnyProvider, QualifiedModelId } from "../provider.js";
-import { provideExtensionHook } from "../extension.js";
-import type { AnyExtension } from "../extension.js";
-import { SessionBusyError, SessionReleasedError, TurnError, hookTurnError } from "./errors.js";
-import { turnEventToDto } from "./events.js";
-import type { PersistedTurnEvent, TurnEvent } from "./events.js";
-import { beginHookPhase } from "./hooks.js";
-import * as ModelResolver from "./model-resolver.js";
-import * as StepRunner from "./step-runner.js";
-import * as ToolExecution from "./tool-execution.js";
-import * as Transcript from "../transcript.js";
-import type { Transcript as TranscriptValue } from "../transcript.js";
-import { TranscriptEventRecordVersion } from "../transcript-store.js";
-import type { StoreError, TranscriptStore } from "../transcript-store.js";
+import { Context, Effect, Exit, Fiber, PubSub, Scope } from "effect";
+import type { Prompt } from "effect/unstable/ai";
+import {
+  SessionBusyError,
+  SessionFencedError,
+  SessionReleasedError,
+  SessionSaveError,
+} from "./errors.js";
 
-type ProvidersOf<Definition extends AgentDefinition> =
-  Definition extends AgentDefinition<infer Providers, any, any> ? Providers : never;
-
-/** Per-Turn overrides for `Session.runTurn`. */
-export interface TurnOptions<Providers extends ReadonlyArray<AnyProvider>> {
-  /** Model for this Turn only, as a Qualified Model id under a Provider registered on the Agent. */
-  readonly model: QualifiedModelId<Providers[number]>;
-}
-
-/** Persistence and seeding for `createSession`. */
-export interface CreateSessionOptions {
-  /**
-   * Seeds the Session's committed Messages. If it has no system message, the Agent's compiled
-   * instructions are intentionally not injected.
-   */
-  readonly transcript?: TranscriptValue | undefined;
-  /** Receives the Transcript snapshot after each committed Turn and every Turn event record. */
-  readonly transcripts?: TranscriptStore | undefined;
-}
-
-/** A live, process-bound interaction with one Agent, obtained from `createSession` inside a Scope. */
-export interface Session<
-  Providers extends ReadonlyArray<AnyProvider> = ReadonlyArray<AnyProvider>,
-> {
-  /**
-   * Runs one Turn for a user Message as a Stream of Turn events; consume or interrupt it exactly
-   * once. Fails with `SessionBusyError` while another Turn is active and `SessionReleasedError`
-   * after the Session scope closed. A Turn that fails or is interrupted before its Transcript save
-   * is not committed. Once the save succeeds the Turn is committed, even if appending the final
-   * event record then fails with `StoreError` in place of `response-complete`.
-   */
-  readonly runTurn: (
-    message: string,
-    options?: TurnOptions<Providers>,
-  ) => Stream.Stream<TurnEvent, SessionBusyError | SessionReleasedError | StoreError | TurnError>;
-  /** The committed Model Prompt, advanced only after a Turn completes and its Transcript save succeeds. */
-  readonly history: () => ReadonlyArray<Prompt.Message>;
-  /** Serializable snapshot of the committed Messages with this Session's Transcript id and lineage. */
-  readonly transcript: () => TranscriptValue;
-}
-
-const createSessionImpl: (
-  definition: AgentDefinition,
-  options?: CreateSessionOptions,
-) => Effect.Effect<Session, AgentDefinitionError | TurnError, Scope.Scope> = Effect.fn(
-  "@mitome/core/createSession",
-)(function* (definition, sessionOptions = {}) {
-  const compiled = yield* compileAgentDefinition(definition);
-
-  const sessionScope = yield* Effect.scope;
-  const extensionContexts = new Map<AnyExtension, Context.Context<any>>();
-  for (const extension of compiled.extensions) {
-    if (extension.resource === undefined) continue;
-    // SAFETY: contexts are intentionally heterogeneous and indexed by their owning Extension.
-    const context = (yield* Layer.build(extension.resource).pipe(
-      hookTurnError("Extension Resource acquisition failed"),
-    )) as Context.Context<any>;
-    extensionContexts.set(extension, context);
+/**
+ * The active Turn, supplied to the program `Session.run` invokes. Ordinary nested functions that
+ * yield it share that same Turn; running work in another Session is an explicit `run` call there.
+ */
+export class Turn extends Context.Service<
+  Turn,
+  {
+    /** Live identity of this Turn; not a durable receipt or an authorization token. */
+    readonly id: string;
+    /**
+     * Adds Messages to this Turn's staged conversation. They publish together only when the whole
+     * Turn commits. Staging through a Turn after it closed is a defect.
+     */
+    readonly stage: (...messages: ReadonlyArray<Prompt.Message>) => Effect.Effect<void>;
   }
-  const toolExecution = yield* ToolExecution.makeToolExecution(compiled, extensionContexts);
-  const resolveModel = ModelResolver.makeModelResolver(compiled.providers, sessionScope);
-  const runStep = StepRunner.makeStepRunner(compiled, extensionContexts, toolExecution);
-  const transcriptId = crypto.randomUUID();
-  const sessionId = crypto.randomUUID();
-  const parentTranscriptId = sessionOptions.transcript?.id;
-  let eventSeq = 0;
-  const appendTurnEvent = (event: PersistedTurnEvent): Effect.Effect<void, StoreError> => {
-    const transcripts = sessionOptions.transcripts;
-    return transcripts === undefined
-      ? Effect.void
-      : Effect.sync(() => ({
-          transcriptId,
-          sessionId,
-          seq: eventSeq++,
-          version: TranscriptEventRecordVersion,
-          event: turnEventToDto(event),
-        })).pipe(Effect.flatMap((record) => transcripts.appendEvent(record)));
-  };
-  let history =
-    sessionOptions.transcript === undefined
-      ? Prompt.make(
-          compiled.instructions === "" ? [] : [{ role: "system", content: compiled.instructions }],
-        )
-      : Transcript.promptFromTranscript(sessionOptions.transcript);
-  let isReleased = false;
-  let isTurnActive = false;
+>()("@mitome/core/Turn") {}
 
+/** Where a Session saves its next committed conversation before publishing it. */
+export interface SessionStore {
+  /**
+   * Saves the full committed conversation a Turn is about to publish. Fail with `not-written` only
+   * when nothing was saved; any other failure or defect fences the Session.
+   */
+  readonly save: (history: ReadonlyArray<Prompt.Message>) => Effect.Effect<void, SessionSaveError>;
+}
+
+/**
+ * Persistence for `makeSession`: a `SessionStore`, or `"none"` to deliberately opt out. Without a
+ * store nothing survives the Session and no result or Message codec is needed.
+ */
+export interface SessionOptions<Persistence extends SessionStore | "none"> {
+  readonly persistence: Persistence;
+}
+
+/**
+ * One Turn as recorded in its Session's memory. `committed` means history was published;
+ * `failed` means it was not and committed history is unchanged; `uncertain` means the save outcome
+ * is unknown. Records are never durable: they are dropped when the Session is released.
+ */
+export interface TurnSnapshot {
+  readonly id: string;
+  readonly durability: "non-durable";
+  readonly phase: "running" | "committed" | "failed" | "uncertain";
+  /**
+   * The Turn's live result or failure, only on Sessions without persistence. The caller of `run`
+   * still receives the typed value; this is an untyped read of the same outcome.
+   */
+  readonly exit?: Exit.Exit<unknown, unknown>;
+}
+
+/** A live Session from `makeSession`; it lives until the Scope that allocated it closes. */
+export interface Session<out PersistenceError = never> {
+  /**
+   * Runs one program as a whole-function Turn. The Turn supplies `Turn` and its own `Scope`; its
+   * staged Messages publish once, after the program succeeds, the Turn Scope (resources and scoped
+   * fibers) has closed and any store save is confirmed. Otherwise committed history is unchanged,
+   * though completed external effects are not undone. Interrupting the caller interrupts the Turn
+   * and waits for its cleanup; a save already under way still completes, and if it succeeds the
+   * Turn is committed even though the caller sees the interruption.
+   */
+  readonly run: <A, E, R>(
+    program: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<
+    A,
+    E | SessionBusyError | SessionReleasedError | PersistenceError,
+    Exclude<R, Turn | Scope.Scope>
+  >;
+  /** The committed conversation. */
+  readonly history: Effect.Effect<ReadonlyArray<Prompt.Message>, SessionReleasedError>;
+  /** Every Turn this Session has admitted, oldest first. */
+  readonly turns: Effect.Effect<ReadonlyArray<TurnSnapshot>, SessionReleasedError>;
+  /**
+   * Subscribes to Turn snapshots as each Turn finishes, after any history publication. Delivery is
+   * passive and bounded: a slow observer loses the oldest snapshots and never delays a Turn, and
+   * closing the subscription is not cancellation. It ends when the Session is released.
+   */
+  readonly observe: Effect.Effect<
+    PubSub.Subscription<TurnSnapshot>,
+    SessionReleasedError,
+    Scope.Scope
+  >;
+}
+
+const make = Effect.fn("@mitome/core/makeSession")(function* (store: SessionStore | undefined) {
+  // ponytail: fixed observer bound; make it configurable when bounded progress is specified.
+  const observers = yield* PubSub.sliding<TurnSnapshot>(16);
+  const executionScope = yield* Scope.make();
+  let released = false;
+  let busy = false;
+  let fenced = false;
+  let history: ReadonlyArray<Prompt.Message> = [];
+  // ponytail: records are kept for the Session's lifetime; bound retention if Sessions run long.
+  const turns = new Map<string, TurnSnapshot>();
+
+  // Reject new work before draining admitted Turns, then drop every live record.
   yield* Effect.addFinalizer(() =>
-    Effect.sync(() => {
-      history = Prompt.empty;
-      isReleased = true;
-    }),
+    Effect.gen(function* () {
+      released = true;
+      yield* Scope.close(executionScope, Exit.void);
+      history = [];
+      turns.clear();
+    }).pipe(Effect.ensuring(PubSub.shutdown(observers))),
   );
 
-  const sessionHooks = yield* beginHookPhase(
-    compiled.extensions,
-    (extension) =>
-      provideExtensionHook(extension, extensionContexts, extension.hooks?.sessionStart),
-    (extension) => provideExtensionHook(extension, extensionContexts, extension.hooks?.sessionEnd),
-    "Session end Hook failed",
-  ).pipe(hookTurnError("Session start Hook failed"));
+  const record = (id: string, phase: TurnSnapshot["phase"], exit?: Exit.Exit<unknown, unknown>) => {
+    const snapshot: TurnSnapshot =
+      store === undefined && exit !== undefined
+        ? { id, durability: "non-durable", phase, exit }
+        : { id, durability: "non-durable", phase };
+    turns.set(id, snapshot);
+    return snapshot;
+  };
 
-  // A failing sessionEnd Hook must not fail scope close or skip later cleanup.
-  yield* Effect.addFinalizer(() => sessionHooks.cleanup);
+  const whenLive = <A>(read: () => A) =>
+    Effect.suspend(() => (released ? Effect.fail(new SessionReleasedError()) : Effect.sync(read)));
 
-  return {
-    runTurn: (message, turnOptions) =>
-      Stream.suspend<
-        TurnEvent,
-        SessionBusyError | SessionReleasedError | StoreError | TurnError,
-        never
-      >(() => {
-        if (isReleased) {
-          return Stream.fail(new SessionReleasedError({}));
-        }
-        if (isTurnActive) {
-          return Stream.fail(new SessionBusyError({}));
-        }
-        const qualifiedModelId = turnOptions?.model ?? definition.model;
-        isTurnActive = true;
-        return Stream.unwrap(
-          resolveModel(qualifiedModelId).pipe(
-            Effect.flatMap((selected) =>
-              beginHookPhase(
-                compiled.extensions,
-                (extension) =>
-                  provideExtensionHook(
-                    extension,
-                    extensionContexts,
-                    extension.hooks?.turnStart?.(message),
+  const run = <A, E, R>(program: Effect.Effect<A, E, R>) =>
+    Effect.uninterruptibleMask((restoreCaller) =>
+      Effect.gen(function* () {
+        if (released) return yield* new SessionReleasedError();
+        if (busy) return yield* new SessionBusyError();
+        if (fenced) return yield* new SessionFencedError();
+        busy = true;
+        const id = crypto.randomUUID();
+        record(id, "running");
+
+        const execute = Effect.uninterruptibleMask((restoreProgram) =>
+          Effect.gen(function* () {
+            let open = true;
+            const staged: Array<Prompt.Message> = [];
+            const turn = Turn.of({
+              id,
+              stage: (...messages) =>
+                Effect.suspend(() =>
+                  open
+                    ? Effect.sync(() => void staged.push(...messages))
+                    : Effect.die(new Error("Turn is closed; its Messages can no longer be staged")),
+                ),
+            });
+            const result = yield* Effect.scopedWith((turnScope) =>
+              restoreProgram(
+                program.pipe(
+                  Effect.provideContext(
+                    Context.make(Turn, turn).pipe(Context.add(Scope.Scope, turnScope)),
                   ),
-                (extension) =>
-                  provideExtensionHook(
-                    extension,
-                    extensionContexts,
-                    extension.hooks?.turnEnd?.(message),
+                ),
+              ).pipe(Effect.ensuring(Effect.sync(() => void (open = false)))),
+            );
+            // The Turn Scope has closed; observe any interruption that arrived during its cleanup.
+            yield* restoreProgram(Effect.void);
+            if (released) return yield* new SessionReleasedError();
+            const next = [...history, ...staged];
+            if (store !== undefined) {
+              // ponytail: a save that never resolves blocks cancellation and release; deadlines are #170's.
+              fenced = true;
+              yield* store
+                .save(next)
+                .pipe(
+                  Effect.tapError((error) =>
+                    Effect.sync(() => void (fenced = error.outcome !== "not-written")),
                   ),
-                "Turn end Hook failed",
-              ).pipe(
-                hookTurnError("Turn start Hook failed"),
-                Effect.map((turnHooks) =>
-                  runStep(Prompt.concat(history, message), selected).pipe(
-                    Stream.mapEffect((event) => {
-                      if (event.type !== "turn-complete") return Effect.succeed(event);
-                      return turnHooks.end.pipe(
-                        hookTurnError("Turn end Hook failed"),
-                        Effect.flatMap(() => {
-                          const { type: _type, history: nextHistory, ...finish } = event;
-                          const persist =
-                            sessionOptions.transcripts === undefined
-                              ? Effect.void
-                              : sessionOptions.transcripts.save(
-                                  Transcript.makeTranscript({
-                                    id: transcriptId,
-                                    parentTranscriptId,
-                                    messages: nextHistory.content,
-                                  }),
-                                );
-                          // Commit only after the durable save: a failed save leaves the Turn
-                          // absent from history() and transcript() alike. Uninterruptible so an
-                          // interrupt cannot land between the store's side effect and the commit.
-                          return persist.pipe(
-                            Effect.map(() => {
-                              history = nextHistory;
-                              return { type: "response-complete", ...finish } as const;
-                            }),
-                            Effect.uninterruptible,
-                          );
-                        }),
-                      );
-                    }),
-                    Stream.mapEffect((event) => appendTurnEvent(event).pipe(Effect.as(event))),
-                    Stream.map((event) => {
-                      if (event.type !== "tool-result") return event;
-                      const { encodedResult: _encodedResult, ...turnEvent } = event;
-                      return turnEvent;
-                    }),
-                    Stream.filter(
-                      (event): event is TurnEvent => event.type !== "approval-resolved",
-                    ),
-                    Stream.onExit(() => turnHooks.cleanup),
-                  ),
+                );
+              fenced = false;
+            }
+            history = next;
+            return result;
+          }).pipe(
+            Effect.onExit((exit) =>
+              PubSub.publish(
+                observers,
+                record(
+                  id,
+                  Exit.isSuccess(exit) ? "committed" : fenced ? "uncertain" : "failed",
+                  exit,
                 ),
               ),
             ),
           ),
-        ).pipe(
-          Stream.ensuring(
-            Effect.sync(() => {
-              toolExecution.approval.reset();
-              isTurnActive = false;
-            }),
-          ),
         );
+
+        // The Session's execution Scope owns the Turn so release drains it; the caller still waits.
+        return yield* Effect.gen(function* () {
+          const fiber = yield* Effect.forkIn(execute, executionScope);
+          return yield* restoreCaller(Fiber.join(fiber)).pipe(
+            Effect.ensuring(Fiber.interrupt(fiber)),
+          );
+        }).pipe(Effect.ensuring(Effect.sync(() => void (busy = false))));
       }),
-    history: () => history.content,
-    transcript: () =>
-      Transcript.makeTranscript({
-        id: transcriptId,
-        parentTranscriptId,
-        messages: history.content,
-      }),
+    );
+
+  return {
+    run,
+    history: whenLive(() => history),
+    turns: whenLive(() => [...turns.values()]),
+    observe: Effect.suspend(() =>
+      released ? Effect.fail(new SessionReleasedError()) : PubSub.subscribe(observers),
+    ),
   };
 });
 
 /**
- * Compiles the Agent Definition, acquires Extension Resources, and runs `sessionStart` Hooks. The
- * Session lives until the enclosing Scope closes, which runs `sessionEnd` Hooks and releases
- * Resources in reverse Agent Definition order.
+ * Allocates a fresh Session in the current Scope. Closing that Scope rejects new Turns,
+ * interrupts and drains an active Turn (a save under way still completes) and then releases
+ * every live record. Each call is a new Session; nothing is shared between them.
  */
-export const createSession = <const Definition extends AgentDefinition>(
-  definition: Definition,
-  options?: CreateSessionOptions,
-): Effect.Effect<Session<ProvidersOf<Definition>>, AgentDefinitionError | TurnError, Scope.Scope> =>
-  createSessionImpl(definition, options);
+export function makeSession(
+  options: SessionOptions<"none">,
+): Effect.Effect<Session, never, Scope.Scope>;
+export function makeSession(
+  options: SessionOptions<SessionStore>,
+): Effect.Effect<Session<SessionSaveError | SessionFencedError>, never, Scope.Scope>;
+export function makeSession(
+  options: SessionOptions<SessionStore | "none">,
+): Effect.Effect<Session<SessionSaveError | SessionFencedError>, never, Scope.Scope> {
+  return make(options.persistence === "none" ? undefined : options.persistence);
+}

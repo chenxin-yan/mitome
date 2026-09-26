@@ -36,7 +36,7 @@ export type {
   ToolResultHookContext,
   ToolResultValidator,
 } from "./extension.js";
-export { createHostSession, defineMitome } from "./host.js";
+export { defineMitome } from "./host.js";
 export type {
   ChannelHost,
   ChannelHostContext,
@@ -59,7 +59,9 @@ export type {
 export {
   ApprovalResolutionError,
   SessionBusyError,
+  SessionFencedError,
   SessionReleasedError,
+  SessionSaveError,
   TurnError,
 } from "./session/errors.js";
 export { TurnEventDtoSchema } from "./session/events.js";
@@ -70,8 +72,8 @@ export type {
   TurnEvent,
   TurnEventDto,
 } from "./session/events.js";
-export { createSession } from "./session/session.js";
-export type { CreateSessionOptions, TurnOptions, Session } from "./session/session.js";
+export { makeSession, Turn } from "./session/session.js";
+export type { Session, SessionOptions, SessionStore, TurnSnapshot } from "./session/session.js";
 export {
   makeTranscript,
   promptFromTranscript,
