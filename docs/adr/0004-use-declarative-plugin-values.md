@@ -1,7 +1,9 @@
 ---
-status: amended by ADR-0024, ADR-0049
+status: amended by ADR-0057
 ---
 
-# Use declarative Plugin values
+# Preserve lifecycle and Tool validation without mandatory Plugins
 
-A Plugin is a plain typed value that may contribute an Effect AI Toolkit, lifecycle Hooks, and a fully provisioned Layer for scoped resources; Plugins run in Definition order and do not wire dependencies into one another. MVP Hooks cover Session, Turn, and Step notifications, pre-Step context transformation, pre-Tool veto, and post-Tool result transformation. Hooks run sequentially in Definition order, and a Hook failure fails the Session startup or current Turn unless the Plugin explicitly recovers; the exception is Session-end Hooks during teardown, whose failures are logged and suppressed so cleanup always completes. A pre-Tool veto or user-denied Approval skips execution, returns the same typed denial result with its reason to the model, and allows the Turn to continue. A transformed Tool result is revalidated against the Tool’s existing success or failure schema before entering Session history. Every Plugin has a required stable name; duplicate Plugin or Tool names reject the Definition before Session startup. Mitome still uses Effect v4 Model, Tool, Toolkit, and Chat directly rather than wrapping them.
+[ADR-0057](0057-use-effect-native-functions-and-optional-host-composition.md) replaces declarative Plugin/Extension values and mandatory Hooks with ordinary Effect composition and native Tool/Toolkit/Schema/model types. Preserve the behavioral boundaries: unrecovered startup/Turn failures fail that operation; cleanup still completes without replacing a primary failure; denied Tool execution returns a typed, sanitized denial to the Model without running the handler; transformed Tool results are revalidated against their declared success/failure schemas before entering history. Reject ambiguous duplicate model-visible Tool names before execution.
+
+Scoped finalization must unwind successfully acquired resources in reverse order ([ADR-0054](0054-acquire-resources-with-a-setup-scoped-defer.md)). Exact lifecycle interception operations remain open; no universal Definition-order Hook protocol or direct upstream Chat-as-history-authority is selected for the redesign.

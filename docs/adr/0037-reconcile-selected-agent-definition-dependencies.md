@@ -1,4 +1,10 @@
-# Reconcile selected Agent Definition dependencies before import
+---
+status: amended by ADR-0057
+---
+
+# Reconcile explicitly selected module dependencies before import
+
+[ADR-0057](0057-use-effect-native-functions-and-optional-host-composition.md) retains explicit selection and package-manager ownership, not the mandatory Agent Definition shape. The checks below describe the current CLI; exact native module/version contracts require proof.
 
 Before any CLI command imports an Agent Definition module, the CLI checks the selected Agent Definition directory's manifest, Bun lockfile, installed direct dependencies, and `@mitome/core` version. A missing or stale installation is reconciled with Bun's existing install machinery before the Child Host imports the module. An up-to-date installation does no package-manager work and emits no reconcile output; an install is narrated. The Definition directory's `package.json`, `node_modules`, and `bun.lock` remain the declaration, store, and sole reproducibility record—Mitome adds no dependency format or package store.
 
