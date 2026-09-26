@@ -1,6 +1,6 @@
 # Native execution baseline qualification (#181)
 
-Status: **the repository catalog is upgraded to Effect `4.0.0-rc.117` and Vitest `5.0.2` in this branch (uncommitted), and every native gate passes against the worktree-installed packages.** Isolated rc.117 qualification came first; the owner then authorized the conditional upgrade. rc.108 fails the native gates (historical sections below). The compiler and `@effect/tsgo` are unchanged, and no upstream source or package was patched. The SQL transaction gate is separate and not assessed here.
+Status: **the repository catalog is upgraded to Effect `4.0.0-rc.117` and Vitest `5.0.2` in this branch, and every native gate passes against the worktree-installed packages.** Isolated rc.117 qualification came first; the owner then authorized the conditional upgrade. rc.108 fails the native gates (historical sections below). The compiler and `@effect/tsgo` are unchanged, and no upstream source or package was patched. The SQL transaction gate is separate and not assessed here.
 
 ## Installed rc.117 upgrade
 
@@ -77,13 +77,24 @@ The worktree compiler is again byte-identical to the approved compiler.
 **Final installed-baseline run (after the Vitest fix).** Evidence `181-vitest-evidence/logs/run-V96qhIU5`: 26 desired gates pass, 0 `QUALIFICATION-RED`, and 101 control/pin/count expectations match. An independent `sha256sum -c` of its 95-file `evidence.sha256` exits 0. It repeats R1–R5 above unchanged, and adds:
 
 - **Peer audit:** no Effect or Vitest mismatch; only the two pre-existing mismatches above.
-- **Superseded upgrade manifest:** the upgrade-stage source manifest now fails for exactly `package.json` and `bun.lock`, as expected. It is preserved, not regenerated.
+- **Superseded upgrade manifest:** the upgrade-stage source manifest fails for `package.json` and `bun.lock`, as expected, and is preserved rather than regenerated. **Correction:** this control counted only `: FAILED` lines. It did not notice 96 further `FAILED open or read` entries: the `@effect/vitest` rc.117 package-store variant `+a8056e89…`, which Bun re-keyed to `+de7e7c18…` when Vitest changed. The final verification revision below checks those entries strictly.
 - **R6, Bun WebSocket transport.** The existing `uses one Responses WebSocket by default for Tool continuations` test runs under `bun --bun vitest`.
   - An evidence-only setup file asserts that test code runs in Bun 1.4.0.
   - It passes. The Bun branch selects the WebSocket transport, the changed `Socket.WebSocketConstructor` hands `headers` to Bun's global `WebSocket`, and the local `ws` server receives `Authorization: Bearer synthetic-key`. There is one upgrade and no HTTP request, and the string result is unquoted.
   - A mutant that restores `Socket.layerWebSocketConstructorGlobal` fails on Bun with `TypeError: WebSocket client options are not supported by the global WebSocket constructor`.
   - The same test still passes on Node v26.7.0.
 - **Limits of R6:** it uses a local `ws` server and a synthetic key, with no real Provider traffic. The Bun run is evidence-only and not part of the repository's `test` script, whose Vitest suites run on Node.
+
+**Final verification revision (after the review fixes).** Evidence `181-final-evidence/logs/run-UZ04DtuG`: 26 desired gates pass, 0 `QUALIFICATION-RED`, and 110 control/pin/count expectations match. An independent `sha256sum -c` of its 104-file `evidence.sha256` exits 0.
+
+- **Why a new revision:** the review fix replaced the fixture's `Inner<T>` helper with the installed `Effect.Success`. The unchanged exact assertions still pass, the unsuppressed copy has the same 11 intended diagnostics, and the 9 runtime checks pass. Also, rerunning `181-vitest-evidence/run.sh` at the committed head exits 1 at `upgrade-evidence-run` (parent run `181-vitest-evidence/logs/run-18Tr7RLb`, preserved): the upgrade-stage `post-run.sha256` hashes this document, which later stages intentionally updated.
+- **How historical manifests are verified:** none is rewritten. `checks/verify-manifest.py` requires every entry to match its live file, except explicitly declared supersessions. For a declared superseded path, the recorded historical hash must equal a retained snapshot's bytes.
+  - This document at the upgrade stage (`b06fc9fc…`, reconstructed and hash-verified) and at the Vitest stage (`16d4c707…`).
+  - The rc.117-stage fixture `types.ts` (`f9d7e8c5…`).
+  - The pre-Vitest `package.json` and `bun.lock` retained in `181-vitest-evidence/provenance/`.
+  - The 96 re-keyed `@effect/vitest` store entries are verified against the same relative paths in the new store variant, where all recorded hashes match.
+  - Controls pin that the upgrade-stage manifest still fails on this document without a declaration, and that a wrong snapshot is rejected.
+- **What this runner does not hash:** the live qualification document. Its source manifest covers the current fixture and the runner files, so this citation cannot invalidate the run.
 
 ## rc.117 isolated qualification (before the upgrade)
 
@@ -213,7 +224,22 @@ Bun 1.4.0 and Node 26.7.0 on Linux x64 only; no Node 24 floor, macOS or Windows 
 
 ## Reproduce
 
-**Installed rc.117 + Vitest 5.0.2 (current).** Evidence lives in `/home/cyan/.local/state/mitome/effect-native-stack/181-vitest-evidence/`. `bash run.sh` reuses the upgrade-stage transplant copies, configs and resolution check read-only. It verifies its own `provenance/sources.sha256`, which has 3,441 entries covering the installed Effect and Vitest package trees, lockfile, changeset, changed repository files, fixture, runner, checks and the R6 mutant. The cited run is `logs/run-V96qhIU5`: `summary.log` SHA-256 is `e8dbb01f…ff64`, and `evidence.sha256` SHA-256 is `9095f368…cd10`.
+**Final verification revision (current).** Evidence lives in `/home/cyan/.local/state/mitome/effect-native-stack/181-final-evidence/`. It needs the worktree `node_modules` from `bun install --frozen-lockfile --backend=copyfile`. Rerun:
+
+```sh
+bash /home/cyan/.local/state/mitome/effect-native-stack/181-final-evidence/run.sh
+```
+
+It writes a fresh `logs/run-*`, self-verifies `evidence.sha256`, and exits nonzero on any control or evidence mismatch. The cited run is `logs/run-UZ04DtuG`: `summary.log` SHA-256 is `00a21ee9…de16`, and `evidence.sha256` SHA-256 is `c69aeb8a…ca57`.
+
+The manifests are classified as follows:
+
+- `provenance/snapshots.sha256`: the three retained historical snapshots. Verified by the run.
+- `provenance/sources.sha256`: the current fixture files, the runner, `hash-sources.sh` and the checks. Verified before and after the run.
+- The upgrade, Vitest and rc.117-stage manifests: historical. Verified with declared supersessions only.
+- `provenance/current-doc.sha256`: records this document's final bytes after the citation. It is not an input to the run.
+
+**Installed rc.117 + Vitest 5.0.2 (`run-V96qhIU5`, historical).** Its runner now exits 1 at `upgrade-evidence-run` for the superseded document, as described above. Evidence lives in `/home/cyan/.local/state/mitome/effect-native-stack/181-vitest-evidence/`. `bash run.sh` reuses the upgrade-stage transplant copies, configs and resolution check read-only. It verifies its own `provenance/sources.sha256`, which has 3,441 entries covering the installed Effect and Vitest package trees, lockfile, changeset, changed repository files, fixture, runner, checks and the R6 mutant. The cited run is `logs/run-V96qhIU5`: `summary.log` SHA-256 is `e8dbb01f…ff64`, and `evidence.sha256` SHA-256 is `9095f368…cd10`.
 
 **Installed rc.117, before the Vitest fix.** Evidence lives in `/home/cyan/.local/state/mitome/effect-native-stack/181-upgrade-evidence/`. `bash run.sh` writes a fresh `logs/run-*`, self-verifies, and exits nonzero on a mismatch. It needs the worktree `node_modules` from `bun install --frozen-lockfile --backend=copyfile`. It verifies `provenance/sources.sha256` (3,306 entries: the installed Effect-family package trees, lockfile, changed repository files, fixture and runner files), `provenance/approved-compiler.sha256`, the retained trees and the prior rc.117 and rc.108 evidence, before and after.
 

@@ -16,7 +16,6 @@ type RenderE = "user-failed" | AiError.AiError;
 type RenderR = Handlers | F.Encoder | F.Invocation;
 type ConvertR = RenderR | F.Decoder;
 type Generated = Effect.Success<typeof F.generate>;
-type Inner<T> = T extends Effect.Effect<infer S, infer _E, infer _R> ? S : never;
 
 export type Checks = [
   // Serviceful input and output schemas plus declared handler dependencies.
@@ -53,10 +52,12 @@ export type Checks = [
   Assert<Equal<Effect.Error<typeof F.dispatch>, RenderE>>,
   // Pinned rc.117 native declaration defects (fixed upstream after rc.117).
   Assert<Equal<Effect.Services<typeof F.convertOuterNative>, Handlers>>, // #8526
-  Assert<Equal<Stream.Error<Inner<typeof F.renderReturnedStreamNative>>, never>>, // #8527
+  Assert<Equal<Stream.Error<Effect.Success<typeof F.renderReturnedStreamNative>>, never>>, // #8527
   // Workaround candidate declares the merged-fix channels.
   Assert<Equal<Effect.Services<typeof F.convertOuterDeclared>, ConvertR>>,
-  Assert<Equal<Stream.Error<Inner<typeof F.renderReturnedStreamDeclared>>, AiError.AiError>>,
+  Assert<
+    Equal<Stream.Error<Effect.Success<typeof F.renderReturnedStreamDeclared>>, AiError.AiError>
+  >,
 ];
 
 // Equal itself distinguishes supersets and subsets.
@@ -91,7 +92,7 @@ export const rejected = [
   handlers.handle("Convert", { n: 21 }),
   // @ts-expect-error the workaround keeps Decoder on the outer Effect
   F.convertOuterDeclared satisfies Effect.Effect<
-    Inner<typeof F.convertOuterDeclared>,
+    Effect.Success<typeof F.convertOuterDeclared>,
     AiError.AiError,
     Handlers
   >,
