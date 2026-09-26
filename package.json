@@ -11,12 +11,12 @@
     "catalog": {
       "typescript": "7.0.2",
       "@types/bun": "^1.4.0",
-      "@effect/ai-openai": "4.0.0-rc.108",
-      "@effect/ai-openai-compat": "4.0.0-rc.108",
-      "@effect/platform-bun": "4.0.0-rc.108",
-      "@effect/vitest": "4.0.0-rc.108",
-      "effect": "4.0.0-rc.108",
-      "vitest": "4.1.11",
+      "@effect/ai-openai": "4.0.0-rc.117",
+      "@effect/ai-openai-compat": "4.0.0-rc.117",
+      "@effect/platform-bun": "4.0.0-rc.117",
+      "@effect/vitest": "4.0.0-rc.117",
+      "effect": "4.0.0-rc.117",
+      "vitest": "5.0.2",
       "@types/node": "^26.0.0"
     }
   },

@@ -15,7 +15,7 @@ export interface RuntimeModel {
   /** Provider metadata; undefined when the Provider declares no window for this Model id. */
   readonly contextWindow: number | undefined;
   readonly context: Context.Context<LanguageModel.LanguageModel>;
-  readonly model: LanguageModel.Service;
+  readonly model: LanguageModel.LanguageModel;
 }
 
 const modelSetupTurnError = (cause: unknown) =>

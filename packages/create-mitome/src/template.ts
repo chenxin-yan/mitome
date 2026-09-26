@@ -60,7 +60,7 @@ const agentPackageSource = (flavor: Flavor = "promise"): string => {
     "@mitome/providers": packageJson.version,
     "@mitome/sdk": packageJson.version,
   };
-  if (flavor === "effect") Object.assign(dependencies, { effect: "4.0.0-rc.108" });
+  if (flavor === "effect") Object.assign(dependencies, { effect: "4.0.0-rc.117" });
   return `${JSON.stringify(
     {
       name: "mitome-agent",

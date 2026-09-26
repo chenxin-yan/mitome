@@ -1,9 +1,20 @@
 import { OpenAiClient } from "@effect/ai-openai";
-import { Layer, Result, Schema } from "effect";
+import { Layer, Predicate, Result, Schema } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
 import { Socket } from "effect/unstable/socket";
 
 const NodeProcess = Schema.Struct({ versions: Schema.Struct({ node: Schema.String }) });
+
+// Effect's `Socket.layerWebSocketConstructorGlobal` rejects constructor options, but the
+// Node and Bun globals accept the handshake `headers` option carrying Authorization.
+const webSocketConstructor = Layer.succeed(Socket.WebSocketConstructor)((url, options) =>
+  options === undefined || Predicate.isString(options) || Array.isArray(options)
+    ? new globalThis.WebSocket(url, options)
+    : new globalThis.WebSocket(
+        url,
+        options.headers === undefined ? {} : { headers: options.headers },
+      ),
+);
 
 /**
  * Wires the Responses transport for a provisioned language-model Layer:
@@ -24,9 +35,7 @@ export const transportLayer = (
   return selected === "websocket"
     ? Layer.merge(languageModel, OpenAiClient.layerWebSocketMode).pipe(
         Layer.provide(client),
-        // Node and Bun accept the non-standard constructor options used for
-        // Authorization headers; standards-only edge constructors do not.
-        Layer.provide(Socket.layerWebSocketConstructorGlobal),
+        Layer.provide(webSocketConstructor),
       )
     : languageModel.pipe(Layer.provide(client));
 };

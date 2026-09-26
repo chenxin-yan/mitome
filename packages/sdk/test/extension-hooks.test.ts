@@ -48,7 +48,7 @@ describe("@mitome/sdk Extension Hooks", () => {
           signals.push(signal.aborted);
           expect(
             responseParts.every(
-              (part) => !("~effect/ai/Content/Part" in part) && !("encodedResult" in part),
+              (part) => !("~effect/ai/Response/Part" in part) && !("encodedResult" in part),
             ),
           ).toBe(true);
           responsePartTypes.push(responseParts.map((part) => part.type));

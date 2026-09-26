@@ -70,10 +70,11 @@ const approvalScript = (name: string, requirement: ApprovalRequirement) => {
   return { stream, decisions: () => decisions };
 };
 
-const testProvider = (streamText: LanguageModel.Service["streamText"]) => {
+const testProvider = (streamText: LanguageModel.LanguageModel["streamText"]) => {
   const unsupported = () => Effect.die("not used");
   return makeProvider("test", [] as const, undefined, () =>
     Layer.succeed(LanguageModel.LanguageModel, {
+      [LanguageModel.TypeId]: LanguageModel.TypeId,
       generateText: unsupported,
       generateObject: unsupported,
       streamText,
