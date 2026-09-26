@@ -53,6 +53,7 @@ export type {
   Json,
   MakeTranscriptOptions,
   MitomeDefinition,
+  NonDurableSession,
   Provider,
   QualifiedModelId,
   Session,
@@ -76,5 +77,7 @@ export type {
   TranscriptSummary,
   TurnEvent,
   TurnEventDto,
+  TurnObservation,
+  TurnReceipt,
   TurnSnapshot,
 } from "@mitome/core";

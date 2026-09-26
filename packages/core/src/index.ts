@@ -73,7 +73,15 @@ export type {
   TurnEventDto,
 } from "./session/events.js";
 export { makeSession, Turn } from "./session/session.js";
-export type { Session, SessionOptions, SessionStore, TurnSnapshot } from "./session/session.js";
+export type {
+  NonDurableSession,
+  Session,
+  SessionOptions,
+  SessionStore,
+  TurnObservation,
+  TurnReceipt,
+  TurnSnapshot,
+} from "./session/session.js";
 export {
   makeTranscript,
   promptFromTranscript,
