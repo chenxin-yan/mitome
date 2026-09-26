@@ -15,27 +15,29 @@ import { fail, type ExitCode } from "./support.js";
 const useExitCode = <A extends ExitCode, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.tap((exitCode) => Effect.sync(() => (process.exitCode = exitCode))));
 
-const useFlag = Flag.string("use").pipe(
+const useFlag = Flag.String("use").pipe(
   Flag.withDescription("Path to a Mitome Definition module or directory"),
   Flag.optional,
 );
-const messageArgument = Argument.string("message").pipe(
+const messageArgument = Argument.String("message").pipe(
   Argument.withDescription("Message to send to the Agent"),
   Argument.optional,
 );
-const printFlag = Flag.boolean("print").pipe(
+const printFlag = Flag.Boolean("print").pipe(
   Flag.withAlias("p"),
   Flag.withDescription("Force one-shot output"),
+  Flag.withDefault(false),
 );
-const yesFlag = Flag.boolean("yes").pipe(
+const yesFlag = Flag.Boolean("yes").pipe(
   Flag.withDescription(
     "In one-shot output, approve Approval requests flagged by the Tool author (not policy asks)",
   ),
+  Flag.withDefault(false),
 );
-const packageArgument = Argument.string("package").pipe(
+const packageArgument = Argument.String("package").pipe(
   Argument.withDescription("Extension package to add or remove"),
 );
-const portFlag = Flag.integer("port").pipe(
+const portFlag = Flag.Int("port").pipe(
   Flag.withDescription("Port for Channel Hosts that expose handle"),
   Flag.withDefault(3000),
 );

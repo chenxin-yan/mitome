@@ -4,7 +4,7 @@ import { defineAgent, type QualifiedModelId, type Session } from "../src/index.j
 import * as Provider from "../src/provider.js";
 
 // SAFETY: this compile-only fixture never executes the LanguageModel service.
-const layer = Layer.succeed(LanguageModel.LanguageModel, {} as LanguageModel.Service);
+const layer = Layer.succeed(LanguageModel.LanguageModel, {} as LanguageModel.LanguageModel);
 const alpha = Provider.makeProvider("alpha", ["known", "other"] as const, undefined, () => layer);
 const beta = Provider.makeProvider("beta", [] as const, undefined, () => layer);
 

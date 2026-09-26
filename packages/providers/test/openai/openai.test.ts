@@ -342,7 +342,8 @@ describe("openai", () => {
         {
           type: "function_call_output",
           call_id: "call-1",
-          output: '"hello"',
+          // @effect/ai-openai rc.117 sends string results unquoted.
+          output: "hello",
         },
       ]);
     } finally {
@@ -433,7 +434,8 @@ describe("openai", () => {
     expect(followUp.input).toContainEqual({
       type: "function_call_output",
       call_id: "call-1",
-      output: '"hello"',
+      // @effect/ai-openai rc.117 sends string results unquoted.
+      output: "hello",
     });
   });
 });

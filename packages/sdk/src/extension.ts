@@ -284,7 +284,7 @@ const promiseHook = Effect.fn("@mitome/sdk/promiseHook")(function* <A, Resource>
 const toPrompt: (prompt: AiPrompt.Prompt) => Prompt = Schema.encodeSync(AiPrompt.Prompt);
 
 const toResponsePart = (responsePart: AiResponse.AnyPart): ResponsePart => {
-  const { ["~effect/ai/Content/Part"]: _, ...part } = responsePart;
+  const { ["~effect/ai/Response/Part"]: _, ...part } = responsePart;
   if (part.type === "finish") {
     return {
       ...part,
