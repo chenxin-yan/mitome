@@ -96,6 +96,17 @@ The worktree compiler is again byte-identical to the approved compiler.
   - Controls pin that the upgrade-stage manifest still fails on this document without a declaration, and that a wrong snapshot is rejected.
 - **What this runner does not hash:** the live qualification document. Its source manifest covers the current fixture and the runner files, so this citation cannot invalidate the run.
 
+**Runner v2 (exit-status correction).** Review found that `run.sh` recorded a failed desired gate as `QUALIFICATION-RED` but still exited 0, because its final exit tested only control mismatches. `run-UZ04DtuG` itself recorded all 26 desired gates passing, so its result stands, but its exit status alone was not a reliable verdict. `run.sh` and its manifests are kept unchanged. `run-v2.sh` differs only in the following ways:
+
+- a desired mismatch also sets a failure flag;
+- `QUALIFICATION VERDICT: GREEN` or `FAILED (…)` is written to `summary.log` before hashing, and the run exits 1 unless the verdict is GREEN;
+- it verifies its own `provenance/sources-v2.sha256`, which covers the current fixture, both runners, both `hash-sources` scripts, the checks, the negative-injection files and the original `sources.sha256` and `snapshots.sha256`.
+
+Two runs recorded the change:
+
+- **Positive, `logs/run-QwsFG9jE`:** exit 0 and verdict GREEN. 26/26 desired gates pass, 0 RED, and 110 controls match. An independent `sha256sum -c` of its 104-file evidence exits 0.
+- **Negative, `logs/negative-nECfbAzf`:** `negative/make-injected.sh` derives `negative/run-v2-injected.sh` with exactly two changes. It pins the evidence root, and it replaces the desired `kernel-boundary-turn` command, which has no companion output pin, with `exit 7`. Nothing installed, retained or in the repository fixture is modified. The run exits 1 with exactly one `QUALIFICATION-RED` (`kernel-boundary-turn`, actual 7). The other 25 desired gates and all 110 controls match, and the verdict is `FAILED (controls_bad=0 desired_red=1)`. An independent evidence check exits 0.
+
 ## rc.117 isolated qualification (before the upgrade)
 
 **Candidate.** `effect@4.0.0-rc.117`, isolated at `/tmp/mitome-sql-transaction-proof-rc117-20260924/node_modules/effect`. Its tarball SHA-512 equals the npm registry `dist.integrity` (`sha512-UUyi9QiO…j/w==`), and the extracted tree has no differences from the isolated package. Git tag `effect@4.0.0-rc.117` (`14a3f140`) sources for `Toolkit.ts`, `LanguageModel.ts` and `Response.ts` are byte-identical to the package. `Tool.ts` differs only in JSDoc placement and formatting of one `Tool.dynamic` overload.
@@ -227,17 +238,17 @@ Bun 1.4.0 and Node 26.7.0 on Linux x64 only; no Node 24 floor, macOS or Windows 
 **Final verification revision (current).** Evidence lives in `/home/cyan/.local/state/mitome/effect-native-stack/181-final-evidence/`. It needs the worktree `node_modules` from `bun install --frozen-lockfile --backend=copyfile`. Rerun:
 
 ```sh
-bash /home/cyan/.local/state/mitome/effect-native-stack/181-final-evidence/run.sh
+bash /home/cyan/.local/state/mitome/effect-native-stack/181-final-evidence/run-v2.sh
 ```
 
-It writes a fresh `logs/run-*`, self-verifies `evidence.sha256`, and exits nonzero on any control or evidence mismatch. The cited run is `logs/run-UZ04DtuG`: `summary.log` SHA-256 is `00a21ee9…de16`, and `evidence.sha256` SHA-256 is `c69aeb8a…ca57`.
+It writes a fresh `logs/run-*`, self-verifies `evidence.sha256`, and exits nonzero on any desired-gate, control or evidence mismatch. The cited run is `logs/run-QwsFG9jE`: `summary.log` SHA-256 is `7639cb8f…61e3`, and `evidence.sha256` SHA-256 is `683f25b7…469f`. The earlier `run.sh` run `logs/run-UZ04DtuG` (`00a21ee9…de16` / `c69aeb8a…ca57`) is retained, with the exit-status caveat above.
 
 The manifests are classified as follows:
 
 - `provenance/snapshots.sha256`: the three retained historical snapshots. Verified by the run.
-- `provenance/sources.sha256`: the current fixture files, the runner, `hash-sources.sh` and the checks. Verified before and after the run.
+- `provenance/sources-v2.sha256`: the current fixture files, both runners and `hash-sources` scripts, the checks, the negative-injection files, and the original `sources.sha256` and `snapshots.sha256`. `run-v2.sh` verifies it before and after the run. The original `provenance/sources.sha256` is kept for `run.sh`.
 - The upgrade, Vitest and rc.117-stage manifests: historical. Verified with declared supersessions only.
-- `provenance/current-doc.sha256`: records this document's final bytes after the citation. It is not an input to the run.
+- `provenance/current-doc-v2.sha256` (previous revision: `current-doc.sha256`): records this document's final bytes after the citation. It is not an input to the run.
 
 **Installed rc.117 + Vitest 5.0.2 (`run-V96qhIU5`, historical).** Its runner now exits 1 at `upgrade-evidence-run` for the superseded document, as described above. Evidence lives in `/home/cyan/.local/state/mitome/effect-native-stack/181-vitest-evidence/`. `bash run.sh` reuses the upgrade-stage transplant copies, configs and resolution check read-only. It verifies its own `provenance/sources.sha256`, which has 3,441 entries covering the installed Effect and Vitest package trees, lockfile, changeset, changed repository files, fixture, runner, checks and the R6 mutant. The cited run is `logs/run-V96qhIU5`: `summary.log` SHA-256 is `e8dbb01f…ff64`, and `evidence.sha256` SHA-256 is `9095f368…cd10`.
 
