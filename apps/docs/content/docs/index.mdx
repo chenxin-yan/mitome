@@ -1,50 +1,15 @@
 ---
 title: Introduction
-description: Define an AI Agent in TypeScript, then run it from your terminal or inside your application.
+description: Mitome's accepted direction and the status of its prerelease redesign.
 icon: Rocket
 ---
 
-Mitome is a TypeScript library for defining AI Agents and running them. You describe an Agent once: which Provider it talks to, which Model it uses by default, what Instructions it follows, and which Tools it may call. You then run that Agent wherever you need it: embedded in your own application through a Promise-based SDK, or from a terminal through the optional `mitome` CLI and its interactive terminal UI.
+Mitome is a TypeScript library and CLI/TUI for user-defined AI Agents.
 
-## How a run flows
+**The Effect-native redesign is accepted, not implemented.** Current source still exposes the Promise-facing SDK, Agent Definitions and Extensions, with an Effect facade over that same runtime. Those APIs are being replaced without a compatibility surface. Their prerelease guides and reference pages have been removed rather than retained as a legacy manual; no new runnable API examples are published until the contracts are proven and implemented.
 
-```
-Mitome Definition ─ pairs one Agent with the Hosts that run it
-        │
-        ▼
-      Agent ─────── Providers, Default Model, Extensions
-        │
-        ▼
-     Session ────── one live interaction; opened, used, released
-        │
-        ▼
-      Turn ──────── one user Message → one final Agent response
-        │
-        ▼
-      Step ──────── one Model generation; repeats while the Model calls Tools
-        │
-        ├── Tool call ── gated by Approval, then executed
-        │
-        ▼
-   Transcript ───── the committed Messages, saved when the Turn completes
-```
+The [canonical library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) separates accepted direction, open contracts and dependency-ordered proof/implementation gates. [ADR-0057](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0057-use-effect-native-functions-and-optional-host-composition.md) records the architecture; [roadmap #174](https://github.com/chenxin-yan/mitome/issues/174) tracks delivery.
 
-Every term above has a short entry in [Concepts](/docs/concepts). You do not need them all to start.
+The target is plain Effect agent functions with explicit scoped Sessions, whole-function Turns, native infrastructure and Tool types, and optional Host composition. TUI and mountable HTTP come first; messaging integrations come later. The full replacement still requires durable recovery, History trees, Compaction, Skills, controls and subagents. A process-local demo is an internal proof, not a smaller public release or a durability guarantee.
 
-## Pick your path
-
-- **Run an Agent in your terminal.** Install the CLI, answer two prompts, and talk to your Agent. Add the terminal UI when you want a persistent interactive Session. Start with the [CLI quickstart](/docs/quickstart-cli).
-- **Embed an Agent in your app.** Install two packages, write an Agent Definition, and consume the Turn event stream from a `for await` loop. Start with the [SDK quickstart](/docs/quickstart-sdk).
-
-Both paths use the same Agent Definition. An Agent Definition written for the terminal can be imported into an application, and the other way round.
-
-## Packages by audience
-
-| You are                        | Install                                 | Import from                                                  |
-| ------------------------------ | --------------------------------------- | ------------------------------------------------------------ |
-| Building an application        | `@mitome/sdk`, `@mitome/providers`      | `@mitome/sdk`, the Provider's path under `@mitome/providers` |
-| Using an Agent from a terminal | `@mitome/cli`, optionally `@mitome/tui` | the generated `index.ts`                                     |
-| Authoring an Extension         | `@mitome/sdk`                           | `@mitome/sdk`                                                |
-| Authoring a Host or Provider   | `@mitome/core`                          | `@mitome/core`                                               |
-
-Applications that already run on Effect can use `@mitome/sdk/effect`, a curated Effect-native facade over the same runtime; see [Effect-native API](/docs/effect). Requirements and install commands are on the [Installation](/docs/installation) page.
+See [Design decisions](/docs/design-decisions), [Security](/docs/security), [Versioning](/docs/versioning), and [Contributing](/docs/contributing). Shared vocabulary lives in the repository's [CONTEXT.md](https://github.com/chenxin-yan/mitome/blob/main/CONTEXT.md).
