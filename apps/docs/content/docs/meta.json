@@ -1,35 +1,4 @@
 {
   "title": "Mitome",
-  "pages": [
-    "---Getting started---",
-    "index",
-    "installation",
-    "quickstart-cli",
-    "quickstart-sdk",
-    "concepts",
-    "---Guides---",
-    "providers",
-    "sessions",
-    "tools",
-    "extensions",
-    "approvals",
-    "persistence",
-    "configuration",
-    "cli",
-    "tui",
-    "channels",
-    "---Advanced---",
-    "effect",
-    "hosts",
-    "provider-authoring",
-    "custom-transcript-store",
-    "security",
-    "---Reference---",
-    "reference",
-    "---Project---",
-    "versioning",
-    "troubleshooting",
-    "contributing",
-    "design-decisions"
-  ]
+  "pages": ["index", "design-decisions", "security", "versioning", "contributing"]
 }

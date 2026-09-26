@@ -1,10 +1,5 @@
 # @mitome/cli
 
-The `mitome` command: initialize, authenticate, and run a Mitome Definition from the terminal. Ships as a compiled binary; Bun is not required.
+The current `mitome` command initializes, authenticates and runs explicitly selected Mitome Definitions. The compiled binary embeds Bun.
 
-```sh
-npm install -g @mitome/cli
-mitome init
-```
-
-See the [CLI quickstart](https://mitome.sh/docs/quickstart-cli) and the [CLI reference](https://mitome.sh/docs/reference/cli).
+The accepted native library redesign is not implemented. Obsolete prerelease quickstarts/reference have been removed; see the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) for the CLI/TUI migration gates.

@@ -1,9 +1,5 @@
 # @mitome/providers
 
-First-party Providers for Mitome Agents: `@mitome/providers/openai`, `@mitome/providers/openai-compatible`, and `@mitome/providers/openai-codex`. The package has no root import; use a subpath.
+Current first-party Provider subpaths: `@mitome/providers/openai`, `@mitome/providers/openai-compatible`, and `@mitome/providers/openai-codex`. There is no root import. Codex uses an unofficial ChatGPT endpoint and remains best-effort.
 
-```sh
-npm install @mitome/sdk @mitome/providers
-```
-
-Configuration, Credentials, and transport options are under [Providers](https://mitome.sh/docs/providers).
+The accepted redesign preserves Provider identity, transport/authentication and catalog capabilities; its native composition contract is pending. Obsolete Definition-based guides have been removed; see the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md).

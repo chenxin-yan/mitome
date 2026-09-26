@@ -1,7 +1,9 @@
-# Rename Plugin to Extension and fold first-party Extensions into the SDK
+---
+status: authoring superseded by ADR-0057; package boundary retained
+---
 
-The domain term Plugin is renamed to Extension across the public API, domain language, and code: `definePlugin` becomes `defineExtension`, the Definition field `plugins` becomes `extensions`, and Core/SDK types rename accordingly (`Plugin` → `Extension`, `PluginHooks` → `ExtensionHooks`). The package is pre-release, so no compatibility surface is kept. ADRs written before this decision use "Plugin" for what is now an Extension; they are not rewritten.
+# Keep small first-party features together without heavy root imports
 
-`@mitome/plugins` is deleted. Its two first-party Extensions, `instructions` and `instructionFiles`, move to the `@mitome/sdk/extensions` subpath, following the SDK's existing `./effect` subpath convention. Eighty-odd dependency-free lines did not justify a published package's release and documentation overhead (the same consolidation economics as ADR-0018), and the subpath keeps `node:fs`/`node:path` imports out of the SDK root barrel. Users now install only `@mitome/sdk` and `@mitome/providers`. A future first-party Extension with heavy dependencies should get its own package rather than growing the SDK's dependency list.
+The current implementation renamed Plugin to Extension and consolidated the small first-party instruction helpers into `@mitome/sdk/extensions` rather than maintaining `@mitome/plugins`. Preserve the useful packaging boundary: small dependency-free features need not each become a published package, and filesystem or heavy optional dependencies must not leak into the ordinary library root import.
 
-This amends ADR-0022's install surface and ADR-0024's packaging of first-party instruction Extensions.
+[ADR-0057](0057-use-effect-native-functions-and-optional-host-composition.md) retires Extension as mandatory authoring machinery. Reusable functionality becomes ordinary modules/functions/Tools/Layers; no target helper names or subpaths are settled here. Existing packages/exports remain implemented until migration; this documentation change is not a package reorganization.

@@ -1,7 +1,9 @@
 ---
-status: amended by ADR-0029
+status: amended by ADR-0029 and ADR-0057
 ---
 
-# Add a CLI credential bootstrap surface
+# Keep credential bootstrap independent of Sessions
 
-The CLI gains `mitome auth login [--use <file.ts>]` and `mitome auth logout [--use <file.ts>]`. Authentication is Definition-scoped: the CLI loads the selected trusted Definition and delegates to its Model's provider-owned credential descriptor, so the generic auth path carries no provider registry. `mitome init` separately owns the static scaffold choices: API-key OpenAI writes the masked key to `<config-dir>/.env`, while Codex immediately runs the same provider-owned OAuth login used by `mitome auth login`. OAuth providers persist into `auth.json` (ADR-0010). At startup the CLI — and only the CLI — loads `<config-dir>/.env` into the process environment without overriding existing variables; Core resolves declarative environment credential descriptors from `process.env`, so there is one credential-resolution mechanism with two layers. Embedded SDK sessions read `process.env` untouched. Init generates no `.env.example`.
+The CLI's login/logout/bootstrap uses Provider-owned credential metadata from the explicitly selected trusted composition, not a second global Provider registry. [ADR-0057](0057-use-effect-native-functions-and-optional-host-composition.md) requires discovery/authentication without opening a Session or acquiring authenticated model resources; the same Provider descriptors must drive runtime provisioning. Exact native descriptor and module contracts remain open.
+
+Retain CLI-only loading of `<config-dir>/.env` without overriding existing environment variables; embedded applications supply their own environment. API-key bootstrap writes masked input to that file, while OAuth Providers own their login flow and persist credentials in `auth.json` under [ADR-0010](0010-persist-provider-credentials-outside-the-environment.md). Neither secrets nor authentication belong in Agent Instructions, model input, or a Session allocation side effect.

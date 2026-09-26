@@ -1,7 +1,9 @@
-# Curate entry points by audience
+---
+status: amended by ADR-0057
+---
 
-Public API audience is selected by package: `@mitome/sdk` is the Promise-first app-developer facade, `@mitome/sdk/effect` is a curated Effect-native app-developer facade, and `@mitome/core` is the documented Effect-native Host and Provider author surface with a weaker stability guarantee.
+# Curate explicit public entry points
 
-Every entry point uses explicit named exports, and package source files may not use `export *`. This prevents internal Core plumbing and future exports from silently becoming public API.
+Every package entry point uses explicit named exports rather than `export *`, so internal plumbing and future exports cannot silently become public API. Document supported consumers and stability boundaries deliberately.
 
-This amends ADR-0022's complete Core re-export and undocumented-Core decisions, and ADR-0039's public SDK `Host` interface decision. The `Host` contract is authored from `@mitome/core`; the Promise SDK accepts configured Host values opaquely so their Effect-native context does not leak into its surface.
+[ADR-0057](0057-use-effect-native-functions-and-optional-host-composition.md) supersedes the Promise-first/separate-Effect-facade audience policy. Native Effect is the canonical target library surface; Hosts and CLI/TUI consume that same library, not a second agent API. Exact package/subpath/export layout waits for contract proofs. Current source still exposes the Promise SDK and Effect facade until migration; removing obsolete reference pages does not change exports.

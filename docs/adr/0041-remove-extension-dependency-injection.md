@@ -1,11 +1,9 @@
 ---
-status: reaffirmed by ADR-0053
+status: amended by ADR-0057
 ---
 
-# Remove Extension dependency injection
+# Do not rebuild native dependency injection as a framework graph
 
-Extension dependency injection is removed: Extensions no longer declare `dependencies` or `provides`, Promise Tool declarations no longer name cross-Extension service dependencies, and Promise Hooks and Tool handlers no longer expose `getService`. Agent Definition compilation neither auto-includes nor topologically orders Extensions. Resources are acquired in Agent Definition order and remain private to their owning Extension.
+Mitome removed a custom Extension dependency/provided-service graph with no non-test consumers. Preserve the rejection of a second named registry, auto-inclusion graph, or framework-specific service wiring when native Effect Context and Layers already compose infrastructure.
 
-Tools and Hooks that share Session state belong in one Extension and access the same Resource. Independent Extensions are composed explicitly in the Agent Definition. This smaller contract removes a type-heavy graph with no non-test consumers; if cross-Extension services become a demonstrated requirement, they can return later as an additive design grounded in that use case.
-
-This supersedes ADR-0035. It restores ADR-0004's no-wiring decision and re-defers ADR-0026's cross-Extension type dependencies. ADR-0032's Layer-inferred coverage remains within one Extension.
+[ADR-0057](0057-use-effect-native-functions-and-optional-host-composition.md) retires mandatory Extensions, including their private/eager/Definition-order Resource rule. This does not prohibit native shared services or Layers: applications explicitly own their sharing and lifetime, while Session allocation remains fresh and scoped. Providing a service does not make it a Model-visible Tool.

@@ -1,50 +1,27 @@
 ---
 title: Security
-description: Understand what a Mitome Definition can do when it runs, and keep Credentials out of code, logs, and Model input.
+description: Trust, credential and authority boundaries that the redesign must preserve.
 icon: Lock
 ---
 
-Mitome runs code you wrote, with the access you have, against services that bill your account. This page states the trust boundaries so you know what to protect.
+Mitome runs user-authored code with the permissions of its process. The [redesign plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) is accepted direction, not an implemented security or durability guarantee.
 
-## A Mitome Definition is a program
+## Trust executable modules
 
-A [Mitome Definition](/docs/concepts#agent-definition-and-mitome-definition) is executable TypeScript, not a configuration file. When you run `mitome`, the CLI starts a **Child Host** process that imports the Definition module, the Hosts it declares, and every dependency in its `package.json`. That process has your filesystem, your network, your environment variables, and every Credential the Definition's Providers can reach.
+An explicitly selected composition module and its dependencies are executable code, not a sandboxed configuration file. Import only code you trust. Tool policy does not sandbox arbitrary Agent programs, infrastructure, or Hosts. Explicit module selection must not turn into implicit execution of project-local code.
 
-Run only Mitome Definitions you trust. `mitome --use <path>` executes whatever module is at that path, and `mitome add <package>` installs and later imports whatever that package publishes. Neither the CLI nor a Host sandboxes the code. Treat a Mitome Definition and its dependencies the way you treat any script you would run with your own account.
+## Separate policy, consent and replay safety
 
-The same holds when you embed the SDK: an Extension's Tool handlers run in your application process with its permissions.
+The Agent author controls policy; Tools flag risk and reusable policy may tighten it. Hosts resolve permitted asks, never override a deny. Missing consent or a policy failure must not silently permit execution. Decode Tool input before policy, validate declared outcomes, and keep defects and secrets out of Model-visible results.
 
-## Tools act on your behalf
+Approval authorizes an operation, not a retry after a crash. An unknown unsafe external outcome requires reconciliation; cancellation cannot undo an effect already completed. Passive progress events are not authoritative Approval or commit records.
 
-A Tool call is the Model deciding to run your code. Three mechanisms gate it: `preTool` Hooks apply policy an Extension author wrote, the Agent's `approvals` applies the Agent author's policy, and whatever still asks becomes an Approval the Host resolves. Core enforces every `deny` and veto itself; an ask is a request for a person. The [TUI](/docs/tui) prompts for it, and one-shot output (`mitome -p`, or any non-TTY run) denies it with a reason the Model sees, because nobody is there to answer.
+## Authenticate before accessing state
 
-Three switches relax that, and it matters what each does not bypass:
+For external Channels, including HTTP, authenticate and authorize before Route/history/model access. Conversation, Turn and Approval ids are not credentials. Approval, cancellation and result retrieval must enforce ownership, including after reconnect. Persisted state and incoming payloads are untrusted boundaries and must be decoded.
 
-| Switch                       | Set by                     | Skips the Tool's `needsApproval` predicate | Answers `policy` asks | Beats `deny` or a `preTool` veto |
-| ---------------------------- | -------------------------- | ------------------------------------------ | --------------------- | -------------------------------- |
-| `approvals.allow` in Agent   | The Agent author           | Yes; the predicate is not evaluated        | No                    | No                               |
-| `mitome --yes`               | Whoever runs it            | No; a failed predicate is still denied     | No                    | No                               |
-| TUI "allow for this Session" | The person at the terminal | No                                         | No                    | No                               |
+## Protect Credentials and stored data
 
-`allow` is the Agent author's standing decision and is visible in the Agent Definition; `--yes` is a per-invocation decision by whoever runs the command and only covers requests the Tool author flagged (`requirement: "tool"`). The TUI's Session grant is the same scope as `--yes`, held for one live Session on one terminal. None of them turns a `deny`, a veto, or a policy `ask` into a run. For Tools with real side effects, mark them `needsApproval` and run them where a person can answer, as the [Approvals](/docs/approvals) page explains.
+Keep secrets out of source, Instructions, Tool outputs, thrown errors, logs, and bug reports. Do not commit `.env` or `auth.json`. Embedded applications supply credentials through their own environment or secret manager; CLI-only environment loading must not override explicit process values.
 
-## Credentials
-
-A [Credential](/docs/concepts#credential) authorizes Mitome to spend on your account. Keep it in exactly one place: the environment variable or `<config-dir>/auth.json` entry its Provider reads. Never:
-
-- paste it into `index.ts` or any Agent Definition;
-- put it in Instructions, where it becomes Model input;
-- return it from a Tool handler, where it becomes Model input and a Turn event;
-- throw it inside an error, where it can reach logs; a Tool handler that throws produces an opaque failure, but a rejected `withSession` callback surfaces the error unchanged;
-- commit `.env` or `auth.json`, or include them in backups, logs, or bug reports.
-
-The CLI writes `.env` and `auth.json` readable by you alone, and reads `.env` only into the Child Host process. Embedded applications never read `.env`; supply the variable from your platform's secret manager. The full precedence and every file's mode are listed under [Configuration](/docs/configuration#credentials).
-
-## What is persisted
-
-With `transcripts` declared, every completed Turn's Messages and every Turn event, including Tool inputs and results, are written to the store. A Transcript is user data plus whatever your Tools returned; place the store accordingly and treat what you read back as untrusted input, as [Custom Transcript store](/docs/custom-transcript-store#validate-what-you-read) describes. Without `transcripts`, Mitome writes nothing.
-
-## Next
-
-- [Configuration](/docs/configuration): the config directory, its files, and their modes.
-- [Hosts](/docs/hosts): how the CLI decides which Host runs a Mitome Definition.
+Retain private credential file permissions, atomic writes, refresh locking and per-Provider isolation from [ADR-0010](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0010-persist-provider-credentials-outside-the-environment.md) and [ADR-0031](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0031-share-oauth-and-credential-storage-across-provider-subpaths.md). Transcripts and execution/delivery records can contain user data, Tool inputs and results; storage retention/access policies require explicit ownership. The new backend and crash guarantees remain design work, not claims derived from today's Transcript files.

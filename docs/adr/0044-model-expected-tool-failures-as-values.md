@@ -1,7 +1,9 @@
-# Model expected Tool failures as values
+---
+status: amended by ADR-0057
+---
 
-A Promise-first Tool may declare `failureSchema` alongside `outputSchema`. Its handler then returns `ok(value)` or `fail(error)`. Both branches are validated against their declared schemas; the success and failure types come from those schemas, with the handler positions excluded from inference. The const-generic helpers preserve discriminants and are the sanctioned authoring form.
+# Distinguish expected Tool outcomes from defects
 
-A validated `fail(error)` becomes a failed Tool result whose error value is visible to the Model. This channel is for expected outcomes the Agent can react to, such as a missing record or a rejected operation. A thrown error, rejected Promise, or invalid result remains a defect and keeps the existing opaque `SDK tool handler failed` mapping, so implementation details and secrets are not exposed accidentally.
+A declared, schema-validated expected Tool failure is an outcome the Model may inspect and react to; implementation defects and invalid results must not leak raw errors or secrets into the Model or remote responses. Validate declared success/failure schemas, including transformed results, and preserve this distinction through controlled execution.
 
-The channel is opt-in. Without `failureSchema`, handlers return their success value directly. `outputSchema` is also optional; omitted output is inferred from the handler and passed through without validation.
+[ADR-0057](0057-use-effect-native-functions-and-optional-host-composition.md) replaces the Promise-specific `ok`/`fail` convention with native Tool/Schema/Effect authoring. The precise error/value mapping remains an API proof task, not a reason to duplicate native Tool representations or claim an unverified helper is exported.
