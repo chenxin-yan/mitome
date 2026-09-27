@@ -17,8 +17,8 @@ export class Turn extends Context.Service<
   {
     /** Live identity of this Turn; not a durable receipt or an authorization token. */
     readonly id: string;
-    /** The Session that owns this Turn. */
-    readonly session: Session<unknown>;
+    /** The Session that owns this Turn, with every persistence error a Session can raise. */
+    readonly session: Session<SessionSaveError | SessionFencedError>;
     /**
      * Adds Messages to this Turn's staged conversation. They publish together only when the whole
      * Turn commits. Staging through a Turn after it closed is a defect.
@@ -61,11 +61,14 @@ export interface TurnSnapshot {
   readonly exit?: Exit.Exit<unknown, unknown>;
 }
 
-/** A Turn snapshot as delivered to one observer, with how many snapshots it missed just before. */
+/** A Turn snapshot as delivered to one observer. */
 export interface TurnObservation {
   readonly snapshot: TurnSnapshot;
-  /** Snapshots not delivered to this observer, because its queue was full, since its last delivery. */
-  readonly missed: number;
+  /**
+   * Position of this snapshot among those published since the observer subscribed, from 0. A jump
+   * from the previous delivery, or a first delivery above 0, counts the snapshots it lost.
+   */
+  readonly sequence: number;
 }
 
 /** A finished Turn of a Session without persistence, from `runWithReceipt`. */
@@ -73,7 +76,7 @@ export interface TurnReceipt<out A, out E> {
   readonly id: string;
   /**
    * Reads this Turn's typed live outcome from its Session's records. Fails once the Session is
-   * released; the receipt keeps neither the Session nor the outcome alive.
+   * released or closing; the receipt keeps neither the Session nor the outcome alive.
    */
   readonly read: Effect.Effect<
     { readonly id: string; readonly durability: "non-durable"; readonly exit: Exit.Exit<A, E> },
@@ -86,8 +89,11 @@ export interface Session<out PersistenceError = never> {
   /**
    * Runs one program as a whole-function Turn. The Turn supplies `Turn` and its own `Scope`; its
    * staged Messages publish once, after the program succeeds, its child fibers and the Turn Scope
-   * have finished and any store save is confirmed. Child fibers are interrupted and awaited before
-   * the Turn Scope closes; only a joined child's failure fails the Turn. Otherwise committed
+   * have finished and any store save is confirmed. Child fibers the program forks are interrupted
+   * and awaited before the Turn Scope closes, and those its cleanup forks before the Turn saves,
+   * commits or returns and before the Session releases its dependencies. Turn Scope finalizers run
+   * in native reverse order, so a finalizer must join any child that needs a resource a later
+   * finalizer releases. Only a joined child's failure fails the Turn. Otherwise committed
    * history is unchanged, though completed external effects are not undone. Interrupting the
    * caller interrupts the Turn and waits for its cleanup; a save already under way still
    * completes, and if it succeeds the Turn is committed even though the caller sees the
@@ -106,10 +112,10 @@ export interface Session<out PersistenceError = never> {
   readonly turns: Effect.Effect<ReadonlyArray<TurnSnapshot>, SessionReleasedError>;
   /**
    * Subscribes to Turn snapshots as each Turn finishes, after any history publication. Delivery is
-   * passive: when the observer's queue holds `capacity` undelivered snapshots, later ones are
-   * dropped and counted in the next delivered `missed`, and a Turn never waits for an observer.
-   * Closing the subscription is not cancellation, and it ends when the Session is released.
-   * `turns` stays the authoritative record.
+   * passive: the observer's queue keeps the newest `capacity` undelivered snapshots, dropping the
+   * oldest, and `sequence` gaps show what was lost; a Turn never waits for an observer. Closing the
+   * subscription is not cancellation, and it ends when the Session is released. `turns` stays the
+   * authoritative record.
    */
   readonly observe: (
     capacity: number,
@@ -140,7 +146,7 @@ interface TurnRecord<A, E> {
 
 const make = Effect.fn("@mitome/core/makeSession")(function* (store: SessionStore | undefined) {
   const executionScope = yield* Scope.make();
-  // Each observer's queue, with how many snapshots it has missed since its last delivery.
+  // Each observer's queue, with the sequence its next snapshot gets.
   const observers = new Map<Queue.Queue<TurnObservation>, number>();
   let released = false;
   let busy = false;
@@ -203,9 +209,11 @@ const make = Effect.fn("@mitome/core/makeSession")(function* (store: SessionStor
                     : Effect.die(new Error("Turn is closed; its Messages can no longer be staged")),
                 ),
             });
-            // The program runs on its own fiber: a fiber interrupts and awaits its native children
-            // before it completes, so joining it drains them before the Turn Scope closes.
-            const result = yield* Effect.scopedWith((turnScope) =>
+            // A fiber interrupts and awaits its native children before it completes. The program runs
+            // on one fiber, joined before the Turn Scope closes, and the Turn Scope closes on another,
+            // joined before save and publication, so children forked by the program or by its
+            // cleanup both settle before the Turn commits.
+            const owned = Effect.scopedWith((turnScope) =>
               Effect.gen(function* () {
                 const body = yield* Effect.forkChild(
                   program.pipe(
@@ -214,11 +222,15 @@ const make = Effect.fn("@mitome/core/makeSession")(function* (store: SessionStor
                     ),
                   ),
                 );
-                return yield* restoreProgram(Fiber.join(body)).pipe(
-                  Effect.ensuring(Fiber.interrupt(body)),
-                );
+                return yield* Fiber.join(body).pipe(Effect.ensuring(Fiber.interrupt(body)));
               }),
-            ).pipe(Effect.ensuring(Effect.sync(() => void (open = false))));
+            );
+            const result = yield* Effect.gen(function* () {
+              const cleanup = yield* Effect.forkChild(owned);
+              return yield* restoreProgram(Fiber.join(cleanup)).pipe(
+                Effect.ensuring(Fiber.interrupt(cleanup)),
+              );
+            }).pipe(Effect.ensuring(Effect.sync(() => void (open = false))));
             // The Turn Scope has closed; observe any interruption that arrived during its cleanup.
             yield* restoreProgram(Effect.void);
             if (released) return yield* new SessionReleasedError();
@@ -226,14 +238,17 @@ const make = Effect.fn("@mitome/core/makeSession")(function* (store: SessionStor
             if (store !== undefined) {
               // ponytail: a save that never resolves blocks cancellation and release; deadlines are #170's.
               fenced = true;
-              // Only a failure whose every reason is a definite not-written leaves nothing to reconcile.
+              // Only a failure with at least one reason, every one a definite not-written, leaves
+              // nothing to reconcile.
               yield* store.save(next).pipe(
                 Effect.tapCause((cause) =>
                   Effect.sync(() => {
-                    fenced = !cause.reasons.every(
-                      (reason) =>
-                        Cause.isFailReason(reason) && reason.error.outcome === "not-written",
-                    );
+                    fenced =
+                      cause.reasons.length === 0 ||
+                      !cause.reasons.every(
+                        (reason) =>
+                          Cause.isFailReason(reason) && reason.error.outcome === "not-written",
+                      );
                   }),
                 ),
               );
@@ -247,9 +262,9 @@ const make = Effect.fn("@mitome/core/makeSession")(function* (store: SessionStor
                 record.phase = Exit.isSuccess(exit) ? "committed" : fenced ? "uncertain" : "failed";
                 if (store === undefined) record.exit = exit;
                 const delivered = snapshot(record);
-                for (const [queue, missed] of observers) {
-                  const offered = Queue.offerUnsafe(queue, { snapshot: delivered, missed });
-                  observers.set(queue, offered ? 0 : missed + 1);
+                for (const [queue, sequence] of observers) {
+                  Queue.offerUnsafe(queue, { snapshot: delivered, sequence });
+                  observers.set(queue, sequence + 1);
                 }
               }),
             ),
@@ -279,7 +294,7 @@ const make = Effect.fn("@mitome/core/makeSession")(function* (store: SessionStor
         }
         if (released) return Effect.fail(new SessionReleasedError());
         return Effect.acquireRelease(
-          Queue.dropping<TurnObservation>(capacity).pipe(
+          Queue.sliding<TurnObservation>(capacity).pipe(
             Effect.tap((queue) => Effect.sync(() => void observers.set(queue, 0))),
           ),
           (queue) =>
@@ -297,7 +312,7 @@ const make = Effect.fn("@mitome/core/makeSession")(function* (store: SessionStor
         id: record.id,
         read: Effect.suspend(() => {
           const exit = record.exit;
-          return exit === undefined
+          return released || exit === undefined
             ? Effect.fail(new SessionReleasedError())
             : Effect.succeed({ id: record.id, durability: "non-durable" as const, exit });
         }),

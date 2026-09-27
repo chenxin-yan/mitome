@@ -254,6 +254,172 @@ describe("makeSession", () => {
       }),
   );
 
+  it.effect("drains a child forked by a Turn finalizer before publishing and returning", () =>
+    Effect.gen(function* () {
+      const session = yield* makeSession({ persistence: "none" });
+      const started = yield* Deferred.make<void>();
+      const cleaning = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      const invocation = yield* Effect.forkChild(
+        session.run(
+          Effect.gen(function* () {
+            yield* program();
+            yield* Effect.addFinalizer(() =>
+              Effect.forkChild(
+                Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.ensuring(
+                    Deferred.succeed(cleaning, undefined).pipe(
+                      Effect.andThen(Deferred.await(gate)),
+                    ),
+                  ),
+                ),
+              ).pipe(Effect.andThen(Deferred.await(started))),
+            );
+            return "done";
+          }),
+        ),
+      );
+      yield* Deferred.await(cleaning);
+
+      expect(invocation.pollUnsafe()).toBeUndefined();
+      expect(yield* session.history).toEqual([]);
+      expect((yield* session.turns).map((turn) => turn.phase)).toEqual(["running"]);
+      expect(yield* Effect.flip(session.run(program()))).toBeInstanceOf(SessionBusyError);
+      yield* Deferred.succeed(gate, undefined);
+
+      expect(yield* Fiber.join(invocation)).toBe("done");
+      expect(texts(yield* session.history)).toEqual(["first", "second"]);
+    }),
+  );
+
+  it.effect("keeps a Turn-local resource for a child its finalizer joins", () =>
+    Effect.gen(function* () {
+      const session = yield* makeSession({ persistence: "none" });
+      const cleaning = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      let resourceLive = false;
+      const seenByChild: Array<boolean> = [];
+      const invocation = yield* Effect.forkChild(
+        session.run(
+          Effect.gen(function* () {
+            yield* Effect.acquireRelease(
+              Effect.sync(() => void (resourceLive = true)),
+              () => Effect.sync(() => void (resourceLive = false)),
+            );
+            yield* program();
+            // Registered after the resource, so it runs first; joining keeps the resource open.
+            yield* Effect.addFinalizer(() =>
+              Effect.forkChild(
+                Deferred.succeed(cleaning, undefined).pipe(
+                  Effect.andThen(Deferred.await(gate)),
+                  Effect.andThen(Effect.sync(() => void seenByChild.push(resourceLive))),
+                ),
+              ).pipe(Effect.flatMap(Fiber.join)),
+            );
+            return "done";
+          }),
+        ),
+      );
+      yield* Deferred.await(cleaning);
+
+      expect(resourceLive).toBe(true);
+      expect(invocation.pollUnsafe()).toBeUndefined();
+      expect(yield* session.history).toEqual([]);
+      yield* Deferred.succeed(gate, undefined);
+
+      expect(yield* Fiber.join(invocation)).toBe("done");
+      expect(seenByChild).toEqual([true]);
+      expect(resourceLive).toBe(false);
+      expect(texts(yield* session.history)).toEqual(["first", "second"]);
+    }),
+  );
+
+  it.effect("keeps Session infrastructure until an unjoined cleanup child drains", () =>
+    Effect.gen(function* () {
+      const allocation = yield* Scope.make();
+      const started = yield* Deferred.make<void>();
+      const cleaning = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      const order: Array<string> = [];
+      let resourceLive = false;
+      const session = yield* Effect.gen(function* () {
+        yield* Effect.acquireRelease(Effect.void, () =>
+          Effect.sync(() => void order.push("infrastructure released")),
+        );
+        return yield* makeSession({ persistence: "none" });
+      }).pipe(Effect.provideService(Scope.Scope, allocation));
+      const invocation = yield* Effect.forkChild(
+        session.run(
+          Effect.gen(function* () {
+            yield* Effect.acquireRelease(
+              Effect.sync(() => void (resourceLive = true)),
+              () => Effect.sync(() => void (resourceLive = false)),
+            );
+            yield* program();
+            yield* Effect.addFinalizer(() =>
+              Effect.forkChild(
+                Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.ensuring(
+                    Deferred.succeed(cleaning, undefined).pipe(
+                      Effect.andThen(Deferred.await(gate)),
+                      Effect.andThen(Effect.sync(() => void order.push("child drained"))),
+                    ),
+                  ),
+                ),
+              ).pipe(Effect.andThen(Deferred.await(started))),
+            );
+            return "done";
+          }),
+        ),
+      );
+      yield* Deferred.await(cleaning);
+
+      // Native LIFO order: the unjoined child outlives the resource a later finalizer released.
+      expect(resourceLive).toBe(false);
+      expect(invocation.pollUnsafe()).toBeUndefined();
+      expect(yield* session.history).toEqual([]);
+      const close = yield* Effect.forkChild(Scope.close(allocation, Exit.void), {
+        startImmediately: true,
+      });
+      expect(yield* Effect.flip(session.run(program()))).toBeInstanceOf(SessionReleasedError);
+      expect(close.pollUnsafe()).toBeUndefined();
+      expect(order).toEqual([]);
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(close);
+
+      expect(order).toEqual(["child drained", "infrastructure released"]);
+      expect(Exit.hasInterrupts(yield* Fiber.await(invocation))).toBe(true);
+    }),
+  );
+
+  it.effect("commits Messages staged by the Turn's own cleanup with the Turn", () =>
+    Effect.gen(function* () {
+      const session = yield* makeSession({ persistence: "none" });
+      yield* session.run(
+        Effect.gen(function* () {
+          const turn = yield* Turn;
+          yield* Effect.addFinalizer(() => turn.stage(message("cleanup")));
+          yield* program();
+        }),
+      );
+      expect(texts(yield* session.history)).toEqual(["first", "second", "cleanup"]);
+
+      const failed = yield* Effect.exit(
+        session.run(
+          Effect.gen(function* () {
+            const turn = yield* Turn;
+            yield* Effect.addFinalizer(() => turn.stage(message("discarded")));
+            return yield* new ApplicationFailure();
+          }),
+        ),
+      );
+      expect(Exit.isFailure(failed)).toBe(true);
+      expect(texts(yield* session.history)).toEqual(["first", "second", "cleanup"]);
+    }),
+  );
+
   it.effect("fails the Turn for a joined native child failure but not an unjoined one", () =>
     Effect.gen(function* () {
       const session = yield* makeSession({ persistence: "none" });
@@ -558,6 +724,7 @@ describe("makeSession with a SessionStore", () => {
     Effect.gen(function* () {
       const notWritten = new SessionSaveError({ outcome: "not-written" });
       const compounds = [
+        Cause.empty,
         Cause.combine(Cause.fail(notWritten), Cause.die(new Error("save cleanup defect"))),
         Cause.combine(
           Cause.fail(notWritten),
@@ -664,7 +831,31 @@ describe("Session live queries", () => {
       ]);
       expect(texts(yield* session.history)).toEqual(["first", "second"]);
 
-      yield* Scope.close(allocation, Exit.void);
+      const started = yield* Deferred.make<void>();
+      const cleaning = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      yield* Effect.forkChild(
+        session.run(
+          Effect.gen(function* () {
+            yield* Effect.addFinalizer(() =>
+              Deferred.succeed(cleaning, undefined).pipe(Effect.andThen(Deferred.await(gate))),
+            );
+            yield* Deferred.succeed(started, undefined);
+            return yield* Effect.never;
+          }),
+        ),
+      );
+      yield* Deferred.await(started);
+      const close = yield* Effect.forkChild(Scope.close(allocation, Exit.void), {
+        startImmediately: true,
+      });
+      yield* Deferred.await(cleaning);
+
+      expect(close.pollUnsafe()).toBeUndefined();
+      expect(yield* Effect.flip(session.history)).toBeInstanceOf(SessionReleasedError);
+      expect(yield* Effect.flip(succeeded.read)).toBeInstanceOf(SessionReleasedError);
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(close);
       expect(yield* Effect.flip(succeeded.read)).toBeInstanceOf(SessionReleasedError);
     }),
   );
@@ -682,7 +873,7 @@ describe("Session live queries", () => {
         Queue.take(observer).pipe(
           Effect.tap((observation) =>
             Effect.gen(function* () {
-              expect(observation).toMatchObject({ missed: 0, snapshot: { phase: "committed" } });
+              expect(observation).toMatchObject({ sequence: 0, snapshot: { phase: "committed" } });
               expect(texts(yield* session.history)).toEqual(["first", "second"]);
             }),
           ),
@@ -697,26 +888,36 @@ describe("Session live queries", () => {
 
       expect(saved).toHaveLength(5);
       expect((yield* session.turns).every((turn) => turn.phase === "committed")).toBe(true);
-      expect((yield* Queue.takeAll(idle)).map((o) => o.missed)).toEqual([0, 0]);
+      const ids = (yield* session.turns).map((turn) => turn.id);
+      // The idle observer kept the newest two; sequences 3 and 4 show it missed 0 to 2.
+      expect((yield* Queue.takeAll(idle)).map((o) => [o.sequence, o.snapshot.id])).toEqual([
+        [3, ids[3]],
+        [4, ids[4]],
+      ]);
     }),
   );
 
-  it.effect("signal observations a slow observer missed, including before its first read", () =>
+  it.effect("signal observations a slow observer missed without waiting for another Turn", () =>
     Effect.gen(function* () {
       const session = yield* makeSession({ persistence: "none" });
+      const tail = yield* session.observe(1);
       const observer = yield* session.observe(2);
-      for (let turn = 0; turn < 5; turn++) yield* session.run(stage(String(turn)));
-      const ids = (yield* session.turns).map((turn) => turn.id);
+      yield* session.run(stage("0"));
+      yield* session.run(stage("1"));
+      const [latest] = yield* Queue.takeAll(tail);
+      // Two Turns, capacity one: the delivered snapshot is the second, so one was missed.
+      expect(latest.sequence).toBe(1);
+      expect(latest.snapshot.id).toBe((yield* session.turns)[1]?.id);
+      expect(yield* Queue.size(tail)).toBe(0);
 
-      const first = yield* Queue.takeAll(observer);
-      expect(first.map((o) => [o.snapshot.id, o.missed])).toEqual([
-        [ids[0], 0],
-        [ids[1], 0],
+      for (let turn = 2; turn < 5; turn++) yield* session.run(stage(String(turn)));
+      const ids = (yield* session.turns).map((turn) => turn.id);
+      expect((yield* Queue.takeAll(observer)).map((o) => [o.sequence, o.snapshot.id])).toEqual([
+        [3, ids[3]],
+        [4, ids[4]],
       ]);
-      yield* session.run(stage("after gap"));
-      const [afterGap] = yield* Queue.takeAll(observer);
-      expect(afterGap.missed).toBe(3);
-      expect(afterGap.snapshot.id).toBe((yield* session.turns)[5]?.id);
+      yield* session.run(stage("5"));
+      expect((yield* Queue.takeAll(observer)).map((o) => o.sequence)).toEqual([5]);
 
       const invalid = yield* Effect.exit(Effect.scoped(session.observe(0)));
       expect(Exit.isFailure(invalid) && Cause.hasDies(invalid.cause)).toBe(true);

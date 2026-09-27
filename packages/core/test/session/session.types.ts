@@ -81,8 +81,13 @@ const outcome: Exit.Exit<Result, AppError | SessionReleasedError> = Effect.runSy
 ).exit;
 void outcome;
 
-// The ambient Turn exposes its owning Session.
-exact<typeof Turn.Service.session, Session<unknown>>(true);
+// The ambient Turn exposes its owning Session, keeping every error a Session can raise.
+exact<typeof Turn.Service.session, Session<Persistence>>(true);
+exact<
+  ReturnType<typeof Turn.Service.session.run<Result, AppError, Other | Turn | Scope.Scope>>,
+  Effect.Effect<Result, AppError | Boundary | Persistence, Other>
+>(true);
+exact<TurnObservation, { readonly snapshot: TurnSnapshot; readonly sequence: number }>(true);
 
 // Unrelated requirements stay required until the caller provides them.
 const provided: Effect.Effect<Result, AppError | Boundary> = direct.pipe(
@@ -112,7 +117,7 @@ const castOutcome: Exit.Exit<string, AppError | SessionReleasedError> = Effect.r
 ).exit;
 // @ts-expect-error Only a Session without persistence gives receipts for live outcomes.
 const persistedReceipt = persisted.runWithReceipt;
-// @ts-expect-error The ambient Session's run is not typed as never failing.
+// @ts-expect-error The ambient Session's run does not erase its persistence errors.
 const ambientRun: Effect.Effect<Result, AppError | Boundary, Other> = Turn.Service.session.run(
   application({ limit: 1 }),
 );
