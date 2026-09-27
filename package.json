@@ -50,6 +50,8 @@
     "@babel/cli": "7.29.7",
     "@babel/core": "7.29.7",
     "@changesets/cli": "3.0.1",
+    "@effect/sql-sqlite-bun": "4.0.0-rc.117",
+    "@effect/sql-sqlite-node": "4.0.0-rc.117",
     "@effect/tsgo": "0.36.5",
     "@oxlint/plugins": "1.80.0",
     "@types/bun": "catalog:",
@@ -64,5 +66,10 @@
   "engines": {
     "bun": ">=1.4.0"
   },
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.0",
+  "patchedDependencies": {
+    "effect@4.0.0-rc.117": "patches/effect@4.0.0-rc.117.patch",
+    "@effect/sql-sqlite-node@4.0.0-rc.117": "patches/@effect%2Fsql-sqlite-node@4.0.0-rc.117.patch",
+    "@effect/sql-sqlite-bun@4.0.0-rc.117": "patches/@effect%2Fsql-sqlite-bun@4.0.0-rc.117.patch"
+  }
 }

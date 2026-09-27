@@ -1,0 +1,449 @@
+diff --git a/dist/SqliteClient.d.ts b/dist/SqliteClient.d.ts
+index f75f40e9c619d7fef8e9e3a7fdfc4cc51781c861..42c78fe0191f39281d10e9d865ab41188d732ce0 100644
+--- a/dist/SqliteClient.d.ts
++++ b/dist/SqliteClient.d.ts
+@@ -95,4 +95,3 @@ export declare const layerConfig: (config: Config.Wrap<SqliteClientConfig>) => L
+  * @since 4.0.0
+  */
+ export declare const layer: (config: SqliteClientConfig) => Layer.Layer<SqliteClient | Client.SqlClient>;
+-//# sourceMappingURL=SqliteClient.d.ts.map
+\ No newline at end of file
+diff --git a/dist/SqliteClient.js b/dist/SqliteClient.js
+index 7be668cbd7d550d25b5be22e211e50dd7bb00883..a5425cc7dc6d91b07ef6e1780d632cb8346cd25f 100644
+--- a/dist/SqliteClient.js
++++ b/dist/SqliteClient.js
+@@ -14,12 +14,12 @@
+  *
+  * @since 4.0.0
+  */
++// TODO(development-only patch): SQLite failed-COMMIT connection cleanup backported onto rc.117 for private repository development and backend tests only; remove this patch once a qualified fixed upstream @effect/sql-sqlite-node release is consumed.
+ import * as Cache from "effect/Cache";
+ import * as Config from "effect/Config";
+ import * as Context from "effect/Context";
+ import * as Duration from "effect/Duration";
+ import * as Effect from "effect/Effect";
+-import * as Fiber from "effect/Fiber";
+ import { identity } from "effect/Function";
+ import * as Layer from "effect/Layer";
+ import * as Scope from "effect/Scope";
+@@ -45,168 +45,157 @@ export const TypeId = "~@effect/sql-sqlite-node/SqliteClient";
+  * @category services
+  * @since 4.0.0
+  */
+-export const SqliteClient = /*#__PURE__*/Context.Service("@effect/sql-sqlite-node/SqliteClient");
++export const SqliteClient = Context.Service("@effect/sql-sqlite-node/SqliteClient");
+ /**
+  * Creates a scoped node SQLite client from the supplied configuration, using a single serialized connection with WAL and a 5-second busy timeout enabled by default. Explicit transactions on writable connections take the write lock for their duration, even when they only read; clients opened with `readonly: true` are unaffected.
+  *
+  * @category constructors
+  * @since 4.0.0
+  */
+-export const make = options => Effect.gen(function* () {
+-  const compiler = Statement.makeCompilerSqlite(options.transformQueryNames);
+-  const transformRows = options.transformResultNames ? Statement.defaultTransforms(options.transformResultNames).array : undefined;
+-  const makeConnection = Effect.gen(function* () {
+-    const scope = yield* Effect.scope;
+-    const db = new DatabaseSync(options.filename, {
+-      readOnly: options.readonly ?? false,
+-      allowExtension: true
+-    });
+-    yield* Scope.addFinalizer(scope, Effect.sync(() => db.close()));
+-    db.enableLoadExtension(false);
+-    const busyTimeout = Math.min(MAX_BUSY_TIMEOUT, Math.max(0, Math.round(Duration.toMillis(options.busyTimeout ?? Duration.seconds(5)))));
+-    db.exec(`PRAGMA busy_timeout = ${busyTimeout}`);
+-    if (options.disableWAL !== true) {
+-      db.exec("PRAGMA journal_mode = WAL");
+-    }
+-    const prepare = sql => Effect.try({
+-      try: () => db.prepare(sql),
+-      catch: cause => new SqlError({
+-        reason: classifyError(cause, "Failed to prepare statement", "prepare")
+-      })
+-    });
+-    const prepareCache = yield* Cache.make({
+-      capacity: options.prepareCacheSize ?? 200,
+-      timeToLive: options.prepareCacheTTL ?? Duration.minutes(10),
+-      lookup: prepare
+-    });
+-    const runStatement = (statement, params, raw) => Effect.withFiber(fiber => {
+-      const useSafeIntegers = Context.get(fiber.context, Client.SafeIntegers);
+-      return Effect.try({
+-        try: () => {
+-          statement.setReadBigInts(useSafeIntegers);
+-          if (statement.columns().length > 0) {
+-            return statement.all(...params);
+-          }
+-          const result = statement.run(...params);
+-          return raw ? {
+-            changes: result.changes,
+-            lastInsertRowid: result.lastInsertRowid
+-          } : [];
+-        },
+-        catch: cause => new SqlError({
+-          reason: classifyError(cause, "Failed to execute statement", "execute")
+-        })
+-      });
+-    });
+-    const runStatementValues = (statement, params) => Effect.withFiber(fiber => {
+-      const useSafeIntegers = Context.get(fiber.context, Client.SafeIntegers);
+-      return Effect.try({
+-        try: () => {
+-          statement.setReadBigInts(useSafeIntegers);
+-          if (statement.columns().length > 0) {
+-            return statement.all(...params);
+-          }
+-          statement.run(...params);
+-          return [];
+-        },
+-        catch: cause => new SqlError({
+-          reason: classifyError(cause, "Failed to execute statement", "execute")
+-        })
+-      });
++export const make = (options) => Effect.gen(function* () {
++    const compiler = Statement.makeCompilerSqlite(options.transformQueryNames);
++    const transformRows = options.transformResultNames ?
++        Statement.defaultTransforms(options.transformResultNames).array :
++        undefined;
++    const makeConnection = Effect.gen(function* () {
++        const scope = yield* Effect.scope;
++        const db = new DatabaseSync(options.filename, {
++            readOnly: options.readonly ?? false,
++            allowExtension: true
++        });
++        yield* Scope.addFinalizer(scope, Effect.sync(() => db.close()));
++        db.enableLoadExtension(false);
++        const busyTimeout = Math.min(MAX_BUSY_TIMEOUT, Math.max(0, Math.round(Duration.toMillis(options.busyTimeout ?? Duration.seconds(5)))));
++        db.exec(`PRAGMA busy_timeout = ${busyTimeout}`);
++        if (options.disableWAL !== true) {
++            db.exec("PRAGMA journal_mode = WAL");
++        }
++        const prepare = (sql) => Effect.try({
++            try: () => db.prepare(sql),
++            catch: (cause) => new SqlError({ reason: classifyError(cause, "Failed to prepare statement", "prepare") })
++        });
++        const prepareCache = yield* Cache.make({
++            capacity: options.prepareCacheSize ?? 200,
++            timeToLive: options.prepareCacheTTL ?? Duration.minutes(10),
++            lookup: prepare
++        });
++        const runStatement = (statement, params, raw) => Effect.withFiber((fiber) => {
++            const useSafeIntegers = Context.get(fiber.context, Client.SafeIntegers);
++            return Effect.try({
++                try: () => {
++                    statement.setReadBigInts(useSafeIntegers);
++                    if (statement.columns().length > 0) {
++                        return statement.all(...params);
++                    }
++                    const result = statement.run(...params);
++                    return raw ? { changes: result.changes, lastInsertRowid: result.lastInsertRowid } : [];
++                },
++                catch: (cause) => new SqlError({ reason: classifyError(cause, "Failed to execute statement", "execute") })
++            });
++        });
++        const runStatementValues = (statement, params) => Effect.withFiber((fiber) => {
++            const useSafeIntegers = Context.get(fiber.context, Client.SafeIntegers);
++            return Effect.try({
++                try: () => {
++                    statement.setReadBigInts(useSafeIntegers);
++                    if (statement.columns().length > 0) {
++                        return statement.all(...params);
++                    }
++                    statement.run(...params);
++                    return [];
++                },
++                catch: (cause) => new SqlError({ reason: classifyError(cause, "Failed to execute statement", "execute") })
++            });
++        });
++        const runStatementValuesUnprepared = (statement, params) => Effect.withFiber((fiber) => {
++            const useSafeIntegers = Context.get(fiber.context, Client.SafeIntegers);
++            return Effect.try({
++                try: () => {
++                    statement.setReadBigInts(useSafeIntegers);
++                    statement.setReturnArrays(true);
++                    if (statement.columns().length > 0) {
++                        return statement.all(...params);
++                    }
++                    statement.run(...params);
++                    return [];
++                },
++                catch: (cause) => new SqlError({ reason: classifyError(cause, "Failed to execute statement", "execute") })
++            });
++        });
++        const run = (sql, params, raw = false) => Effect.flatMap(Cache.get(prepareCache, sql), (s) => runStatement(s, params, raw));
++        const runValues = (sql, params) => Effect.acquireUseRelease(Cache.get(prepareCache, sql), (statement) => {
++            statement.setReturnArrays(true);
++            return runStatementValues(statement, params);
++        }, (statement) => Effect.sync(() => statement.setReturnArrays(false)));
++        const runValuesUnprepared = (sql, params) => Effect.flatMap(prepare(sql), (statement) => runStatementValuesUnprepared(statement, params));
++        return identity({
++            isTransaction: () => db.isTransaction,
++            execute(sql, params, transformRows) {
++                return transformRows
++                    ? Effect.map(run(sql, params), transformRows)
++                    : run(sql, params);
++            },
++            executeRaw(sql, params) {
++                return run(sql, params, true);
++            },
++            executeValues(sql, params) {
++                return runValues(sql, params);
++            },
++            executeValuesUnprepared(sql, params) {
++                return runValuesUnprepared(sql, params);
++            },
++            executeUnprepared(sql, params, transformRows) {
++                const effect = Effect.flatMap(prepare(sql), (statement) => runStatement(statement, params ?? [], false));
++                return transformRows ? Effect.map(effect, transformRows) : effect;
++            },
++            executeStream(_sql, _params) {
++                return Stream.die("executeStream not implemented");
++            },
++            backup(destination) {
++                return Effect.suspend(() => {
++                    let totalPages = 0;
++                    return Effect.tryPromise({
++                        try: () => backupDatabase(db, destination, {
++                            progress: (progress) => {
++                                totalPages = progress.totalPages;
++                            }
++                        }).then((pages) => ({ totalPages: totalPages || pages, remainingPages: 0 })),
++                        catch: (cause) => new SqlError({ reason: classifyError(cause, "Failed to backup database", "backup") })
++                    });
++                });
++            },
++            loadExtension(path) {
++                return Effect.acquireUseRelease(Effect.sync(() => db.enableLoadExtension(true)), () => Effect.try({
++                    try: () => db.loadExtension(path),
++                    catch: (cause) => new SqlError({ reason: classifyError(cause, "Failed to load extension", "loadExtension") })
++                }), () => Effect.sync(() => db.enableLoadExtension(false)));
++            }
++        });
+     });
+-    const runStatementValuesUnprepared = (statement, params) => Effect.withFiber(fiber => {
+-      const useSafeIntegers = Context.get(fiber.context, Client.SafeIntegers);
+-      return Effect.try({
+-        try: () => {
+-          statement.setReadBigInts(useSafeIntegers);
+-          statement.setReturnArrays(true);
+-          if (statement.columns().length > 0) {
+-            return statement.all(...params);
+-          }
+-          statement.run(...params);
+-          return [];
+-        },
+-        catch: cause => new SqlError({
+-          reason: classifyError(cause, "Failed to execute statement", "execute")
+-        })
+-      });
++    const connection = yield* makeConnection;
++    const { acquirer, onCommitFailure, transactionAcquirer } = Client.makeSqliteAcquirers({
++        connection: Effect.succeed(connection),
++        semaphore: yield* Semaphore.make(1),
++        isTransaction: (conn) => conn.isTransaction()
+     });
+-    const run = (sql, params, raw = false) => Effect.flatMap(Cache.get(prepareCache, sql), s => runStatement(s, params, raw));
+-    const runValues = (sql, params) => Effect.acquireUseRelease(Cache.get(prepareCache, sql), statement => {
+-      statement.setReturnArrays(true);
+-      return runStatementValues(statement, params);
+-    }, statement => Effect.sync(() => statement.setReturnArrays(false)));
+-    const runValuesUnprepared = (sql, params) => Effect.flatMap(prepare(sql), statement => runStatementValuesUnprepared(statement, params));
+-    return identity({
+-      execute(sql, params, transformRows) {
+-        return transformRows ? Effect.map(run(sql, params), transformRows) : run(sql, params);
+-      },
+-      executeRaw(sql, params) {
+-        return run(sql, params, true);
+-      },
+-      executeValues(sql, params) {
+-        return runValues(sql, params);
+-      },
+-      executeValuesUnprepared(sql, params) {
+-        return runValuesUnprepared(sql, params);
+-      },
+-      executeUnprepared(sql, params, transformRows) {
+-        const effect = Effect.flatMap(prepare(sql), statement => runStatement(statement, params ?? [], false));
+-        return transformRows ? Effect.map(effect, transformRows) : effect;
+-      },
+-      executeStream(_sql, _params) {
+-        return Stream.die("executeStream not implemented");
+-      },
+-      backup(destination) {
+-        return Effect.suspend(() => {
+-          let totalPages = 0;
+-          return Effect.tryPromise({
+-            try: () => backupDatabase(db, destination, {
+-              progress: progress => {
+-                totalPages = progress.totalPages;
+-              }
+-            }).then(pages => ({
+-              totalPages: totalPages || pages,
+-              remainingPages: 0
+-            })),
+-            catch: cause => new SqlError({
+-              reason: classifyError(cause, "Failed to backup database", "backup")
+-            })
+-          });
+-        });
+-      },
+-      loadExtension(path) {
+-        return Effect.acquireUseRelease(Effect.sync(() => db.enableLoadExtension(true)), () => Effect.try({
+-          try: () => db.loadExtension(path),
+-          catch: cause => new SqlError({
+-            reason: classifyError(cause, "Failed to load extension", "loadExtension")
+-          })
+-        }), () => Effect.sync(() => db.enableLoadExtension(false)));
+-      }
++    return Object.assign((yield* Client.make({
++        acquirer,
++        compiler,
++        transactionAcquirer,
++        onCommitFailure,
++        releaseSavepoint: (name) => `RELEASE SAVEPOINT ${name}`,
++        beginTransaction: options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
++        spanAttributes: [
++            ...(options.spanAttributes ? Object.entries(options.spanAttributes) : []),
++            [ATTR_DB_SYSTEM_NAME, "sqlite"]
++        ],
++        transformRows
++    })), {
++        [TypeId]: TypeId,
++        config: options,
++        backup: (destination) => Effect.flatMap(acquirer, (_) => _.backup(destination)),
++        loadExtension: (path) => Effect.flatMap(acquirer, (_) => _.loadExtension(path))
+     });
+-  });
+-  const semaphore = yield* Semaphore.make(1);
+-  const connection = yield* makeConnection;
+-  const acquirer = semaphore.withPermits(1)(Effect.succeed(connection));
+-  const transactionAcquirer = Effect.uninterruptibleMask(restore => {
+-    const fiber = Fiber.getCurrent();
+-    const scope = Context.getUnsafe(fiber.context, Scope.Scope);
+-    return Effect.as(Effect.tap(restore(semaphore.take(1)), () => Scope.addFinalizer(scope, semaphore.release(1))), connection);
+-  });
+-  return Object.assign(yield* Client.make({
+-    acquirer,
+-    compiler,
+-    transactionAcquirer,
+-    releaseSavepoint: name => `RELEASE SAVEPOINT ${name}`,
+-    beginTransaction: options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
+-    spanAttributes: [...(options.spanAttributes ? Object.entries(options.spanAttributes) : []), [ATTR_DB_SYSTEM_NAME, "sqlite"]],
+-    transformRows
+-  }), {
+-    [TypeId]: TypeId,
+-    config: options,
+-    backup: destination => Effect.flatMap(acquirer, _ => _.backup(destination)),
+-    loadExtension: path => Effect.flatMap(acquirer, _ => _.loadExtension(path))
+-  });
+ });
+ /**
+  * Builds a layer from an Effect `Config` value, providing both the node `SqliteClient` service and the generic `SqlClient` service.
+@@ -214,29 +203,23 @@ export const make = options => Effect.gen(function* () {
+  * @category layers
+  * @since 4.0.0
+  */
+-export const layerConfig = config => Layer.effectContext(Config.unwrap(config).pipe(Effect.flatMap(make), Effect.map(client => Context.make(SqliteClient, client).pipe(Context.add(Client.SqlClient, client))))).pipe(Layer.provide(Reactivity.layer));
++export const layerConfig = (config) => Layer.effectContext(Config.unwrap(config).pipe(Effect.flatMap(make), Effect.map((client) => Context.make(SqliteClient, client).pipe(Context.add(Client.SqlClient, client))))).pipe(Layer.provide(Reactivity.layer));
+ /**
+  * Builds a layer from a node SQLite client configuration, providing both `SqliteClient` and the generic `SqlClient` service.
+  *
+  * @category layers
+  * @since 4.0.0
+  */
+-export const layer = config => Layer.effectContext(Effect.map(make(config), client => Context.make(SqliteClient, client).pipe(Context.add(Client.SqlClient, client)))).pipe(Layer.provide(Reactivity.layer));
++export const layer = (config) => Layer.effectContext(Effect.map(make(config), (client) => Context.make(SqliteClient, client).pipe(Context.add(Client.SqlClient, client)))).pipe(Layer.provide(Reactivity.layer));
+ // internal
+-const classifyError = (cause, message, operation) => classifySqliteError(sqliteCauseWithErrno(cause), {
+-  message,
+-  operation
+-});
+-const sqliteCauseWithErrno = cause => {
+-  if (typeof cause !== "object" || cause === null || !("errcode" in cause) || "errno" in cause) {
+-    return cause;
+-  }
+-  const errcode = cause.errcode;
+-  if (typeof errcode !== "number") {
+-    return cause;
+-  }
+-  return Object.assign(cause, {
+-    errno: errcode
+-  });
++const classifyError = (cause, message, operation) => classifySqliteError(sqliteCauseWithErrno(cause), { message, operation });
++const sqliteCauseWithErrno = (cause) => {
++    if (typeof cause !== "object" || cause === null || !("errcode" in cause) || "errno" in cause) {
++        return cause;
++    }
++    const errcode = cause.errcode;
++    if (typeof errcode !== "number") {
++        return cause;
++    }
++    return Object.assign(cause, { errno: errcode });
+ };
+-//# sourceMappingURL=SqliteClient.js.map
+\ No newline at end of file
+diff --git a/src/SqliteClient.ts b/src/SqliteClient.ts
+index 7d49914a978a11e56706709b29415ebae7552bf8..1603e495d35afab687c8c84a4931b4e10eb9503c 100644
+--- a/src/SqliteClient.ts
++++ b/src/SqliteClient.ts
+@@ -14,12 +14,12 @@
+  *
+  * @since 4.0.0
+  */
++// TODO(development-only patch): SQLite failed-COMMIT connection cleanup backported onto rc.117 for private repository development and backend tests only; remove this patch once a qualified fixed upstream @effect/sql-sqlite-node release is consumed.
+ import * as Cache from "effect/Cache"
+ import * as Config from "effect/Config"
+ import * as Context from "effect/Context"
+ import * as Duration from "effect/Duration"
+ import * as Effect from "effect/Effect"
+-import * as Fiber from "effect/Fiber"
+ import { identity } from "effect/Function"
+ import * as Layer from "effect/Layer"
+ import * as Scope from "effect/Scope"
+@@ -112,6 +112,7 @@ export interface SqliteClientConfig {
+ }
+ 
+ interface SqliteConnection extends Connection {
++  readonly isTransaction: () => boolean
+   readonly backup: (destination: string) => Effect.Effect<BackupMetadata, SqlError>
+   readonly loadExtension: (path: string) => Effect.Effect<void, SqlError>
+ }
+@@ -251,6 +252,7 @@ export const make = (
+       ) => Effect.flatMap(prepare(sql), (statement) => runStatementValuesUnprepared(statement, params))
+ 
+       return identity<SqliteConnection>({
++        isTransaction: () => db.isTransaction,
+         execute(sql, params, transformRows) {
+           return transformRows
+             ? Effect.map(run(sql, params), transformRows)
+@@ -301,20 +303,11 @@ export const make = (
+       })
+     })
+ 
+-    const semaphore = yield* Semaphore.make(1)
+     const connection = yield* makeConnection
+-
+-    const acquirer = semaphore.withPermits(1)(Effect.succeed(connection))
+-    const transactionAcquirer = Effect.uninterruptibleMask((restore) => {
+-      const fiber = Fiber.getCurrent()!
+-      const scope = Context.getUnsafe(fiber.context, Scope.Scope)
+-      return Effect.as(
+-        Effect.tap(
+-          restore(semaphore.take(1)),
+-          () => Scope.addFinalizer(scope, semaphore.release(1))
+-        ),
+-        connection
+-      )
++    const { acquirer, onCommitFailure, transactionAcquirer } = Client.makeSqliteAcquirers({
++      connection: Effect.succeed(connection),
++      semaphore: yield* Semaphore.make(1),
++      isTransaction: (conn) => conn.isTransaction()
+     })
+ 
+     return Object.assign(
+@@ -322,6 +315,7 @@ export const make = (
+         acquirer,
+         compiler,
+         transactionAcquirer,
++        onCommitFailure,
+         releaseSavepoint: (name) => `RELEASE SAVEPOINT ${name}`,
+         beginTransaction: options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
+         spanAttributes: [

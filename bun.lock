@@ -12,6 +12,8 @@
         "@babel/cli": "7.29.7",
         "@babel/core": "7.29.7",
         "@changesets/cli": "3.0.1",
+        "@effect/sql-sqlite-bun": "4.0.0-rc.117",
+        "@effect/sql-sqlite-node": "4.0.0-rc.117",
         "@effect/tsgo": "0.36.5",
         "@oxlint/plugins": "1.80.0",
         "@types/bun": "catalog:",
@@ -241,6 +243,11 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@effect/sql-sqlite-bun@4.0.0-rc.117": "patches/@effect%2Fsql-sqlite-bun@4.0.0-rc.117.patch",
+    "@effect/sql-sqlite-node@4.0.0-rc.117": "patches/@effect%2Fsql-sqlite-node@4.0.0-rc.117.patch",
+    "effect@4.0.0-rc.117": "patches/effect@4.0.0-rc.117.patch",
+  },
   "catalog": {
     "@effect/ai-openai": "4.0.0-rc.117",
     "@effect/ai-openai-compat": "4.0.0-rc.117",
@@ -382,6 +389,10 @@
     "@effect/platform-bun": ["@effect/platform-bun@4.0.0-rc.117", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.117" }, "peerDependencies": { "effect": "^4.0.0-rc.117" } }, "sha512-jyvoxPjT9562z5Tc2gib9GB16jcgh43jhpsuNQxs9B8WJ7RB2doPBQdrYLSSWRodGPLJBKJGzToRRbJiaGblsw=="],
 
     "@effect/platform-node-shared": ["@effect/platform-node-shared@4.0.0-rc.117", "", { "dependencies": { "@types/ws": "^8.18.1", "ws": "^8.21.3" }, "peerDependencies": { "effect": "^4.0.0-rc.117" } }, "sha512-GyRkEfLBG49MwJe+/XDPiXYcQ44RA9p2z0AurlsWhR1cd1PqOUMEZU1pORL+/R5hR8aH6ZuqoJYD8lAc6h+wlA=="],
+
+    "@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.0-rc.117", "", { "peerDependencies": { "effect": "^4.0.0-rc.117" } }, "sha512-UjgkEmR+s5Rc870sDsDzu/8AA5KQqcBeq5qgH6AFe5OYfv3GCMfoQTkIvnl+Q3M5KaZosYgwwEy9uij/J2HOJw=="],
+
+    "@effect/sql-sqlite-node": ["@effect/sql-sqlite-node@4.0.0-rc.117", "", { "peerDependencies": { "effect": "^4.0.0-rc.117" } }, "sha512-/u0ShTwVKltYZPpulckLV6ZUkMjSr/Kc+bpipX1Ac/OyLtZH6ScOL2AeBTLDiIq5ATnvXABzFSheydzoudBxgQ=="],
 
     "@effect/tsgo": ["@effect/tsgo@0.36.5", "", { "optionalDependencies": { "@effect/tsgo-darwin-arm64": "0.36.5", "@effect/tsgo-darwin-x64": "0.36.5", "@effect/tsgo-linux-arm": "0.36.5", "@effect/tsgo-linux-arm64": "0.36.5", "@effect/tsgo-linux-x64": "0.36.5", "@effect/tsgo-win32-arm64": "0.36.5", "@effect/tsgo-win32-x64": "0.36.5" }, "bin": { "effect-tsgo": "dist/effect-tsgo.cjs" } }, "sha512-BHxVjeRK1/XlqYHWXkbT4W9JpOrT3sNA2wrfwQPBTojD5OSyxI2TUIltobYhWudyfuCrn770qP6uOpDjdrmghA=="],
 
