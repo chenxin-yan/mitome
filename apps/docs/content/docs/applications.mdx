@@ -80,6 +80,25 @@ Selection is explicit and lazy. Nothing is provisioned until acquisition.
 
 Closing the owning Scope or calling `application.shutdown` closes admission, interrupts serving Hosts, active Turns and provided work together, waits for all of their cleanup and only then releases the Model binding and the infrastructure. Shutdown is idempotent and waits as long as cleanup takes; the library never exits the process. Bounding that wait is the embedding application's choice: `acquire({ onShutdown })` runs an Effect when shutdown begins, including the unwind of a failed startup, so the embedding can start its own deadline. The CLI applies a grace this way (see [CLI](/docs/cli)).
 
+## Approvals in the terminal
+
+A Tool whose `needsApproval` (or `policy`) asks is dispatched only with consent. `makeApprovals` allocates a process-local Approval channel: its `consent` is an ordinary `consent` callback for `step` or `loop`, and declaring its decision side as `cli.approvals` grants it to `mitome tui`. Allocate it once in the infrastructure, so the program and the terminal share it.
+
+```ts
+import { type Approvals, makeApprovals } from "@mitome/core";
+
+class Channel extends Context.Service<Channel, Approvals>()("app/Approvals") {}
+
+// in the program: yield* loop({ tools, consent: (yield* Channel).consent })
+export default defineMitome({
+  // ...
+  infrastructure: Layer.mergeAll(toolsLayer, Layer.effect(Channel, makeApprovals)),
+  cli: { parseInput, renderResult, approvals: Channel },
+});
+```
+
+Each pending request carries its Turn id, Tool-call id, Tool name and the once-decoded parameters the handler receives, and its own one-use `decide`. A second decision, or one made after the Turn was interrupted, is `stale` and changes nothing; knowing an id decides nothing. Approval grants consent only: a supplied `authority` check still runs before dispatch. Granting the channel to the terminal is this process's only authorization; it is no isolation from other code in the same process.
+
 ## Serving Hosts
 
 A Host is `{ name, start }`. `start(application)` acquires the Host's resources and returns its long-lived serving Effect. If a serving Effect fails after readiness, the failure is logged with the Host's name; the Host is not restarted, and other Hosts and Sessions keep running.

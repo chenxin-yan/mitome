@@ -4,11 +4,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { afterAll, beforeEach, describe, expect, it } from "@effect/vitest";
-import { Effect, Exit, Layer, Predicate, Sink, Stdio, Stream } from "effect";
+import { Cause, Effect, Exit, Fiber, Layer, Predicate, Sink, Stdio, Stream } from "effect";
 import { TestConsole } from "effect/testing";
 import { CliOutput } from "effect/cli";
 import cliPackage from "../package.json" with { type: "json" };
 
+import { loadApplication } from "../src/application.ts";
 import { runCli } from "../src/index.ts";
 
 const fixture = fileURLToPath(new URL("fixtures/app.ts", import.meta.url));
@@ -79,7 +80,7 @@ describe("mitome command", () => {
     Effect.gen(function* () {
       const help = yield* cli(["--help"]);
       expect(Exit.isSuccess(help.exit)).toBe(true);
-      for (const name of ["run", "providers", "auth"]) expect(help.logs).toContain(name);
+      for (const name of ["run", "tui", "providers", "auth"]) expect(help.logs).toContain(name);
 
       const version = yield* cli(["--version"]);
       expect(Exit.isSuccess(version.exit)).toBe(true);
@@ -90,6 +91,35 @@ describe("mitome command", () => {
   it.effect("rejects unknown flags and a missing --app with native parse errors", () =>
     Effect.gen(function* () {
       for (const args of [["--unknown"], ["run", "hello"], ["providers"]]) {
+        const result = yield* cli(args);
+        expect(Exit.isFailure(result.exit)).toBe(true);
+        expect(result.errors).toContain("ERROR");
+      }
+      expect(yield* events).toEqual([]);
+    }),
+  );
+});
+
+describe("mitome tui", () => {
+  it.effect("needs a terminal on stdin and stdout and loads nothing otherwise", () =>
+    Effect.gen(function* () {
+      for (const terminal of [false, true]) {
+        // The test Stdio reports a non-terminal stdout either way.
+        const result = yield* cli(["tui", "--app", fixture], { terminal });
+        expect(Exit.isFailure(result.exit)).toBe(true);
+        expect(result.errors).toContain("mitome tui needs a terminal on standard input and output");
+        expect(result.stdout).toBe("");
+      }
+      expect(yield* events).toEqual([]);
+    }),
+  );
+
+  it.effect("has no attachment or initial-input options", () =>
+    Effect.gen(function* () {
+      for (const args of [
+        ["tui", "--app", fixture, "--attach", "http://localhost"],
+        ["tui", "--app", fixture, "hello"],
+      ]) {
         const result = yield* cli(args);
         expect(Exit.isFailure(result.exit)).toBe(true);
         expect(result.errors).toContain("ERROR");
@@ -234,6 +264,72 @@ describe("mitome run", () => {
         expect(Exit.isFailure(result.exit)).toBe(true);
         expect(result.errors).toContain(message);
       }
+    }),
+  );
+});
+
+describe("the loaded Approval channel", () => {
+  const write = (name: string, source: string) =>
+    Effect.promise(async () => {
+      const path = join(directory, name);
+      await writeFile(path, source);
+      return path;
+    });
+  const overriding = (approvals: string) =>
+    `import { Effect } from "effect";\nimport app from ${JSON.stringify(fixture)};\nexport default { ...app, cli: { ...app.cli, approvals: ${approvals} } };\n`;
+
+  it.live("keeps each request's identity and checks decisions and shapes at the boundary", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const app = yield* loadApplication(fixture);
+        const runtime = yield* app.acquire({});
+        const session = yield* runtime.session;
+        const channel = yield* runtime.provide(app.cli!.approvals!);
+        expect(yield* channel.pending).toEqual([]);
+        const turn = yield* Effect.forkChild(session.run("charge"));
+        let pending = yield* channel.pending;
+        while (pending.length === 0) {
+          yield* Effect.sleep(5);
+          pending = yield* channel.pending;
+        }
+        const [request] = pending;
+        expect((yield* channel.pending)[0]).toBe(request);
+        expect({ ...request, decide: undefined }).toMatchObject({
+          toolCallId: "call-1",
+          name: "charge",
+          params: { cents: 250 },
+        });
+        expect(yield* request!.decide("approve")).toBe("accepted");
+        expect(yield* request!.decide("deny")).toBe("stale");
+        expect(yield* Fiber.join(turn)).toMatchObject({ text: "echo: charged" });
+
+        const malformed = yield* loadApplication(
+          yield* write(
+            "malformed-approvals.ts",
+            overriding("Effect.succeed({ pending: Effect.succeed([{ toolCallId: 1 }]) })"),
+          ),
+        );
+        const broken = yield* (yield* malformed.acquire({})).provide(malformed.cli!.approvals!);
+        const exit = yield* Effect.exit(broken.pending);
+        expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
+
+        const notChannel = yield* loadApplication(
+          yield* write("not-a-channel.ts", overriding("Effect.succeed({})")),
+        );
+        const refused = yield* Effect.exit(
+          (yield* notChannel.acquire({})).provide(notChannel.cli!.approvals!),
+        );
+        expect(Exit.isFailure(refused)).toBe(true);
+      }),
+    ),
+  );
+
+  it.effect("rejects an approvals export that is not an Effect when loading", () =>
+    Effect.gen(function* () {
+      const path = yield* write("approvals-not-effect.ts", overriding("() => undefined"));
+      const result = yield* cli(["run", "--app", path, "hi"]);
+      expect(Exit.isFailure(result.exit)).toBe(true);
+      expect(result.errors).toContain("is not a mitome/1 application");
     }),
   );
 });
