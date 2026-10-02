@@ -5,7 +5,7 @@
  */
 
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai";
-import { makeProvider } from "@mitome/core";
+import { makeProvider, withModelRequestAccounting } from "@mitome/core";
 import { apiKeyClientLayer } from "../shared/api-key-client.js";
 import { transportLayer } from "./transport.js";
 import { knownModelIds, knownModelMetadata } from "./models.js";
@@ -31,7 +31,13 @@ export const openai = (options: OpenAiOptions = {}) => {
     "openai",
     knownModelIds,
     apiKeyEnv,
-    (model) => transportLayer(options.transport, OpenAiLanguageModel.layer({ model }), client),
+    // Controlled generation uses the Responses HTTP endpoint in both transports, including the
+    // native non-incremental fallback in WebSocket mode; the client reports each request.
+    (model) =>
+      withModelRequestAccounting(
+        "openai",
+        transportLayer(options.transport, OpenAiLanguageModel.layer({ model }), client),
+      ),
     knownModelMetadata,
   );
 };

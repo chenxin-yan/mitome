@@ -1,19 +1,30 @@
 import { OpenAiClient } from "@effect/ai-openai";
-import { Layer, Result, Schema } from "effect";
-import { LanguageModel } from "effect/unstable/ai";
-import { Socket } from "effect/unstable/socket";
+import { Layer, Predicate, Result, Schema } from "effect";
+import { LanguageModel } from "effect/ai";
+import { Socket } from "effect/socket";
 
 const NodeProcess = Schema.Struct({ versions: Schema.Struct({ node: Schema.String }) });
+
+// Effect's `Socket.layerWebSocketConstructorGlobal` rejects constructor options, but the
+// Node and Bun globals accept the handshake `headers` option carrying Authorization.
+const webSocketConstructor = Layer.succeed(Socket.WebSocketConstructor)((url, options) =>
+  options === undefined || Predicate.isString(options) || Array.isArray(options)
+    ? new globalThis.WebSocket(url, options)
+    : new globalThis.WebSocket(
+        url,
+        options.headers === undefined ? {} : { headers: options.headers },
+      ),
+);
 
 /**
  * Wires the Responses transport for a provisioned language-model Layer:
  * WebSocket by default on Bun/Node server runtimes, HTTP elsewhere.
  */
-export const transportLayer = (
+export const transportLayer = <E>(
   transport: "http" | "websocket" | undefined,
   languageModel: Layer.Layer<LanguageModel.LanguageModel, never, OpenAiClient.OpenAiClient>,
-  client: Layer.Layer<OpenAiClient.OpenAiClient, unknown>,
-): Layer.Layer<LanguageModel.LanguageModel, unknown> => {
+  client: Layer.Layer<OpenAiClient.OpenAiClient, E>,
+): Layer.Layer<LanguageModel.LanguageModel, E> => {
   const supportsWebSocketHeaders =
     "Bun" in globalThis ||
     Result.isSuccess(Schema.decodeUnknownResult(NodeProcess)(globalThis.process));
@@ -24,9 +35,7 @@ export const transportLayer = (
   return selected === "websocket"
     ? Layer.merge(languageModel, OpenAiClient.layerWebSocketMode).pipe(
         Layer.provide(client),
-        // Node and Bun accept the non-standard constructor options used for
-        // Authorization headers; standards-only edge constructors do not.
-        Layer.provide(Socket.layerWebSocketConstructorGlobal),
+        Layer.provide(webSocketConstructor),
       )
     : languageModel.pipe(Layer.provide(client));
 };

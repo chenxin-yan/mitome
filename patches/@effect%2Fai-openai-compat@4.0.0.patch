@@ -1,0 +1,41 @@
+diff --git a/dist/OpenAiLanguageModel.js b/dist/OpenAiLanguageModel.js
+index 85198f9..d5f5aaf 100644
+--- a/dist/OpenAiLanguageModel.js
++++ b/dist/OpenAiLanguageModel.js
+@@ -915,11 +915,12 @@ const transformToolCallParams = /*#__PURE__*/Effect.fnUntraced(function* (tools,
+   if (Tool.isDynamic(tool) && tool.jsonSchema !== undefined) {
+     return toolParams;
+   }
++  // TODO(mitome): development-only patch; remove once a qualified fixed release normalizes strict-wire tool parameters without running the application parameter codec.
+   const {
+     codec
+-  } = yield* tryCodecTransform(tool.parametersSchema, "makeResponse");
++  } = yield* tryCodecTransform(Schema.toEncoded(tool.parametersSchema), "makeResponse");
+   // Normalize valid parameters; leave invalid ones for Toolkit.
+-  return yield* Schema.decodeEffect(codec)(toolParams).pipe(Effect.flatMap(decoded => Schema.encodeUnknownEffect(tool.parametersSchema)(decoded)), Effect.orElseSucceed(() => toolParams));
++  return yield* Schema.decodeEffect(codec)(toolParams).pipe(Effect.orElseSucceed(() => toolParams));
+ });
+ const prepareTools = /*#__PURE__*/Effect.fnUntraced(function* ({
+   config,
+diff --git a/src/OpenAiLanguageModel.ts b/src/OpenAiLanguageModel.ts
+index 8348fdf..2a63fb2 100644
+--- a/src/OpenAiLanguageModel.ts
++++ b/src/OpenAiLanguageModel.ts
+@@ -1545,15 +1545,13 @@ const transformToolCallParams = Effect.fnUntraced(function*<Tools extends Readon
+     return toolParams
+   }
+ 
+-  const { codec } = yield* tryCodecTransform(tool.parametersSchema, "makeResponse")
++  // TODO(mitome): development-only patch; remove once a qualified fixed release normalizes strict-wire tool parameters without running the application parameter codec.
++  const { codec } = yield* tryCodecTransform(Schema.toEncoded(tool.parametersSchema), "makeResponse")
+ 
+   // Normalize valid parameters; leave invalid ones for Toolkit.
+   return yield* (
+     Schema.decodeEffect(codec)(toolParams) as Effect.Effect<unknown, Schema.SchemaError>
+   ).pipe(
+-    Effect.flatMap((decoded) =>
+-      Schema.encodeUnknownEffect(tool.parametersSchema)(decoded) as Effect.Effect<unknown, Schema.SchemaError>
+-    ),
+     Effect.orElseSucceed(() => toolParams)
+   )
+ })

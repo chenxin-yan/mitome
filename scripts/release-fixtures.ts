@@ -125,7 +125,7 @@ try {
     if (/"(?:catalog|workspace):/.test(JSON.stringify(manifest))) {
       throw new Error(`${name} tarball retains a workspace-only dependency protocol.`);
     }
-    if (["core", "sdk", "providers", "channels"].includes(name)) {
+    if (["core", "providers"].includes(name)) {
       if (manifest.dependencies?.effect !== effectVersion) {
         throw new Error(`${name} tarball does not install exact Effect ${effectVersion}.`);
       }
@@ -138,9 +138,7 @@ try {
     [
       consumerDirectory,
       join(nodeModules, "@mitome", "core"),
-      join(nodeModules, "@mitome", "sdk"),
       join(nodeModules, "@mitome", "providers"),
-      join(nodeModules, "@mitome", "channels"),
       join(nodeModules, "@effect", "ai-openai"),
       join(nodeModules, "@effect", "ai-openai-compat"),
     ].map((directory) => Bun.resolveSync("effect/package.json", directory)),
@@ -167,43 +165,44 @@ try {
   await writeFile(
     join(consumerDirectory, "smoke.ts"),
     `import { Effect, Layer, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
-import * as core from "@mitome/core";
-import { createSession, makeProvider } from "@mitome/core";
-import { defineAgent, withSession } from "@mitome/sdk";
-import * as sdkEffect from "@mitome/sdk/effect";
+import { LanguageModel, Prompt } from "effect/ai";
+import {
+  firstPartyExecutionLimits,
+  loop,
+  makeProvider,
+  makeSession,
+  providerModel,
+  Turn,
+  withModelRequestAccounting,
+} from "@mitome/core";
 import { openai } from "@mitome/providers/openai";
 import { openaiCompatible } from "@mitome/providers/openai-compatible";
 import { codex } from "@mitome/providers/openai-codex";
-import { bearer, http } from "@mitome/channels/http";
-import { instructions } from "@mitome/sdk/extensions";
 
-if (sdkEffect.createSession !== core.createSession) throw new Error("SDK Effect facade duplicated the Core runtime.");
 if (openai().id !== "openai" || codex().id !== "openai-codex") throw new Error("Official Provider packages were not installed.");
 if (openaiCompatible({ id: "local", baseUrl: "http://localhost" }).id !== "local") throw new Error("OpenAI-compatible package was not installed.");
-const channel = http({ auth: bearer({ secret: "owner" }), routes: core.memoryRoutes() });
-if (channel.kind !== "channel" || channel.name !== "http" || channel.handle === undefined) throw new Error("HTTP Channel package was not installed.");
-// Built through the real published LanguageModel.make constructor; generateText is unused here.
-const provider = makeProvider("fixture", [] as const, undefined, () => Layer.effect(LanguageModel.LanguageModel, LanguageModel.make({
-  streamText: () => Stream.succeed(Response.makePart("text-delta", { id: "fixture", delta: "ok" })),
-  generateText: () => Effect.die("generateText is not used by this smoke"),
-})));
-const definition = defineAgent({
-  providers: [provider] as const,
-  model: "fixture/default",
-  extensions: [instructions("Release fixture")],
-});
-await Effect.runPromise(
-  Effect.scoped(Effect.as(createSession(definition), undefined)),
+// Built through the real published LanguageModel.make constructor; streamText is unused here.
+const provider = makeProvider("fixture", [] as const, undefined, () => withModelRequestAccounting("fixture", Layer.effect(LanguageModel.LanguageModel, LanguageModel.make({
+  generateText: () => Effect.succeed([{ type: "text", text: "ok" }]),
+  streamText: () => Stream.die(new Error("streamText is not used by this smoke")),
+}))));
+const text = await Effect.runPromise(
+  Effect.scoped(
+    Effect.gen(function* () {
+      const session = yield* makeSession({ persistence: "none", limits: firstPartyExecutionLimits });
+      const text = yield* session.run(
+        Effect.gen(function* () {
+          const turn = yield* Turn;
+          yield* turn.stage(Prompt.userMessage({ content: [Prompt.textPart({ text: "hello" })] }));
+          return (yield* loop()).response.text;
+        }),
+      );
+      if ((yield* session.history).length !== 2) throw new Error("Turn did not commit its conversation.");
+      return text;
+    }),
+  ).pipe(Effect.provide(providerModel(provider, "default"))),
 );
-if (definition.providers[0] !== provider) throw new Error("SDK wrapped the canonical Core Provider.");
-if (definition.extensions[0]?.instructions !== "Release fixture") throw new Error("SDK extensions subpath was not installed.");
-const events = await withSession(definition, async (session) => {
-  const values = [];
-  for await (const event of session.runTurn("hello", { model: "fixture/override" })) values.push(event);
-  return values;
-});
-if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke did not complete.");
+if (text !== "ok") throw new Error("Session smoke did not complete.");
 `,
   );
   // Typechecking the consumer against the packed declarations is the leak gate:
@@ -212,26 +211,21 @@ if (events.at(-1)?.type !== "response-complete") throw new Error("Session smoke 
   await run([process.execPath, "smoke.ts"], consumerDirectory);
   const createdDirectory = join(temporaryDirectory, "created-agent");
   await mkdir(createdDirectory);
-  await run(["node", join(nodeModules, ".bin", "create-mitome")], createdDirectory, "1\n1\n2\n");
+  await run(["node", join(nodeModules, ".bin", "create-mitome")], createdDirectory, "1\n1\n");
   const createdPackage = await Bun.file(join(createdDirectory, "package.json")).json();
   if (
-    Object.keys(createdPackage.dependencies).join(",") !== "@mitome/providers,@mitome/sdk,effect" ||
+    Object.keys(createdPackage.dependencies).join(",") !==
+      "@mitome/core,@mitome/providers,effect" ||
     createdPackage.dependencies.effect !== effectVersion
   ) {
     throw new Error("create-mitome generated unexpected Effect dependencies.");
   }
-  if (!(await Bun.file(join(createdDirectory, "instructions.md")).exists())) {
-    throw new Error("create-mitome did not generate instructions.md.");
-  }
-  const createdDefinition = await Bun.file(join(createdDirectory, "index.ts")).text();
-  if (!createdDefinition.includes("instructionFiles")) {
-    throw new Error("create-mitome did not load instructions.md through @mitome/sdk/extensions.");
-  }
+  const createdProgram = await Bun.file(join(createdDirectory, "index.ts")).text();
   if (
-    !createdDefinition.includes("providers: [openai()]") ||
-    !createdDefinition.includes('model: "openai/')
+    !createdProgram.includes('from "@mitome/core";') ||
+    !createdProgram.includes("providerModel(openai(), ")
   ) {
-    throw new Error("create-mitome did not generate the Provider-qualified Agent contract.");
+    throw new Error("create-mitome did not generate the native Agent program.");
   }
   await symlink(nodeModules, join(createdDirectory, "node_modules"), "dir");
   await run([process.execPath, "x", "tsc", "-p", join(createdDirectory, "tsconfig.json")]);

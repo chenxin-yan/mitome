@@ -1,0 +1,311 @@
+diff --git a/dist/OpenAiLanguageModel.js b/dist/OpenAiLanguageModel.js
+index 47be3fd..d57edc1 100644
+--- a/dist/OpenAiLanguageModel.js
++++ b/dist/OpenAiLanguageModel.js
+@@ -760,6 +760,72 @@ const makeResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+   toolNameMapper
+ }) {
+   const idGenerator = yield* IdGenerator.IdGenerator;
++  // TODO(mitome): development-only patch; remove once a qualified fixed @effect/ai-openai release rejects failed, cancelled, non-terminal and invalid Responses `status` values and keeps `incomplete` without a reason from reading as complete.
++  const responseStatus = rawResponse.status;
++  if (responseStatus !== undefined && responseStatus !== "completed" && responseStatus !== "incomplete") {
++    const metadata = {
++      openai: {
++        errorCode: rawResponse.error?.code ?? null,
++        errorType: null,
++        requestId: response.headers["x-request-id"] ?? null
++      }
++    };
++    const http = {
++      request: buildHttpRequestDetails(response.request),
++      response: buildHttpResponseDetails(response)
++    };
++    return yield* AiError.make({
++      module: "OpenAiLanguageModel",
++      method: "makeResponse",
++      reason: responseStatus === "failed" ? new AiError.InternalProviderError({
++        description: rawResponse.error?.message ?? "OpenAI response failed",
++        metadata,
++        http
++      }) : responseStatus === "cancelled" ? new AiError.UnknownError({
++        description: rawResponse.error?.message ?? "OpenAI response was cancelled by the provider",
++        metadata,
++        http
++      }) : new AiError.InvalidOutputError({
++        description: responseStatus === "in_progress" || responseStatus === "queued" ? `OpenAI returned a non-terminal response (status ${JSON.stringify(responseStatus)})` : `OpenAI returned an invalid response status: ${JSON.stringify(responseStatus)}`,
++        metadata
++      })
++    });
++  }
++  // TODO(mitome): development-only patch; remove once a qualified fixed @effect/ai-openai release rejects a response that is not `incomplete` but contains an unfinished message, reasoning or function_call item, or any computer_call item (which it cannot declare in a non-streaming request).
++  for (const item of rawResponse.output) {
++    if (item.type === "computer_call") {
++      return yield* AiError.make({
++        module: "OpenAiLanguageModel",
++        method: "makeResponse",
++        reason: new AiError.InvalidOutputError({
++          description: "OpenAI returned a computer_call item, which this request cannot have declared",
++          metadata: {
++            openai: {
++              errorCode: rawResponse.error?.code ?? null,
++              errorType: null,
++              requestId: response.headers["x-request-id"] ?? null
++            }
++          }
++        })
++      });
++    }
++    if (responseStatus !== "incomplete" && (item.type === "message" || item.type === "reasoning" || item.type === "function_call") && (item.status === "in_progress" || item.status === "incomplete")) {
++      return yield* AiError.make({
++        module: "OpenAiLanguageModel",
++        method: "makeResponse",
++        reason: new AiError.InvalidOutputError({
++          description: `OpenAI returned a ${item.type} item with status ${JSON.stringify(item.status)} in a response that is not incomplete`,
++          metadata: {
++            openai: {
++              errorCode: rawResponse.error?.code ?? null,
++              errorType: null,
++              requestId: response.headers["x-request-id"] ?? null
++            }
++          }
++        })
++      });
++    }
++  }
+   const approvalRequests = getApprovalRequestIdMapping(options.prompt);
+   const webSearchTool = options.tools.find(tool => Tool.isProviderDefined(tool) && (tool.name === "OpenAiWebSearch" || tool.name === "OpenAiWebSearchPreview"));
+   let hasToolCalls = false;
+@@ -1162,7 +1228,7 @@ const makeResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+         }
+     }
+   }
+-  const finishReason = InternalUtilities.resolveFinishReason(rawResponse.incomplete_details?.reason, hasToolCalls);
++  const finishReason = rawResponse.status === "incomplete" && rawResponse.incomplete_details?.reason == null ? "unknown" : InternalUtilities.resolveFinishReason(rawResponse.incomplete_details?.reason, hasToolCalls);
+   parts.push({
+     type: "finish",
+     reason: finishReason,
+@@ -2566,10 +2632,11 @@ const transformToolCallParams = /*#__PURE__*/Effect.fnUntraced(function* (tools,
+   if (Tool.isDynamic(tool) && tool.jsonSchema !== undefined) {
+     return toolParams;
+   }
++  // TODO(mitome): development-only patch; remove once a qualified fixed release normalizes strict-wire tool parameters without running the application parameter codec.
+   const {
+     codec
+-  } = yield* tryCodecTransform(tool.parametersSchema, "makeResponse");
++  } = yield* tryCodecTransform(Schema.toEncoded(tool.parametersSchema), "makeResponse");
+   // Normalize valid parameters; leave invalid ones for Toolkit.
+-  return yield* Schema.decodeEffect(codec)(toolParams).pipe(Effect.flatMap(decoded => Schema.encodeUnknownEffect(tool.parametersSchema)(decoded)), Effect.orElseSucceed(() => toolParams));
++  return yield* Schema.decodeEffect(codec)(toolParams).pipe(Effect.orElseSucceed(() => toolParams));
+ });
+ //# sourceMappingURL=OpenAiLanguageModel.js.map
+\ No newline at end of file
+diff --git a/dist/OpenAiSchema.d.ts b/dist/OpenAiSchema.d.ts
+index 054487c..dd8ba5d 100644
+--- a/dist/OpenAiSchema.d.ts
++++ b/dist/OpenAiSchema.d.ts
+@@ -1119,6 +1119,7 @@ export declare const Response: Schema.Struct<{
+     readonly incomplete_details: Schema.optionalKey<Schema.NullOr<Schema.Struct<{
+         readonly reason: Schema.optionalKey<Schema.Literals<readonly ["max_output_tokens", "content_filter"]>>;
+     }>>>;
++    readonly status: Schema.optionalKey<Schema.Unknown>;
+     readonly service_tier: Schema.optionalKey<Schema.String>;
+ }>;
+ /**
+@@ -1349,6 +1350,7 @@ export declare const ResponseStreamEvent: Schema.Union<readonly [Schema.Struct<{
+         readonly incomplete_details: Schema.optionalKey<Schema.NullOr<Schema.Struct<{
+             readonly reason: Schema.optionalKey<Schema.Literals<readonly ["max_output_tokens", "content_filter"]>>;
+         }>>>;
++        readonly status: Schema.optionalKey<Schema.Unknown>;
+         readonly service_tier: Schema.optionalKey<Schema.String>;
+     }>;
+     readonly sequence_number: Schema.optionalKey<Schema.Int>;
+@@ -1527,6 +1529,7 @@ export declare const ResponseStreamEvent: Schema.Union<readonly [Schema.Struct<{
+         readonly incomplete_details: Schema.optionalKey<Schema.NullOr<Schema.Struct<{
+             readonly reason: Schema.optionalKey<Schema.Literals<readonly ["max_output_tokens", "content_filter"]>>;
+         }>>>;
++        readonly status: Schema.optionalKey<Schema.Unknown>;
+         readonly service_tier: Schema.optionalKey<Schema.String>;
+     }>;
+     readonly sequence_number: Schema.optionalKey<Schema.Int>;
+@@ -1705,6 +1708,7 @@ export declare const ResponseStreamEvent: Schema.Union<readonly [Schema.Struct<{
+         readonly incomplete_details: Schema.optionalKey<Schema.NullOr<Schema.Struct<{
+             readonly reason: Schema.optionalKey<Schema.Literals<readonly ["max_output_tokens", "content_filter"]>>;
+         }>>>;
++        readonly status: Schema.optionalKey<Schema.Unknown>;
+         readonly service_tier: Schema.optionalKey<Schema.String>;
+     }>;
+     readonly sequence_number: Schema.optionalKey<Schema.Int>;
+@@ -1883,6 +1887,7 @@ export declare const ResponseStreamEvent: Schema.Union<readonly [Schema.Struct<{
+         readonly incomplete_details: Schema.optionalKey<Schema.NullOr<Schema.Struct<{
+             readonly reason: Schema.optionalKey<Schema.Literals<readonly ["max_output_tokens", "content_filter"]>>;
+         }>>>;
++        readonly status: Schema.optionalKey<Schema.Unknown>;
+         readonly service_tier: Schema.optionalKey<Schema.String>;
+     }>;
+     readonly sequence_number: Schema.optionalKey<Schema.Int>;
+diff --git a/dist/OpenAiSchema.js b/dist/OpenAiSchema.js
+index 1437794..2ae4492 100644
+--- a/dist/OpenAiSchema.js
++++ b/dist/OpenAiSchema.js
+@@ -610,6 +610,8 @@ export const Response = /*#__PURE__*/Schema.Struct({
+   incomplete_details: /*#__PURE__*/Schema.optionalKey(/*#__PURE__*/Schema.NullOr(/*#__PURE__*/Schema.Struct({
+     reason: /*#__PURE__*/Schema.optionalKey(/*#__PURE__*/Schema.Literals(["max_output_tokens", "content_filter"]))
+   }))),
++  // TODO(mitome): development-only patch; remove once a qualified fixed @effect/ai-openai release rejects failed, cancelled, non-terminal and invalid Responses `status` values and keeps `incomplete` without a reason from reading as complete.
++  status: /*#__PURE__*/Schema.optionalKey(Schema.Unknown),
+   service_tier: /*#__PURE__*/Schema.optionalKey(Schema.String)
+ });
+ const ResponseCreatedEvent = /*#__PURE__*/Schema.Struct({
+diff --git a/dist/internal/utilities.js b/dist/internal/utilities.js
+index b39ea17..4e6ea00 100644
+--- a/dist/internal/utilities.js
++++ b/dist/internal/utilities.js
+@@ -2,6 +2,8 @@ const finishReasonMap = {
+   content_filter: "content-filter",
+   function_call: "tool-calls",
+   length: "length",
++  // TODO(mitome): remove this development-only patch once a qualified fixed @effect/ai-openai release maps max_output_tokens.
++  max_output_tokens: "length",
+   stop: "stop",
+   tool_calls: "tool-calls"
+ };
+diff --git a/src/OpenAiLanguageModel.ts b/src/OpenAiLanguageModel.ts
+index 93a6c40..cd083e8 100644
+--- a/src/OpenAiLanguageModel.ts
++++ b/src/OpenAiLanguageModel.ts
+@@ -1540,6 +1540,80 @@ const makeResponse = Effect.fnUntraced(
+     IdGenerator.IdGenerator
+   > {
+     const idGenerator = yield* IdGenerator.IdGenerator
++    // TODO(mitome): development-only patch; remove once a qualified fixed @effect/ai-openai release rejects failed, cancelled, non-terminal and invalid Responses `status` values and keeps `incomplete` without a reason from reading as complete.
++    const responseStatus = rawResponse.status
++    if (responseStatus !== undefined && responseStatus !== "completed" && responseStatus !== "incomplete") {
++      const metadata = {
++        openai: {
++          errorCode: rawResponse.error?.code ?? null,
++          errorType: null,
++          requestId: (response.headers as Record<string, string>)["x-request-id"] ?? null
++        }
++      }
++      const http = { request: buildHttpRequestDetails(response.request), response: buildHttpResponseDetails(response) }
++      return yield* AiError.make({
++        module: "OpenAiLanguageModel",
++        method: "makeResponse",
++        reason: responseStatus === "failed"
++          ? new AiError.InternalProviderError({
++            description: rawResponse.error?.message ?? "OpenAI response failed",
++            metadata,
++            http
++          })
++          : responseStatus === "cancelled"
++          ? new AiError.UnknownError({
++            description: rawResponse.error?.message ?? "OpenAI response was cancelled by the provider",
++            metadata,
++            http
++          })
++          : new AiError.InvalidOutputError({
++            description: responseStatus === "in_progress" || responseStatus === "queued"
++              ? `OpenAI returned a non-terminal response (status ${JSON.stringify(responseStatus)})`
++              : `OpenAI returned an invalid response status: ${JSON.stringify(responseStatus)}`,
++            metadata
++          })
++      })
++    }
++
++    // TODO(mitome): development-only patch; remove once a qualified fixed @effect/ai-openai release rejects a response that is not `incomplete` but contains an unfinished message, reasoning or function_call item, or any computer_call item (which it cannot declare in a non-streaming request).
++    for (const item of rawResponse.output) {
++      if (item.type === "computer_call") {
++        return yield* AiError.make({
++          module: "OpenAiLanguageModel",
++          method: "makeResponse",
++          reason: new AiError.InvalidOutputError({
++            description: "OpenAI returned a computer_call item, which this request cannot have declared",
++            metadata: {
++              openai: {
++                errorCode: rawResponse.error?.code ?? null,
++                errorType: null,
++                requestId: (response.headers as Record<string, string>)["x-request-id"] ?? null
++              }
++            }
++          })
++        })
++      }
++      if (
++        responseStatus !== "incomplete" &&
++        (item.type === "message" || item.type === "reasoning" || item.type === "function_call") &&
++        (item.status === "in_progress" || item.status === "incomplete")
++      ) {
++        return yield* AiError.make({
++          module: "OpenAiLanguageModel",
++          method: "makeResponse",
++          reason: new AiError.InvalidOutputError({
++            description: `OpenAI returned a ${item.type} item with status ${JSON.stringify(item.status)} in a response that is not incomplete`,
++            metadata: {
++              openai: {
++                errorCode: rawResponse.error?.code ?? null,
++                errorType: null,
++                requestId: (response.headers as Record<string, string>)["x-request-id"] ?? null
++              }
++            }
++          })
++        })
++      }
++    }
+ 
+     const approvalRequests = getApprovalRequestIdMapping(options.prompt)
+ 
+@@ -1917,7 +1991,9 @@ const makeResponse = Effect.fnUntraced(
+       }
+     }
+ 
+-    const finishReason = InternalUtilities.resolveFinishReason(
++    const finishReason = rawResponse.status === "incomplete" && rawResponse.incomplete_details?.reason == null
++      ? "unknown"
++      : InternalUtilities.resolveFinishReason(
+       rawResponse.incomplete_details?.reason,
+       hasToolCalls
+     )
+@@ -3457,15 +3533,13 @@ const transformToolCallParams = Effect.fnUntraced(function*<Tools extends Readon
+     return toolParams
+   }
+ 
+-  const { codec } = yield* tryCodecTransform(tool.parametersSchema, "makeResponse")
++  // TODO(mitome): development-only patch; remove once a qualified fixed release normalizes strict-wire tool parameters without running the application parameter codec.
++  const { codec } = yield* tryCodecTransform(Schema.toEncoded(tool.parametersSchema), "makeResponse")
+ 
+   // Normalize valid parameters; leave invalid ones for Toolkit.
+   return yield* (
+     Schema.decodeEffect(codec)(toolParams) as Effect.Effect<unknown, Schema.SchemaError>
+   ).pipe(
+-    Effect.flatMap((decoded) =>
+-      Schema.encodeUnknownEffect(tool.parametersSchema)(decoded) as Effect.Effect<unknown, Schema.SchemaError>
+-    ),
+     Effect.orElseSucceed(() => toolParams)
+   )
+ })
+diff --git a/src/OpenAiSchema.ts b/src/OpenAiSchema.ts
+index 0c7ff45..9b0e643 100644
+--- a/src/OpenAiSchema.ts
++++ b/src/OpenAiSchema.ts
+@@ -947,6 +947,8 @@ export const Response = Schema.Struct({
+       })
+     )
+   ),
++  // TODO(mitome): development-only patch; remove once a qualified fixed @effect/ai-openai release rejects failed, cancelled, non-terminal and invalid Responses `status` values and keeps `incomplete` without a reason from reading as complete.
++  status: Schema.optionalKey(Schema.Unknown),
+   service_tier: Schema.optionalKey(Schema.String)
+ })
+ 
+diff --git a/src/internal/utilities.ts b/src/internal/utilities.ts
+index 7651401..b3fc7d7 100644
+--- a/src/internal/utilities.ts
++++ b/src/internal/utilities.ts
+@@ -4,6 +4,8 @@ const finishReasonMap: Record<string, Response.FinishReason> = {
+   content_filter: "content-filter",
+   function_call: "tool-calls",
+   length: "length",
++  // TODO(mitome): remove this development-only patch once a qualified fixed @effect/ai-openai release maps max_output_tokens.
++  max_output_tokens: "length",
+   stop: "stop",
+   tool_calls: "tool-calls"
+ }
