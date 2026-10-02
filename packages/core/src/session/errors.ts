@@ -111,25 +111,3 @@ export class IncompleteStepError extends Schema.TaggedError<IncompleteStepError>
     return `Model response was incomplete (${this.reason})`;
   }
 }
-
-/** A model, Tool, or Extension Hook failed while completing a Turn. */
-export class TurnError extends Schema.TaggedError<TurnError>()("TurnError", {
-  message: Schema.String,
-  cause: Schema.Defect(),
-}) {}
-
-/**
- * An Approval decision could not be applied: it was already resolved, or (`reason: "not-pending"`)
- * its Turn has ended. Decisions are one-shot.
- */
-export class ApprovalResolutionError extends Schema.TaggedError<ApprovalResolutionError>()(
-  "ApprovalResolutionError",
-  { reason: Schema.optional(Schema.Literal("not-pending")) },
-) {
-  /** Description derived from `reason`. */
-  override get message(): string {
-    return this.reason === "not-pending"
-      ? "Approval is no longer pending (the Turn ended or the request is missing)"
-      : "Approval decision has already been resolved";
-  }
-}
