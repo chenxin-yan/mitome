@@ -2,7 +2,7 @@ import * as BunServices from "@effect/platform-bun/BunServices";
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Layer } from "effect";
 import { TestConsole } from "effect/testing";
-import { CliOutput } from "effect/unstable/cli";
+import { CliOutput } from "effect/cli";
 import cliPackage from "../package.json" with { type: "json" };
 
 import { ChildHost } from "../src/child-host-service.ts";

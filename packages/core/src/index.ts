@@ -36,7 +36,7 @@ export type {
   ToolResultHookContext,
   ToolResultValidator,
 } from "./extension.js";
-export { createHostSession, defineMitome } from "./host.js";
+export { defineMitome } from "./host.js";
 export type {
   ChannelHost,
   ChannelHostContext,
@@ -45,7 +45,7 @@ export type {
   InteractiveHost,
   MitomeDefinition,
 } from "./host.js";
-export { credentialDescriptor, makeProvider } from "./provider.js";
+export { credentialDescriptor, makeProvider, providerModel } from "./provider.js";
 export { memoryRoutes } from "./routes.js";
 export type { RouteKey, Routes } from "./routes.js";
 export type {
@@ -58,8 +58,14 @@ export type {
 } from "./provider.js";
 export {
   ApprovalResolutionError,
+  ExecutionLimitError,
+  IncompleteStepError,
   SessionBusyError,
+  SessionFencedError,
   SessionReleasedError,
+  SessionSaveError,
+  StepProtocolError,
+  ToolRegistrationError,
   TurnError,
 } from "./session/errors.js";
 export { TurnEventDtoSchema } from "./session/events.js";
@@ -70,8 +76,36 @@ export type {
   TurnEvent,
   TurnEventDto,
 } from "./session/events.js";
-export { createSession } from "./session/session.js";
-export type { CreateSessionOptions, TurnOptions, Session } from "./session/session.js";
+export { firstPartyExecutionLimits, makeSession, Turn } from "./session/session.js";
+export type {
+  ExecutionLimits,
+  ExecutionUsage,
+  NonDurableSession,
+  Session,
+  SessionOptions,
+  SessionStore,
+  TurnObservation,
+  TurnReceipt,
+  TurnSnapshot,
+} from "./session/session.js";
+export {
+  localTools,
+  loop,
+  ModelRequestAccounting,
+  reportModelRequest,
+  step,
+  toolOutcomes,
+  withModelRequestAccounting,
+} from "./session/step.js";
+export type {
+  CompleteStep,
+  IncompleteStep,
+  LocalTools,
+  StepOptions,
+  StepResult,
+  ToolCallRequest,
+  ToolDecision,
+} from "./session/step.js";
 export {
   makeTranscript,
   promptFromTranscript,

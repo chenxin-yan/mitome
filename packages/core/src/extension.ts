@@ -1,6 +1,6 @@
 import { Context, Effect, Layer, Schema } from "effect";
-import { Prompt, Tool, Toolkit } from "effect/unstable/ai";
-import type { Response } from "effect/unstable/ai";
+import { Prompt, Tool, Toolkit } from "effect/ai";
+import type { Response } from "effect/ai";
 
 /** Decoded parameters of any Tool call. */
 export type ToolInput = Tool.Parameters<Tool.Any>;

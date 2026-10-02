@@ -3,7 +3,7 @@ import { type AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "@effect/vitest";
 import { WebSocketServer } from "ws";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 import { createSession, credentialDescriptor } from "@mitome/core";
 import { agent, fakeFetch, runWithKey, sse } from "../support.js";
 import { openai } from "../../src/openai/index.js";
@@ -342,7 +342,8 @@ describe("openai", () => {
         {
           type: "function_call_output",
           call_id: "call-1",
-          output: '"hello"',
+          // @effect/ai-openai rc.117 sends string results unquoted.
+          output: "hello",
         },
       ]);
     } finally {
@@ -433,7 +434,8 @@ describe("openai", () => {
     expect(followUp.input).toContainEqual({
       type: "function_call_output",
       call_id: "call-1",
-      output: '"hello"',
+      // @effect/ai-openai rc.117 sends string results unquoted.
+      output: "hello",
     });
   });
 });

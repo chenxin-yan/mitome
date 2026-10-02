@@ -1,6 +1,5 @@
 import { Predicate } from "effect";
 import type { AgentDefinition } from "./agent.js";
-import { createSession } from "./session/session.js";
 import type { TranscriptStore } from "./transcript-store.js";
 
 /** What a Channel Host receives to run Sessions for one Mitome Definition. */
@@ -62,10 +61,6 @@ export interface MitomeDefinition<Agent extends AgentDefinition = AgentDefinitio
   /** Store shared by every Host; absent means no Transcript data is written. */
   readonly transcripts?: TranscriptStore | undefined;
 }
-
-/** Opens the scoped Session a Host runs for its context; closing the Scope ends the Session. */
-export const createHostSession = (context: ChannelHostContext) =>
-  createSession(context.agent, { transcripts: context.transcripts });
 
 /** A declared Host as it may actually arrive at runtime, before validation. */
 interface HostCandidate {

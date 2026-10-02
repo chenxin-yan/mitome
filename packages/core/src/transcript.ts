@@ -1,5 +1,6 @@
-import { Encoding, Match, Predicate, Result, Schema } from "effect";
-import { Prompt } from "effect/unstable/ai";
+import { Match, Predicate, Result, Schema } from "effect";
+import { Prompt } from "effect/ai";
+import { Base64 } from "effect/encoding";
 
 /** Identifies a Transcript; a UUID when Mitome generates it. */
 export type TranscriptId = string;
@@ -23,7 +24,7 @@ const urlString = Schema.String.check(
 );
 const base64String = Schema.String.check(
   Schema.makeFilter((value) =>
-    Result.isSuccess(Encoding.decodeBase64(value)) ? undefined : "Expected a base64 string",
+    Result.isSuccess(Base64.decode(value)) ? undefined : "Expected a base64 string",
   ),
 );
 const fileData = Schema.Union([

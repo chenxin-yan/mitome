@@ -11,7 +11,7 @@ import {
   SchemaGetter,
   Stream,
 } from "effect";
-import { Response, Tool as AiTool, Toolkit } from "effect/unstable/ai";
+import { Response, Tool as AiTool, Toolkit } from "effect/ai";
 import {
   createSession,
   defineExtension as defineCoreExtension,
@@ -511,10 +511,10 @@ describe("@mitome/sdk Extension resources", () => {
     // Success schema whose encoding requires the Prefix service from the Extension resource.
     const serviceString = Schema.String.pipe(
       Schema.decodeTo(Schema.String, {
-        decode: SchemaGetter.transformOrFail((value: string) =>
+        decode: SchemaGetter.transformEffect((value: string) =>
           Effect.map(Effect.service(Prefix), (prefix) => `${prefix}:${value}`),
         ),
-        encode: SchemaGetter.transformOrFail((value: string) =>
+        encode: SchemaGetter.transformEffect((value: string) =>
           Effect.map(Effect.service(Prefix), (prefix) => `${prefix}:${value}`),
         ),
       }),

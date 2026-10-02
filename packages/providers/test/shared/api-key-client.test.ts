@@ -14,7 +14,7 @@ describe("API-key client", () => {
       delete process.env[key];
       try {
         // Populate Effect's process-wide default provider before the key exists.
-        await Effect.runPromise(Effect.result(Config.string(key)));
+        await Effect.runPromise(Effect.result(Config.String(key)));
         let observed: string | undefined;
         const layer = apiKeyClientLayer(key, "https://test.invalid", ({ apiKey }) => {
           observed = apiKey === undefined ? undefined : Redacted.value(apiKey);

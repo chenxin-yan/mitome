@@ -1,4 +1,5 @@
 import type { Provider } from "@mitome/core";
+import type { AiError } from "effect/ai";
 import {
   type CodexOptions,
   type KnownModelId,
@@ -12,7 +13,13 @@ type Assert<T extends true> = T;
 const publicContracts: [
   Assert<Equal<string extends KnownModelId ? true : false, false>>,
   Assert<
-    Equal<typeof codex, (options?: CodexOptions) => Provider<"openai-codex", typeof knownModelIds>>
+    // Provisioning fails with a configuration message or a native credential AiError.
+    Equal<
+      typeof codex,
+      (
+        options?: CodexOptions,
+      ) => Provider<"openai-codex", typeof knownModelIds, string | AiError.AiError, never>
+    >
   >,
 ] = [true, true];
 void publicContracts;

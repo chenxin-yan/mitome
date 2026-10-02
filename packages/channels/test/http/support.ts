@@ -5,14 +5,7 @@ import {
   memoryTranscripts,
 } from "@mitome/core";
 import { Effect, Layer, Schema, Stream } from "effect";
-import {
-  type AiError,
-  LanguageModel,
-  type Prompt,
-  type Response,
-  Tool,
-  Toolkit,
-} from "effect/unstable/ai";
+import { type AiError, LanguageModel, type Prompt, type Response, Tool, Toolkit } from "effect/ai";
 import type { TurnFrame } from "../../src/http/index.js";
 
 type StreamText = (

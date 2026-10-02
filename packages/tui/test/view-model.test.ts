@@ -7,7 +7,7 @@ import type {
   TurnEvent,
 } from "@mitome/core";
 import { Context, Effect, Layer, Match, Schema, Stream } from "effect";
-import { LanguageModel, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { LanguageModel, Response, Tool, Toolkit } from "effect/ai";
 import { makeSessionManager } from "../src/session-manager.js";
 import type { SessionManager, SessionResource } from "../src/session-manager.js";
 import { makeSessionViewModel } from "../src/view-model.js";
@@ -70,10 +70,11 @@ const approvalScript = (name: string, requirement: ApprovalRequirement) => {
   return { stream, decisions: () => decisions };
 };
 
-const testProvider = (streamText: LanguageModel.Service["streamText"]) => {
+const testProvider = (streamText: LanguageModel.LanguageModel["streamText"]) => {
   const unsupported = () => Effect.die("not used");
   return makeProvider("test", [] as const, undefined, () =>
     Layer.succeed(LanguageModel.LanguageModel, {
+      [LanguageModel.TypeId]: LanguageModel.TypeId,
       generateText: unsupported,
       generateObject: unsupported,
       streamText,

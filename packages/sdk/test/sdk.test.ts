@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Stream } from "effect";
-import { AiError, Response } from "effect/unstable/ai";
+import { AiError, Response } from "effect/ai";
 import { TurnError, defineAgent, defineMitome, withSession } from "../src/index.js";
 import { makeDeterministicProvider, makeTestProvider } from "./provider.js";
 

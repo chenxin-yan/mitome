@@ -11,10 +11,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
 
+// Keeps undeclared manifest fields so the rewrite below does not drop them.
 const ManifestFromJson = Schema.fromJsonString(
-  Schema.Struct({
-    dependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  }),
+  Schema.StructWithRest(
+    Schema.Struct({
+      dependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+    }),
+    [Schema.Record(Schema.String, Schema.Unknown)],
+  ),
 );
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -22,9 +26,7 @@ const home = join(root, ".dev-home");
 const manifestPath = join(home, "package.json");
 
 const repoint = async (): Promise<void> => {
-  const manifest = Schema.decodeSync(ManifestFromJson, {
-    onExcessProperty: "preserve",
-  })(await readFile(manifestPath, "utf8"));
+  const manifest = Schema.decodeSync(ManifestFromJson)(await readFile(manifestPath, "utf8"));
   const dependencies = { ...manifest.dependencies };
   // core is no direct dependency, but the run host resolves it beside the definition.
   const names = new Set([...Object.keys(dependencies), "@mitome/core"]);

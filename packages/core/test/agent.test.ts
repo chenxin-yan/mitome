@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema, Stream } from "effect";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 import { compileAgentDefinition } from "../src/agent.js";
 import type { ToolInput, ToolOutput } from "../src/extension.js";
 import {

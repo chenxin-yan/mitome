@@ -67,6 +67,218 @@ describe("Codex SSE decoder", () => {
     await expect(decode(body)).rejects.toMatchObject({ reason: { description } });
   });
 
+  test("emits each indexed streamed text part once, in content order around a refusal", async () => {
+    const at = { output_index: 0, item_id: "m0" };
+    const parts = await decode(
+      sse({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "message", id: "m0" },
+      }),
+      sse({ type: "response.output_text.delta", ...at, content_index: 0, delta: "A" }),
+      sse({ type: "response.refusal.done", ...at, content_index: 1, refusal: "R" }),
+      sse({ type: "response.output_text.delta", ...at, content_index: 2, delta: "B" }),
+      sse({
+        type: "response.output_item.done",
+        output_index: 0,
+        item: { type: "message", id: "m0" },
+      }),
+      sse({ type: "response.completed" }),
+    );
+    // The last part is the finish; every text part starts and ends exactly once.
+    expect(parts.slice(0, -1)).toMatchObject([
+      { type: "text-start", id: "0~0" },
+      { type: "text-delta", id: "0~0", delta: "A" },
+      { type: "text-start", id: "0~2" },
+      { type: "text-delta", id: "0~2", delta: "B" },
+      { type: "text-end", id: "0~0" },
+      { type: "text-start", id: "0~1", metadata: { openai: { refusal: "R" } } },
+      { type: "text-end", id: "0~1", metadata: { openai: { refusal: "R" } } },
+      { type: "text-end", id: "0~2" },
+    ]);
+  });
+
+  test("streams a start's indexed text as the prefix of its deltas, once", async () => {
+    const at = { output_index: 0, item_id: "m0" };
+    const parts = await decode(
+      sse({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: {
+          type: "message",
+          id: "m0",
+          content: [
+            { type: "output_text", text: "A" },
+            { type: "refusal", refusal: "R" },
+          ],
+        },
+      }),
+      sse({ type: "response.output_text.delta", ...at, content_index: 0, delta: "B" }),
+      sse({ type: "response.output_text.delta", ...at, content_index: 0, delta: "C" }),
+      sse({
+        type: "response.output_item.done",
+        output_index: 0,
+        item: { type: "message", id: "m0" },
+      }),
+      sse({ type: "response.completed" }),
+    );
+    expect(parts.slice(0, -1)).toMatchObject([
+      { type: "text-start", id: "0~0" },
+      { type: "text-delta", id: "0~0", delta: "A" },
+      { type: "text-delta", id: "0~0", delta: "B" },
+      { type: "text-delta", id: "0~0", delta: "C" },
+      { type: "text-end", id: "0~0" },
+      { type: "text-start", id: "0~1", metadata: { openai: { refusal: "R" } } },
+      { type: "text-end", id: "0~1", metadata: { openai: { refusal: "R" } } },
+    ]);
+  });
+
+  test("ends a message finished with status incomplete once, at the incomplete terminal, with its listing's refusal", async () => {
+    const at = { output_index: 0, item_id: "m0" };
+    const parts = await decode(
+      sse({
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "message", id: "m0" },
+      }),
+      sse({ type: "response.output_text.delta", ...at, content_index: 0, delta: "A" }),
+      sse({
+        type: "response.output_item.done",
+        output_index: 0,
+        item: { type: "message", id: "m0", status: "incomplete" },
+      }),
+      sse({
+        type: "response.incomplete",
+        response: {
+          output: [
+            {
+              type: "message",
+              id: "m0",
+              status: "incomplete",
+              content: [
+                { type: "output_text", text: "A" },
+                { type: "refusal", refusal: "R" },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    expect(parts.slice(0, -1)).toMatchObject([
+      { type: "text-start", id: "0~0" },
+      { type: "text-delta", id: "0~0", delta: "A" },
+      { type: "text-end", id: "0~0" },
+      { type: "text-start", id: "0~1", metadata: { openai: { refusal: "R" } } },
+      { type: "text-end", id: "0~1", metadata: { openai: { refusal: "R" } } },
+    ]);
+    expect(parts.slice(0, -1)).toHaveLength(5);
+  });
+
+  test("streams deltas after an unfinished item as they arrive, and ends every item once, in done order", async () => {
+    const m0 = { output_index: 0, item_id: "m0" };
+    const m1 = { output_index: 1, item_id: "m1" };
+    const parts = await decode(
+      sse({ type: "response.output_item.added", ...m0, item: { type: "message", id: "m0" } }),
+      sse({ type: "response.output_text.delta", ...m0, content_index: 0, delta: "A" }),
+      sse({
+        type: "response.output_item.done",
+        ...m0,
+        item: { type: "message", id: "m0", status: "incomplete" },
+      }),
+      sse({ type: "response.output_item.added", ...m1, item: { type: "message", id: "m1" } }),
+      sse({ type: "response.output_text.delta", ...m1, content_index: 0, delta: "B" }),
+      sse({ type: "response.output_item.done", ...m1, item: { type: "message", id: "m1" } }),
+      sse({
+        type: "response.output_item.added",
+        output_index: 2,
+        item: { type: "function_call", id: "item-2", call_id: "call-2", name: "lookup" },
+      }),
+      sse({
+        type: "response.output_item.done",
+        output_index: 2,
+        item: { type: "function_call", id: "item-2", arguments: "{}" },
+      }),
+      sse({
+        type: "response.incomplete",
+        response: {
+          output: [
+            {
+              type: "message",
+              id: "m0",
+              status: "incomplete",
+              content: [
+                { type: "output_text", text: "A" },
+                { type: "refusal", refusal: "R" },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    expect(parts.slice(0, -1)).toMatchObject([
+      { type: "text-start", id: "0~0" },
+      { type: "text-delta", id: "0~0", delta: "A" },
+      { type: "text-start", id: "1~0" },
+      { type: "text-delta", id: "1~0", delta: "B" },
+      { type: "tool-params-start", id: "call-2" },
+      { type: "text-end", id: "0~0" },
+      { type: "text-start", id: "0~1", metadata: { openai: { refusal: "R" } } },
+      { type: "text-end", id: "0~1", metadata: { openai: { refusal: "R" } } },
+      { type: "text-end", id: "1~0" },
+      { type: "tool-params-end", id: "call-2" },
+      { type: "tool-call", id: "call-2", params: {} },
+    ]);
+    expect(parts.at(-1)).toMatchObject({ type: "finish" });
+  });
+
+  test("starts and ends no part for an unknown part of a message finished sparsely with status incomplete", async () => {
+    const at = { output_index: 0, item_id: "m0" };
+    const parts = await decode(
+      sse({ type: "response.output_item.added", ...at, item: { type: "message", id: "m0" } }),
+      sse({
+        type: "response.content_part.added",
+        ...at,
+        content_index: 0,
+        part: { type: "output_text", text: "" },
+      }),
+      sse({ type: "response.output_text.delta", ...at, content_index: 1, delta: "B" }),
+      sse({
+        type: "response.output_item.done",
+        ...at,
+        item: { type: "message", id: "m0", status: "incomplete" },
+      }),
+      sse({ type: "response.incomplete" }),
+    );
+    expect(parts.slice(0, -1)).toMatchObject([
+      { type: "text-start", id: "0~1" },
+      { type: "text-delta", id: "0~1", delta: "B" },
+      { type: "text-end", id: "0~1" },
+    ]);
+    expect(parts.slice(0, -1)).toHaveLength(3);
+  });
+
+  test("rejects final arguments that contradict the accumulated deltas", async () => {
+    await expect(
+      decode(
+        sse(addedCall),
+        sse({
+          type: "response.function_call_arguments.delta",
+          output_index: 0,
+          delta: '{"stale":',
+        }),
+        sse({
+          type: "response.function_call_arguments.done",
+          output_index: 0,
+          arguments: '{"query":"mitome"}',
+        }),
+        sse(completedCall('{"query":"mitome"}')),
+        sse({ type: "response.done" }),
+      ),
+    ).rejects.toMatchObject({
+      reason: { description: "Codex sent output events that contradict each other" },
+    });
+  });
+
   test.each([
     {
       name: "emits the suffix when final arguments extend accumulated deltas",
@@ -75,8 +287,8 @@ describe("Codex SSE decoder", () => {
       reconciledDelta: '"mitome"}',
     },
     {
-      name: "emits no reconciliation delta when final arguments replace accumulated deltas",
-      initial: '{"stale":',
+      name: "emits no reconciliation delta when final arguments repeat the complete accumulated value",
+      initial: '{ "query" : "mitome" }',
       final: '{"query":"mitome"}',
       reconciledDelta: undefined,
     },
@@ -202,6 +414,125 @@ describe("Codex SSE decoder", () => {
     },
   ])("$name", async ({ terminal, finish }) => {
     expect(await decode(sse(terminal))).toMatchObject([finish]);
+  });
+
+  // An explicit response.incomplete without a reason is incomplete ("unknown"), never a
+  // completion that would authorize local Tool dispatch; usage is still decoded.
+  test.each([
+    { name: "no response", terminal: { type: "response.incomplete" } },
+    {
+      name: "null details",
+      terminal: { type: "response.incomplete", response: { incomplete_details: null } },
+    },
+    {
+      name: "empty details",
+      terminal: { type: "response.incomplete", response: { incomplete_details: {} } },
+    },
+    {
+      name: "usage without details",
+      terminal: {
+        type: "response.incomplete",
+        response: { usage: { input_tokens: 3, output_tokens: 2 } },
+      },
+      usage: { inputTokens: { total: 3, uncached: 3 }, outputTokens: { total: 2 } },
+    },
+  ])(
+    "maps response.incomplete with $name to unknown, even after a Tool call",
+    async ({ terminal, usage }) => {
+      const finish = {
+        type: "finish",
+        reason: "unknown",
+        usage: usage ?? { inputTokens: {}, outputTokens: {} },
+      };
+      expect(await decode(sse(terminal))).toMatchObject([finish]);
+      const parts = await decode(sse(addedCall), sse(completedCall("{}")), sse(terminal));
+      expect(parts.at(-1)).toMatchObject(finish);
+    },
+  );
+
+  // A completed or done event still carries the response's own status; an explicit non-success
+  // status is never read as a completion (Codex CLI keys only on the event type, see report).
+  test.each(["response.completed", "response.done"])(
+    "keeps an explicitly incomplete %s response incomplete, with its reason",
+    async (type) => {
+      const bare = { type, response: { status: "incomplete" } };
+      const reasoned = {
+        type,
+        response: { status: "incomplete", incomplete_details: { reason: "max_output_tokens" } },
+      };
+      expect(
+        (await decode(sse(addedCall), sse(completedCall("{}")), sse(bare))).at(-1),
+      ).toMatchObject({ type: "finish", reason: "unknown" });
+      expect(await decode(sse(reasoned))).toMatchObject([{ type: "finish", reason: "length" }]);
+    },
+  );
+
+  test.each([
+    {
+      status: "failed",
+      error: { message: "backend exploded" },
+      reason: { _tag: "UnknownError", description: "backend exploded" },
+    },
+    { status: "failed", reason: { _tag: "UnknownError", description: "Codex response failed" } },
+    {
+      status: "cancelled",
+      reason: { _tag: "UnknownError", description: "Codex response was cancelled by the provider" },
+    },
+    {
+      status: "cancelled",
+      error: { message: "cancelled by operator" },
+      reason: { _tag: "UnknownError", description: "cancelled by operator" },
+    },
+    {
+      status: "in_progress",
+      reason: {
+        _tag: "InvalidOutputError",
+        description: 'Codex returned a non-terminal response (status "in_progress")',
+      },
+    },
+    {
+      status: "queued",
+      reason: {
+        _tag: "InvalidOutputError",
+        description: 'Codex returned a non-terminal response (status "queued")',
+      },
+    },
+    {
+      status: 7,
+      reason: {
+        _tag: "InvalidOutputError",
+        description: "Codex returned an invalid response status: 7",
+      },
+    },
+  ])(
+    "fails a completed or done event whose status is $status",
+    async ({ status, error, reason }) => {
+      for (const type of ["response.completed", "response.done"]) {
+        const terminal = { type, response: error === undefined ? { status } : { status, error } };
+        const failure = await Effect.runPromise(
+          Effect.flip(
+            Stream.runCollect(
+              decodeStream(
+                Stream.fromIterable(
+                  [sse(addedCall), sse(completedCall("{}")), sse(terminal)].map((chunk) =>
+                    encoder.encode(chunk),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(failure).toMatchObject({ _tag: "AiError", reason });
+      }
+    },
+  );
+
+  test("keeps completed and done terminal events without details complete", async () => {
+    for (const type of ["response.completed", "response.done"]) {
+      expect(await decode(sse({ type }))).toMatchObject([{ type: "finish", reason: "stop" }]);
+      const parts = await decode(sse(addedCall), sse(completedCall("{}")), sse({ type }));
+      expect(parts.at(-1)).toMatchObject({ type: "finish", reason: "tool-calls" });
+    }
   });
 
   test.each([

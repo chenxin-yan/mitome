@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema, Stream } from "effect";
-import { Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { Prompt, Response, Tool, Toolkit } from "effect/ai";
 import {
   type AgentDefinition,
   createSession,

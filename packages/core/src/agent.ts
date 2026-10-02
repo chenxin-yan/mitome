@@ -1,5 +1,5 @@
 import { Effect, Predicate, Schema } from "effect";
-import { Tool } from "effect/unstable/ai";
+import { Tool } from "effect/ai";
 import type {
   AnyExtension,
   Extension,

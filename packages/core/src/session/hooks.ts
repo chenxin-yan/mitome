@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { Prompt } from "effect/unstable/ai";
+import { Prompt } from "effect/ai";
 import type { AnyExtension, ExtensionContexts } from "../extension.js";
 import { provideExtension } from "../extension.js";
 

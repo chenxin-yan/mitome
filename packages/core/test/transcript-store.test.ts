@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "@effect/vitest";
 import { Effect, Schema } from "effect";
-import { Prompt, Response } from "effect/unstable/ai";
+import { Prompt, Response } from "effect/ai";
 import {
   memoryTranscripts,
   makeTranscript,
