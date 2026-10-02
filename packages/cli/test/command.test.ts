@@ -104,6 +104,7 @@ describe("mitome run", () => {
       expect(yield* events).toEqual([
         "infra:acquire",
         "provision:echo",
+        "program:hello",
         "release-model:echo",
         "infra:release",
       ]);
@@ -167,6 +168,36 @@ describe("mitome run", () => {
       expect(result.stdout).toBe("");
       expect(result.errors).toContain("The application failed: refused: asked to fail");
       expect((yield* events).at(-1)).toBe("infra:release");
+    }),
+  );
+
+  it.effect("never enters the program when parsing fails, and never reruns a failed render", () =>
+    Effect.gen(function* () {
+      const unparsed = yield* cli(["run", "--app", fixture, "unparseable"]);
+      expect(Exit.isFailure(unparsed.exit)).toBe(true);
+      expect(unparsed.stdout).toBe("");
+      expect(unparsed.errors).toContain("Could not parse the input: unparseable input");
+      expect(yield* events).toEqual([
+        "infra:acquire",
+        "provision:echo",
+        "release-model:echo",
+        "infra:release",
+      ]);
+
+      yield* Effect.promise(() => writeFile(log, ""));
+      const unrendered = yield* cli(["run", "--app", fixture, "unrenderable"]);
+      expect(Exit.isFailure(unrendered.exit)).toBe(true);
+      expect(unrendered.stdout).toBe("");
+      expect(unrendered.errors).toContain(
+        "The Turn committed, but its result could not be rendered: refused: cannot render",
+      );
+      expect(yield* events).toEqual([
+        "infra:acquire",
+        "provision:echo",
+        "program:unrenderable",
+        "release-model:echo",
+        "infra:release",
+      ]);
     }),
   );
 

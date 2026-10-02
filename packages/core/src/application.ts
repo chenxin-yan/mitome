@@ -78,7 +78,10 @@ export interface ApplicationSession<Input, A, E> extends Pick<
   readonly run: (
     input: Input,
   ) => Effect.Effect<A, E | SessionBusyError | SessionReleasedError | ApplicationClosedError>;
-  /** Releases this Session, draining an active Turn; shared infrastructure stays live. */
+  /**
+   * Releases this Session, draining an active Turn; shared infrastructure stays live. Every
+   * caller, and application shutdown, waits for the same drain.
+   */
   readonly close: Effect.Effect<void>;
 }
 
@@ -362,7 +365,13 @@ const acquire = (options: ErasedOptions, selection: AcquireOptions) =>
         session: Effect.uninterruptible(
           Effect.gen(function* () {
             yield* admit;
-            const scope = yield* Scope.fork(work);
+            // Closing a forked Scope detaches it from its parent before its finalizers finish, so
+            // the Session's Scope stays unattached and `work` holds a finalizer awaiting the one
+            // shared close until it completes: shutdown then still drains a Session being closed.
+            const scope = yield* Scope.make();
+            const holder = yield* Scope.fork(work);
+            const drain = yield* Effect.cached(Scope.close(scope, Exit.void));
+            yield* Scope.addFinalizer(holder, drain);
             const session = yield* makeSession({
               persistence: "none",
               limits: options.limits,
@@ -380,7 +389,7 @@ const acquire = (options: ErasedOptions, selection: AcquireOptions) =>
               history: session.history,
               turns: session.turns,
               observe: session.observe,
-              close: Scope.close(scope, Exit.void),
+              close: Effect.andThen(drain, Scope.close(holder, Exit.void)),
             };
           }),
         ),

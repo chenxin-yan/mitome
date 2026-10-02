@@ -1,5 +1,6 @@
 // An offline native application for the CLI tests: a scripted Model, no network or credentials.
-// Set MITOME_FIXTURE_LOG to record what was acquired, provisioned and cleaned up.
+// Set MITOME_FIXTURE_LOG to record what was acquired, provisioned, run and cleaned up, and
+// MITOME_FIXTURE_HOLD_RELEASE to make releasing the infrastructure never finish.
 import { appendFileSync } from "node:fs";
 import {
   defineMitome,
@@ -21,6 +22,12 @@ const record = (event: string) => {
 class Greeting extends Context.Service<Greeting, { readonly prefix: string }>()(
   "fixture/Greeting",
 ) {}
+
+class Unparseable extends Schema.TaggedError<Unparseable>()("Unparseable", {}) {
+  override get message(): string {
+    return "unparseable input";
+  }
+}
 
 class Refused extends Schema.TaggedError<Refused>()("Refused", { reason: Schema.String }) {
   override get message(): string {
@@ -54,14 +61,16 @@ const scripted = makeProvider(
   "scripted",
   ["echo"],
   "FIXTURE_API_KEY",
-  (modelId) =>
-    Layer.unwrap(
+  (modelId) => {
+    if (modelId === "defect") throw new ReferenceError("fixture provisioning defect");
+    return Layer.unwrap(
       Effect.gen(function* () {
         record(`provision:${modelId}`);
         yield* Effect.addFinalizer(() => Effect.sync(() => record(`release-model:${modelId}`)));
         return echoModel(modelId);
       }),
-    ),
+    );
+  },
   { echo: { contextWindow: 8192 } },
 );
 
@@ -76,14 +85,22 @@ const infrastructure = Layer.effect(
   Greeting,
   Effect.acquireRelease(
     Effect.sync(() => (record("infra:acquire"), { prefix: "> " })),
-    () => Effect.sync(() => record("infra:release")),
+    () =>
+      process.env.MITOME_FIXTURE_HOLD_RELEASE === undefined
+        ? Effect.sync(() => record("infra:release"))
+        : Effect.never,
   ),
 );
 
-/** The ordinary program; `hold` and `wait` exercise shutdown with stuck and prompt cleanup. */
+/**
+ * The ordinary program; `hold` and `wait` exercise shutdown with stuck and prompt cleanup, and
+ * `log` writes an application log line.
+ */
 export const program = (message: string) =>
   Effect.gen(function* () {
+    record(`program:${message}`);
     const turn = yield* Turn;
+    if (message === "log") yield* Effect.logInfo("fixture log line");
     if (message === "fail") return yield* new Refused({ reason: "asked to fail" });
     if (message === "hold" || message === "wait") {
       yield* Effect.addFinalizer(() =>
@@ -105,7 +122,11 @@ export default defineMitome({
   defaultModel: "scripted/echo",
   configDirectory: process.env.MITOME_FIXTURE_CREDENTIALS,
   cli: {
-    parseInput: (text: string) => Effect.succeed(text.trim()),
-    renderResult: (result) => Effect.map(Greeting, ({ prefix }) => `${prefix}${result.text}`),
+    parseInput: (text: string) =>
+      text.trim() === "unparseable" ? Effect.fail(new Unparseable()) : Effect.succeed(text.trim()),
+    renderResult: (result) =>
+      result.text.endsWith("unrenderable")
+        ? Effect.fail(new Refused({ reason: "cannot render" }))
+        : Effect.map(Greeting, ({ prefix }) => `${prefix}${result.text}`),
   },
 });
