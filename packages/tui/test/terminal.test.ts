@@ -14,6 +14,7 @@ import {
   Turn,
   withModelRequestAccounting,
 } from "@mitome/core";
+import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
 import {
   Cause,
@@ -24,6 +25,7 @@ import {
   Fiber,
   Layer,
   Match,
+  Option,
   Schema,
   Scope,
   Stream,
@@ -109,7 +111,7 @@ afterEach(async () => {
 });
 
 /** Acquires the application once, allocates its one Session and starts the terminal over it. */
-const start = async (channel: "granted" | "none" | "broken" = "granted") => {
+const start = async (channel: "granted" | "none" | "broken" | "defective" | "held" = "granted") => {
   const dispatched: Array<unknown> = [];
   const returned: Array<Reply> = [];
   const renderedResults: Array<Reply> = [];
@@ -145,15 +147,18 @@ const start = async (channel: "granted" | "none" | "broken" = "granted") => {
     providers: [makeProvider("test", ["echo"], undefined, () => model)],
     defaultModel: "test/echo",
     cli: {
-      parseInput: (text: string) =>
-        text === "unparseable" ? Effect.fail(new Unparseable()) : Effect.succeed({ text }),
-      renderResult: (result) =>
-        Effect.suspend(() => {
-          renderedResults.push(result);
-          return result.reply === "echo unrenderable"
-            ? Effect.fail(new Unrenderable())
-            : Effect.succeed(`reply: ${result.reply}`);
-        }),
+      // `throw-parse` and `throw-render` throw instead of returning a failing Effect.
+      parseInput: (text: string) => {
+        if (text === "throw-parse") throw new Error("parser threw");
+        return text === "unparseable" ? Effect.fail(new Unparseable()) : Effect.succeed({ text });
+      },
+      renderResult: (result) => {
+        renderedResults.push(result);
+        if (result.reply === "echo throw-render") throw new Error("renderer threw");
+        return result.reply === "echo unrenderable"
+          ? Effect.fail(new Unrenderable())
+          : Effect.succeed(`reply: ${result.reply}`);
+      },
       approvals: Channel,
     },
   });
@@ -166,6 +171,22 @@ const start = async (channel: "granted" | "none" | "broken" = "granted") => {
     Match.when("granted", () => Effect.runSync(application.provide(cli.approvals!))),
     Match.when("none", () => undefined),
     Match.when("broken", () => ({ pending: Effect.die(new Error("view broke")) })),
+    // A request whose decision is itself defective.
+    Match.when("defective", () => ({
+      pending: Effect.succeed([
+        {
+          turnId: "t",
+          toolCallId: "c",
+          name: "charge",
+          params: {},
+          decide: (): Effect.Effect<"accepted" | "stale"> => {
+            throw new Error("decide threw");
+          },
+        },
+      ]),
+    })),
+    // A read that never answers and whose interruption never finishes cleaning up.
+    Match.when("held", () => ({ pending: Effect.never.pipe(Effect.ensuring(Effect.never)) })),
     Match.exhaustive,
   );
   setup = await createTestRenderer({ width: 90, height: 40 });
@@ -196,6 +217,15 @@ const frameWith = async (predicate: (frame: string) => boolean) => {
   }
   throw new Error(`No frame matched; last frame:\n${frame}`);
 };
+
+/** The terminal's Exit, or "running" if it has not ended within `millis`. */
+const settled = (terminal: Fiber.Fiber<void, unknown>, millis = 2_000) =>
+  Effect.runPromise(
+    Fiber.await(terminal).pipe(
+      Effect.timeoutOption(millis),
+      Effect.map(Option.getOrElse(() => "running" as const)),
+    ),
+  );
 
 const send = async (text: string) => {
   await setup!.mockInput.pasteBracketedText(text);
@@ -325,6 +355,62 @@ describe("runTerminal", () => {
     // The Turn is still running; the caller's shutdown, not the terminal, settles it.
     expect((await Effect.runPromise(session.turns)).map((turn) => turn.phase)).toEqual(["running"]);
     Effect.runSync(Deferred.succeed(release, undefined));
+  });
+
+  test("a mapping that throws is that stage's failure: no Turn, or committed and not rerun", async () => {
+    const { terminal, session, returned } = await start();
+    await send("throw-parse");
+    await frameWith((frame) => frame.includes("Not run: the input could not be parsed: defect:"));
+    expect(await Effect.runPromise(session.turns)).toEqual([]);
+    await send("throw-render");
+    const frame = await frameWith((frame) => frame.includes("renderer threw"));
+    expect(frame).toContain("could not be rendered (it is not rerun): defect:");
+    expect(returned).toHaveLength(1);
+    expect((await Effect.runPromise(session.turns)).map((turn) => turn.phase)).toEqual([
+      "committed",
+    ]);
+    expect(await settled(terminal, 200)).toBe("running");
+  });
+
+  test("a failed frame ends the terminal with that failure and destroys the renderer", async () => {
+    const { terminal } = await start();
+    const broken = new BoxRenderable(setup!.renderer, {
+      renderBefore: () => {
+        throw new Error("frame broke");
+      },
+    });
+    setup!.renderer.root.add(broken);
+    await setup!.renderOnce();
+    const exit = await settled(terminal);
+    expect(
+      exit !== "running" && Exit.isFailure(exit) ? Cause.pretty(exit.cause) : String(exit),
+    ).toContain("frame broke");
+    expect(setup!.renderer.isDestroyed).toBe(true);
+  });
+
+  test("a defective decision ends the terminal instead of being lost", async () => {
+    const { terminal } = await start("defective");
+    await frameWith((frame) => frame.includes("Approval required"));
+    setup!.mockInput.pressTab();
+    setup!.mockInput.pressKey("y");
+    const exit = await settled(terminal);
+    expect(
+      exit !== "running" && Exit.isFailure(exit) ? Cause.pretty(exit.cause) : String(exit),
+    ).toContain("decide threw");
+    expect(setup!.renderer.isDestroyed).toBe(true);
+  });
+
+  test("Ctrl-C ends the terminal without waiting for a pending read held in cleanup", async () => {
+    const { terminal } = await start("held");
+    await frameWith((frame) => frame.includes("Ready"));
+    // Let the poll start its held read.
+    await Bun.sleep(50);
+    setup!.mockInput.pressCtrlC();
+    const exit = await settled(terminal);
+    expect(exit !== "running" && Exit.isSuccess(exit)).toBe(true);
+    expect(setup!.renderer.isDestroyed).toBe(true);
+    // Closing the owner would wait on that cleanup forever; the caller's deadline bounds it.
+    scope = undefined;
   });
 
   test("a failure in the view ends the terminal with it and destroys the renderer", async () => {

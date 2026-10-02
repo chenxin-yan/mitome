@@ -49,7 +49,7 @@ On SIGINT or SIGTERM the CLI starts a wall-clock grace timer, then cancels coope
 | `y` / `n` | Approve or deny the focused Approval                                                  |
 | Ctrl-C    | Close                                                                                 |
 
-Closing (Ctrl-C, SIGINT or SIGTERM) restores the terminal first and then shuts the application down as described under [Shutdown and grace](#shutdown-and-grace): an active Turn is interrupted and its cleanup awaited. A clean close exits 130; startup, terminal or shutdown failures and an expired grace exit 1, the last without claiming cleanup finished. Restoration is cooperative: SIGKILL, a blocked event loop or a failing terminal can still leave it unrestored.
+Closing (Ctrl-C, SIGINT or SIGTERM) restores the terminal first and then shuts the application down as described under [Shutdown and grace](#shutdown-and-grace): an active Turn is interrupted and its cleanup awaited. A clean close exits 130; startup and shutdown failures, a terminal failure (a failed frame, or a defect such as a malformed Approval decision) and an expired grace exit 1, the last without claiming cleanup finished. Restoration is cooperative: SIGKILL, a blocked event loop or a failing terminal can still leave it unrestored.
 
 ## providers
 

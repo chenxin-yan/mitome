@@ -160,6 +160,23 @@ describe("compiled mitome tui", () => {
     });
   }
 
+  test("Ctrl-C starts the grace before an Approval read held in cleanup settles", async () => {
+    const tui = open(["--grace", "300ms"], { MITOME_FIXTURE_HOLD_PENDING: "1" });
+    await tui.shows("Ready");
+    // Let the terminal start its first, never-answering read.
+    await Bun.sleep(200);
+    const started = Date.now();
+    tui.write("\u0003");
+    const { code, restored, output } = await tui.exited();
+    expect(code).toBe(1);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(restored).toBe(true);
+    expect(restoredScreen(output)).toBe(true);
+    expect(output.indexOf("shutdown did not finish within its 300ms grace")).toBeGreaterThan(
+      output.lastIndexOf(leaveAlternate),
+    );
+  });
+
   test("a startup failure exits 1 without ever entering the terminal", async () => {
     const tui = open(["--model", "scripted/defect"]);
     const { code, restored, output } = await tui.exited();
