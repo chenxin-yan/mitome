@@ -67,6 +67,12 @@ export interface AcquireOptions {
   readonly model?: string | undefined;
   /** Starts every declared serving Host before the application is ready. */
   readonly serve?: boolean | undefined;
+  /**
+   * Runs once when shutdown begins, after admission closed and before any cancellation or release,
+   * including the unwind of a failed startup. An embedding can start its own deadline here; the
+   * application still waits for all cleanup.
+   */
+  readonly onShutdown?: Effect.Effect<void> | undefined;
 }
 
 /** A fresh Session owned by an acquired application, running the application's program. */
@@ -334,7 +340,10 @@ const acquire = (options: ErasedOptions, selection: AcquireOptions) =>
         const shutdown = yield* Effect.cached(
           Effect.suspend(() => {
             admitting = false;
-            return Scope.close(resources, Exit.void);
+            return Effect.andThen(
+              selection.onShutdown ?? Effect.void,
+              Scope.close(resources, Exit.void),
+            );
           }),
         );
         return { resources, shutdown };
