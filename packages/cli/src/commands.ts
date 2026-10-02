@@ -105,11 +105,12 @@ export const runApplication = (options: RunOptions) =>
     Effect.gen(function* () {
       const deadline = yield* graceDeadline(options.grace);
       // The command's work ends here, however it ends; the Scope's cleanup then runs bounded.
-      yield* execute(options).pipe(Effect.onExit(() => Effect.sync(deadline.start)));
+      const startDeadline = Effect.sync(deadline.start);
+      yield* execute(options, startDeadline).pipe(Effect.onExit(() => startDeadline));
     }),
   );
 
-const execute = (options: RunOptions) =>
+const execute = (options: RunOptions, onShutdown: Effect.Effect<void>) =>
   Effect.gen(function* () {
     const app = yield* loadApplication(options.app);
     const cli = app.cli;
@@ -123,6 +124,8 @@ const execute = (options: RunOptions) =>
       .acquire({
         provider: Option.getOrUndefined(options.provider),
         model: Option.getOrUndefined(options.model),
+        // Also bounds the unwind of a failed startup, which runs before acquire returns.
+        onShutdown,
       })
       .pipe(failingWith("Could not start the application: "));
     const session = yield* application.session.pipe(failingWith(""));

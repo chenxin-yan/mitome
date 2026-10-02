@@ -345,6 +345,25 @@ describe("defineMitome application", () => {
         "release:scripted/broken",
         "store:release",
       ]);
+
+      // The embedding hears that shutdown began before the failed startup unwinds.
+      log.length = 0;
+      yield* Effect.flip(
+        Effect.scoped(
+          app.acquire({
+            model: "scripted/broken",
+            onShutdown: Effect.sync(() => void log.push("shutdown:begin")),
+          }),
+        ),
+      );
+      expect(log).toEqual([
+        "store:acquire",
+        "tools:register",
+        "provision:scripted/broken",
+        "release:scripted/broken",
+        "shutdown:begin",
+        "store:release",
+      ]);
     }),
   );
 
