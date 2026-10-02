@@ -367,6 +367,31 @@ describe("defineMitome application", () => {
     }),
   );
 
+  it.effect("still releases everything when the shutdown notification fails", () =>
+    Effect.gen(function* () {
+      const log: Array<string> = [];
+      const app = defineMitome({
+        program: () => Effect.void,
+        limits: firstPartyExecutionLimits,
+        infrastructure: infrastructure(log),
+        providers: [scripted([], log)],
+      });
+      const exit = yield* Effect.exit(
+        Effect.scoped(
+          app.acquire({ model: "scripted/m", onShutdown: Effect.die("notification failed") }),
+        ),
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(log).toEqual([
+        "store:acquire",
+        "tools:register",
+        "provision:scripted/m",
+        "release:scripted/m",
+        "store:release",
+      ]);
+    }),
+  );
+
   it.effect("is ready only after Host startup, and unwinds a Host that fails to start", () =>
     Effect.gen(function* () {
       const log: Array<string> = [];

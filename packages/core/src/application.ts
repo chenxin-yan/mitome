@@ -70,7 +70,9 @@ export interface AcquireOptions {
   /**
    * Runs once when shutdown begins, after admission closed and before any cancellation or release,
    * including the unwind of a failed startup. An embedding can start its own deadline here; the
-   * application still waits for all cleanup.
+   * application still waits for all cleanup, and still releases everything if this fails. A native
+   * Layer that fails while building rolls back its own resources before shutdown can begin, so that
+   * rollback runs before this notification.
    */
   readonly onShutdown?: Effect.Effect<void> | undefined;
 }
@@ -340,7 +342,8 @@ const acquire = (options: ErasedOptions, selection: AcquireOptions) =>
         const shutdown = yield* Effect.cached(
           Effect.suspend(() => {
             admitting = false;
-            return Effect.andThen(
+            // A failing or interrupted notification must not skip releasing what is owned.
+            return Effect.ensuring(
               selection.onShutdown ?? Effect.void,
               Scope.close(resources, Exit.void),
             );
