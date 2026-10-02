@@ -1,6 +1,6 @@
 import * as BunRuntime from "@effect/platform-bun/BunRuntime";
 import * as BunServices from "@effect/platform-bun/BunServices";
-import { Effect, Layer, Runtime } from "effect";
+import { Cause, Effect, Layer, Logger, Runtime } from "effect";
 import { Argument, CliOutput, Command, Flag } from "effect/cli";
 import cliPackage from "../package.json" with { type: "json" };
 import { describe } from "./application.js";
@@ -64,7 +64,19 @@ export const runCli = Command.runWith(command, { version: cliPackage.version });
 
 if (import.meta.main) {
   const platform = Layer.merge(BunServices.layer, CliOutput.layer(CliOutput.defaultFormatter()));
-  BunRuntime.runMain(runCli(process.argv.slice(2)).pipe(Effect.provide(platform)), {
+  const main = runCli(process.argv.slice(2)).pipe(
+    // runMain's own reporter would log outside this program, to stdout; stdout carries only the
+    // rendered result, so unreported failures and every application log go to stderr instead.
+    Effect.tapCause((cause) =>
+      Cause.hasInterruptsOnly(cause) || !Runtime.getErrorReported(Cause.squash(cause))
+        ? Effect.void
+        : Effect.logError(cause),
+    ),
+    Effect.provide(platform),
+    Effect.provideService(Logger.LogToStderr, true),
+  );
+  BunRuntime.runMain(main, {
+    disableErrorReporting: true,
     // Exit once the command finishes, even if the loaded module left handles open.
     teardown: (exit) => Runtime.defaultTeardown(exit, (code) => process.exit(code)),
   });

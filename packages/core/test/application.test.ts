@@ -279,6 +279,52 @@ describe("defineMitome application", () => {
     }),
   );
 
+  it.effect("keeps infrastructure live while an explicit Session close is still draining", () =>
+    Effect.gen(function* () {
+      const log: Array<string> = [];
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const app = defineMitome({
+        program: () =>
+          Effect.gen(function* () {
+            const store = yield* Store;
+            yield* Effect.addFinalizer(() =>
+              Effect.andThen(
+                Deferred.await(release),
+                Effect.sync(() => void log.push(`cleanup:${store.read("k")}`)),
+              ),
+            );
+            yield* Deferred.succeed(started, undefined);
+            return yield* Effect.never;
+          }),
+        limits: firstPartyExecutionLimits,
+        infrastructure: infrastructure(log),
+      });
+      const scope = yield* Scope.make();
+      const application = yield* app.acquire().pipe(Scope.provide(scope));
+      const session = yield* application.session;
+      yield* Effect.forkChild(session.run(undefined));
+      yield* Deferred.await(started);
+
+      const closing = yield* Effect.forkChild(session.close);
+      yield* settle;
+      const again = yield* Effect.forkChild(session.close);
+      const shutdown = yield* Effect.forkChild(application.shutdown);
+      yield* settle;
+      expect(closing.pollUnsafe()).toBeUndefined();
+      expect(again.pollUnsafe()).toBeUndefined();
+      expect(shutdown.pollUnsafe()).toBeUndefined();
+      expect(log).not.toContain("store:release");
+
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(closing);
+      yield* Fiber.join(again);
+      yield* Fiber.join(shutdown);
+      expect(log.slice(-2)).toEqual(["cleanup:value of k", "store:release"]);
+      yield* Scope.close(scope, Exit.void);
+    }),
+  );
+
   it.effect("unwinds a startup that fails after partial acquisition", () =>
     Effect.gen(function* () {
       const log: Array<string> = [];

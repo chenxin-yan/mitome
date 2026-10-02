@@ -26,17 +26,17 @@ export const parseGrace = (value: string): number => {
 };
 
 /**
- * Best-effort bound on cooperative shutdown, owned by the standalone CLI. A first SIGINT or
- * SIGTERM starts a wall-clock timer before the runtime begins interrupting; if cleanup is still
- * running when it fires, the process exits nonzero without claiming cleanup finished. Normal
- * completion removes the listeners and the timer. A blocked event loop needs an external
- * supervisor.
+ * Best-effort bound on shutdown, owned by the standalone CLI. A wall-clock timer starts on the
+ * first SIGINT or SIGTERM, before the runtime begins interrupting, or through `start` once the
+ * command's own work ends and its cleanup begins. If cleanup is still running when it fires, the
+ * process exits nonzero without claiming cleanup finished. Settled cleanup removes the listeners
+ * and the timer. A blocked event loop needs an external supervisor.
  */
 const graceDeadline = (grace: number) =>
   Effect.acquireRelease(
     Effect.sync(() => {
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const onSignal = () => {
+      const start = () => {
         timer ??= setTimeout(() => {
           process.stderr.write(
             `mitome: shutdown did not finish within its ${grace}ms grace; exiting before cleanup completed\n`,
@@ -44,14 +44,14 @@ const graceDeadline = (grace: number) =>
           process.exit(1);
         }, grace);
       };
-      process.prependListener("SIGINT", onSignal);
-      process.prependListener("SIGTERM", onSignal);
-      return { onSignal, clear: () => clearTimeout(timer) };
+      process.prependListener("SIGINT", start);
+      process.prependListener("SIGTERM", start);
+      return { start, clear: () => clearTimeout(timer) };
     }),
-    ({ onSignal, clear }) =>
+    ({ start, clear }) =>
       Effect.sync(() => {
-        process.off("SIGINT", onSignal);
-        process.off("SIGTERM", onSignal);
+        process.off("SIGINT", start);
+        process.off("SIGTERM", start);
         clear();
       }),
   );
@@ -97,44 +97,50 @@ export interface RunOptions {
 
 /**
  * One-shot execution: load, read input, acquire, allocate one fresh Session, parse, run one Turn,
- * render, then close the Session and shut down. A render failure after the Turn committed is
- * reported and never reruns the Turn.
+ * render, then close the Session and shut down within the grace. A render failure after the Turn
+ * committed is reported and never reruns the Turn.
  */
 export const runApplication = (options: RunOptions) =>
   Effect.scoped(
     Effect.gen(function* () {
-      yield* graceDeadline(options.grace);
-      const app = yield* loadApplication(options.app);
-      const cli = app.cli;
-      if (cli === undefined) {
-        return yield* userError(
-          `${app.path} declares no cli mapping (parseInput and renderResult), which mitome run needs`,
-        );
-      }
-      const text = yield* readInput(options.input);
-      const application = yield* app
-        .acquire({
-          provider: Option.getOrUndefined(options.provider),
-          model: Option.getOrUndefined(options.model),
-        })
-        .pipe(failingWith("Could not start the application: "));
-      const session = yield* application.session.pipe(failingWith(""));
-      const input = yield* application
-        .provide(cli.parseInput(text))
-        .pipe(failingWith("Could not parse the input: "));
-      const result = yield* session.run(input).pipe(failingWith("The application failed: "));
-      const rendered = yield* application
-        .provide(cli.renderResult(result))
-        .pipe(failingWith("The Turn committed, but its result could not be rendered: "));
-      if (!Predicate.isString(rendered)) {
-        return yield* userError(
-          "The Turn committed, but renderResult did not produce a string; it is not rerun",
-        );
-      }
-      yield* writeResult(rendered);
-      yield* session.close;
+      const deadline = yield* graceDeadline(options.grace);
+      // The command's work ends here, however it ends; the Scope's cleanup then runs bounded.
+      yield* execute(options).pipe(Effect.onExit(() => Effect.sync(deadline.start)));
     }),
   );
+
+const execute = (options: RunOptions) =>
+  Effect.gen(function* () {
+    const app = yield* loadApplication(options.app);
+    const cli = app.cli;
+    if (cli === undefined) {
+      return yield* userError(
+        `${app.path} declares no cli mapping (parseInput and renderResult), which mitome run needs`,
+      );
+    }
+    const text = yield* readInput(options.input);
+    const application = yield* app
+      .acquire({
+        provider: Option.getOrUndefined(options.provider),
+        model: Option.getOrUndefined(options.model),
+      })
+      .pipe(failingWith("Could not start the application: "));
+    const session = yield* application.session.pipe(failingWith(""));
+    yield* Effect.addFinalizer(() => session.close);
+    const input = yield* application
+      .provide(cli.parseInput(text))
+      .pipe(failingWith("Could not parse the input: "));
+    const result = yield* session.run(input).pipe(failingWith("The application failed: "));
+    const rendered = yield* application
+      .provide(cli.renderResult(result))
+      .pipe(failingWith("The Turn committed, but its result could not be rendered: "));
+    if (!Predicate.isString(rendered)) {
+      return yield* userError(
+        "The Turn committed, but renderResult did not produce a string; it is not rerun",
+      );
+    }
+    yield* writeResult(rendered);
+  });
 
 const modelHint = (provider: ProviderDiscovery, modelId: string) => {
   const window = provider.models[modelId]?.contextWindow;
