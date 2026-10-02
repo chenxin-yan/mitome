@@ -115,6 +115,21 @@ describe("compiled mitome", () => {
     expect(await events()).not.toContain("infra:release");
   });
 
+  test("bounds the unwind of a failed startup by the grace, without a signal", async () => {
+    await writeFile(log, "");
+    const started = Date.now();
+    const failed = await start(
+      ["run", "--app", fixture, "--model", "scripted/defect", "--grace", "300ms", "hi"],
+      "",
+      { MITOME_FIXTURE_HOLD_RELEASE: "1" },
+    ).result;
+    expect(failed.code).toBe(1);
+    expect(failed.stdout).toBe("");
+    expect(failed.stderr).toContain("shutdown did not finish within its 300ms grace");
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(await events()).toEqual(["infra:acquire"]);
+  });
+
   test("discovers Providers offline", async () => {
     await writeFile(log, "");
     const providers = await run(["providers", "--app", fixture]);

@@ -76,7 +76,7 @@ Selection is explicit and lazy. Nothing is provisioned until acquisition.
 
 ## Shutdown
 
-Closing the owning Scope or calling `application.shutdown` closes admission, interrupts serving Hosts, active Turns and provided work together, waits for all of their cleanup and only then releases the Model binding and the infrastructure. Shutdown is idempotent and waits as long as cleanup takes; the library never exits the process. Bounding that wait is the embedding application's choice; the CLI applies a grace (see [CLI](/docs/cli)).
+Closing the owning Scope or calling `application.shutdown` closes admission, interrupts serving Hosts, active Turns and provided work together, waits for all of their cleanup and only then releases the Model binding and the infrastructure. Shutdown is idempotent and waits as long as cleanup takes; the library never exits the process. Bounding that wait is the embedding application's choice: `acquire({ onShutdown })` runs an Effect when shutdown begins, including the unwind of a failed startup, so the embedding can start its own deadline. The CLI applies a grace this way (see [CLI](/docs/cli)).
 
 ## Serving Hosts
 

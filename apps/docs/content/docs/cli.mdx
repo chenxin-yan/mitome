@@ -27,7 +27,7 @@ mitome auth logout --app <file> [--provider <id>]
 
 ### Shutdown and grace
 
-On SIGINT or SIGTERM the CLI starts a wall-clock grace timer, then cancels cooperatively: admission closes, the active Turn and Hosts are interrupted and their cleanup is awaited before shared infrastructure is released. If cleanup finishes, the exit status is 130. The same timer bounds the cleanup that follows ordinary completion or failure. If the grace expires first, the CLI reports it on standard error and exits 1 without claiming cleanup finished.
+On SIGINT or SIGTERM the CLI starts a wall-clock grace timer, then cancels cooperatively: admission closes, the active Turn and Hosts are interrupted and their cleanup is awaited before shared infrastructure is released. If cleanup finishes, the exit status is 130. The same timer bounds the cleanup that follows ordinary completion or failure, including the unwind of a startup that failed. If the grace expires first, the CLI reports it on standard error and exits 1 without claiming cleanup finished.
 
 `--grace` accepts a positive duration such as `500ms` or `5s` (default `5s`, at most 2147483647ms). A blocked event loop cannot honor it; use an external supervisor for hard limits.
 
