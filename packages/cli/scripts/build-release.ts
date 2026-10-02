@@ -24,6 +24,8 @@ for (const [target, packageName] of Object.entries(targets)) {
       "build",
       "--compile",
       "--no-compile-autoload-dotenv",
+      // Lets the selected application module resolve its own packages at runtime.
+      "--compile-autoload-package-json",
       "src/index.ts",
       `--target=${target}`,
       `--outfile=${artifact}`,
