@@ -1,4 +1,12 @@
 {
   "title": "Mitome",
-  "pages": ["index", "design-decisions", "security", "versioning", "contributing"]
+  "pages": [
+    "index",
+    "applications",
+    "cli",
+    "design-decisions",
+    "security",
+    "versioning",
+    "contributing"
+  ]
 }

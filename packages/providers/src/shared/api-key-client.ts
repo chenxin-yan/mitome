@@ -36,7 +36,7 @@ export const apiKeyClientLayer = <Id, E>(
         apiKeyEnv === undefined
           ? undefined
           : yield* Config.Redacted(apiKeyEnv).pipe(
-              // A bare string: core surfaces it via String(cause) on TurnError.
+              // A bare string, so whoever provisions the Model can report it verbatim.
               Effect.mapError(
                 () => `Environment variable ${apiKeyEnv} is not set or empty` as const,
               ),

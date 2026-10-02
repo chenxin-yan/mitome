@@ -266,7 +266,8 @@ describe("Codex OAuth", () => {
   });
 
   test("names the recovery for an absent or malformed Credential", async () => {
-    const message = "Codex Credential is unavailable. Run `mitome auth login` to authenticate.";
+    const message =
+      "Codex Credential is unavailable. Authenticate through your application; with the Mitome CLI, run `mitome auth login --app <file> --provider openai-codex`.";
     await expect(loadCredential(await directory())).rejects.toThrow(message);
 
     const configDirectory = await directory();
