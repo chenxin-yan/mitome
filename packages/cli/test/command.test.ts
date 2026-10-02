@@ -19,7 +19,12 @@ const credentials = join(directory, "credentials");
 process.env.MITOME_FIXTURE_LOG = log;
 process.env.MITOME_FIXTURE_CREDENTIALS = credentials;
 
-afterAll(() => rm(directory, { recursive: true, force: true }));
+const originalApiKey = process.env.FIXTURE_API_KEY;
+afterAll(async () => {
+  if (originalApiKey === undefined) delete process.env.FIXTURE_API_KEY;
+  else process.env.FIXTURE_API_KEY = originalApiKey;
+  await rm(directory, { recursive: true, force: true });
+});
 beforeEach(() => writeFile(log, ""));
 
 const events = Effect.promise(async () =>

@@ -367,6 +367,29 @@ describe("defineMitome application", () => {
     }),
   );
 
+  it.effect("closes infrastructure with the failure of a failed startup", () =>
+    Effect.gen(function* () {
+      const log: Array<string> = [];
+      const exitAware = Layer.effectDiscard(
+        Effect.acquireRelease(Effect.void, (_, exit) =>
+          Effect.sync(() => void log.push(`infra:${exit._tag}`)),
+        ),
+      );
+      const app = defineMitome({
+        program: () => Effect.void,
+        limits: firstPartyExecutionLimits,
+        infrastructure: Layer.merge(infrastructure(log), exitAware),
+        providers: [scripted([], log, new Set(["broken"]))],
+      });
+      yield* Effect.flip(Effect.scoped(app.acquire({ model: "scripted/broken" })));
+      expect(log).toContain("infra:Failure");
+
+      log.length = 0;
+      yield* Effect.scoped(app.acquire({ model: "scripted/fine" }));
+      expect(log).toContain("infra:Success");
+    }),
+  );
+
   it.effect("still releases everything when the shutdown notification fails", () =>
     Effect.gen(function* () {
       const log: Array<string> = [];

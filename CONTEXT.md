@@ -145,7 +145,7 @@ _Avoid_: Token, key, login
 These terms name source constructs the language above does not already cover.
 
 **Application**:
-An Agent program composed by `defineMitome` with its infrastructure, Providers, Default and fallback Models, and optional CLI mapping and serving Hosts. One acquisition builds its infrastructure once and serves explicit fresh Sessions until shutdown.
+An Agent program composed by `defineMitome` with optional infrastructure and Providers, optional Default and fallback Models, and optional CLI mapping and serving Hosts. One acquisition builds its infrastructure once and serves explicit fresh Sessions until shutdown.
 _Avoid_: Agent Definition, Mitome Definition
 
 **Application module**:
