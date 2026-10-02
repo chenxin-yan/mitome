@@ -1,6 +1,8 @@
 // An offline native application for the CLI tests: a scripted Model, no network or credentials.
 // Set MITOME_FIXTURE_LOG to record what was acquired, provisioned, run and cleaned up, and
-// MITOME_FIXTURE_HOLD_RELEASE to make releasing the infrastructure never finish.
+// MITOME_FIXTURE_HOLD_RELEASE to make releasing the infrastructure never finish, and
+// MITOME_FIXTURE_HOLD_PENDING to grant an Approval channel whose reads never answer and whose
+// interruption never finishes.
 import { appendFileSync } from "node:fs";
 import {
   type Approvals,
@@ -174,6 +176,10 @@ export default defineMitome({
       result.text.endsWith("unrenderable")
         ? Effect.fail(new Refused({ reason: "cannot render" }))
         : Effect.map(Greeting, ({ prefix }) => `${prefix}${result.text}`),
-    approvals: Channel,
+    approvals: Effect.map(Channel, (channel) =>
+      process.env.MITOME_FIXTURE_HOLD_PENDING === undefined
+        ? channel
+        : { pending: Effect.never.pipe(Effect.ensuring(Effect.never)) },
+    ),
   },
 });

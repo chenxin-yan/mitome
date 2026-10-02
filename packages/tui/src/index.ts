@@ -22,6 +22,7 @@ import {
 } from "@opentui/core";
 import {
   Cause,
+  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -128,10 +129,11 @@ const help = (phase: Phase, approval: PendingApproval | undefined, deciding: boo
     .join(" • ");
 
 /**
- * Runs the terminal until it is closed (Ctrl-C, a signal, or the renderer's own destruction), then
- * restores it. Submissions run one at a time as parse, one Turn, render; each is forked into the
- * caller's Scope, so closing the terminal never waits for Turn cleanup and the caller decides how
- * to shut the application down. Pending Approvals are reread passively; only `y`/`n` while the
+ * Runs the terminal until it is closed (Ctrl-C, a signal, or the renderer's own destruction) or
+ * fails (a failed frame, or a defect in launched work such as a decision), then restores it.
+ * Submissions run one at a time as parse, one Turn, render; a stage's failure, thrown or returned,
+ * is shown for that submission. All launched work, the Approval poll included, is forked into the
+ * caller's Scope, so ending never waits for it and the caller decides how to shut down. Pending Approvals are reread passively; only `y`/`n` while the
  * Approval box has focus decides the request it shows. Uses `renderer` when given, for tests.
  */
 export const runTerminal = <Input, A>(
@@ -165,7 +167,10 @@ const closed = (renderer: CliRenderer) =>
 
 const view = <Input, A>(application: TerminalApplication<Input, A>, renderer: CliRenderer) =>
   Effect.gen(function* () {
-    const runFork = yield* FiberSet.makeRuntime();
+    // Launched work lives in the caller's Scope; the view never awaits it, and its only failures
+    // are defects (per-submission failures are captured below), which end the terminal.
+    const launched = yield* FiberSet.make<unknown, never>();
+    const runFork = yield* FiberSet.runtime(launched)();
     const entries: Array<Entry> = [];
     let phase: Phase = "idle";
     let interrupting = false;
@@ -276,31 +281,34 @@ const view = <Input, A>(application: TerminalApplication<Input, A>, renderer: Cl
       if (decision === undefined || request === undefined) return;
       key.preventDefault();
       runFork(
-        Effect.flatMap(request.decide(decision), (result) =>
-          Effect.sync(() => {
-            const call = `${printable(request.name)} (${printable(request.toolCallId)})`;
-            const line =
-              result === "stale"
-                ? `Decision on ${call} was stale; nothing changed.`
-                : decision === "approve"
-                  ? `Approved ${call}.`
-                  : `Denied ${call}; the program decides how the Turn continues.`;
-            const entry = current();
-            if (entry === undefined) notice = line;
-            else entry.lines.push(line);
-            if (shown === request) showApproval(undefined);
-            draw();
-          }),
+        Effect.flatMap(
+          Effect.suspend(() => request.decide(decision)),
+          (result) =>
+            Effect.sync(() => {
+              const call = `${printable(request.name)} (${printable(request.toolCallId)})`;
+              const line =
+                result === "stale"
+                  ? `Decision on ${call} was stale; nothing changed.`
+                  : decision === "approve"
+                    ? `Approved ${call}.`
+                    : `Denied ${call}; the program decides how the Turn continues.`;
+              const entry = current();
+              if (entry === undefined) notice = line;
+              else entry.lines.push(line);
+              if (shown === request) showApproval(undefined);
+              draw();
+            }),
         ),
       );
     };
 
     /** Runs one stage as its own fiber, so Escape interrupts that stage and settlement still runs. */
-    const staged = <X>(next: Phase, effect: Effect.Effect<X, unknown>) =>
+    const staged = <X>(next: Phase, effect: () => Effect.Effect<X, unknown>) =>
       Effect.gen(function* () {
         phase = next;
         draw();
-        const fiber = yield* Effect.forkChild(effect);
+        // Suspended, so a mapping that throws instead of failing is still this stage's Exit.
+        const fiber = yield* Effect.forkChild(Effect.suspend(effect));
         stage = fiber;
         return yield* Fiber.await(fiber).pipe(
           Effect.ensuring(
@@ -313,7 +321,7 @@ const view = <Input, A>(application: TerminalApplication<Input, A>, renderer: Cl
 
     const pipeline = (text: string, entry: Entry) =>
       Effect.gen(function* () {
-        const parsed = yield* staged("parsing", application.parseInput(text));
+        const parsed = yield* staged("parsing", () => application.parseInput(text));
         if (Exit.isFailure(parsed)) {
           entry.lines.push(
             Cause.hasInterruptsOnly(parsed.cause)
@@ -325,7 +333,7 @@ const view = <Input, A>(application: TerminalApplication<Input, A>, renderer: Cl
         const before = (yield* Effect.exit(application.turns)).pipe(
           Exit.match({ onFailure: () => 0, onSuccess: (turns) => turns.length }),
         );
-        const ran = yield* staged("running", application.run(parsed.value));
+        const ran = yield* staged("running", () => application.run(parsed.value));
         const turns = yield* Effect.exit(application.turns);
         const snapshot =
           Exit.isSuccess(turns) && turns.value.length > before ? turns.value.at(-1) : undefined;
@@ -339,7 +347,7 @@ const view = <Input, A>(application: TerminalApplication<Input, A>, renderer: Cl
           entry.lines.push(outcome(ran, snapshot));
         }
         if (Exit.isFailure(ran)) return;
-        const rendered = yield* staged("rendering", application.renderResult(ran.value));
+        const rendered = yield* staged("rendering", () => application.renderResult(ran.value));
         if (Exit.isFailure(rendered)) {
           entry.lines.push(
             `The Turn committed, but its result could not be rendered (it is not rerun): ${reasons(rendered.cause)}`,
@@ -400,13 +408,32 @@ const view = <Input, A>(application: TerminalApplication<Input, A>, renderer: Cl
         application.approvals === undefined ? [] : yield* application.approvals.pending;
       showApproval(pending[0]);
     });
+    // OpenTUI reports a failed frame through this event and otherwise keeps running.
+    const renderFailed = Deferred.makeUnsafe<never, Cause.UnknownError>();
+    const onRenderError = ({ error }: { readonly error: Error }) =>
+      Deferred.doneUnsafe(
+        renderFailed,
+        Effect.fail(
+          new Cause.UnknownError(error, `The terminal failed to render: ${error.message}`),
+        ),
+      );
     yield* Effect.acquireUseRelease(
-      Effect.sync(() => renderer.keyInput.on("keypress", onKey)),
+      Effect.sync(() => {
+        renderer.keyInput.on("keypress", onKey);
+        renderer.on("render:error", onRenderError);
+        runFork(Effect.forever(Effect.andThen(refresh, Effect.sleep(refreshMillis))));
+      }),
+      // Ends on close, a failed frame or a defect in launched work without waiting for any of that
+      // work, the poll included, so the caller can start its deadline before settling it.
       () =>
         Effect.raceFirst(
           closed(renderer),
-          Effect.forever(Effect.andThen(refresh, Effect.sleep(refreshMillis))),
+          Effect.raceFirst(Deferred.await(renderFailed), FiberSet.join(launched)),
         ),
-      () => Effect.sync(() => renderer.keyInput.off("keypress", onKey)),
+      () =>
+        Effect.sync(() => {
+          renderer.keyInput.off("keypress", onKey);
+          renderer.off("render:error", onRenderError);
+        }),
     );
   });
