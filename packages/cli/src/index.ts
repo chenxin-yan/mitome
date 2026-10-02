@@ -4,7 +4,14 @@ import { Cause, Effect, Layer, Logger, Runtime } from "effect";
 import { Argument, CliOutput, Command, Flag } from "effect/cli";
 import cliPackage from "../package.json" with { type: "json" };
 import { describe } from "./application.js";
-import { authenticate, authStatus, listProviders, parseGrace, runApplication } from "./commands.js";
+import {
+  authenticate,
+  authStatus,
+  listProviders,
+  parseGrace,
+  runApplication,
+  runTerminalApplication,
+} from "./commands.js";
 
 const app = Flag.String("app").pipe(
   Flag.withDescription("Application module whose default export is defineMitome(...)"),
@@ -14,20 +21,23 @@ const provider = Flag.String("provider").pipe(
   Flag.optional,
 );
 
+const model = Flag.String("model").pipe(
+  Flag.withDescription("Qualified Model id (provider/model); never falls back"),
+  Flag.optional,
+);
+const grace = Flag.String("grace").pipe(
+  Flag.mapTryCatch(parseGrace, describe),
+  Flag.withDefault(5000),
+  Flag.withDescription("How long shutdown may take once it begins, as <n>ms or <n>s"),
+);
+
 const run = Command.make(
   "run",
   {
     app,
     provider,
-    model: Flag.String("model").pipe(
-      Flag.withDescription("Qualified Model id (provider/model); never falls back"),
-      Flag.optional,
-    ),
-    grace: Flag.String("grace").pipe(
-      Flag.mapTryCatch(parseGrace, describe),
-      Flag.withDefault(5000),
-      Flag.withDescription("How long shutdown may take after SIGINT/SIGTERM, as <n>ms or <n>s"),
-    ),
+    model,
+    grace,
     input: Argument.String("input").pipe(
       Argument.withDescription("Input text; without it, non-terminal standard input is read"),
       Argument.optional,
@@ -35,6 +45,10 @@ const run = Command.make(
   },
   runApplication,
 ).pipe(Command.withDescription("Run the application's program once for one input"));
+
+const tui = Command.make("tui", { app, provider, model, grace }, runTerminalApplication).pipe(
+  Command.withDescription("Run the application's program repeatedly in a terminal"),
+);
 
 const providers = Command.make("providers", { app }, ({ app }) => listProviders(app)).pipe(
   Command.withDescription("List the application's Providers and Model hints"),
@@ -57,7 +71,7 @@ const auth = Command.make("auth").pipe(
 
 const command = Command.make("mitome").pipe(
   Command.withDescription("Run and set up a native Mitome application"),
-  Command.withSubcommands([run, providers, auth]),
+  Command.withSubcommands([run, tui, providers, auth]),
 );
 
 export const runCli = Command.runWith(command, { version: cliPackage.version });

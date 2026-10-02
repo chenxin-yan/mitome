@@ -1,5 +1,6 @@
 import { Cause, Context, Effect, Exit, Fiber, Layer, Result, Schema, Scope } from "effect";
 import type { LanguageModel } from "effect/ai";
+import type { ApprovalChannel } from "./approvals.js";
 import type { CredentialDescriptor } from "./credential.js";
 import { getProviderMetadata, parseQualifiedModelId, providerModel } from "./provider.js";
 import type { AnyProvider, ModelMetadataMap, Provider, QualifiedModelId } from "./provider.js";
@@ -132,9 +133,14 @@ export interface MitomeHost<Input, A, E, ROut, ES> {
 }
 
 /** Explicit mapping between CLI text and the program's own input and result. */
-export interface MitomeCli<Input, A, EP, RP, ER, RR> {
+export interface MitomeCli<Input, A, EP, RP, ER, RR, EA, RA> {
   readonly parseInput: (text: string) => Effect.Effect<Input, EP, RP>;
   readonly renderResult: (result: A) => Effect.Effect<string, ER, RR>;
+  /**
+   * The Approval channel the program's own `consent` waits on, granted to the terminal. Without it
+   * the terminal offers no decisions; whatever consent the program configured still decides.
+   */
+  readonly approvals?: Effect.Effect<ApprovalChannel, EA, RA>;
 }
 
 /** The declarative composition `defineMitome` accepts. */
@@ -150,6 +156,8 @@ export interface MitomeOptions<
   RP,
   ER,
   RR,
+  EA,
+  RA,
   ES,
 > {
   /** The ordinary program, run as one whole-function Turn per request. */
@@ -168,7 +176,7 @@ export interface MitomeOptions<
    * same directory to any Provider factory that reads them, such as `codex({ configDirectory })`.
    */
   readonly configDirectory?: string | undefined;
-  readonly cli?: MitomeCli<NoInfer<Input>, NoInfer<A>, EP, RP, ER, RR>;
+  readonly cli?: MitomeCli<NoInfer<Input>, NoInfer<A>, EP, RP, ER, RR, EA, RA>;
   readonly hosts?: ReadonlyArray<
     MitomeHost<NoInfer<Input>, NoInfer<A>, NoInfer<E>, NoInfer<ROut>, ES>
   >;
@@ -187,8 +195,10 @@ export interface Mitome<
   RP,
   ER,
   RR,
+  EA,
+  RA,
   ES,
-> extends MitomeOptions<Input, A, E, R, Providers, ROut, EI, EP, RP, ER, RR, ES> {
+> extends MitomeOptions<Input, A, E, R, Providers, ROut, EI, EP, RP, ER, RR, EA, RA, ES> {
   readonly protocol: typeof mitomeProtocol;
   /** Provider facts read without provisioning, authenticating or acquiring anything. */
   readonly discovery: ReadonlyArray<ProviderDiscovery>;
@@ -476,10 +486,12 @@ export const defineMitome = <
   RP extends ROut = never,
   ER = never,
   RR extends ROut = never,
+  EA = never,
+  RA extends ROut = never,
   ES = never,
 >(
-  options: MitomeOptions<Input, A, E, R, Providers, ROut, EI, EP, RP, ER, RR, ES>,
-): Mitome<Input, A, E, R, Providers, ROut, EI, EP, RP, ER, RR, ES> => {
+  options: MitomeOptions<Input, A, E, R, Providers, ROut, EI, EP, RP, ER, RR, EA, RA, ES>,
+): Mitome<Input, A, E, R, Providers, ROut, EI, EP, RP, ER, RR, EA, RA, ES> => {
   const providers: ReadonlyArray<AnyProvider> = options.providers ?? [];
   const ids = new Set<string>();
   const discovery = providers.map((provider) => {
