@@ -238,7 +238,8 @@ describe("Codex transport", () => {
 
   test("preserves Credential auth and storage error taxonomy", async () => {
     const unavailable = new CredentialUnavailableError({
-      message: "Codex Credential is unavailable. Run `mitome auth login` to authenticate.",
+      message:
+        "Codex Credential is unavailable. Authenticate through your application; with the Mitome CLI, run `mitome auth login --app <file> --provider openai-codex`.",
     });
     await expect(
       runWithLayer(failingCredentialStoreLayer(unavailable), () => completed()),
@@ -246,7 +247,7 @@ describe("Codex transport", () => {
       reason: {
         _tag: "AuthenticationError",
         isRetryable: false,
-        message: expect.stringContaining("mitome auth login"),
+        message: expect.stringContaining("mitome auth login --app <file> --provider openai-codex"),
       },
     });
 

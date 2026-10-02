@@ -4,7 +4,7 @@ description: Prerelease breaking changes and the Effect version rule.
 icon: Tags
 ---
 
-Mitome is prerelease. Its packages currently release together at one version; there is no compatibility promise across the accepted Effect-native redesign. Current source still implements the Promise-facing SDK and its Effect facade. The new API, export layout and storage contracts are not yet implemented; obsolete guides are removed rather than offered as a legacy surface.
+Mitome is prerelease. Its packages currently release together at one version; there is no compatibility promise across the accepted Effect-native redesign. The process-local native library and one-shot CLI are implemented and may still change; storage, TUI and HTTP contracts are not yet implemented. Obsolete guides are removed rather than offered as a legacy surface.
 
 Until 1.0, public functions, options, event fields and stored representations may change without a deprecation period. Published stored formats still need explicit versioning and migration decisions, not silent reinterpretation. See the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) for proof and delivery gates.
 
