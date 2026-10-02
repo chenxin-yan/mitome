@@ -335,6 +335,8 @@ const acquire = (options: ErasedOptions, selection: AcquireOptions) =>
     ];
     const chain = yield* candidates(providers, configured, selection);
     let admitting = true;
+    // A failed startup closes with its failure, so exit-aware releases can roll back.
+    let closing: Exit.Exit<unknown, unknown> = Exit.void;
     // Infrastructure is built into `resources` first, so it is released last.
     const { resources, shutdown } = yield* Effect.acquireRelease(
       Effect.gen(function* () {
@@ -345,7 +347,7 @@ const acquire = (options: ErasedOptions, selection: AcquireOptions) =>
             // A failing or interrupted notification must not skip releasing what is owned.
             return Effect.ensuring(
               selection.onShutdown ?? Effect.void,
-              Scope.close(resources, Exit.void),
+              Effect.suspend(() => Scope.close(resources, closing)),
             );
           }),
         );
@@ -441,7 +443,14 @@ const acquire = (options: ErasedOptions, selection: AcquireOptions) =>
         }
       }
       return application;
-    }).pipe(Effect.onError(() => shutdown));
+    }).pipe(
+      Effect.onError((cause) =>
+        Effect.suspend(() => {
+          closing = Exit.failCause(cause);
+          return shutdown;
+        }),
+      ),
+    );
   });
 
 /**
