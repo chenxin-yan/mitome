@@ -1,0 +1,45 @@
+---
+title: CLI
+description: Run, inspect and authenticate an explicitly selected Mitome application with the mitome command.
+icon: Terminal
+---
+
+The `mitome` command loads exactly one [application](/docs/applications): the default export of the file passed with `--app`, resolved against the current directory. It never searches a project, home or config directory, never guesses an entry file and never installs dependencies. Loading imports and runs the module, so select only code you trust.
+
+```text
+mitome --help
+mitome --version
+mitome run --app <file> [--provider <id>] [--model <provider/model>] [--grace <duration>] [input]
+mitome providers --app <file>
+mitome auth status --app <file> [--provider <id>]
+mitome auth login --app <file> [--provider <id>]
+mitome auth logout --app <file> [--provider <id>]
+```
+
+## run
+
+`run` is one-shot, in a terminal or not. It acquires the application, allocates one fresh Session, runs one Turn and shuts down.
+
+- **Input.** The `input` argument wins and standard input is then not read. Without it, non-terminal standard input is read to its end as one payload. In a terminal with no argument, `run` reports usage. The text goes through the application's `cli.parseInput`; there is no implicit Message or JSON decoding.
+- **Output.** The result goes through `cli.renderResult`, and only that string is written to standard output, followed by one newline unless it is empty or already ends with one. Diagnostics go to standard error. An application without a `cli` mapping cannot be run.
+- **Selection.** `--model` takes a Qualified Model id, split at its first `/`, and never falls back. `--provider` restricts the configured default and fallbacks to one Provider. Unknown Providers, malformed ids and mismatched flags fail before anything is acquired.
+- **Exit status.** Load, selection, input, application and rendering failures exit 1. A rendering failure after the Turn committed is reported as such; the Turn is not rerun.
+
+### Shutdown and grace
+
+On SIGINT or SIGTERM the CLI starts a wall-clock grace timer, then cancels cooperatively: admission closes, the active Turn and Hosts are interrupted and their cleanup is awaited before shared infrastructure is released. If cleanup finishes, the exit status is 130. If the grace expires first, the CLI reports it on standard error and exits 1 without claiming cleanup finished.
+
+`--grace` accepts a positive duration such as `500ms` or `5s` (default `5s`, at most 2147483647ms). A blocked event loop cannot honor it; use an external supervisor for hard limits.
+
+## providers
+
+Lists each declared Provider with its catalog hints and known context windows, then the configured default and fallbacks. Nothing is acquired, provisioned or authenticated. Catalogs are hints: `run --model` accepts any Provider-native id.
+
+## auth
+
+None of the `auth` commands acquire the application, start a Session or provision a Model.
+
+- `auth status` reports offline facts only: whether an environment credential is present or missing (never its value), or that a Provider offers an auth capability whose credential status is unknown.
+- `auth login` and `auth logout` act on the Provider named by `--provider`, or on the only Provider that takes a credential. For an environment credential they explain which variable to set or unset; Mitome does not store it. For an auth capability they run the Provider's own login or logout, which may open a browser and needs network access.
+
+Capability credentials are stored in the application's `configDirectory`, or by default in Mitome's config directory (`$MITOME_HOME`, else `$XDG_CONFIG_HOME/mitome`, with `APPDATA`/`HOME` fallbacks). When an application overrides it, pass the same directory to the Provider, for example `codex({ configDirectory })`.
