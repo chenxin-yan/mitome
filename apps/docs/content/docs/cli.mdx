@@ -10,6 +10,7 @@ The `mitome` command loads exactly one [application](/docs/applications): the de
 mitome --help
 mitome --version
 mitome run --app <file> [--provider <id>] [--model <provider/model>] [--grace <duration>] [input]
+mitome tui --app <file> [--provider <id>] [--model <provider/model>] [--grace <duration>]
 mitome providers --app <file>
 mitome auth status --app <file> [--provider <id>]
 mitome auth login --app <file> [--provider <id>]
@@ -30,6 +31,25 @@ mitome auth logout --app <file> [--provider <id>]
 On SIGINT or SIGTERM the CLI starts a wall-clock grace timer, then cancels cooperatively: admission closes, the active Turn and Hosts are interrupted and their cleanup is awaited before shared infrastructure is released. If cleanup finishes, the exit status is 130. The same timer bounds the cleanup that follows ordinary completion or failure, including the unwind of a startup that failed. One exception: a native Layer that fails while it is being built rolls back its own resources before the application can begin shutting down, so a hanging rollback inside that Layer is bounded only after SIGINT or SIGTERM starts the timer. If the grace expires first, the CLI reports it on standard error and exits 1 without claiming cleanup finished.
 
 `--grace` accepts a positive duration such as `500ms` or `5s` (default `5s`, at most 2147483647ms). A blocked event loop cannot honor it; use an external supervisor for hard limits.
+
+## tui
+
+`tui` is the standalone terminal for one application. It needs a terminal on both standard input and standard output and refuses otherwise, before loading anything. It acquires the application once, allocates one Session and keeps it for every submission until you close the terminal. There is no attachment to another running application.
+
+- **Input and output.** Each submission's text goes through `cli.parseInput`, runs as one Turn and is shown through `cli.renderResult`, exactly as with `run`. Rendered output is application output, not a Message: the committed conversation is only what the program staged, and the status line counts its Messages. A parse failure starts no Turn; a rendering failure after the Turn committed is reported and the Turn is not rerun.
+- **One at a time.** A new submission waits until the previous one settles; a draft typed meanwhile is kept. Each submission shows its Turn's outcome from the Session's own record: succeeded and committed, failed, or interrupted, with committed conversation unchanged unless it committed.
+- **Approvals.** Only an application that declares `cli.approvals` (see [Applications](/docs/applications#approvals-in-the-terminal)) can be decided from the terminal. A pending Tool Call is shown exactly as the handler would receive it: its Turn, Tool-call id, Tool and decoded parameters, inspected natively with control characters escaped; the box scrolls rather than truncating. Press Tab to focus it, then `y` to approve or `n` to deny; typing or pasting in the editor decides nothing. A denial is recorded on its own line; whether the Turn then fails or continues is up to the program. Without `cli.approvals` the terminal offers no decisions, and the program's own consent still decides.
+- **Progress.** The view rereads the pending Approvals about every 100ms and each submission's outcome when it settles. Observation never drives or blocks execution, and there is no token streaming.
+
+| Key       | Effect                                                                                |
+| --------- | ------------------------------------------------------------------------------------- |
+| Alt-Enter | Submit the editor's text (Enter inserts a newline)                                    |
+| Esc       | Interrupt the running submission; its cleanup is shown as continuing until it settles |
+| Tab       | Move focus between the editor and a pending Approval                                  |
+| `y` / `n` | Approve or deny the focused Approval                                                  |
+| Ctrl-C    | Close                                                                                 |
+
+Closing (Ctrl-C, SIGINT or SIGTERM) restores the terminal first and then shuts the application down as described under [Shutdown and grace](#shutdown-and-grace): an active Turn is interrupted and its cleanup awaited. A clean close exits 130; startup, terminal or shutdown failures and an expired grace exit 1, the last without claiming cleanup finished. Restoration is cooperative: SIGKILL, a blocked event loop or a failing terminal can still leave it unrestored.
 
 ## providers
 

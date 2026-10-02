@@ -3,16 +3,20 @@
 // MITOME_FIXTURE_HOLD_RELEASE to make releasing the infrastructure never finish.
 import { appendFileSync } from "node:fs";
 import {
+  type Approvals,
   defineMitome,
   firstPartyExecutionLimits,
+  type LocalTools,
+  localTools,
   loop,
+  makeApprovals,
   makeProvider,
   reportModelRequest,
   Turn,
   withModelRequestAccounting,
 } from "@mitome/core";
 import { Context, Effect, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Prompt } from "effect/ai";
+import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
 
 const record = (event: string) => {
   const file = process.env.MITOME_FIXTURE_LOG;
@@ -21,6 +25,18 @@ const record = (event: string) => {
 
 class Greeting extends Context.Service<Greeting, { readonly prefix: string }>()(
   "fixture/Greeting",
+) {}
+
+const Charge = Tool.make("charge", {
+  parameters: Schema.Struct({ cents: Schema.FiniteFromString }),
+  success: Schema.String,
+  failureMode: "return",
+  needsApproval: true,
+});
+const Kit = Toolkit.make(Charge);
+class Channel extends Context.Service<Channel, Approvals>()("fixture/Approvals") {}
+class Tools extends Context.Service<Tools, LocalTools<Toolkit.Tools<typeof Kit>>>()(
+  "fixture/Tools",
 ) {}
 
 class Unparseable extends Schema.TaggedError<Unparseable>()("Unparseable", {}) {
@@ -35,7 +51,10 @@ class Refused extends Schema.TaggedError<Refused>()("Refused", { reason: Schema.
   }
 }
 
-/** Echoes the last user text, prefixed with the provisioned Model id. */
+/**
+ * Echoes the last user text, prefixed with the provisioned Model id; `charge` first asks for one
+ * Tool Call, which needs approval.
+ */
 const echoModel = (modelId: string) =>
   withModelRequestAccounting(
     "fixture",
@@ -45,10 +64,24 @@ const echoModel = (modelId: string) =>
         generateText: (options) =>
           Effect.gen(function* () {
             yield* reportModelRequest;
+            const last = options.prompt.content.at(-1);
             const user = options.prompt.content.findLast((message) => message.role === "user");
             const said = user?.content.map((part) => (part.type === "text" ? part.text : "")) ?? [];
+            if (said.join("") === "charge" && last?.role === "user") {
+              return [
+                { type: "tool-call", id: "call-1", name: "charge", params: { cents: "250" } },
+                {
+                  type: "finish",
+                  reason: "tool-calls",
+                  usage: { inputTokens: {}, outputTokens: {} },
+                },
+              ];
+            }
             return [
-              { type: "text", text: `${modelId}: ${said.join("")}` },
+              {
+                type: "text",
+                text: `${modelId}: ${last?.role === "tool" ? "charged" : said.join("")}`,
+              },
               { type: "finish", reason: "stop", usage: { inputTokens: {}, outputTokens: {} } },
             ];
           }),
@@ -81,14 +114,26 @@ const oauth = makeProvider(
   () => echoModel("oauth"),
 );
 
-const infrastructure = Layer.effect(
-  Greeting,
-  Effect.acquireRelease(
-    Effect.sync(() => (record("infra:acquire"), { prefix: "> " })),
-    () =>
-      process.env.MITOME_FIXTURE_HOLD_RELEASE === undefined
-        ? Effect.sync(() => record("infra:release"))
-        : Effect.never,
+const infrastructure = Layer.mergeAll(
+  Layer.effect(
+    Greeting,
+    Effect.acquireRelease(
+      Effect.sync(() => (record("infra:acquire"), { prefix: "> " })),
+      () =>
+        process.env.MITOME_FIXTURE_HOLD_RELEASE === undefined
+          ? Effect.sync(() => record("infra:release"))
+          : Effect.never,
+    ),
+  ),
+  Layer.effect(Channel, makeApprovals),
+  Layer.effect(
+    Tools,
+    localTools(
+      Kit,
+      Kit.of({
+        charge: ({ cents }) => Effect.sync(() => (record(`charge:${cents}`), "charged")),
+      }),
+    ),
   ),
 );
 
@@ -110,7 +155,8 @@ export const program = (message: string) =>
       return yield* Effect.never;
     }
     yield* turn.stage(Prompt.userMessage({ content: [Prompt.textPart({ text: message })] }));
-    const result = yield* loop({});
+    const approvals = yield* Channel;
+    const result = yield* loop({ tools: yield* Tools, consent: approvals.consent });
     return { text: result.response.text, turn: turn.id };
   });
 
@@ -128,5 +174,6 @@ export default defineMitome({
       result.text.endsWith("unrenderable")
         ? Effect.fail(new Refused({ reason: "cannot render" }))
         : Effect.map(Greeting, ({ prefix }) => `${prefix}${result.text}`),
+    approvals: Channel,
   },
 });

@@ -53,6 +53,10 @@ Every user-visible change adds a changeset: run `bun changeset`, or write the ma
 
 An architecture decision that changes a public contract or a cross-cutting rule gets an ADR in `docs/adr`, numbered sequentially, in the style of its neighbours: the decision in prose, then consequences. Mixed decisions retain meaningful guarantees with `status: amended by ADR-NNNN` and a successor link. For this prerelease redesign, fully obsolete decisions and Promise/Extension API guides are removed; Git history preserves them. Repair inbound links and navigation on deletion. New runnable examples and reference pages must accompany verified implementation, never proposed signatures. Terms go in the glossary-only `CONTEXT.md`; use the term it defines and none of the ones it says to avoid.
 
+## Manual TUI check
+
+Automated tests drive `runTerminal` through OpenTUI's test renderer and the compiled `mitome tui` through a pseudo-terminal on Linux; before a release, also run `mitome tui --app <file>` in a real terminal on each supported platform and confirm: Enter inserts a newline and `Alt-Enter` sends; repeated submissions reuse one Session; a pending Approval is decided only after Tab, with `y` or `n`; `Escape` interrupts and the next submission succeeds; `Ctrl-C` exits and restores the terminal.
+
 ## Issue labels
 
 `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix` are the labels in use; a new issue starts at `needs-triage`.
