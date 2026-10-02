@@ -3,8 +3,11 @@ import { pathToFileURL } from "node:url";
 import {
   type AcquireOptions,
   type Application,
+  type ApprovalChannel,
+  type ApprovalDecision,
   CredentialDescriptorSchema,
   mitomeProtocol,
+  type PendingApproval,
   type ProviderDiscovery,
 } from "@mitome/core";
 import { Effect, Predicate, Schema, type Scope } from "effect";
@@ -18,6 +21,7 @@ export const userError = (userMessage: string, cause?: typeof Schema.Unknown.Typ
   new CliError.UserError({ cause, userMessage });
 
 const Callback = Schema.declare(Predicate.isFunction);
+const AnEffect = Schema.declare(Effect.isEffect);
 
 /**
  * The `mitome/1` shape of a `defineMitome` default export, checked without calling anything.
@@ -36,7 +40,13 @@ const ApplicationExport = Schema.Struct({
   defaultModel: Schema.optionalKey(Schema.String),
   fallbackModels: Schema.optionalKey(Schema.Array(Schema.String)),
   configDirectory: Schema.optional(Schema.String),
-  cli: Schema.optionalKey(Schema.Struct({ parseInput: Callback, renderResult: Callback })),
+  cli: Schema.optionalKey(
+    Schema.Struct({
+      parseInput: Callback,
+      renderResult: Callback,
+      approvals: Schema.optionalKey(AnEffect),
+    }),
+  ),
   acquire: Callback,
 });
 
@@ -67,6 +77,10 @@ export interface LoadedApplication {
         readonly renderResult: (
           result: typeof Schema.Unknown.Type,
         ) => Erased<typeof Schema.Unknown.Type>;
+        /** Likewise run through `provide`; the channel it yields is shape-checked on each use. */
+        readonly approvals:
+          | Effect.Effect<ApprovalChannel, typeof Schema.Unknown.Type, typeof Schema.Unknown.Type>
+          | undefined;
       }
     | undefined;
 }
@@ -87,6 +101,61 @@ const invoke =
     // SAFETY: the trusted producer contract described above, not an inferred fact.
     return effect as Erased<R>;
   };
+
+const Channel = Schema.Struct({ pending: AnEffect });
+const Pending = Schema.Array(
+  Schema.Struct({
+    turnId: Schema.String,
+    toolCallId: Schema.String,
+    name: Schema.String,
+    params: Schema.Unknown,
+    decide: Callback,
+  }),
+);
+const isDecided = Schema.is(Schema.Literals(["accepted", "stale"]));
+
+/**
+ * The module's Approval channel, checked where it crosses into the CLI: a malformed channel,
+ * request or decision is the module's defect. Requests keep their identity and exact parameters;
+ * only `decide` is wrapped, once per request, to check what it returns.
+ */
+const approvalChannel = (accessor: Erased<typeof Schema.Unknown.Type>) =>
+  Effect.gen(function* () {
+    const channel = yield* Schema.decodeUnknownEffect(Channel)(yield* accessor).pipe(
+      Effect.mapError((cause) =>
+        userError(`The application's approvals is not an Approval channel: ${cause.message}`),
+      ),
+    );
+    // SAFETY: Approval operations need nothing more (`ApprovalChannel`); the shape is checked here.
+    const pending = channel.pending as Erased<never>;
+    const checked = new WeakMap<object, PendingApproval>();
+    const wrap = (request: (typeof Pending.Type)[number]): PendingApproval => {
+      const decide = invoke<never>("decide", request.decide);
+      return {
+        ...request,
+        decide: (decision: ApprovalDecision) =>
+          Effect.flatMap(decide(decision), (result) =>
+            isDecided(result)
+              ? Effect.succeed(result)
+              : Effect.fail(userError("The application's decide did not report a decision")),
+          ).pipe(Effect.orDie),
+      };
+    };
+    const approvals: ApprovalChannel = {
+      pending: Effect.flatMap(pending, (requests) =>
+        Schema.is(Pending)(requests)
+          ? Effect.succeed(
+              requests.map((request) => {
+                const known = checked.get(request) ?? wrap(request);
+                checked.set(request, known);
+                return known;
+              }),
+            )
+          : Effect.fail(userError("The application's pending approvals are malformed")),
+      ).pipe(Effect.orDie),
+    };
+    return approvals;
+  });
 
 /**
  * Imports one explicitly selected module, resolved against the invocation directory, and
@@ -130,6 +199,7 @@ export const loadApplication = (file: string) =>
           : {
               parseInput: invoke("parseInput", cli.parseInput),
               renderResult: invoke("renderResult", cli.renderResult),
+              approvals: cli.approvals === undefined ? undefined : approvalChannel(cli.approvals),
             },
     };
     return application;

@@ -87,39 +87,54 @@ const failingWith = (prefix: string) =>
     cause instanceof CliError.UserError ? cause : userError(`${prefix}${describe(cause)}`, cause),
   );
 
-export interface RunOptions {
+/** What every executing command selects: the module, its Model and its shutdown grace. */
+export interface ApplicationOptions {
   readonly app: string;
   readonly provider: Option.Option<string>;
   readonly model: Option.Option<string>;
   readonly grace: number;
+}
+
+export interface RunOptions extends ApplicationOptions {
   readonly input: Option.Option<string>;
 }
 
 /**
- * One-shot execution: load, read input, acquire, allocate one fresh Session, parse, run one Turn,
- * render, then close the Session and shut down within the grace. A render failure after the Turn
- * committed is reported and never reruns the Turn.
+ * Runs `work` with the standalone grace: its shutdown is bounded once the work ends however it
+ * ends, and from the first SIGINT or SIGTERM. `work` passes `onShutdown` to `acquire`.
  */
-export const runApplication = (options: RunOptions) =>
+const withGrace = <A, E, R>(
+  grace: number,
+  work: (onShutdown: Effect.Effect<void>) => Effect.Effect<A, E, R>,
+) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const deadline = yield* graceDeadline(options.grace);
+      const deadline = yield* graceDeadline(grace);
       // The command's work ends here, however it ends; the Scope's cleanup then runs bounded.
       const startDeadline = Effect.sync(deadline.start);
-      yield* execute(options, startDeadline).pipe(Effect.onExit(() => startDeadline));
+      return yield* work(startDeadline).pipe(Effect.onExit(() => startDeadline));
     }),
   );
 
-const execute = (options: RunOptions, onShutdown: Effect.Effect<void>) =>
+/** The module's CLI mapping, which executing commands require. */
+const loadMapped = (file: string, command: string) =>
   Effect.gen(function* () {
-    const app = yield* loadApplication(options.app);
-    const cli = app.cli;
-    if (cli === undefined) {
+    const app = yield* loadApplication(file);
+    if (app.cli === undefined) {
       return yield* userError(
-        `${app.path} declares no cli mapping (parseInput and renderResult), which mitome run needs`,
+        `${app.path} declares no cli mapping (parseInput and renderResult), which mitome ${command} needs`,
       );
     }
-    const text = yield* readInput(options.input);
+    return { app, cli: app.cli };
+  });
+
+/** Acquires the application once and allocates the one Session the command keeps. */
+const acquireSession = (
+  app: LoadedApplication,
+  options: ApplicationOptions,
+  onShutdown: Effect.Effect<void>,
+) =>
+  Effect.gen(function* () {
     const application = yield* app
       .acquire({
         provider: Option.getOrUndefined(options.provider),
@@ -130,20 +145,72 @@ const execute = (options: RunOptions, onShutdown: Effect.Effect<void>) =>
       .pipe(failingWith("Could not start the application: "));
     const session = yield* application.session.pipe(failingWith(""));
     yield* Effect.addFinalizer(() => session.close);
-    const input = yield* application
-      .provide(cli.parseInput(text))
-      .pipe(failingWith("Could not parse the input: "));
-    const result = yield* session.run(input).pipe(failingWith("The application failed: "));
-    const rendered = yield* application
-      .provide(cli.renderResult(result))
-      .pipe(failingWith("The Turn committed, but its result could not be rendered: "));
-    if (!Predicate.isString(rendered)) {
-      return yield* userError(
-        "The Turn committed, but renderResult did not produce a string; it is not rerun",
-      );
-    }
-    yield* writeResult(rendered);
+    return { application, session };
   });
+
+/**
+ * One-shot execution: load, read input, acquire, allocate one fresh Session, parse, run one Turn,
+ * render, then close the Session and shut down within the grace. A render failure after the Turn
+ * committed is reported and never reruns the Turn.
+ */
+export const runApplication = (options: RunOptions) =>
+  withGrace(options.grace, (onShutdown) =>
+    Effect.gen(function* () {
+      const { app, cli } = yield* loadMapped(options.app, "run");
+      const text = yield* readInput(options.input);
+      const { application, session } = yield* acquireSession(app, options, onShutdown);
+      const input = yield* application
+        .provide(cli.parseInput(text))
+        .pipe(failingWith("Could not parse the input: "));
+      const result = yield* session.run(input).pipe(failingWith("The application failed: "));
+      const rendered = yield* application
+        .provide(cli.renderResult(result))
+        .pipe(failingWith("The Turn committed, but its result could not be rendered: "));
+      if (!Predicate.isString(rendered)) {
+        return yield* userError(
+          "The Turn committed, but renderResult did not produce a string; it is not rerun",
+        );
+      }
+      yield* writeResult(rendered);
+    }),
+  );
+
+/**
+ * Interactive execution over one acquired application and one retained Session, until the user
+ * closes the terminal. It needs a terminal on stdin and stdout, checked before anything is loaded;
+ * OpenTUI is imported only then. The terminal is restored before shutdown begins, and closing
+ * exits like SIGINT, with shutdown bounded by the grace.
+ */
+export const runTerminalApplication = (options: ApplicationOptions) =>
+  withGrace(options.grace, (onShutdown) =>
+    Effect.gen(function* () {
+      const stdio = yield* Stdio.Stdio;
+      if (!(yield* stdio.stdinIsTerminal) || !(yield* stdio.stdoutIsTerminal)) {
+        return yield* userError(
+          "mitome tui needs a terminal on standard input and output; use mitome run otherwise.",
+        );
+      }
+      const { app, cli } = yield* loadMapped(options.app, "tui");
+      const { application, session } = yield* acquireSession(app, options, onShutdown);
+      const approvals =
+        cli.approvals === undefined
+          ? undefined
+          : yield* application
+              .provide(cli.approvals)
+              .pipe(failingWith("Could not open the application's Approval channel: "));
+      const { runTerminal } = yield* Effect.promise(() => import("@mitome/tui"));
+      yield* runTerminal({
+        parseInput: (text) => application.provide(cli.parseInput(text)),
+        run: session.run,
+        renderResult: (result) => application.provide(cli.renderResult(result)),
+        history: session.history,
+        turns: session.turns,
+        approvals,
+      }).pipe(failingWith("The terminal failed: "));
+      // The user closed the terminal: end like SIGINT, exiting 130 once shutdown settles.
+      return yield* Effect.interrupt;
+    }),
+  );
 
 const modelHint = (provider: ProviderDiscovery, modelId: string) => {
   const window = provider.models[modelId]?.contextWindow;

@@ -121,7 +121,8 @@ jobs:
           ref: ${{ needs.select-mode.outputs.sha }}
           persist-credentials: false
       - uses: jdx/mise-action@v4
-      - run: bun install --frozen-lockfile
+      # Every target's native OpenTUI package, which build:release embeds in that target's binary.
+      - run: bun install --frozen-lockfile --os="*" --cpu="*"
       - run: bun run build:pkgs
       - run: bun run --cwd packages/cli build:release
       - run: node scripts/release.ts pack "$RUNNER_TEMP/release-packages"

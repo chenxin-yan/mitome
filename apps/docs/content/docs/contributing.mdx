@@ -55,7 +55,7 @@ An architecture decision that changes a public contract or a cross-cutting rule 
 
 ## Manual TUI check
 
-Automated tests cover the TUI view model and shell; before a release, also run an Agent in a real terminal and confirm: Enter inserts a newline and `Alt-Enter` sends; Model text streams before the Turn ends; `Escape` interrupts and the next Message succeeds; `Ctrl-O` lists Transcripts and `Enter` resumes one; `Ctrl-N` starts a fresh Session; `Ctrl-C` exits and restores the terminal.
+Automated tests drive `runTerminal` through OpenTUI's test renderer and the compiled `mitome tui` through a pseudo-terminal on Linux; before a release, also run `mitome tui --app <file>` in a real terminal on each supported platform and confirm: Enter inserts a newline and `Alt-Enter` sends; repeated submissions reuse one Session; a pending Approval is decided only after Tab, with `y` or `n`; `Escape` interrupts and the next submission succeeds; `Ctrl-C` exits and restores the terminal.
 
 ## Issue labels
 
