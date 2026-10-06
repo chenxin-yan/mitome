@@ -1,0 +1,33 @@
+{
+  "name": "@mitome/tui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun ../../scripts/build-lib.ts",
+    "check:types": "tsc",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "test": "bun test --timeout 15000"
+  },
+  "dependencies": {
+    "@opentui/core": "0.5.8",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@mitome/config": "workspace:*",
+    "@mitome/core": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  }
+}

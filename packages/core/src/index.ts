@@ -20,6 +20,8 @@ export type {
   MitomeOptions,
   ProviderDiscovery,
 } from "./application.js";
+export { makeApprovals } from "./approvals.js";
+export type { ApprovalChannel, ApprovalDecision, Approvals, PendingApproval } from "./approvals.js";
 export { configDirectory, configDirectoryMessage } from "./config.js";
 export { CredentialDescriptorSchema } from "./credential.js";
 export type { AuthCapability, AuthenticateOptions, CredentialDescriptor } from "./credential.js";
