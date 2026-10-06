@@ -1,6 +1,6 @@
 import { Match, Predicate, Result, Schema } from "effect";
-import { AiError, LanguageModel, Tool } from "effect/unstable/ai";
-import { HttpClientError } from "effect/unstable/http";
+import { AiError, LanguageModel, type Prompt, Tool } from "effect/ai";
+import { HttpClientError } from "effect/http";
 import { type CredentialError } from "./credential-store.js";
 
 const makeError = (reason: AiError.AiErrorReason) =>
@@ -61,10 +61,41 @@ const contentFor = (
         .join("")
     : content;
 
+const RefusalOptions = Schema.Struct({ openai: Schema.Struct({ refusal: Schema.String }) });
+
+/**
+ * Whether a Prompt carries a refusal: an assistant text part whose `options.openai.refusal` keeps
+ * the explanation (the native rc.117 form). The Codex request has no refusal input form (the Codex
+ * CLI's `ContentItem` has none), so such a conversation is refused before any request rather than
+ * sent without it or as ordinary text.
+ */
+export const hasRefusal = (prompt: Prompt.Prompt) =>
+  prompt.content.some(
+    (message) =>
+      message.role === "assistant" &&
+      message.content.some(
+        (part) => part.type === "text" && Schema.is(RefusalOptions)(part.options),
+      ),
+  );
+
+/**
+ * The Codex wire `tool_choice` for a native Tool choice. The Codex CLI sends only the strings
+ * `"auto"` and `"none"`; a restricting `oneOf` in `"auto"` mode is the native filtered Tool list
+ * with `"auto"`. Other choices have no evidenced Codex form and are rejected before any request.
+ */
+export const toolChoiceFor = (
+  choice: LanguageModel.ProviderOptions["toolChoice"],
+): "auto" | "none" | undefined => {
+  if (choice === "auto" || choice === "none") return choice;
+  if (Predicate.isObject(choice) && "oneOf" in choice && choice.mode !== "required") return "auto";
+  return undefined;
+};
+
 export const requestFor = (
   model: string,
   options: LanguageModel.ProviderOptions,
   sessionId: string,
+  toolChoice: "auto" | "none",
 ) => {
   const system = options.prompt.content.find((message) => message.role === "system");
   const input: Array<typeof Schema.Json.Type> = [];
@@ -123,7 +154,7 @@ export const requestFor = (
     text: { verbosity: "low" },
     include: ["reasoning.encrypted_content"],
     prompt_cache_key: sessionId,
-    tool_choice: "auto",
+    tool_choice: toolChoice,
     parallel_tool_calls: true,
   };
   if (options.tools.length === 0) return request;

@@ -1,6 +1,6 @@
 import type { TurnEvent } from "@mitome/core";
 import { Effect, Stream } from "effect";
-import { Prompt } from "effect/unstable/ai";
+import { Prompt } from "effect/ai";
 import type { SessionResource } from "../../src/session-manager.js";
 
 /**

@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { Response } from "effect/unstable/ai";
+import { Response } from "effect/ai";
 import type { ApprovalResolutionError } from "./errors.js";
 
 /** A JSON-serializable value. */

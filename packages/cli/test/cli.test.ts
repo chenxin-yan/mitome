@@ -58,7 +58,7 @@ const definitionSource = (
 ): string => `
 import { writeFileSync } from "node:fs";
 import { Effect, Layer, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
+import { LanguageModel, Response } from "effect/ai";
 import { createHostSession, defineMitome, fileTranscripts, makeProvider } from "@mitome/core";
 ${options.tui ? 'import { tui } from "@mitome/tui";' : ""}
 
@@ -84,7 +84,7 @@ export default defineMitome({ agent, hosts: ${options.hosts ?? (options.tui ? "[
 
 const envDefinitionSource = (): string => `
 import { Layer, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
+import { LanguageModel, Response } from "effect/ai";
 import { defineMitome, makeProvider } from "@mitome/core";
 
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
@@ -102,7 +102,7 @@ export default defineMitome({ agent: { providers: [provider], model: "test/defau
 
 const reexecDefinitionSource = (): string => `
 import { Layer, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
+import { LanguageModel, Response } from "effect/ai";
 import { defineMitome, makeProvider } from "@mitome/core";
 
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {
@@ -119,7 +119,7 @@ const approvalDefinitionSource = (
   options: { readonly needsApproval?: string; readonly approvals?: string } = {},
 ): string => `
 import { Effect, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai";
+import { LanguageModel, Tool, Toolkit } from "effect/ai";
 import { defineMitome, makeProvider } from "@mitome/core";
 
 let calls = 0;
@@ -149,7 +149,7 @@ export default defineMitome({
 
 const extensionListDefinitionSource = (invalid = false): string => `
 import { Layer } from "effect";
-import { LanguageModel } from "effect/unstable/ai";
+import { LanguageModel } from "effect/ai";
 import { defineMitome, makeProvider } from "@mitome/core";
 
 const provider = makeProvider("test", [], undefined, () => Layer.succeed(LanguageModel.LanguageModel, {}));
@@ -169,7 +169,7 @@ export default defineMitome({
 
 const persistentExtensionListDefinitionSource = (): string => `
 import { Layer } from "effect";
-import { LanguageModel } from "effect/unstable/ai";
+import { LanguageModel } from "effect/ai";
 import { defineMitome, makeProvider } from "@mitome/core";
 
 setInterval(() => {}, 60_000);
@@ -186,7 +186,7 @@ export default defineMitome({
 
 const persistentAuthDefinitionSource = (): string => `
 import { Layer } from "effect";
-import { LanguageModel } from "effect/unstable/ai";
+import { LanguageModel } from "effect/ai";
 import { defineMitome, makeProvider } from "@mitome/core";
 
 setInterval(() => {}, 60_000);
@@ -198,7 +198,7 @@ export default defineMitome({ agent: { providers: [provider], model: "test/defau
 // `authenticate` apart from a child that exited without running it.
 const persistentOAuthDefinitionSource = (capabilityModule: string): string => `
 import { Layer } from "effect";
-import { LanguageModel } from "effect/unstable/ai";
+import { LanguageModel } from "effect/ai";
 import { defineMitome, makeProvider } from "@mitome/core";
 
 setInterval(() => {}, 60_000);
@@ -398,7 +398,7 @@ const serveChannels = {
       const session = yield* createHostSession(context);
       return yield* Stream.runFold(session.runTurn(message), () => "", (text, event) => event.type === "model-output" ? text + event.text : text);
     })));
-    // The fixture imports effect/unstable/ai's Response, which shadows the global.
+    // The fixture imports effect/ai's Response, which shadows the global.
     return new globalThis.Response(\`\${this.name.toUpperCase()} \${request.method} \${new URL(request.url).pathname}\${new URL(request.url).search} \${reply}\`);
   } }`,
   steady: `{ kind: "channel", name: "steady", serve: (context, signal) => new Promise((resolve) => {

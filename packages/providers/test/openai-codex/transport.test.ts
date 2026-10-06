@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Layer, Predicate, Schema, Stream } from "effect";
-import { LanguageModel, Prompt } from "effect/unstable/ai";
-import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http";
+import { LanguageModel, Prompt } from "effect/ai";
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import {
   CredentialStore,
   CredentialUnavailableError,
@@ -187,7 +187,7 @@ describe("Codex transport", () => {
       }),
     ]);
 
-    expect(requestFor("gpt-5.4", optionsFor(prompt), "session-1")).toMatchObject({
+    expect(requestFor("gpt-5.4", optionsFor(prompt), "session-1", "auto")).toMatchObject({
       include: ["reasoning.encrypted_content"],
       input: [
         {
@@ -224,7 +224,7 @@ describe("Codex transport", () => {
       }),
     ]);
 
-    expect(requestFor("gpt-5.4", optionsFor(prompt), "session-1").input).toEqual([
+    expect(requestFor("gpt-5.4", optionsFor(prompt), "session-1", "auto").input).toEqual([
       {
         type: "reasoning",
         id: "reasoning-1",

@@ -1,7 +1,7 @@
 // oxlint-disable-next-line jsdoc/check-tag-names
 /** @effect-diagnostics missingEffectContext:skip-file */
 import { Context, Effect, Layer, Schema } from "effect";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 import {
   defineAgent,
   defineExtension,

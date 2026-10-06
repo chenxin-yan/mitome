@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type RouteKey, type Routes, memoryRoutes } from "@mitome/core";
 import { Effect, Stream } from "effect";
-import { AiError } from "effect/unstable/ai";
+import { AiError } from "effect/ai";
 import { bearer, http } from "../../src/http/index.js";
 import {
   agentWith,

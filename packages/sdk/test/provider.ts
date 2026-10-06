@@ -1,5 +1,5 @@
 import { Effect, Layer, Ref, Schema, Stream } from "effect";
-import { AiError, LanguageModel, Prompt, Response } from "effect/unstable/ai";
+import { AiError, LanguageModel, Prompt, Response } from "effect/ai";
 import { makeProvider } from "@mitome/core";
 import type { InputSchema, StandardSchema } from "../src/index.js";
 

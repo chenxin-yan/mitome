@@ -1,6 +1,6 @@
 import * as BunTerminal from "@effect/platform-bun/BunTerminal";
 import { Context, Effect, Layer, Redacted, Terminal } from "effect";
-import { Prompt } from "effect/unstable/cli";
+import { Prompt } from "effect/cli";
 
 export interface PromptChoice<A> {
   readonly title: string;
@@ -49,10 +49,10 @@ export class Prompter extends Context.Service<
         select: <A>(options: {
           readonly message: string;
           readonly choices: ReadonlyArray<PromptChoice<A>>;
-        }) => execute(Prompt.select(options), context),
-        text: (message: string) => execute(Prompt.text({ message }), context),
+        }) => execute(Prompt.Select(options), context),
+        text: (message: string) => execute(Prompt.String({ message }), context),
         password: (message: string) =>
-          execute(Prompt.password({ message }), context).pipe(Effect.map(Redacted.value)),
+          execute(Prompt.Password({ message }), context).pipe(Effect.map(Redacted.value)),
       };
     }),
   );

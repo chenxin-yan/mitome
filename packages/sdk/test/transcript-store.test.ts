@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { Stream } from "effect";
-import { AiError, Response } from "effect/unstable/ai";
+import { AiError, Response } from "effect/ai";
 import {
   defineAgent,
   memoryTranscripts,

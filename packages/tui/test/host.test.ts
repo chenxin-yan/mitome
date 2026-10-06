@@ -25,7 +25,7 @@ describe("TUI Host", () => {
         import(${JSON.stringify(entry)}),
         import("@mitome/core"),
         import("effect"),
-        import("effect/unstable/ai"),
+        import("effect/ai"),
       ]);
       const unsupported = () => Effect.die("not used");
       const provider = makeProvider("test", [], undefined, () =>

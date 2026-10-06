@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 import { createSession, credentialDescriptor } from "@mitome/core";
 import { agent, fakeFetch, runWithKey, sse } from "../support.js";
 import { openaiCompatible } from "../../src/openai-compatible/index.js";

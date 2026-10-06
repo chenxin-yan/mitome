@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Stream } from "effect";
-import { Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { Prompt, Response, Tool, Toolkit } from "effect/ai";
 import { Schema } from "effect";
 import {
   TurnError,

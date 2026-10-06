@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Effect, Stream } from "effect";
-import { Response } from "effect/unstable/ai";
+import { Response } from "effect/ai";
 import { createSession } from "@mitome/core";
 import { defineExtension } from "../src/index.js";
 import { instructionFiles, instructions } from "../src/extensions/index.js";

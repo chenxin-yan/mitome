@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { Schema, Stream } from "effect";
-import { AiError } from "effect/unstable/ai";
+import { AiError } from "effect/ai";
 import {
   AgentDefinitionError,
   defineAgent,

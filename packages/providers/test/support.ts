@@ -4,7 +4,7 @@ import { type AddressInfo } from "node:net";
 import { Readable } from "node:stream";
 import type { AgentDefinition, AnyExtension, AnyProvider } from "@mitome/core";
 import { ConfigProvider, Effect, Schema } from "effect";
-import { FetchHttpClient } from "effect/unstable/http";
+import { FetchHttpClient } from "effect/http";
 
 type SseData = string | typeof Schema.Json.Type;
 

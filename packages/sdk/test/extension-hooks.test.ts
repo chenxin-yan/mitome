@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { Effect, Stream } from "effect";
-import { Response } from "effect/unstable/ai";
+import { Response } from "effect/ai";
 import { defineAgent, defineExtension, withSession, type Extension } from "../src/index.js";
 import { jsonStringSchema, makeTestProvider, makeToolModel, stringSchema } from "./provider.js";
 
@@ -48,7 +48,7 @@ describe("@mitome/sdk Extension Hooks", () => {
           signals.push(signal.aborted);
           expect(
             responseParts.every(
-              (part) => !("~effect/ai/Content/Part" in part) && !("encodedResult" in part),
+              (part) => !("~effect/ai/Response/Part" in part) && !("encodedResult" in part),
             ),
           ).toBe(true);
           responsePartTypes.push(responseParts.map((part) => part.type));

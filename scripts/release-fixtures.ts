@@ -167,7 +167,7 @@ try {
   await writeFile(
     join(consumerDirectory, "smoke.ts"),
     `import { Effect, Layer, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
+import { LanguageModel, Response } from "effect/ai";
 import * as core from "@mitome/core";
 import { createSession, makeProvider } from "@mitome/core";
 import { defineAgent, withSession } from "@mitome/sdk";

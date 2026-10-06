@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/unstable/ai";
+import { LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/ai";
 import { createSession, defineAgent, makeProvider } from "../../src/index.js";
 import { testLanguageModel } from "../support/provider.js";
 

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "vitest";
 import { setTimeout } from "node:timers/promises";
 import { Effect, Schema, Stream } from "effect";
-import { AiError, Tool, Toolkit } from "effect/unstable/ai";
+import { AiError, Tool, Toolkit } from "effect/ai";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
