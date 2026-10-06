@@ -8,7 +8,7 @@ Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxi
 
 ## Repository layout
 
-- `packages/core`, `packages/sdk`, `packages/providers`, `packages/tui`, `packages/cli`, `packages/create-mitome`: the published packages, one directory each, with tests under `test/`.
+- `packages/core`, `packages/providers`, `packages/cli`, `packages/create-mitome`: the published packages, one directory each, with tests under `test/`.
 - `apps/docs`: this site (fumadocs on TanStack Start); pages live in `apps/docs/content/docs`.
 - `docs/adr`: architecture decision records; `CONTEXT.md` at the root is the domain glossary every page and identifier follows. `docs/plans/effect-native-library.md` is the canonical redesign plan; `docs/research` is supporting evidence.
 - `scripts`: a private workspace for repository tooling and release fixture tests.
@@ -35,8 +35,6 @@ bun run build:docs   # builds the site
 ```
 
 `build:docs` fails on an internal link to a page that does not exist and on an `<auto-type-table>` whose type cannot be resolved, so it is the documentation gate as well. Anchors within a page are not checked. `bun run check:fix` applies lint and format fixes.
-
-`@mitome/tui` enumerates its test files explicitly in its `test` script because `.tsx` tests need the OpenTUI preload while the Host test must run without it; add new TUI test files there or they will not run.
 
 ## Generated artifacts
 

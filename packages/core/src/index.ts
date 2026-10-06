@@ -1,53 +1,13 @@
 /**
- * Effect-native Host and Provider authoring surface. Application code should prefer `@mitome/sdk`
- * or `@mitome/sdk/effect`; Core carries a weaker stability guarantee.
+ * Effect-native Session, Turn, controlled Step and Provider surface.
  *
  * @module @mitome/core
  */
 
 export { configDirectory, configDirectoryMessage } from "./config.js";
-export { fileRoutes } from "./file-routes.js";
-export { fileTranscripts } from "./file-transcript-store.js";
 export { CredentialDescriptorSchema } from "./credential.js";
 export type { AuthCapability, AuthenticateOptions, CredentialDescriptor } from "./credential.js";
-export { AgentDefinitionError, compileAgentDefinition, defineAgent } from "./agent.js";
-export type {
-  AgentDefinition,
-  ApprovalPolicy,
-  ApprovalPolicyCall,
-  ApprovalPolicyCallback,
-  ApprovalPolicyDecision,
-  ApprovalRules,
-  CompiledAgent,
-  CompiledTool,
-} from "./agent.js";
-export { defineExtension } from "./extension.js";
-export type {
-  AnyExtension,
-  Extension,
-  ExtensionHooks,
-  ToolContribution,
-  ToolContributions,
-  ToolFailureValidator,
-  ToolHookContext,
-  ToolInput,
-  ToolInputValidator,
-  ToolOutput,
-  ToolResultHookContext,
-  ToolResultValidator,
-} from "./extension.js";
-export { defineMitome } from "./host.js";
-export type {
-  ChannelHost,
-  ChannelHostContext,
-  Host,
-  HostContext,
-  InteractiveHost,
-  MitomeDefinition,
-} from "./host.js";
 export { credentialDescriptor, makeProvider, providerModel } from "./provider.js";
-export { memoryRoutes } from "./routes.js";
-export type { RouteKey, Routes } from "./routes.js";
 export type {
   AnyProvider,
   ModelMetadata,
@@ -57,7 +17,6 @@ export type {
   ValidProviderId,
 } from "./provider.js";
 export {
-  ApprovalResolutionError,
   ExecutionLimitError,
   IncompleteStepError,
   SessionBusyError,
@@ -66,16 +25,7 @@ export {
   SessionSaveError,
   StepProtocolError,
   ToolRegistrationError,
-  TurnError,
 } from "./session/errors.js";
-export { TurnEventDtoSchema } from "./session/events.js";
-export type {
-  ApprovalRequirement,
-  Json,
-  ToolExecutionDenied,
-  TurnEvent,
-  TurnEventDto,
-} from "./session/events.js";
 export { firstPartyExecutionLimits, makeSession, Turn } from "./session/session.js";
 export type {
   ExecutionLimits,
@@ -106,30 +56,3 @@ export type {
   ToolCallRequest,
   ToolDecision,
 } from "./session/step.js";
-export {
-  makeTranscript,
-  promptFromTranscript,
-  TranscriptMessageSchema,
-  TranscriptSchema,
-  TranscriptSchemaVersion,
-} from "./transcript.js";
-export type {
-  MakeTranscriptOptions,
-  Transcript,
-  TranscriptId,
-  TranscriptMessage,
-} from "./transcript.js";
-export {
-  memoryTranscripts,
-  StoreError,
-  summarizeTranscript,
-  TranscriptEventRecordSchema,
-  TranscriptEventRecordVersion,
-  TranscriptNotFound,
-  TranscriptSummarySchema,
-} from "./transcript-store.js";
-export type {
-  TranscriptEventRecord,
-  TranscriptStore,
-  TranscriptSummary,
-} from "./transcript-store.js";

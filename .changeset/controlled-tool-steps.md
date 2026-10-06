@@ -1,6 +1,5 @@
 ---
 "@mitome/core": minor
-"@mitome/sdk": minor
 "@mitome/providers": minor
 ---
 

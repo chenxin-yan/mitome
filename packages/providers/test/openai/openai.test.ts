@@ -3,9 +3,9 @@ import { type AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "@effect/vitest";
 import { WebSocketServer } from "ws";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
-import { Tool, Toolkit } from "effect/ai";
-import { createSession, credentialDescriptor } from "@mitome/core";
-import { agent, fakeFetch, runWithKey, sse } from "../support.js";
+import { LanguageModel, Prompt, type Response as AiResponse, Tool, Toolkit } from "effect/ai";
+import { credentialDescriptor, providerModel } from "@mitome/core";
+import { fakeFetch, runWithKey, sse } from "../support.js";
 import { openai } from "../../src/openai/index.js";
 
 type Json = typeof Schema.Json.Type;
@@ -73,6 +73,25 @@ const itemStream = (
     }),
   ].map(sse);
 };
+const echo = Tool.make("echo", {
+  parameters: Schema.Struct({ text: Schema.String }),
+  success: Schema.String,
+});
+const Echo = Toolkit.make(echo);
+const echoHandlers = Echo.toLayer({ echo: ({ text }) => Effect.succeed(text) });
+/** One Tool-resolving streamed generation, then the follow-up generation carrying its results. */
+const toolContinuation = Effect.gen(function* () {
+  const prompt = Prompt.make("Hi");
+  const first = yield* Stream.runCollect(LanguageModel.streamText({ prompt, toolkit: Echo }));
+  const second = yield* Stream.runCollect(
+    LanguageModel.streamText({
+      prompt: Prompt.concat(prompt, Prompt.fromResponseParts([...first])),
+    }),
+  );
+  return { first: [...first], second: [...second] };
+}).pipe(Effect.provide(echoHandlers));
+const textDeltas = (parts: ReadonlyArray<AiResponse.AnyPart>) =>
+  parts.flatMap((part) => (part.type === "text-delta" ? [part.delta] : []));
 const textStream = (respId: string, msgId: string, deltas: ReadonlyArray<string>) =>
   itemStream(
     respId,
@@ -83,7 +102,7 @@ const textStream = (respId: string, msgId: string, deltas: ReadonlyArray<string>
   );
 
 describe("openai", () => {
-  it("exposes its credential descriptor without building a Session", () => {
+  it("exposes its credential descriptor without provisioning a Model", () => {
     expect(credentialDescriptor(openai({ apiKeyEnv: "MITOME_TEST_API_KEY" }))).toBe(
       "MITOME_TEST_API_KEY",
     );
@@ -131,32 +150,27 @@ describe("openai", () => {
       baseUrl: "https://test.invalid/v1/",
       transport: "http",
     });
-    const events: Array<unknown> = [];
+    const parts: Array<AiResponse.AnyPart> = [];
     const { promise: output, resolve: firstOutput } = Promise.withResolvers<void>();
-    const turn = run(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* createSession(agent(provider, "gpt-5.6"));
-          yield* Stream.runForEach(session.runTurn("Hi"), (item) =>
-            Effect.sync(() => {
-              events.push(item);
-              if (item.type === "model-output") firstOutput();
-            }),
-          );
-        }),
+    const generation = run(
+      LanguageModel.streamText({ prompt: "Hi" }).pipe(
+        Stream.runForEach((part) =>
+          Effect.sync(() => {
+            parts.push(part);
+            if (part.type === "text-delta") firstOutput();
+          }),
+        ),
+        Effect.provide(providerModel(provider, "gpt-5.6")),
       ),
       fetch,
     );
     await firstChunkSent;
     await output;
-    expect(events).toEqual([{ type: "model-output", text: "hel" }]);
+    expect(textDeltas(parts)).toEqual(["hel"]);
     releaseSecond();
-    await turn;
-    expect(events).toEqual([
-      { type: "model-output", text: "hel" },
-      { type: "model-output", text: "lo" },
-      expect.objectContaining({ type: "response-complete", finishReason: "stop" }),
-    ]);
+    await generation;
+    expect(textDeltas(parts)).toEqual(["hel", "lo"]);
+    expect(parts.at(-1)).toMatchObject({ type: "finish", reason: "stop" });
     expect(requests).toEqual([
       {
         model: "gpt-5.6",
@@ -171,17 +185,14 @@ describe("openai", () => {
     vi.stubGlobal("process", undefined);
     try {
       const provider = openai({ apiKeyEnv: key, transport: "websocket" });
-      await expect(
-        run(
-          Effect.scoped(
-            Effect.gen(function* () {
-              const session = yield* createSession(agent(provider, "gpt-5.6"));
-              yield* Stream.runDrain(session.runTurn("Hi"));
-            }),
+      const exit = await run(
+        Effect.exit(
+          LanguageModel.generateText({ prompt: "Hi" }).pipe(
+            Effect.provide(providerModel(provider, "gpt-5.6")),
           ),
         ),
-      ).rejects.toMatchObject({
-        _tag: "TurnError",
+      );
+      expect(Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty)).toMatchObject({
         message: "OpenAI WebSocket transport requires a Bun or Node server runtime",
       });
     } finally {
@@ -191,21 +202,16 @@ describe("openai", () => {
 
   it("fails first use when its environment credential is missing", async () => {
     const provider = openai({ apiKeyEnv: key });
-    await expect(
-      run(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const session = yield* createSession(agent(provider, "gpt-5.6"));
-            yield* Stream.runDrain(session.runTurn("Hi"));
-          }),
+    const error = await run(
+      Effect.flip(
+        LanguageModel.generateText({ prompt: "Hi" }).pipe(
+          Effect.provide(providerModel(provider, "gpt-5.6")),
         ),
-        globalThis.fetch,
-        {},
       ),
-    ).rejects.toMatchObject({
-      _tag: "TurnError",
-      message: `Environment variable ${key} is not set or empty`,
-    });
+      globalThis.fetch,
+      {},
+    );
+    expect(error).toBe(`Environment variable ${key} is not set or empty`);
   });
 
   it("surfaces backend model rejection after the request without preflight", async () => {
@@ -219,19 +225,15 @@ describe("openai", () => {
       baseUrl: "https://test.invalid/v1",
       transport: "http",
     });
-    const exit = await run(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* createSession(agent(provider, "future-private-model"));
-          return yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
-        }),
+    const error = await run(
+      Effect.flip(
+        Stream.runDrain(LanguageModel.streamText({ prompt: "Hi" })).pipe(
+          Effect.provide(providerModel(provider, "future-private-model")),
+        ),
       ),
       fetch,
     );
-    expect(Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty)).toMatchObject({
-      _tag: "TurnError",
-      cause: { reason: { _tag: "InvalidRequestError" } },
-    });
+    expect(error).toMatchObject({ _tag: "AiError", reason: { _tag: "InvalidRequestError" } });
     expect(requests).toBe(1);
   });
 
@@ -291,46 +293,22 @@ describe("openai", () => {
       server.listen(0, "127.0.0.1", resolve);
     });
     try {
-      const echo = Tool.make("echo", {
-        parameters: Schema.Struct({ text: Schema.String }),
-        success: Schema.String,
+      const provider = openai({
+        apiKeyEnv: key,
+        // SAFETY: the successfully listening TCP server has an AddressInfo address.
+        baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
       });
-      const events = await run(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const provider = openai({
-              apiKeyEnv: key,
-              // SAFETY: the successfully listening TCP server has an AddressInfo address.
-              baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
-            });
-            const session = yield* createSession(
-              agent(provider, "gpt-5.6", [
-                {
-                  name: "echo",
-                  toolkit: Toolkit.make(echo),
-                  handlers: {
-                    // SAFETY: Toolkit validates handler parameters with the echo schema.
-                    echo: (params) => Effect.succeed((params as { text: string }).text),
-                  },
-                },
-              ]),
-            );
-            return yield* Stream.runCollect(session.runTurn("Hi"));
-          }),
-        ),
+      const { first, second } = await run(
+        toolContinuation.pipe(Effect.provide(providerModel(provider, "gpt-5.6"))),
       );
-      expect([...events]).toEqual([
+      expect(
+        first.filter((part) => part.type === "tool-call" || part.type === "tool-result"),
+      ).toMatchObject([
         { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
-        {
-          type: "tool-result",
-          id: "call-1",
-          name: "echo",
-          result: "hello",
-          isFailure: false,
-        },
-        { type: "model-output", text: "done" },
-        expect.objectContaining({ type: "response-complete", finishReason: "stop" }),
+        { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },
       ]);
+      expect(textDeltas(second)).toEqual(["done"]);
+      expect(second.at(-1)).toMatchObject({ type: "finish", reason: "stop" });
       expect(upgrades).toBe(1);
       expect(authorizations).toEqual(["Bearer synthetic-key"]);
       expect(httpRequests).toBe(0);
@@ -354,7 +332,7 @@ describe("openai", () => {
     }
   });
 
-  it("maps Responses function calls through the Core Tool loop", async () => {
+  it("maps Responses function calls and their results across generations", async () => {
     let calls = 0;
     let followUp: FollowUpRequest = {};
     const fetch = fakeFetch(async (request) => {
@@ -390,46 +368,23 @@ describe("openai", () => {
         headers: { "content-type": "text/event-stream" },
       });
     });
-    const echo = Tool.make("echo", {
-      parameters: Schema.Struct({ text: Schema.String }),
-      success: Schema.String,
-    });
     const provider = openai({
       apiKeyEnv: key,
       baseUrl: "https://test.invalid/v1",
       transport: "http",
     });
-    const definition = agent(provider, "gpt-5.6", [
-      {
-        name: "echo",
-        toolkit: Toolkit.make(echo),
-        handlers: {
-          // SAFETY: Toolkit validates handler parameters with the echo schema.
-          echo: (params) => Effect.succeed((params as { text: string }).text),
-        },
-      },
-    ]);
-    const events = await run(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* createSession(definition);
-          return yield* Stream.runCollect(session.runTurn("Hi"));
-        }),
-      ),
+    const { first, second } = await run(
+      toolContinuation.pipe(Effect.provide(providerModel(provider, "gpt-5.6"))),
       fetch,
     );
-    expect([...events]).toEqual([
+    expect(
+      first.filter((part) => part.type === "tool-call" || part.type === "tool-result"),
+    ).toMatchObject([
       { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
-      {
-        type: "tool-result",
-        id: "call-1",
-        name: "echo",
-        result: "hello",
-        isFailure: false,
-      },
-      { type: "model-output", text: "done" },
-      expect.objectContaining({ type: "response-complete", finishReason: "stop" }),
+      { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },
     ]);
+    expect(textDeltas(second)).toEqual(["done"]);
+    expect(second.at(-1)).toMatchObject({ type: "finish", reason: "stop" });
     expect(calls).toBe(2);
     expect(followUp.input).toContainEqual({
       type: "function_call_output",

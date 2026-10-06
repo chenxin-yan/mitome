@@ -12,13 +12,12 @@ import {
   SchemaGetter,
   Stream,
 } from "effect";
-import { LanguageModel, Tool, Toolkit, type Prompt } from "effect/ai";
+import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
 import {
   firstPartyExecutionLimits as limits,
   localTools,
   loop,
   makeSession,
-  makeTranscript,
   reportModelRequest,
   SessionReleasedError,
   step,
@@ -280,8 +279,10 @@ describe("Tool result projection and codecs", () => {
         ["c", "enc:ok:v-c", false],
         ["fail", { code: 43 }, true],
       ]);
-      // The projection is valid Transcript JSON.
-      expect(() => makeTranscript({ id: "t", messages: history })).not.toThrow();
+      // The projection encodes to valid JSON.
+      expect(Schema.is(Schema.Json)(Schema.encodeSync(Schema.Array(Prompt.Message))(history))).toBe(
+        true,
+      );
     }),
   );
 

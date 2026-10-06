@@ -2,7 +2,6 @@ import { spawn } from "node:child_process";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import { type AddressInfo } from "node:net";
 import { Readable } from "node:stream";
-import type { AgentDefinition, AnyExtension, AnyProvider } from "@mitome/core";
 import { ConfigProvider, Effect, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 
@@ -10,16 +9,6 @@ type SseData = string | typeof Schema.Json.Type;
 
 export const sse = (data: SseData) =>
   `data: ${Schema.is(Schema.String)(data) ? data : JSON.stringify(data)}\n\n`;
-
-export const agent = (
-  provider: AnyProvider,
-  model: string,
-  extensions: ReadonlyArray<AnyExtension> = [],
-): AgentDefinition => ({
-  providers: [provider],
-  model: `${provider.id}/${model}`,
-  extensions,
-});
 
 export const fakeFetch =
   (handle: (request: Request) => Response | Promise<Response>): typeof globalThis.fetch =>

@@ -1,17 +1,27 @@
 import { afterAll, describe, expect, test } from "vitest";
 import { setTimeout } from "node:timers/promises";
-import { Effect, Schema, Stream } from "effect";
-import { AiError, Tool, Toolkit } from "effect/ai";
+import { Effect, Layer, Schema, Stream } from "effect";
+import {
+  AiError,
+  LanguageModel,
+  Prompt,
+  type Response as AiResponse,
+  Tool,
+  Toolkit,
+} from "effect/ai";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createSession, TurnError } from "@mitome/core";
-import { agent as definition, serve, spawnRuntime, sse } from "../support.js";
+import { providerModel } from "@mitome/core";
+import { serve, spawnRuntime, sse } from "../support.js";
 import { writeCredential as writeCredentialEffect } from "../../src/openai-codex/credential-store.js";
 import { codex } from "../../src/openai-codex/index.js";
 
 type JsonObject = { readonly [key: string]: typeof Schema.Json.Type };
 const JsonObject = Schema.Record(Schema.String, Schema.Json);
+
+const textDeltas = (parts: ReadonlyArray<AiResponse.AnyPart>) =>
+  parts.flatMap((part) => (part.type === "text-delta" ? [part.delta] : []));
 
 const directories: Array<string> = [];
 const writeCredential = (
@@ -99,7 +109,7 @@ const raceRotation = async (
   const child = () =>
     spawnRuntime([
       "-e",
-      `import { Effect, Stream } from "effect"; const { createSession } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const provider = codex(${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Effect.scoped(Effect.gen(function* () { const session = yield* createSession({ providers: [provider], model: "openai-codex/gpt-5.4", extensions: [] }); yield* Stream.runDrain(session.runTurn("Hi")); })));`,
+      `import { Effect, Stream } from "effect"; import { LanguageModel } from "effect/ai"; const { providerModel } = await import(${JSON.stringify(core)}); const { codex } = await import(${JSON.stringify(source)}); await fetch(${JSON.stringify(`http://127.0.0.1:${tokenServer.port}/barrier`)}); const provider = codex(${JSON.stringify({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}`, tokenUrl: `http://127.0.0.1:${tokenServer.port}/oauth/token` })}); await Effect.runPromise(Stream.runDrain(LanguageModel.streamText({ prompt: "Hi" })).pipe(Effect.provide(providerModel(provider, "gpt-5.4"))));`,
     ]);
   try {
     const children = [child(), child()];
@@ -133,25 +143,8 @@ describe("Codex SSE", () => {
                 controller.enqueue(new TextEncoder().encode(value));
               enqueue(sse({ type: "response.created" }));
               enqueue(sse({ type: "response.in_progress" }));
-              enqueue(
-                sse({
-                  type: "response.output_item.added",
-                  output_index: 99,
-                  item: { type: "future_item" },
-                }),
-              );
-              enqueue(
-                sse({
-                  type: "response.output_item.done",
-                  output_index: 99,
-                  item: { type: "future_item" },
-                }),
-              );
               enqueue(added.slice(0, 17));
               enqueue(added.slice(17));
-              enqueue(
-                sse({ type: "response.content_part.added", item_id: "msg-1", output_index: 0 }),
-              );
               enqueue(
                 sse({
                   type: "response.output_text.delta",
@@ -195,48 +188,40 @@ describe("Codex SSE", () => {
       },
     });
     try {
-      const events: Array<unknown> = [];
+      const parts: Array<AiResponse.AnyPart> = [];
       const { promise: output, resolve: firstOutput } = Promise.withResolvers<void>();
-      const turn = Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const session = yield* createSession(
-              definition(
-                codex({
-                  configDirectory,
-                  baseUrl: `http://127.0.0.1:${server.port}`,
-                }),
-                "future-private-model",
-              ),
-            );
-            yield* Stream.runForEach(session.runTurn("Hi"), (event) =>
-              Effect.sync(() => {
-                events.push(event);
-                if (event.type === "model-output") firstOutput();
-              }),
-            );
-          }),
+      const generation = Effect.runPromise(
+        LanguageModel.streamText({ prompt: "Hi" }).pipe(
+          Stream.runForEach((part) =>
+            Effect.sync(() => {
+              parts.push(part);
+              if (part.type === "text-delta") firstOutput();
+            }),
+          ),
+          Effect.provide(
+            providerModel(
+              codex({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}` }),
+              "future-private-model",
+            ),
+          ),
         ),
       );
       await output;
-      expect(events).toEqual([{ type: "model-output", text: "hel" }]);
+      expect(textDeltas(parts)).toEqual(["hel"]);
       release();
-      await turn;
-      expect(events).toEqual([
-        { type: "model-output", text: "hel" },
-        { type: "model-output", text: "lo" },
-        {
-          type: "response-complete",
-          finishReason: "stop",
-          usage: { inputTokens: {}, outputTokens: {} },
-        },
-      ]);
+      await generation;
+      expect(textDeltas(parts)).toEqual(["hel", "lo"]);
+      expect(parts.at(-1)).toMatchObject({
+        type: "finish",
+        reason: "stop",
+        usage: { inputTokens: {}, outputTokens: {} },
+      });
     } finally {
       await server.stop(true);
     }
   });
 
-  test("replays encrypted reasoning before the paired Tool call on the next Step", async () => {
+  test("replays encrypted reasoning before the paired Tool call on the next generation", async () => {
     const configDirectory = await directory();
     const requests: Array<JsonObject> = [];
     const server = await serve({
@@ -299,47 +284,38 @@ describe("Codex SSE", () => {
       parameters: Schema.Struct({ text: Schema.String }),
       success: Schema.String,
     });
+    const Echo = Toolkit.make(echo);
     try {
       const result = await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const session = yield* createSession(
-              definition(
-                codex({
-                  configDirectory,
-                  baseUrl: `http://127.0.0.1:${server.port}`,
-                }),
+        Effect.gen(function* () {
+          const prompt = Prompt.make("Hi");
+          const first = [
+            ...(yield* Stream.runCollect(LanguageModel.streamText({ prompt, toolkit: Echo }))),
+          ];
+          const history = Prompt.concat(prompt, Prompt.fromResponseParts(first));
+          const second = yield* Stream.runCollect(LanguageModel.streamText({ prompt: history }));
+          return { first, second: [...second], history: history.content };
+        }).pipe(
+          Effect.provide(
+            Layer.merge(
+              Echo.toLayer({ echo: ({ text }) => Effect.succeed(text) }),
+              providerModel(
+                codex({ configDirectory, baseUrl: `http://127.0.0.1:${server.port}` }),
                 "future-private-model",
-                [
-                  {
-                    name: "echo",
-                    toolkit: Toolkit.make(echo),
-                    handlers: {
-                      // SAFETY: Toolkit validates handler parameters with the echo schema.
-                      echo: (params) => Effect.succeed((params as { readonly text: string }).text),
-                    },
-                  },
-                ],
               ),
-            );
-            const events = yield* Stream.runCollect(session.runTurn("Hi"));
-            return { events: [...events], history: session.history() };
-          }),
+            ),
+          ),
         ),
       );
 
-      expect(result.events).toEqual([
-        { type: "reasoning", text: "Checked the repository." },
+      expect(
+        result.first.filter((part) => part.type === "tool-call" || part.type === "tool-result"),
+      ).toMatchObject([
         { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
         { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },
-        { type: "model-output", text: "done" },
-        {
-          type: "response-complete",
-          finishReason: "stop",
-          usage: { inputTokens: {}, outputTokens: {} },
-        },
       ]);
-      expect(JSON.stringify(result.events)).not.toContain("encrypted-reasoning");
+      expect(textDeltas(result.second)).toEqual(["done"]);
+      expect(result.second.at(-1)).toMatchObject({ type: "finish", reason: "stop" });
       expect(requests).toHaveLength(2);
       expect(requests[1]?.input).toEqual([
         { role: "user", content: "Hi" },
@@ -391,10 +367,10 @@ describe("Codex SSE", () => {
     });
     try {
       const error = await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const session = yield* createSession(
-              definition(
+        Effect.flip(
+          Stream.runDrain(LanguageModel.streamText({ prompt: "Hi" })).pipe(
+            Effect.provide(
+              providerModel(
                 codex({
                   configDirectory,
                   baseUrl: `http://127.0.0.1:${server.port}`,
@@ -402,19 +378,17 @@ describe("Codex SSE", () => {
                 }),
                 "future-private-model",
               ),
-            );
-            return yield* Effect.flip(Stream.runDrain(session.runTurn("Hi")));
-          }),
+            ),
+          ),
         ),
       );
 
-      expect(error).toBeInstanceOf(TurnError);
+      expect(AiError.isAiError(error)).toBe(true);
+      if (!AiError.isAiError(error)) throw new Error("Expected an AiError");
       expect(error.message).toContain("mitome auth login");
       expect(error.message).toContain("HTTP 400; invalid_grant");
       expect(error.message).not.toContain(refresh);
-      expect(AiError.isAiError(error.cause)).toBe(true);
-      if (!AiError.isAiError(error.cause)) throw new Error("Expected an AiError cause");
-      expect(error.cause.reason).toMatchObject({
+      expect(error.reason).toMatchObject({
         _tag: "AuthenticationError",
         isRetryable: false,
         message: expect.stringContaining("mitome auth login"),

@@ -36,8 +36,8 @@
   },
   "devDependencies": {
     "@mitome/config": "workspace:*",
+    "@mitome/core": "workspace:*",
     "@mitome/providers": "workspace:*",
-    "@mitome/sdk": "workspace:*",
     "@types/node": "catalog:",
     "effect": "catalog:",
     "typescript": "catalog:",

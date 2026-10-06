@@ -32,10 +32,7 @@
     "@effect/platform-bun": "catalog:",
     "@effect/vitest": "catalog:",
     "@mitome/config": "workspace:*",
-    "@mitome/core": "workspace:*",
-    "@mitome/providers": "workspace:*",
     "@types/bun": "catalog:",
-    "create-mitome": "workspace:*",
     "effect": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
