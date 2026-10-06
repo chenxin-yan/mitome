@@ -10,8 +10,6 @@ import rootPackage from "../../../package.json" with { type: "json" };
 import { knownModelIds } from "../src/model-hints.js";
 import {
   customModel,
-  defaultAgentPlan,
-  defaultAgentPlanFiles,
   modelChoices,
   projectPlan,
   validateModelId,
@@ -33,40 +31,28 @@ afterEach(async () => {
 });
 
 describe("scaffold plans", () => {
-  test("defines the default Agent scaffold and discovery as plan data", () => {
-    const plan = defaultAgentPlan({ provider: "openai-codex", model: "gpt-5.6" });
-
-    expect([...plan.keys()]).toEqual([...defaultAgentPlanFiles]);
-    expect(plan.get("index.ts")).toContain('from "@mitome/sdk";');
-    expect(plan.get("index.ts")).toContain('model: "openai-codex/gpt-5.6"');
-    expect(plan.get("index.ts")).toContain(
-      'instructionFiles({ base: import.meta.url, paths: ["./AGENTS.md"], discover: ["AGENTS.md"] })',
-    );
-    expect(plan.get("AGENTS.md")).toBe("You are a helpful Agent.\n");
-    expect(JSON.parse(plan.get("package.json")!)).toMatchObject({
-      name: "mitome-agent",
-      private: true,
-      type: "module",
-    });
-  });
-
-  test("defines the project-only files and Effect template as plan data", () => {
-    const plan = projectPlan({ flavor: "effect", provider: "openai", model: "gpt-5.6" });
+  test("defines the native Agent program and project files as plan data", () => {
+    const plan = projectPlan({ provider: "openai", model: "gpt-5.6" });
 
     expect([...plan.keys()]).toEqual([
       "package.json",
       "index.ts",
-      "instructions.md",
       "tsconfig.json",
       ".gitignore",
       "README.md",
     ]);
-    expect(plan.get("index.ts")).toContain(
-      'instructionFiles({ base: import.meta.url, paths: ["./instructions.md"] })',
-    );
-    expect(plan.get("instructions.md")).toBe("You are a helpful Agent.\n");
-    expect(JSON.parse(plan.get("package.json")!)).toMatchObject({
-      dependencies: { effect: rootPackage.workspaces.catalog.effect },
+    expect(plan.get("index.ts")).toContain('from "@mitome/core";');
+    expect(plan.get("index.ts")).toContain("session.run(agent(");
+    expect(plan.get("index.ts")).toContain('providerModel(openai(), "gpt-5.6")');
+    expect(JSON.parse(plan.get("package.json")!)).toEqual({
+      name: "mitome-agent",
+      private: true,
+      type: "module",
+      dependencies: {
+        "@mitome/core": packageJson.version,
+        "@mitome/providers": packageJson.version,
+        effect: rootPackage.workspaces.catalog.effect,
+      },
     });
     expect(JSON.parse(plan.get("tsconfig.json")!)).toEqual({
       compilerOptions: {
@@ -80,35 +66,21 @@ describe("scaffold plans", () => {
       include: ["**/*.ts"],
     });
     expect(plan.get(".gitignore")).toBe("node_modules/\n");
-    expect(plan.get("README.md")).toContain("mitome auth login --use .\n");
-    expect(plan.get("README.md")).toContain('mitome "hi" --use .\n');
+    expect(plan.get("README.md")).toContain("OPENAI_API_KEY");
+    expect(plan.get("README.md")).toContain("node index.ts\n");
   });
 
-  test.each([
-    [
-      "default Agent",
-      () => defaultAgentPlan({ provider: "openai", model: "gpt-5.6" }),
-      "AGENTS.md",
-      "index.ts",
-    ],
-    [
-      "project",
-      () => projectPlan({ flavor: "promise", provider: "openai", model: "gpt-5.6" }),
-      "instructions.md",
-      "package.json",
-    ],
-  ] as const)(
-    "names an existing file before writing any %s scaffold file",
-    async (_name, plan, existingFile, unwrittenFile) => {
-      const path = await directory();
-      const existing = join(path, existingFile);
-      await writeFile(existing, "hand-written\n");
+  test("names an existing file before writing any scaffold file", async () => {
+    const path = await directory();
+    const existing = join(path, "index.ts");
+    await writeFile(existing, "hand-written\n");
 
-      await expect(writeScaffold(path, plan())).rejects.toThrow(`${existing} already exists`);
-      expect(existsSync(join(path, unwrittenFile))).toBe(false);
-      expect(await readFile(existing, "utf8")).toBe("hand-written\n");
-    },
-  );
+    await expect(
+      writeScaffold(path, projectPlan({ provider: "openai", model: "gpt-5.6" })),
+    ).rejects.toThrow(`${existing} already exists`);
+    expect(existsSync(join(path, "package.json"))).toBe(false);
+    expect(await readFile(existing, "utf8")).toBe("hand-written\n");
+  });
 
   test("refuses a dangling symlink instead of writing through it", async () => {
     const path = await directory();
@@ -117,7 +89,7 @@ describe("scaffold plans", () => {
     await symlink(target, link);
 
     await expect(
-      writeScaffold(path, projectPlan({ flavor: "promise", provider: "openai", model: "gpt-5.6" })),
+      writeScaffold(path, projectPlan({ provider: "openai", model: "gpt-5.6" })),
     ).rejects.toThrow(`${link} already exists`);
     expect((await lstat(link)).isSymbolicLink()).toBe(true);
     expect(await readlink(link)).toBe(target);
@@ -140,54 +112,24 @@ describe("selection policy", () => {
 });
 
 describe("generated TypeScript", () => {
-  const variants = [
-    ["promise", "openai", "@mitome/sdk", "openai()"],
-    ["promise", "openai-codex", "@mitome/sdk", "codex()"],
-    ["effect", "openai", "@mitome/sdk/effect", "openai()"],
-    ["effect", "openai-codex", "@mitome/sdk/effect", "codex()"],
-  ] as const;
-  const embedExample = (readme: string) => /```ts\n([\s\S]*?)\n```/.exec(readme)![1]!;
-
-  test("every project variant, its README embed example, and the default Agent typecheck against the workspace SDK", async () => {
+  test("every Provider variant typechecks against the workspace packages", async () => {
     const root = await directory();
     // Generated projects resolve @mitome/*, effect, and @types/node like an installed consumer
     // would; this package's devDependencies stand in for the install.
     await symlink(join(packageDirectory, "node_modules"), join(root, "node_modules"), "dir");
 
-    for (const [flavor, provider, sdk, factory] of variants) {
-      const plan = projectPlan({ flavor, provider, model: "gpt-5.6" });
-      const path = join(root, `${flavor}-${provider}`);
-      await writeScaffold(path, plan);
-      await writeFile(join(path, "embed.ts"), embedExample(plan.get("README.md")!));
-
-      const dependencies = {
-        "@mitome/providers": packageJson.version,
-        "@mitome/sdk": packageJson.version,
-      };
-      if (flavor === "effect") {
-        Object.assign(dependencies, { effect: rootPackage.workspaces.catalog.effect });
-      }
-      expect(JSON.parse(await contents(path, "package.json"))).toEqual({
-        name: "mitome-agent",
-        private: true,
-        type: "module",
-        dependencies,
-      });
-      const agent = await contents(path, "index.ts");
-      expect(agent).toContain(`from "${sdk}";`);
-      expect(agent).toContain(`providers: [${factory}]`);
-      expect(agent).toContain(`model: "${provider}/gpt-5.6"`);
+    for (const [provider, factory] of [
+      ["openai", "openai()"],
+      ["openai-codex", "codex()"],
+    ] as const) {
+      const path = join(root, provider);
+      await writeScaffold(path, projectPlan({ provider, model: "gpt-5.6" }));
+      expect(await contents(path, "index.ts")).toContain(`providerModel(${factory}, "gpt-5.6")`);
     }
-    await writeScaffold(
-      join(root, "default-agent"),
-      defaultAgentPlan({ provider: "openai", model: "gpt-5.6" }),
-    );
     // One program over every generated module, using the tsconfig a project ships with.
     await writeFile(
       join(root, "tsconfig.json"),
-      projectPlan({ flavor: "promise", provider: "openai", model: "gpt-5.6" }).get(
-        "tsconfig.json",
-      )!,
+      projectPlan({ provider: "openai", model: "gpt-5.6" }).get("tsconfig.json")!,
     );
 
     const tsc = promisify(execFile)(join(packageDirectory, "node_modules/.bin/tsc"), [
@@ -216,36 +158,35 @@ describe("create-mitome executable", () => {
   test("scaffolds the numbered selections into the directory argument", async () => {
     const path = await directory();
 
-    const result = await run(["agent"], "2\n1\n1\n", path);
+    const result = await run(["agent"], "2\n1\n", path);
 
     expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(result.stdout).toContain("Created a Mitome Agent in agent.");
     const agent = await contents(join(path, "agent"), "index.ts");
-    expect(agent).toContain('from "@mitome/sdk";');
-    expect(agent).toContain("providers: [codex()]");
-    expect(agent).toContain(`model: "openai-codex/${knownModelIds["openai-codex"][0]}"`);
+    expect(agent).toContain('from "@mitome/core";');
+    expect(agent).toContain(
+      `providerModel(codex(), ${JSON.stringify(knownModelIds["openai-codex"][0])})`,
+    );
   });
 
-  test("accepts a trimmed custom Model id and the Effect template", async () => {
+  test("accepts a trimmed custom Model id", async () => {
     const path = await directory();
 
-    const result = await run([], `1\n${customModelChoice("openai")}\n  my-model  \n2\n`, path);
+    const result = await run([], `1\n${customModelChoice("openai")}\n  my-model  \n`, path);
 
     expect(result).toMatchObject({ exitCode: 0, stderr: "" });
-    const agent = await contents(path, "index.ts");
-    expect(agent).toContain('from "@mitome/sdk/effect";');
-    expect(agent).toContain('model: "openai/my-model"');
+    expect(await contents(path, "index.ts")).toContain('providerModel(openai(), "my-model")');
   });
 
   test("defaults empty answers and re-asks after an out-of-range choice", async () => {
     const path = await directory();
 
-    const result = await run([], "9\n\n\n\n", path);
+    const result = await run([], "9\n\n\n", path);
 
     expect(result).toMatchObject({ exitCode: 0, stderr: "Choose 1-2.\n" });
-    const agent = await contents(path, "index.ts");
-    expect(agent).toContain('from "@mitome/sdk";');
-    expect(agent).toContain(`model: "openai/${knownModelIds.openai[0]}"`);
+    expect(await contents(path, "index.ts")).toContain(
+      `providerModel(openai(), ${JSON.stringify(knownModelIds.openai[0])})`,
+    );
   });
 
   test.each([

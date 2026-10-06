@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Effect, Exit, Schema, Stream } from "effect";
-import { Tool, Toolkit } from "effect/unstable/ai";
-import { createSession, credentialDescriptor } from "@mitome/core";
-import { agent, fakeFetch, runWithKey, sse } from "../support.js";
+import { Effect, Layer, Schema, Stream } from "effect";
+import { LanguageModel, Prompt, type Response as AiResponse, Tool, Toolkit } from "effect/ai";
+import { credentialDescriptor, providerModel } from "@mitome/core";
+import { fakeFetch, runWithKey, sse } from "../support.js";
 import { openaiCompatible } from "../../src/openai-compatible/index.js";
 
 type Json = typeof Schema.Json.Type;
@@ -25,8 +25,11 @@ const chunk = (delta: JsonObject, finishReason: string | null = null) => ({
   choices: [{ index: 0, finish_reason: finishReason, delta }],
 });
 
+const textDeltas = (parts: ReadonlyArray<AiResponse.AnyPart>) =>
+  parts.flatMap((part) => (part.type === "text-delta" ? [part.delta] : []));
+
 describe("openaiCompatible", () => {
-  it("exposes its credential descriptor without building a Session", () => {
+  it("exposes its credential descriptor without provisioning a Model", () => {
     expect(
       credentialDescriptor(
         openaiCompatible({
@@ -80,39 +83,31 @@ describe("openaiCompatible", () => {
       // Trailing slash pins baseUrl normalization.
       baseUrl: "https://test.invalid/v1/",
     });
-    const events: Array<unknown> = [];
+    const parts: Array<AiResponse.AnyPart> = [];
     const { promise: output, resolve: firstOutput } = Promise.withResolvers<void>();
-    const turn = run(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* createSession(agent(provider, "gpt-4o-mini"));
-          yield* Stream.runForEach(session.runTurn("Hi"), (event) =>
-            Effect.sync(() => {
-              events.push(event);
-              if (event.type === "model-output") firstOutput();
-            }),
-          );
-        }),
+    const generation = run(
+      LanguageModel.streamText({ prompt: "Hi" }).pipe(
+        Stream.runForEach((part) =>
+          Effect.sync(() => {
+            parts.push(part);
+            if (part.type === "text-delta") firstOutput();
+          }),
+        ),
+        Effect.provide(providerModel(provider, "gpt-4o-mini")),
       ),
       fetch,
     );
     await firstChunkSent;
     await output;
-    expect(events).toEqual([{ type: "model-output", text: "hel" }]);
+    expect(textDeltas(parts)).toEqual(["hel"]);
     releaseSecond();
-    await turn;
-    expect(events).toEqual([
-      { type: "model-output", text: "hel" },
-      { type: "model-output", text: "lo" },
-      expect.objectContaining({ type: "response-complete", finishReason: "stop" }),
-    ]);
+    await generation;
+    expect(textDeltas(parts)).toEqual(["hel", "lo"]);
+    expect(parts.at(-1)).toMatchObject({ type: "finish", reason: "stop" });
 
     await run(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* createSession(agent(provider, "ft:private-model"));
-          yield* Stream.runDrain(session.runTurn("Hi"));
-        }),
+      Stream.runDrain(LanguageModel.streamText({ prompt: "Hi" })).pipe(
+        Effect.provide(providerModel(provider, "ft:private-model")),
       ),
       fetch,
     );
@@ -133,23 +128,19 @@ describe("openaiCompatible", () => {
       apiKeyEnv: key,
       baseUrl: "https://test.invalid/v1",
     });
-    const exit = await run(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* createSession(agent(provider, "future-private-model"));
-          return yield* Effect.exit(Stream.runDrain(session.runTurn("Hi")));
-        }),
+    const error = await run(
+      Effect.flip(
+        Stream.runDrain(LanguageModel.streamText({ prompt: "Hi" })).pipe(
+          Effect.provide(providerModel(provider, "future-private-model")),
+        ),
       ),
       fetch,
     );
-    expect(Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty)).toMatchObject({
-      _tag: "TurnError",
-      cause: { reason: { _tag: "InvalidRequestError" } },
-    });
+    expect(error).toMatchObject({ _tag: "AiError", reason: { _tag: "InvalidRequestError" } });
     expect(requests).toBe(1);
   });
 
-  it("maps tool calls through the Core Tool loop", async () => {
+  it("maps tool calls and their results across generations", async () => {
     let calls = 0;
     let followUp: FollowUpRequest = {};
     const fetch = fakeFetch(async (request) => {
@@ -198,31 +189,37 @@ describe("openaiCompatible", () => {
       apiKeyEnv: key,
       baseUrl: "https://test.invalid/v1",
     });
-    const definition = agent(provider, "gpt-4o-mini", [
-      {
-        name: "echo",
-        toolkit: Toolkit.make(echo),
-        handlers: {
-          // SAFETY: Toolkit validates handler parameters with the echo schema.
-          echo: (params) => Effect.succeed((params as { text: string }).text),
-        },
-      },
-    ]);
-    const events = await run(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* createSession(definition);
-          return yield* Stream.runCollect(session.runTurn("Hi"));
-        }),
+    const Echo = Toolkit.make(echo);
+    const { first, second } = await run(
+      Effect.gen(function* () {
+        const prompt = Prompt.make("Hi");
+        const first = [
+          ...(yield* Stream.runCollect(LanguageModel.streamText({ prompt, toolkit: Echo }))),
+        ];
+        const second = yield* Stream.runCollect(
+          LanguageModel.streamText({
+            prompt: Prompt.concat(prompt, Prompt.fromResponseParts(first)),
+          }),
+        );
+        return { first, second: [...second] };
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            Echo.toLayer({ echo: ({ text }) => Effect.succeed(text) }),
+            providerModel(provider, "gpt-4o-mini"),
+          ),
+        ),
       ),
       fetch,
     );
-    expect([...events]).toEqual([
+    expect(
+      first.filter((part) => part.type === "tool-call" || part.type === "tool-result"),
+    ).toMatchObject([
       { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
       { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },
-      { type: "model-output", text: "done" },
-      expect.objectContaining({ type: "response-complete", finishReason: "stop" }),
     ]);
+    expect(textDeltas(second)).toEqual(["done"]);
+    expect(second.at(-1)).toMatchObject({ type: "finish", reason: "stop" });
     expect(calls).toBe(2);
     // The follow-up request must carry the tool result attributed to the original call.
     const toolMessage = followUp.messages?.find((message) => message.role === "tool");

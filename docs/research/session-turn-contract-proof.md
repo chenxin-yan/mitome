@@ -30,7 +30,7 @@ Scratch primary source: `/tmp/mitome-session-turn-proof-rc108-20260924`; parent 
 - A pending interrupt can produce an interrupted caller Exit after successful save/commit. An ambiguous save error can also follow an external write. Failed invocation/acknowledgement is not evidence of rollback; stable authoritative outcomes and reconciliation are required.
 - Masking cancellation around save/publication is not bounded shutdown: a stuck save may never finish. A timeout cannot establish rollback or safely free resources still in use.
 - Caller-scoped child fibers can perform external effects after the function returns. Revoking staging prevents late conversation mutation, not arbitrary external effects. The second experiment addresses this for the supplied Turn Scope under its stated lifetime preconditions; explicitly escaping jobs are not automatically made safe.
-- Native Effect SQL rc.108's failed-COMMIT connection leak and lost primary errors are now reproduced on real SQLite and independently rerun (below). A supported upstream resolution remains an integration gate. No local patch/workaround is authorized.
+- Native Effect SQL rc.108's failed-COMMIT connection leak and lost primary errors are now reproduced on real SQLite and independently rerun (below). The failed-COMMIT fix is now carried only as a development-only patch ([below](#development-only-sqlite-integration)); portable delivery still needs a qualified fixed upstream release.
 
 The independent review accepted the evidence report but blocked treating these artifacts as settled production contracts. Fake generations do not test native AI/Tools, approvals, HTTP/TUI, durable outcomes, real database transactions, coordinator exclusion, restart/power loss, trees, Compaction, Skills, or subagents.
 
@@ -97,6 +97,18 @@ Logs are `parent-diagnostic.log`, `parent-desired.log`, `parent-observer-join.lo
 **Remaining integration blocker:** deferred-constraint COMMIT failure leaves the writer's uncommitted row and lock alive; an independent peer sees no row, and two subsequent valid transaction bodies never run because BEGIN still encounters the old transaction. The corrected failed-BEGIN path no longer accidentally rolls it back. Upgrading to rc.117 alone therefore does not solve this blocker. Seek a focused upstream failed-COMMIT resolution, not a local cleanup/retry wrapper or duplicate report of the fixed bugs.
 
 Published-package execution does not prove full type compatibility, Node 24/Bun SQLite support, ambiguous I/O commits, crash recovery or power-loss durability. The separate ownership revalidation above removes the obsolete rc.108 handling; it does not clear this independent SQL integration blocker.
+
+### Development-only SQLite integration
+
+Current (2026-09-28): Effect `4.0.0-rc.118` releases the failed-COMMIT cleanup below in `effect/sql/SqlClient` and both adapters. Root `devDependencies` pin both adapters at `4.0.0-rc.118`, matching `effect`, with no package patch; the same checks run against the released packages. The next two paragraphs describe the superseded rc.117 patch.
+
+The owner selected SQLite and approved the verified minimal upstream fix as a temporary patch for **repository development and backend tests only**. Root `devDependencies` pin `@effect/sql-sqlite-node` and `@effect/sql-sqlite-bun` at `4.0.0-rc.117`, matching `effect`. Bun `patchedDependencies` (`patches/`) patch the shared `SqlClient` and both adapters' source, JS and declarations; each patched file carries a removal TODO. Both patched sources were first qualified in isolation on each real runtime; the checks below also fail as intended against untouched, no-poison and driver-state scratch copies (external evidence).
+
+Bun applies root patch metadata only to this repository's install. Published Mitome packages neither receive the patch nor depend on the adapters, so this is not a portable library fix: portable delivery and release stay blocked until a fixed upstream release is qualified and adopted. The repository must keep one `effect` package: separately installed patched and stock SQL clients would share transaction context keys.
+
+`bun tools/qualification/sqlite-transactions/checks.ts` and `node tools/qualification/sqlite-transactions/checks.ts` run the installed Bun and Node adapters against real SQLite. They check commit, body rollback with its own failure, a busy BEGIN, repeated deferred-FK COMMIT failures (no row, no lock, next transaction commits), and an injected cleanup-ROLLBACK failure (both failures visible, dirty connection refused until cleanup succeeds). Both exit 0. The injected failure is synthetic, not SQLite I/O.
+
+This does not select a schema, recovery policy or limits, and does not establish Node 24/Bun patch floors, native platforms, restart or power-loss durability (#170, #174).
 
 ## Cross-session context and runtime clarification
 

@@ -4,6 +4,7 @@
     "//#hints:generate": {
       "inputs": [
         "$TURBO_ROOT$/scripts/generate-model-hints.ts",
+        "$TURBO_ROOT$/scripts/models-dev.ts",
         "$TURBO_ROOT$/scripts/models-dev.snapshot.json",
         "$TURBO_ROOT$/packages/providers/src/openai-codex/models.ts"
       ],

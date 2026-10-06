@@ -1,515 +1,933 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
-import { AiError, LanguageModel, Prompt, Response } from "effect/unstable/ai";
+import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, Queue, Scope } from "effect";
+import { Prompt } from "effect/ai";
 import {
-  type AgentDefinition,
-  createSession,
-  defineExtension,
-  makeProvider,
-  StoreError,
-  type TranscriptStore,
-  TurnError,
+  firstPartyExecutionLimits as limits,
+  makeSession,
+  SessionBusyError,
+  SessionFencedError,
+  SessionReleasedError,
+  SessionSaveError,
+  type SessionStore,
+  Turn,
 } from "../../src/index.js";
-import { makeDeterministicProvider, makeTestProvider } from "../support/provider.js";
 
-describe("createSession", () => {
-  it.effect("streams one model Step before completion", () =>
+const message = (text: string): Prompt.Message =>
+  Prompt.userMessage({ content: [Prompt.textPart({ text })] });
+
+/** An ordinary nested function: it shares whichever Turn its caller runs in. */
+const stage = (text: string) =>
+  Effect.gen(function* () {
+    const turn = yield* Turn;
+    yield* turn.stage(message(text));
+    return turn.id;
+  });
+
+/** Stages two Messages through nested calls and returns an identity-bearing result. */
+const program = () =>
+  Effect.gen(function* () {
+    yield* stage("first");
+    yield* stage("second");
+    return { answer: 42 };
+  });
+
+const texts = (history: ReadonlyArray<Prompt.Message>) =>
+  history.map((entry) =>
+    entry.role === "user" && entry.content[0]?.type === "text" ? entry.content[0].text : entry.role,
+  );
+
+const recordingStore = () => {
+  const saved: Array<ReadonlyArray<string>> = [];
+  const store: SessionStore = {
+    save: (history) => Effect.sync(() => void saved.push(texts(history))),
+  };
+  return { store, saved };
+};
+
+class Greeting extends Context.Service<Greeting, { readonly text: string }>()("test/Greeting") {}
+class ApplicationFailure extends Data.TaggedError("ApplicationFailure") {}
+
+describe("makeSession", () => {
+  it.effect("runs an ordinary program and publishes its staged Messages once", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicProvider("hello");
-      const definition: AgentDefinition = {
-        providers: [fixture.provider],
-        model: "test/default",
-        extensions: [],
-      };
-      const session = yield* createSession(definition);
-      const events = yield* Stream.runCollect(session.runTurn("Hi"));
+      const session = yield* makeSession({ limits, persistence: "none" });
+      const input = { topic: "blue" };
+      const result = { input, invoke: (n: number) => n + 1 };
+      const application = (value: typeof input) =>
+        Effect.gen(function* () {
+          const greeting = yield* Greeting;
+          const first = yield* stage(greeting.text);
+          const second = yield* stage(value.topic);
+          expect(second).toBe(first);
+          expect(yield* session.history).toEqual([]);
+          return result;
+        });
 
-      expect([...events]).toStrictEqual([
-        { type: "model-output", text: "hello" },
-        { type: "response-complete", finishReason: undefined, usage: undefined },
-      ]);
-      expect(yield* fixture.calls).toBe(1);
+      const returned = yield* session
+        .run(application(input))
+        .pipe(Effect.provideService(Greeting, { text: "hello" }));
+
+      expect(returned).toBe(result);
+      expect(returned.input).toBe(input);
+      expect(yield* session.history).toEqual([message("hello"), message("blue")]);
     }),
   );
 
-  it.effect("exposes reasoning and the final finish metadata", () =>
+  it.effect("allocates independent fresh Sessions", () =>
     Effect.gen(function* () {
-      const firstUsage = new Response.Usage({
-        inputTokens: { total: 2 },
-        outputTokens: { total: 1 },
-      });
-      const finalUsage = new Response.Usage({
-        inputTokens: { total: 3 },
-        outputTokens: { total: 2, reasoning: 1 },
-      });
-      const model = makeTestProvider(() =>
-        Stream.fromIterable([
-          Response.makePart("reasoning-delta", { id: "reasoning", delta: "thinking" }),
-          Response.makePart("finish", { reason: "tool-calls", usage: firstUsage }),
-          Response.makePart("finish", { reason: "stop", usage: finalUsage }),
-        ]),
-      );
-      const session = yield* createSession({
-        providers: [model],
-        model: "test/default",
-        extensions: [],
-      });
-      const events = yield* Stream.runCollect(session.runTurn("Hi"));
+      const first = yield* makeSession({ limits, persistence: "none" });
+      const second = yield* makeSession({ limits, persistence: "none" });
+      yield* first.run(program());
+      yield* second.run(stage("separate"));
 
-      expect([...events]).toEqual([
-        { type: "reasoning", text: "thinking" },
-        { type: "response-complete", finishReason: "stop", usage: finalUsage },
-      ]);
+      expect(texts(yield* first.history)).toEqual(["first", "second"]);
+      expect(texts(yield* second.history)).toEqual(["separate"]);
     }),
   );
 
-  it.effect("preserves reasoning metadata in history without exposing it as an event", () =>
+  it.effect("rejects a concurrent or nested Turn without committing either", () =>
     Effect.gen(function* () {
-      const metadata = {
-        openai: { itemId: "reasoning-1", encryptedContent: "encrypted-reasoning" },
-      };
-      let calls = 0;
-      let secondPrompt: Prompt.Prompt | undefined;
-      const model = makeTestProvider(({ prompt }) => {
-        calls += 1;
-        if (calls === 1) {
-          return Stream.fromIterable([
-            Response.makePart("reasoning-start", { id: "reasoning-1", metadata }),
-            Response.makePart("reasoning-delta", { id: "reasoning-1", delta: "summary" }),
-            Response.makePart("reasoning-end", { id: "reasoning-1", metadata }),
-            Response.makePart("tool-call", {
-              id: "call-1",
-              name: "lookup",
-              params: { query: "mitome" },
-              providerExecuted: false,
-            }),
-          ]);
-        }
-        secondPrompt = prompt;
-        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-      });
-      const session = yield* createSession({
-        providers: [model],
-        model: "test/default",
-        extensions: [],
-      });
-      const events = yield* Stream.runCollect(session.runTurn("Hi"));
-
-      expect([...events]).toEqual([
-        { type: "reasoning", text: "summary" },
-        { type: "tool-call", id: "call-1", name: "lookup", params: { query: "mitome" } },
-        { type: "model-output", text: "done" },
-        { type: "response-complete" },
-      ]);
-      for (const prompt of [secondPrompt, Prompt.make(session.history())]) {
-        const assistant = prompt?.content.find((message) => message.role === "assistant");
-        const reasoning = assistant?.content.find((part) => part.type === "reasoning");
-        expect(reasoning).toMatchObject({ text: "summary", options: metadata });
-      }
-    }),
-  );
-
-  it.effect("keeps caller-provided services visible during stream execution", () =>
-    Effect.gen(function* () {
-      class Greeting extends Context.Service<Greeting, { readonly text: string }>()("Greeting") {}
-      const model = makeTestProvider(() =>
-        Stream.fromEffect(
-          Effect.map(Effect.service(Greeting), ({ text }) =>
-            Response.makePart("text-delta", { id: "caller", delta: text }),
+      const session = yield* makeSession({ limits, persistence: "none" });
+      const started = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      const active = yield* Effect.forkChild(
+        session.run(
+          stage("active").pipe(
+            Effect.andThen(Deferred.succeed(started, undefined)),
+            Effect.andThen(Deferred.await(gate)),
           ),
         ),
       );
-      const session = yield* createSession({
-        providers: [model],
-        model: "test/default",
-        extensions: [],
-      });
-      const events = yield* Stream.runCollect(session.runTurn("Hi")).pipe(
-        Effect.provideService(Greeting, { text: "from the caller" }),
+      yield* Deferred.await(started);
+
+      expect(yield* Effect.flip(session.run(program()))).toBeInstanceOf(SessionBusyError);
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(active);
+      expect(texts(yield* session.history)).toEqual(["active"]);
+
+      const nested = stage("outer").pipe(Effect.andThen(session.run(program())));
+      expect(yield* Effect.flip(session.run(nested))).toBeInstanceOf(SessionBusyError);
+      expect(texts(yield* session.history)).toEqual(["active"]);
+    }),
+  );
+
+  it.effect("rejects every use once its Scope is released", () =>
+    Effect.gen(function* () {
+      const session = yield* Effect.scoped(makeSession({ limits, persistence: "none" }));
+
+      expect(yield* Effect.flip(session.run(program()))).toBeInstanceOf(SessionReleasedError);
+      expect(yield* Effect.flip(session.history)).toBeInstanceOf(SessionReleasedError);
+      expect(yield* Effect.flip(session.turns)).toBeInstanceOf(SessionReleasedError);
+      expect(yield* Effect.flip(Effect.scoped(session.observe(1)))).toBeInstanceOf(
+        SessionReleasedError,
       );
-
-      expect([...events]).toEqual([
-        { type: "model-output", text: "from the caller" },
-        { type: "response-complete" },
-      ]);
     }),
   );
 
-  it.effect("composes Extension Instructions into model input and history", () =>
+  it.effect("keeps committed history on body failure, defect or interruption", () =>
     Effect.gen(function* () {
-      let modelPrompt: ReadonlyArray<Prompt.Message> = [];
-      const model = makeTestProvider(({ prompt }) => {
-        modelPrompt = prompt.content;
-        return Stream.succeed(Response.makePart("text-delta", { id: "done", delta: "done" }));
-      });
-      const session = yield* createSession({
-        providers: [model],
-        model: "test/default",
-        extensions: [
-          { name: "first", instructions: "First Extension" },
-          { name: "empty", instructions: "" },
-          { name: "missing" },
-          { name: "last", instructions: "Last Extension" },
-        ],
-      });
-      const expected = [
-        {
-          role: "system" as const,
-          content: "First Extension\n\nLast Extension",
-        },
-      ];
+      const session = yield* makeSession({ limits, persistence: "none" });
+      yield* session.run(stage("prior"));
+      const failure = new ApplicationFailure();
+      const failed = yield* Effect.flip(
+        session.run(program().pipe(Effect.andThen(Effect.fail(failure)))),
+      );
+      expect(failed).toBe(failure);
 
-      expect(session.history().map(({ role, content }) => ({ role, content }))).toEqual(expected);
-      yield* Stream.runDrain(session.runTurn("Hi"));
-      expect(modelPrompt[0]).toMatchObject(expected[0]!);
-      expect(modelPrompt.map((message) => message.role)).toEqual(["system", "user"]);
-      expect(session.history()[0]).toMatchObject(expected[0]!);
-      expect(session.history().map((message) => message.role)).toEqual(["system", "user"]);
-    }),
-  );
+      const defect = new Error("defect");
+      const died = yield* Effect.exit(
+        session.run(program().pipe(Effect.andThen(Effect.die(defect)))),
+      );
+      expect(Exit.isFailure(died) && Cause.squash(died.cause)).toBe(defect);
 
-  it.effect("starts without a system message when no Instructions contribute", () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeDeterministicProvider("hello");
-      const session = yield* createSession({
-        providers: [fixture.provider],
-        model: "test/default",
-        extensions: [{ name: "empty", instructions: "" }, { name: "missing" }],
-      });
-
-      expect(session.history().map((message) => message.role)).toEqual([]);
-    }),
-  );
-
-  it.effect("wraps a failing lazy Provider build as a TurnError on first use", () =>
-    Effect.gen(function* () {
-      class ProvisionFailure extends Schema.TaggedError<ProvisionFailure>()("ProvisionFailure", {
-        message: Schema.String,
-      }) {}
-      const model = makeProvider("test", [] as const, undefined, () =>
-        Layer.effect(
-          LanguageModel.LanguageModel,
-          Effect.fail(new ProvisionFailure({ message: "no credential" })),
+      const started = yield* Deferred.make<void>();
+      let cleaned = false;
+      const interrupted = yield* Effect.forkChild(
+        session.run(
+          program().pipe(
+            Effect.andThen(Deferred.succeed(started, undefined)),
+            Effect.andThen(Effect.never),
+            Effect.ensuring(Effect.sync(() => void (cleaned = true))),
+          ),
         ),
       );
-      const error = yield* Effect.scoped(
+      yield* Deferred.await(started);
+      yield* Fiber.interrupt(interrupted);
+      expect(cleaned).toBe(true);
+
+      expect(texts(yield* session.history)).toEqual(["prior"]);
+      yield* session.run(stage("next"));
+      expect(texts(yield* session.history)).toEqual(["prior", "next"]);
+    }),
+  );
+
+  it.effect("does not commit when the Turn's own cleanup fails", () =>
+    Effect.gen(function* () {
+      const session = yield* makeSession({ limits, persistence: "none" });
+      const defect = new Error("own cleanup");
+      for (const failBody of [false, true]) {
+        const exit = yield* Effect.exit(
+          session.run(
+            Effect.gen(function* () {
+              yield* Effect.addFinalizer(() => Effect.die(defect));
+              yield* program();
+              if (failBody) return yield* new ApplicationFailure();
+              return 42;
+            }),
+          ),
+        );
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          const reasons = exit.cause.reasons;
+          expect(reasons.some((r) => Cause.isDieReason(r) && r.defect === defect)).toBe(true);
+          expect(reasons.some(Cause.isFailReason)).toBe(failBody);
+        }
+      }
+
+      expect(yield* session.history).toEqual([]);
+      yield* session.run(program());
+      expect(texts(yield* session.history)).toEqual(["first", "second"]);
+    }),
+  );
+
+  it.effect(
+    "drains native and scoped child fibers before Turn resources close and publication",
+    () =>
+      Effect.gen(function* () {
+        const session = yield* makeSession({ limits, persistence: "none" });
+        const nativeCleaning = yield* Deferred.make<void>();
+        const nativeGate = yield* Deferred.make<void>();
+        const scopedCleaning = yield* Deferred.make<void>();
+        const scopedGate = yield* Deferred.make<void>();
+        let resourceLive = false;
+        const resourceSeenByCleanup: Array<boolean> = [];
+        const heldChild = (
+          started: Deferred.Deferred<void>,
+          cleaning: Deferred.Deferred<void>,
+          gate: Deferred.Deferred<void>,
+        ) =>
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.ensuring(
+              Deferred.succeed(cleaning, undefined).pipe(
+                Effect.andThen(Deferred.await(gate)),
+                Effect.andThen(Effect.sync(() => void resourceSeenByCleanup.push(resourceLive))),
+              ),
+            ),
+          );
+        const invocation = yield* Effect.forkChild(
+          session.run(
+            Effect.gen(function* () {
+              yield* Effect.acquireRelease(
+                Effect.sync(() => void (resourceLive = true)),
+                () => Effect.sync(() => void (resourceLive = false)),
+              );
+              yield* program();
+              const nativeStarted = yield* Deferred.make<void>();
+              const scopedStarted = yield* Deferred.make<void>();
+              yield* Effect.forkChild(heldChild(nativeStarted, nativeCleaning, nativeGate));
+              yield* Effect.forkScoped(heldChild(scopedStarted, scopedCleaning, scopedGate));
+              yield* Deferred.await(nativeStarted);
+              yield* Deferred.await(scopedStarted);
+              return "done";
+            }),
+          ),
+        );
+        const assertUnsettled = Effect.gen(function* () {
+          expect(invocation.pollUnsafe()).toBeUndefined();
+          expect(resourceLive).toBe(true);
+          expect(yield* session.history).toEqual([]);
+          expect((yield* session.turns).map((turn) => turn.phase)).toEqual(["running"]);
+          expect(yield* Effect.flip(session.run(program()))).toBeInstanceOf(SessionBusyError);
+        });
+
+        yield* Deferred.await(nativeCleaning);
+        yield* assertUnsettled;
+        yield* Deferred.succeed(nativeGate, undefined);
+        yield* Deferred.await(scopedCleaning);
+        yield* assertUnsettled;
+        yield* Deferred.succeed(scopedGate, undefined);
+
+        expect(yield* Fiber.join(invocation)).toBe("done");
+        expect(resourceSeenByCleanup).toEqual([true, true]);
+        expect(resourceLive).toBe(false);
+        expect(texts(yield* session.history)).toEqual(["first", "second"]);
+      }),
+  );
+
+  it.effect("drains a child forked by a Turn finalizer before publishing and returning", () =>
+    Effect.gen(function* () {
+      const session = yield* makeSession({ limits, persistence: "none" });
+      const started = yield* Deferred.make<void>();
+      const cleaning = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      const invocation = yield* Effect.forkChild(
+        session.run(
+          Effect.gen(function* () {
+            yield* program();
+            yield* Effect.addFinalizer(() =>
+              Effect.forkChild(
+                Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.ensuring(
+                    Deferred.succeed(cleaning, undefined).pipe(
+                      Effect.andThen(Deferred.await(gate)),
+                    ),
+                  ),
+                ),
+              ).pipe(Effect.andThen(Deferred.await(started))),
+            );
+            return "done";
+          }),
+        ),
+      );
+      yield* Deferred.await(cleaning);
+
+      expect(invocation.pollUnsafe()).toBeUndefined();
+      expect(yield* session.history).toEqual([]);
+      expect((yield* session.turns).map((turn) => turn.phase)).toEqual(["running"]);
+      expect(yield* Effect.flip(session.run(program()))).toBeInstanceOf(SessionBusyError);
+      yield* Deferred.succeed(gate, undefined);
+
+      expect(yield* Fiber.join(invocation)).toBe("done");
+      expect(texts(yield* session.history)).toEqual(["first", "second"]);
+    }),
+  );
+
+  it.effect("keeps a Turn-local resource for a child its finalizer joins", () =>
+    Effect.gen(function* () {
+      const session = yield* makeSession({ limits, persistence: "none" });
+      const cleaning = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      let resourceLive = false;
+      const seenByChild: Array<boolean> = [];
+      const invocation = yield* Effect.forkChild(
+        session.run(
+          Effect.gen(function* () {
+            yield* Effect.acquireRelease(
+              Effect.sync(() => void (resourceLive = true)),
+              () => Effect.sync(() => void (resourceLive = false)),
+            );
+            yield* program();
+            // Registered after the resource, so it runs first; joining keeps the resource open.
+            yield* Effect.addFinalizer(() =>
+              Effect.forkChild(
+                Deferred.succeed(cleaning, undefined).pipe(
+                  Effect.andThen(Deferred.await(gate)),
+                  Effect.andThen(Effect.sync(() => void seenByChild.push(resourceLive))),
+                ),
+              ).pipe(Effect.flatMap(Fiber.join)),
+            );
+            return "done";
+          }),
+        ),
+      );
+      yield* Deferred.await(cleaning);
+
+      expect(resourceLive).toBe(true);
+      expect(invocation.pollUnsafe()).toBeUndefined();
+      expect(yield* session.history).toEqual([]);
+      yield* Deferred.succeed(gate, undefined);
+
+      expect(yield* Fiber.join(invocation)).toBe("done");
+      expect(seenByChild).toEqual([true]);
+      expect(resourceLive).toBe(false);
+      expect(texts(yield* session.history)).toEqual(["first", "second"]);
+    }),
+  );
+
+  it.effect("keeps Session infrastructure until an unjoined cleanup child drains", () =>
+    Effect.gen(function* () {
+      const allocation = yield* Scope.make();
+      const started = yield* Deferred.make<void>();
+      const cleaning = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      const order: Array<string> = [];
+      let resourceLive = false;
+      const session = yield* Effect.gen(function* () {
+        yield* Effect.acquireRelease(Effect.void, () =>
+          Effect.sync(() => void order.push("infrastructure released")),
+        );
+        return yield* makeSession({ limits, persistence: "none" });
+      }).pipe(Effect.provideService(Scope.Scope, allocation));
+      const invocation = yield* Effect.forkChild(
+        session.run(
+          Effect.gen(function* () {
+            yield* Effect.acquireRelease(
+              Effect.sync(() => void (resourceLive = true)),
+              () => Effect.sync(() => void (resourceLive = false)),
+            );
+            yield* program();
+            yield* Effect.addFinalizer(() =>
+              Effect.forkChild(
+                Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.ensuring(
+                    Deferred.succeed(cleaning, undefined).pipe(
+                      Effect.andThen(Deferred.await(gate)),
+                      Effect.andThen(Effect.sync(() => void order.push("child drained"))),
+                    ),
+                  ),
+                ),
+              ).pipe(Effect.andThen(Deferred.await(started))),
+            );
+            return "done";
+          }),
+        ),
+      );
+      yield* Deferred.await(cleaning);
+
+      // Native LIFO order: the unjoined child outlives the resource a later finalizer released.
+      expect(resourceLive).toBe(false);
+      expect(invocation.pollUnsafe()).toBeUndefined();
+      expect(yield* session.history).toEqual([]);
+      const close = yield* Effect.forkChild(Scope.close(allocation, Exit.void), {
+        startImmediately: true,
+      });
+      expect(yield* Effect.flip(session.run(program()))).toBeInstanceOf(SessionReleasedError);
+      expect(close.pollUnsafe()).toBeUndefined();
+      expect(order).toEqual([]);
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(close);
+
+      expect(order).toEqual(["child drained", "infrastructure released"]);
+      expect(Exit.hasInterrupts(yield* Fiber.await(invocation))).toBe(true);
+    }),
+  );
+
+  it.effect("commits Messages staged by the Turn's own cleanup with the Turn", () =>
+    Effect.gen(function* () {
+      const session = yield* makeSession({ limits, persistence: "none" });
+      yield* session.run(
         Effect.gen(function* () {
-          const session = yield* createSession({
-            providers: [model],
-            model: "test/default",
-            extensions: [],
-          });
-          return yield* Effect.flip(Stream.runDrain(session.runTurn("Hi")));
+          const turn = yield* Turn;
+          yield* Effect.addFinalizer(() => turn.stage(message("cleanup")));
+          yield* program();
         }),
       );
-      expect(error).toBeInstanceOf(TurnError);
-      expect(error).toMatchObject({ _tag: "TurnError", message: "no credential" });
-    }),
-  );
+      expect(texts(yield* session.history)).toEqual(["first", "second", "cleanup"]);
 
-  it.effect("surfaces provider AiError messages", () =>
-    Effect.gen(function* () {
-      const cause = AiError.make({
-        module: "Test Provider",
-        method: "streamText",
-        reason: new AiError.UnknownError({ description: "provider unavailable" }),
-      });
-      const session = yield* createSession({
-        providers: [makeTestProvider(() => Stream.fail(cause))],
-        model: "test/default",
-        extensions: [],
-      });
-
-      expect(yield* Effect.flip(Stream.runDrain(session.runTurn("Hi")))).toMatchObject({
-        _tag: "TurnError",
-        message: cause.reason.message,
-        cause,
-      });
-    }),
-  );
-
-  it.effect("fails model error parts without committing Turn history", () =>
-    Effect.gen(function* () {
-      const cause = new Error("model stream failed");
-      const model = makeTestProvider(() =>
-        Stream.fromIterable([
-          Response.makePart("text-delta", { id: "partial", delta: "partial" }),
-          Response.makePart("error", { error: cause }),
-        ]),
-      );
-      const session = yield* createSession({
-        providers: [model],
-        model: "test/default",
-        extensions: [],
-      });
-      const events: Array<unknown> = [];
-      const error = yield* Effect.flip(
-        Stream.runDrain(
-          session.runTurn("Hi").pipe(Stream.tap((event) => Effect.sync(() => events.push(event)))),
+      const failed = yield* Effect.exit(
+        session.run(
+          Effect.gen(function* () {
+            const turn = yield* Turn;
+            yield* Effect.addFinalizer(() => turn.stage(message("discarded")));
+            return yield* new ApplicationFailure();
+          }),
         ),
       );
-
-      expect(error).toMatchObject({ _tag: "TurnError", message: "Turn failed", cause });
-      expect(events).toEqual([{ type: "model-output", text: "partial" }]);
-      expect(session.history()).toEqual([]);
+      expect(Exit.isFailure(failed)).toBe(true);
+      expect(texts(yield* session.history)).toEqual(["first", "second", "cleanup"]);
     }),
   );
 
-  it.effect("leaves history and the Transcript unchanged when the Transcript save fails", () =>
+  it.effect("fails the Turn for a joined native child failure but not an unjoined one", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicProvider("hello");
-      const store: TranscriptStore = {
-        save: () => Effect.fail(new StoreError({ message: "save failed" })),
-        appendEvent: () => Effect.void,
-        load: () => Effect.die("not used"),
-        list: () => Effect.die("not used"),
-      };
-      const session = yield* createSession(
-        { providers: [fixture.provider], model: "test/default", extensions: [] },
-        { transcripts: store },
-      );
-      const before = session.transcript();
-      const events: Array<unknown> = [];
-      const error = yield* Effect.flip(
-        Stream.runDrain(
-          session.runTurn("Hi").pipe(Stream.tap((event) => Effect.sync(() => events.push(event)))),
-        ),
-      );
-
-      expect(error).toMatchObject({ _tag: "StoreError", message: "save failed" });
-      expect(events).toEqual([{ type: "model-output", text: "hello" }]);
-      expect(session.history()).toEqual([]);
-      expect(session.transcript()).toEqual(before);
-    }),
-  );
-
-  it.effect("keeps the committed Turn when appending the final event record fails", () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeDeterministicProvider("hello");
-      const saved: Array<number> = [];
-      const store: TranscriptStore = {
-        save: (transcript) => Effect.sync(() => void saved.push(transcript.messages.length)),
-        appendEvent: (record) =>
-          record.event.type === "response-complete"
-            ? Effect.fail(new StoreError({ message: "append failed" }))
-            : Effect.void,
-        load: () => Effect.die("not used"),
-        list: () => Effect.die("not used"),
-      };
-      const session = yield* createSession(
-        { providers: [fixture.provider], model: "test/default", extensions: [] },
-        { transcripts: store },
-      );
-      const events: Array<unknown> = [];
-      const error = yield* Effect.flip(
-        Stream.runDrain(
-          session.runTurn("Hi").pipe(Stream.tap((event) => Effect.sync(() => events.push(event)))),
-        ),
-      );
-
-      // The snapshot save and history mutation are the commit; the final event append is a
-      // post-commit audit write. Its failure surfaces, but does not roll the Turn back.
-      expect(error).toMatchObject({ _tag: "StoreError", message: "append failed" });
-      expect(events).toEqual([{ type: "model-output", text: "hello" }]);
-      // A lone text-delta yields no assistant message, so the committed Turn is the user Message.
-      expect(saved).toEqual([1]);
-      expect(session.history().map((message) => message.role)).toEqual(["user"]);
-      expect(session.transcript().messages).toHaveLength(1);
-
-      const second = yield* Effect.flip(Stream.runDrain(session.runTurn("Again")));
-      expect(second).toMatchObject({ _tag: "StoreError" });
-      expect(saved).toEqual([1, 2]);
-      expect(session.history()).toHaveLength(2);
-    }),
-  );
-
-  it.effect("commits history when interrupted during the Transcript save", () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeDeterministicProvider("hello");
-      const saveStarted = yield* Deferred.make<void>();
-      const releaseSave = yield* Deferred.make<void>();
-      const store: TranscriptStore = {
-        // Simulates a store whose side effect completes after the fiber is interrupted.
-        save: () =>
-          Deferred.succeed(saveStarted, undefined).pipe(
-            Effect.andThen(Deferred.await(releaseSave)),
+      const session = yield* makeSession({ limits, persistence: "none" });
+      const defect = new Error("child cleanup defect");
+      const failingChild = Effect.void.pipe(Effect.ensuring(Effect.die(defect)));
+      const joined = yield* Effect.exit(
+        session.run(
+          program().pipe(
+            Effect.andThen(Effect.forkChild(failingChild)),
+            Effect.flatMap(Fiber.join),
           ),
-        appendEvent: () => Effect.void,
-        load: () => Effect.die("not used"),
-        list: () => Effect.die("not used"),
-      };
-      const session = yield* createSession(
-        { providers: [fixture.provider], model: "test/default", extensions: [] },
-        { transcripts: store },
+        ),
       );
-      const fiber = yield* Effect.forkChild(Stream.runDrain(session.runTurn("Hi")));
-      yield* Deferred.await(saveStarted);
-      const interrupt = yield* Effect.forkChild(Fiber.interrupt(fiber));
-      yield* Deferred.succeed(releaseSave, undefined);
+      expect(Exit.isFailure(joined) && Cause.squash(joined.cause)).toBe(defect);
+      expect(yield* session.history).toEqual([]);
+
+      const started = yield* Deferred.make<void>();
+      const unjoined = yield* session.run(
+        Effect.gen(function* () {
+          yield* program();
+          const child = yield* Effect.forkChild(
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.ensuring(Effect.die(defect)),
+            ),
+          );
+          yield* Deferred.await(started);
+          return child;
+        }),
+      );
+      const childExit = yield* Fiber.await(unjoined);
+      expect(Exit.isFailure(childExit) && Cause.hasDies(childExit.cause)).toBe(true);
+      expect(texts(yield* session.history)).toEqual(["first", "second"]);
+    }),
+  );
+
+  it.effect("waits for held cleanup when the caller is interrupted, then saves nothing", () =>
+    Effect.gen(function* () {
+      const { store, saved } = recordingStore();
+      const session = yield* makeSession({ limits, persistence: store });
+      const cleaning = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      let cleaned = false;
+      const invocation = yield* Effect.forkChild(
+        session.run(
+          Effect.gen(function* () {
+            yield* Effect.addFinalizer(() =>
+              Deferred.succeed(cleaning, undefined).pipe(
+                Effect.andThen(Deferred.await(gate)),
+                Effect.andThen(Effect.sync(() => void (cleaned = true))),
+              ),
+            );
+            return yield* program();
+          }),
+        ),
+      );
+      yield* Deferred.await(cleaning);
+      const interrupt = yield* Effect.forkChild(Fiber.interrupt(invocation), {
+        startImmediately: true,
+      });
+      expect(interrupt.pollUnsafe()).toBeUndefined();
+      yield* Deferred.succeed(gate, undefined);
       yield* Fiber.join(interrupt);
 
-      expect(session.history().map((message) => message.role)).toEqual(["user"]);
+      expect(cleaned).toBe(true);
+      expect(saved).toEqual([]);
+      expect(yield* session.history).toEqual([]);
+      yield* session.run(program());
+      expect(saved).toEqual([["first", "second"]]);
     }),
   );
 
-  it.effect("isolates and releases session state", () =>
+  it.effect("drains an interrupted program and its child before its Turn resources close", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicProvider("hello");
-      const definition: AgentDefinition = {
-        providers: [fixture.provider],
-        model: "test/default",
-        extensions: [],
-      };
-      const first = yield* Effect.scoped(
+      const session = yield* makeSession({ limits, persistence: "none" });
+      const started = yield* Deferred.make<void>();
+      const cleaning = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      let resourceLive = false;
+      const seenByCleanup: Array<string> = [];
+      const heldCleanup = (name: string) =>
+        Deferred.succeed(cleaning, undefined).pipe(
+          Effect.andThen(Deferred.await(gate)),
+          Effect.andThen(Effect.sync(() => void seenByCleanup.push(`${name}:${resourceLive}`))),
+        );
+      const invocation = yield* Effect.forkChild(
+        session.run(
+          Effect.gen(function* () {
+            yield* Effect.acquireRelease(
+              Effect.sync(() => void (resourceLive = true)),
+              () => Effect.sync(() => void (resourceLive = false)),
+            );
+            const childStarted = yield* Deferred.make<void>();
+            yield* Effect.forkChild(
+              Deferred.succeed(childStarted, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.ensuring(heldCleanup("child")),
+              ),
+            );
+            yield* Deferred.await(childStarted);
+            yield* Deferred.succeed(started, undefined);
+            return yield* Effect.never;
+          }).pipe(Effect.ensuring(heldCleanup("program"))),
+        ),
+      );
+      yield* Deferred.await(started);
+      const interrupt = yield* Effect.forkChild(Fiber.interrupt(invocation), {
+        startImmediately: true,
+      });
+      yield* Deferred.await(cleaning);
+
+      expect(interrupt.pollUnsafe()).toBeUndefined();
+      expect(resourceLive).toBe(true);
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(interrupt);
+
+      expect(seenByCleanup.toSorted()).toEqual(["child:true", "program:true"]);
+      expect(resourceLive).toBe(false);
+      expect(yield* session.history).toEqual([]);
+    }),
+  );
+
+  it.effect("drains an active Turn before the Session's own dependencies are released", () =>
+    Effect.gen(function* () {
+      const allocation = yield* Scope.make();
+      const started = yield* Deferred.make<void>();
+      const cleaning = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      const order: Array<string> = [];
+      const session = yield* Effect.gen(function* () {
+        yield* Effect.acquireRelease(Effect.void, () =>
+          Effect.sync(() => void order.push("infrastructure released")),
+        );
+        return yield* makeSession({ limits, persistence: "none" });
+      }).pipe(Effect.provideService(Scope.Scope, allocation));
+      let leaked: typeof Turn.Service | undefined;
+      const invocation = yield* Effect.forkChild(
+        session.run(
+          Effect.gen(function* () {
+            leaked = yield* Turn;
+            yield* program();
+            yield* Effect.addFinalizer(() =>
+              Deferred.succeed(cleaning, undefined).pipe(
+                Effect.andThen(Deferred.await(gate)),
+                Effect.andThen(Effect.sync(() => void order.push("Turn drained"))),
+              ),
+            );
+            yield* Deferred.succeed(started, undefined);
+            return yield* Effect.never;
+          }),
+        ),
+      );
+      yield* Deferred.await(started);
+      const close = yield* Effect.forkChild(Scope.close(allocation, Exit.void), {
+        startImmediately: true,
+      });
+      yield* Deferred.await(cleaning);
+
+      expect(yield* Effect.flip(session.run(program()))).toBeInstanceOf(SessionReleasedError);
+      expect(close.pollUnsafe()).toBeUndefined();
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(close);
+
+      expect(order).toEqual(["Turn drained", "infrastructure released"]);
+      expect(Exit.hasInterrupts(yield* Fiber.await(invocation))).toBe(true);
+      const late = yield* Effect.exit(leaked!.stage(message("late")));
+      expect(Exit.isFailure(late) && Cause.hasDies(late.cause)).toBe(true);
+    }),
+  );
+
+  it.effect("supplies the owning Session ambiently and restores it around another Session", () =>
+    Effect.gen(function* () {
+      /** Independently authored: reaches its Session only through the ambient Turn. */
+      const ambient = Effect.gen(function* () {
+        const turn = yield* Turn;
+        return {
+          session: turn.session,
+          turnId: turn.id,
+          history: texts(yield* turn.session.history),
+        };
+      });
+      const parent = yield* makeSession({ limits, persistence: "none" });
+      const child = yield* makeSession({ limits, persistence: "none" });
+      yield* parent.run(stage("parent committed"));
+      yield* child.run(stage("child committed"));
+
+      const seen = yield* parent.run(
         Effect.gen(function* () {
-          const first = yield* createSession(definition);
-          const second = yield* createSession(definition);
-          yield* Stream.runDrain(first.runTurn("first"));
-          expect(first.history().map((message) => message.role)).toEqual(["user"]);
-          expect(second.history().map((message) => message.role)).toEqual([]);
-          return first;
+          const before = yield* ambient;
+          const nested = yield* stage("staged").pipe(Effect.andThen(ambient));
+          const inside = yield* child.run(ambient.pipe(Effect.flatMap(() => ambient)));
+          const after = yield* ambient;
+          return { before, nested, inside, after };
         }),
       );
 
-      expect(first.history()).toEqual([]);
+      expect(seen.before.session).toBe(parent);
+      expect(seen.nested).toEqual(seen.before);
+      expect(seen.inside.session).toBe(child);
+      expect(seen.inside.turnId).not.toBe(seen.before.turnId);
+      expect(seen.inside.history).toEqual(["child committed"]);
+      expect(seen.after).toEqual(seen.before);
+      expect(seen.after.history).toEqual(["parent committed"]);
     }),
   );
 
-  it.effect("fails overlapping Turns with a typed busy error", () =>
+  it.effect("composes an explicit Turn on another Session without sharing its commit", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicProvider("hello");
-      const definition: AgentDefinition = {
-        providers: [fixture.provider],
-        model: "test/default",
-        extensions: [],
-      };
-      const session = yield* createSession(definition);
-      const pull = yield* Stream.toPull(session.runTurn("first"));
-      yield* pull;
-      const exit = yield* Effect.exit(Stream.runCollect(session.runTurn("second")));
+      const parent = yield* makeSession({ limits, persistence: "none" });
+      const child = yield* makeSession({ limits, persistence: "none" });
+      const failure = new ApplicationFailure();
+      const exit = yield* Effect.flip(
+        parent.run(
+          Effect.gen(function* () {
+            yield* stage("parent");
+            expect((yield* child.run(program())).answer).toBe(42);
+            return yield* failure;
+          }),
+        ),
+      );
 
-      expect(Exit.isFailure(exit)).toBe(true);
-      if (Exit.isFailure(exit)) {
-        expect(Cause.squash(exit.cause)).toMatchObject({
-          _tag: "SessionBusyError",
-          message: "Session is busy with an active Turn",
-        });
-      }
-      expect(yield* fixture.calls).toBe(1);
+      expect(exit).toBe(failure);
+      expect(yield* parent.history).toEqual([]);
+      expect(texts(yield* child.history)).toEqual(["first", "second"]);
+    }),
+  );
+});
+
+describe("makeSession with a SessionStore", () => {
+  it.effect("saves the whole Turn before publishing it", () =>
+    Effect.gen(function* () {
+      const history: Array<ReadonlyArray<string>> = [];
+      let read: Effect.Effect<ReadonlyArray<Prompt.Message>, SessionReleasedError> = Effect.succeed(
+        [],
+      );
+      const session = yield* makeSession({
+        limits,
+        persistence: {
+          save: (next) =>
+            Effect.gen(function* () {
+              history.push(texts(yield* read.pipe(Effect.orDie)), texts(next));
+            }),
+        },
+      });
+      read = session.history;
+      yield* session.run(stage("prior"));
+      yield* session.run(program());
+
+      expect(history).toEqual([[], ["prior"], ["prior"], ["prior", "first", "second"]]);
+      expect(texts(yield* session.history)).toEqual(["prior", "first", "second"]);
     }),
   );
 
-  it.effect("discards cancelled Turn history and reuses the Session", () =>
+  it.effect("keeps history and stays usable when a save definitely wrote nothing", () =>
     Effect.gen(function* () {
       let calls = 0;
-      const { promise: started, resolve: start } = Promise.withResolvers<void>();
-      const model = makeTestProvider(() => {
-        calls += 1;
-        if (calls === 1) {
-          start();
-          return Stream.concat(
-            Stream.succeed(Response.makePart("text-delta", { id: "first", delta: "partial" })),
-            Stream.never,
-          );
-        }
-        return Stream.succeed(Response.makePart("text-delta", { id: "second", delta: "done" }));
+      const session = yield* makeSession({
+        limits,
+        persistence: {
+          save: () =>
+            ++calls === 1
+              ? Effect.fail(new SessionSaveError({ outcome: "not-written" }))
+              : Effect.void,
+        },
       });
 
-      const session = yield* createSession({
-        providers: [model],
-        model: "test/default",
-        extensions: [],
+      expect(yield* Effect.flip(session.run(program()))).toMatchObject({
+        _tag: "SessionSaveError",
+        outcome: "not-written",
       });
-      const first = yield* Effect.forkChild(Stream.runDrain(session.runTurn("first")));
-      yield* Effect.promise(() => started);
-      yield* Fiber.interrupt(first);
-      expect(session.history().map((message) => message.role)).toEqual([]);
-      const events = yield* Stream.runCollect(session.runTurn("second"));
-
-      expect([...events]).toEqual([
-        { type: "model-output", text: "done" },
-        { type: "response-complete" },
-      ]);
-      expect(calls).toBe(2);
+      expect(yield* session.history).toEqual([]);
+      yield* session.run(stage("next"));
+      expect(texts(yield* session.history)).toEqual(["next"]);
     }),
   );
 
-  it.effect("maps an Approval request without its Tool Call to TurnError", () =>
+  it.effect("fences the Session when a save outcome is unknown or the store dies", () =>
     Effect.gen(function* () {
-      const model = makeProvider("test", [] as const, undefined, () =>
-        // SAFETY: this malformed model fake exists only to emit an orphan Approval request.
-        Layer.succeed(LanguageModel.LanguageModel, {
-          streamText: () =>
-            Stream.succeed(
-              Response.makePart("tool-approval-request", {
-                approvalId: "approval-missing",
-                toolCallId: "call-missing",
-              }),
+      const external: Array<ReadonlyArray<string>> = [];
+      const unknown = yield* makeSession({
+        limits,
+        persistence: {
+          save: (next) =>
+            Effect.sync(() => void external.push(texts(next))).pipe(
+              Effect.andThen(Effect.fail(new SessionSaveError({ outcome: "unknown" }))),
             ),
-        } as never),
-      );
-      const session = yield* createSession({
-        providers: [model],
-        model: "test/default",
-        extensions: [],
+        },
       });
+      expect(yield* Effect.flip(unknown.run(program()))).toMatchObject({ outcome: "unknown" });
+      expect(yield* unknown.history).toEqual([]);
+      expect(external).toEqual([["first", "second"]]);
+      expect((yield* unknown.turns).map((turn) => turn.phase)).toEqual(["uncertain"]);
+      expect(yield* Effect.flip(unknown.run(program()))).toBeInstanceOf(SessionFencedError);
+      expect(external).toHaveLength(1);
 
-      expect(yield* Effect.flip(Stream.runDrain(session.runTurn("Hi")))).toMatchObject({
-        _tag: "TurnError",
-        message: "Tool approval request is missing its Tool call",
-      });
+      const defect = new Error("store defect");
+      const dying = yield* makeSession({ limits, persistence: { save: () => Effect.die(defect) } });
+      const exit = yield* Effect.exit(dying.run(program()));
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(defect);
+      expect(yield* Effect.flip(dying.run(program()))).toBeInstanceOf(SessionFencedError);
     }),
   );
 
-  it.effect("rejects Turns after the session scope closes", () =>
+  it.effect("fences unless every save failure reason is a definite not-written failure", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicProvider("hello");
-      const definition: AgentDefinition = {
-        providers: [fixture.provider],
-        model: "test/default",
-        extensions: [],
-      };
-      const session = yield* Effect.scoped(createSession(definition));
-      const exit = yield* Effect.exit(Stream.runCollect(session.runTurn("late")));
-
-      expect(Exit.isFailure(exit)).toBe(true);
-      if (Exit.isFailure(exit)) {
-        expect(Cause.squash(exit.cause)).toMatchObject({
-          _tag: "SessionReleasedError",
-          message: "Session scope has been released",
+      const notWritten = new SessionSaveError({ outcome: "not-written" });
+      const compounds = [
+        Cause.empty,
+        Cause.combine(Cause.fail(notWritten), Cause.die(new Error("save cleanup defect"))),
+        Cause.combine(
+          Cause.fail(notWritten),
+          Cause.fail(new SessionSaveError({ outcome: "unknown" })),
+        ),
+      ];
+      for (const cause of compounds) {
+        let saves = 0;
+        const session = yield* makeSession({
+          limits,
+          persistence: { save: () => Effect.suspend(() => (++saves, Effect.failCause(cause))) },
         });
+        const exit = yield* Effect.exit(session.run(program()));
+        expect(exit).toStrictEqual(Exit.failCause(cause));
+        expect((yield* session.turns).map((turn) => turn.phase)).toEqual(["uncertain"]);
+        expect(yield* Effect.flip(session.run(program()))).toBeInstanceOf(SessionFencedError);
+        expect(saves).toBe(1);
       }
-      expect(session.history()).toEqual([]);
+
+      const twice = yield* makeSession({
+        limits,
+        persistence: {
+          save: () =>
+            Effect.failCause(Cause.combine(Cause.fail(notWritten), Cause.fail(notWritten))),
+        },
+      });
+      yield* Effect.exit(twice.run(program()));
+      expect((yield* twice.turns).map((turn) => turn.phase)).toEqual(["failed"]);
+      expect(yield* Effect.flip(twice.run(program()))).not.toBeInstanceOf(SessionFencedError);
     }),
   );
 
-  it.effect("builds Extension Resources in Definition order and releases them in reverse", () =>
+  it.effect("commits a save already under way even though the caller was interrupted", () =>
     Effect.gen(function* () {
-      const fixture = yield* makeDeterministicProvider("hello");
-      const log: Array<string> = [];
-      const extension = (name: string) =>
-        defineExtension({
-          name,
-          resource: Layer.effect(
-            Context.Service<string>(`test/${name}`),
-            Effect.acquireRelease(
-              Effect.sync(() => {
-                log.push(`acquire:${name}`);
-                return name;
-              }),
-              (resource) => Effect.sync(() => void log.push(`release:${resource}`)),
-            ),
+      const entered = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      const session = yield* makeSession({
+        limits,
+        persistence: {
+          save: () =>
+            Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(gate))),
+        },
+      });
+      const invocation = yield* Effect.forkChild(session.run(program()));
+      yield* Deferred.await(entered);
+      expect(yield* Effect.flip(session.run(program()))).toBeInstanceOf(SessionBusyError);
+      const interrupt = yield* Effect.forkChild(Fiber.interrupt(invocation), {
+        startImmediately: true,
+      });
+      expect(yield* session.history).toEqual([]);
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(interrupt);
+
+      expect(Exit.hasInterrupts(yield* Fiber.await(invocation))).toBe(true);
+      expect(texts(yield* session.history)).toEqual(["first", "second"]);
+      const [turn] = yield* session.turns;
+      expect(turn).toEqual({ id: turn?.id, durability: "non-durable", phase: "committed" });
+    }),
+  );
+});
+
+describe("Session live queries", () => {
+  it.effect("read non-durable live outcomes only while the Session lives", () =>
+    Effect.gen(function* () {
+      const allocation = yield* Scope.make();
+      const session = yield* makeSession({ limits, persistence: "none" }).pipe(
+        Effect.provideService(Scope.Scope, allocation),
+      );
+      const result = yield* session.run(program());
+      const failure = new ApplicationFailure();
+      yield* Effect.flip(session.run(Effect.fail(failure)));
+
+      const [committed, failed] = yield* session.turns;
+      expect(committed).toMatchObject({ durability: "non-durable", phase: "committed" });
+      expect(failed).toMatchObject({ durability: "non-durable", phase: "failed" });
+      const committedExit = committed?.exit;
+      const failedExit = failed?.exit;
+      expect(committedExit && Exit.isSuccess(committedExit) && committedExit.value).toBe(result);
+      expect(failedExit && Exit.isFailure(failedExit) && Cause.squash(failedExit.cause)).toBe(
+        failure,
+      );
+
+      yield* Scope.close(allocation, Exit.void);
+      expect(yield* Effect.flip(session.turns)).toBeInstanceOf(SessionReleasedError);
+    }),
+  );
+
+  it.effect("select one Turn's typed live outcome through its receipt until release", () =>
+    Effect.gen(function* () {
+      const allocation = yield* Scope.make();
+      const session = yield* makeSession({ limits, persistence: "none" }).pipe(
+        Effect.provideService(Scope.Scope, allocation),
+      );
+      const result = { answer: 42 as const };
+      const failure = new ApplicationFailure();
+      const succeeded = yield* session.runWithReceipt(program().pipe(Effect.as(result)));
+      const failedReceipt = yield* session.runWithReceipt(stage("x").pipe(Effect.andThen(failure)));
+
+      const success = yield* succeeded.read;
+      expect(success).toMatchObject({ id: succeeded.id, durability: "non-durable" });
+      expect(Exit.isSuccess(success.exit) && success.exit.value).toBe(result);
+      const failed = yield* failedReceipt.read;
+      expect(Exit.isFailure(failed.exit) && Cause.squash(failed.exit.cause)).toBe(failure);
+      expect((yield* session.turns).map((turn) => turn.id)).toEqual([
+        succeeded.id,
+        failedReceipt.id,
+      ]);
+      expect(texts(yield* session.history)).toEqual(["first", "second"]);
+
+      const started = yield* Deferred.make<void>();
+      const cleaning = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      yield* Effect.forkChild(
+        session.run(
+          Effect.gen(function* () {
+            yield* Effect.addFinalizer(() =>
+              Deferred.succeed(cleaning, undefined).pipe(Effect.andThen(Deferred.await(gate))),
+            );
+            yield* Deferred.succeed(started, undefined);
+            return yield* Effect.never;
+          }),
+        ),
+      );
+      yield* Deferred.await(started);
+      const close = yield* Effect.forkChild(Scope.close(allocation, Exit.void), {
+        startImmediately: true,
+      });
+      yield* Deferred.await(cleaning);
+
+      expect(close.pollUnsafe()).toBeUndefined();
+      expect(yield* Effect.flip(session.history)).toBeInstanceOf(SessionReleasedError);
+      expect(yield* Effect.flip(succeeded.read)).toBeInstanceOf(SessionReleasedError);
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(close);
+      expect(yield* Effect.flip(succeeded.read)).toBeInstanceOf(SessionReleasedError);
+    }),
+  );
+
+  it.effect("deliver observations after publication and independent of the Turn", () =>
+    Effect.gen(function* () {
+      const { store, saved } = recordingStore();
+      const session = yield* makeSession({ limits, persistence: store });
+      const idle = yield* session.observe(2);
+      const observerScope = yield* Scope.make();
+      const observer = yield* session
+        .observe(1)
+        .pipe(Effect.provideService(Scope.Scope, observerScope));
+      const failingObserver = yield* Effect.forkChild(
+        Queue.take(observer).pipe(
+          Effect.tap((observation) =>
+            Effect.gen(function* () {
+              expect(observation).toMatchObject({ sequence: 0, snapshot: { phase: "committed" } });
+              expect(texts(yield* session.history)).toEqual(["first", "second"]);
+            }),
           ),
-        });
-      const definition: AgentDefinition = {
-        providers: [fixture.provider],
-        model: "test/default",
-        extensions: [extension("first"), extension("second")],
-      };
+          Effect.andThen(Effect.die(new Error("observer failed after commit"))),
+        ),
+      );
 
-      yield* Effect.scoped(createSession(definition));
+      expect(yield* session.run(program())).toEqual({ answer: 42 });
+      expect(Exit.isFailure(yield* Fiber.await(failingObserver))).toBe(true);
+      yield* Scope.close(observerScope, Exit.void);
+      for (let turn = 0; turn < 4; turn++) yield* session.run(stage(String(turn)));
 
-      expect(log).toEqual(["acquire:first", "acquire:second", "release:second", "release:first"]);
+      expect(saved).toHaveLength(5);
+      expect((yield* session.turns).every((turn) => turn.phase === "committed")).toBe(true);
+      const ids = (yield* session.turns).map((turn) => turn.id);
+      // The idle observer kept the newest two; sequences 3 and 4 show it missed 0 to 2.
+      expect((yield* Queue.takeAll(idle)).map((o) => [o.sequence, o.snapshot.id])).toEqual([
+        [3, ids[3]],
+        [4, ids[4]],
+      ]);
+    }),
+  );
+
+  it.effect("signal observations a slow observer missed without waiting for another Turn", () =>
+    Effect.gen(function* () {
+      const session = yield* makeSession({ limits, persistence: "none" });
+      const tail = yield* session.observe(1);
+      const observer = yield* session.observe(2);
+      yield* session.run(stage("0"));
+      yield* session.run(stage("1"));
+      const [latest] = yield* Queue.takeAll(tail);
+      // Two Turns, capacity one: the delivered snapshot is the second, so one was missed.
+      expect(latest.sequence).toBe(1);
+      expect(latest.snapshot.id).toBe((yield* session.turns)[1]?.id);
+      expect(yield* Queue.size(tail)).toBe(0);
+
+      for (let turn = 2; turn < 5; turn++) yield* session.run(stage(String(turn)));
+      const ids = (yield* session.turns).map((turn) => turn.id);
+      expect((yield* Queue.takeAll(observer)).map((o) => [o.sequence, o.snapshot.id])).toEqual([
+        [3, ids[3]],
+        [4, ids[4]],
+      ]);
+      yield* session.run(stage("5"));
+      expect((yield* Queue.takeAll(observer)).map((o) => o.sequence)).toEqual([5]);
+
+      const invalid = yield* Effect.exit(Effect.scoped(session.observe(0)));
+      expect(Exit.isFailure(invalid) && Cause.hasDies(invalid.cause)).toBe(true);
     }),
   );
 });
