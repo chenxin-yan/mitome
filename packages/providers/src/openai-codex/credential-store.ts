@@ -10,6 +10,9 @@ import { oauth, provider } from "./constants.js";
 import { token, type OAuthCredentialFailure } from "./oauth-token.js";
 import { OAuthCredentialSchema, type OAuthCredential } from "./types.js";
 
+/** Works for any application; only the CLI half names a command, and it cannot know the file. */
+const remedy = `through your application; with the Mitome CLI, run \`mitome auth login --app <file> --provider ${provider}\``;
+
 export class CredentialUnavailableError extends Data.TaggedError("CredentialUnavailableError")<{
   readonly message: string;
 }> {}
@@ -26,7 +29,7 @@ const credentialFrom = (
     Effect.mapError(
       () =>
         new CredentialUnavailableError({
-          message: "Codex Credential is unavailable. Run `mitome auth login` to authenticate.",
+          message: `Codex Credential is unavailable. Authenticate ${remedy}.`,
         }),
     ),
   );
@@ -88,7 +91,7 @@ const credential = (
           Effect.mapError((error) =>
             error instanceof OAuthTokenError
               ? new OAuthTokenError({
-                  message: `Codex sign-in expired or was revoked. Run \`mitome auth login\` to authenticate again. ${error.message}`,
+                  message: `Codex sign-in expired or was revoked. Authenticate again ${remedy}. ${error.message}`,
                   cause: error,
                 })
               : error,

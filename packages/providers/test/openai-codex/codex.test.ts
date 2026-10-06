@@ -385,13 +385,15 @@ describe("Codex SSE", () => {
 
       expect(AiError.isAiError(error)).toBe(true);
       if (!AiError.isAiError(error)) throw new Error("Expected an AiError");
-      expect(error.message).toContain("mitome auth login");
+      expect(error.message).toContain(
+        "Authenticate again through your application; with the Mitome CLI, run `mitome auth login --app <file> --provider openai-codex`.",
+      );
       expect(error.message).toContain("HTTP 400; invalid_grant");
       expect(error.message).not.toContain(refresh);
       expect(error.reason).toMatchObject({
         _tag: "AuthenticationError",
         isRetryable: false,
-        message: expect.stringContaining("mitome auth login"),
+        message: expect.stringContaining("mitome auth login --app <file> --provider openai-codex"),
       });
       expect(requests).toBe(1);
     } finally {
