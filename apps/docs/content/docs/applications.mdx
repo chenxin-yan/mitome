@@ -1,0 +1,85 @@
+---
+title: Applications
+description: Compose an ordinary Effect program into a loadable Mitome application with defineMitome.
+icon: Boxes
+---
+
+An Agent program is an ordinary Effect function. `defineMitome` from `@mitome/core` optionally composes it with shared infrastructure, Providers, Model selection, a CLI mapping and serving Hosts. The composition keeps your function, Layers, Tools and Providers exactly as written; embedded use can keep calling `makeSession` directly instead.
+
+```ts
+import { Context, Effect, Layer } from "effect";
+import { Prompt } from "effect/ai";
+import { defineMitome, firstPartyExecutionLimits, loop, Turn } from "@mitome/core";
+import { openai } from "@mitome/providers/openai";
+
+class Greeting extends Context.Service<Greeting, { readonly prefix: string }>()("app/Greeting") {}
+
+export const program = (message: string) =>
+  Effect.gen(function* () {
+    const turn = yield* Turn;
+    yield* turn.stage(Prompt.userMessage({ content: [Prompt.textPart({ text: message })] }));
+    const result = yield* loop({ instructions: "You are a helpful Agent." });
+    return { text: result.response.text };
+  });
+
+const app = defineMitome({
+  program,
+  limits: firstPartyExecutionLimits,
+  infrastructure: Layer.succeed(Greeting, { prefix: "> " }),
+  providers: [openai()],
+  defaultModel: "openai/gpt-5",
+  cli: {
+    parseInput: (text) => Effect.succeed(text.trim()),
+    renderResult: (result) => Effect.map(Greeting, ({ prefix }) => `${prefix}${result.text}`),
+  },
+});
+
+export default app;
+```
+
+## Requirements must close
+
+`defineMitome` is a typed producer. It rejects at compile time a program, Provider, CLI mapping or Host that needs a service nothing supplies:
+
+- the program may need the infrastructure's services, its `Turn` and Turn `Scope`, and, only when Providers are declared, the selected Model;
+- Provider provisioning, `parseInput`, `renderResult` and Hosts may need only the infrastructure's services;
+- the infrastructure Layer itself may need nothing.
+
+Acquiring a callback inside a provided Effect does not bind it: the application binds shared services explicitly whenever it invokes a callback. A Turn always receives its own Scope, so a resource the program acquires closes when the Turn ends, not when the application shuts down.
+
+## Acquire once, run many Sessions
+
+`app.acquire(options)` needs only the Scope that owns the application. It validates the Model selection, builds the infrastructure once, provisions the selected Model and, with `serve: true`, starts the declared serving Hosts. Readiness means all of that succeeded; a failure at any point releases whatever was already acquired.
+
+```ts
+const main = Effect.scoped(
+  Effect.gen(function* () {
+    const application = yield* app.acquire();
+    const session = yield* application.session; // a fresh Session each time
+    const result = yield* session.run("Hello");
+    yield* session.close; // shared infrastructure stays live
+    return result;
+  }),
+);
+```
+
+Sessions are owned by the application, not by an observer: an idle Session stays live until `close` or shutdown. `application.provide(effect)` runs other work, such as the CLI mapping, with the shared services bound and outside any Turn.
+
+## Model selection
+
+Selection is explicit and lazy. Nothing is provisioned until acquisition.
+
+- `model: "provider/model"` provisions exactly that Model and never falls back. Catalogs are hints, so any Provider-native id is accepted; the Provider reports a Model it does not serve.
+- Without an explicit Model, `defaultModel` and then `fallbackModels` are tried in order. A later candidate is tried only after the earlier one failed to provision with a typed error, and that attempt is released first. Defects, interruption and failures after the program started never fall back.
+- `provider` restricts the configured candidates to one Provider.
+- An application with Providers but nothing selectable fails before the program runs; an application without Providers needs no selection.
+
+`app.discovery` lists each Provider's id, catalog hints, context windows and credential descriptor without provisioning or authenticating anything.
+
+## Shutdown
+
+Closing the owning Scope or calling `application.shutdown` closes admission, interrupts serving Hosts, active Turns and provided work together, waits for all of their cleanup and only then releases the Model binding and the infrastructure. Shutdown is idempotent and waits as long as cleanup takes; the library never exits the process. Bounding that wait is the embedding application's choice: `acquire({ onShutdown })` runs an Effect when shutdown begins, including the unwind of a failed startup, so the embedding can start its own deadline. The CLI applies a grace this way (see [CLI](/docs/cli)).
+
+## Serving Hosts
+
+A Host is `{ name, start }`. `start(application)` acquires the Host's resources and returns its long-lived serving Effect. If a serving Effect fails after readiness, the failure is logged with the Host's name; the Host is not restarted, and other Hosts and Sessions keep running.

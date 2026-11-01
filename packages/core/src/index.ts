@@ -1,9 +1,25 @@
 /**
- * Effect-native Session, Turn, controlled Step and Provider surface.
+ * Effect-native Session, Turn, controlled Step, Provider and loadable application surface.
  *
  * @module @mitome/core
  */
 
+export {
+  ApplicationClosedError,
+  defineMitome,
+  mitomeProtocol,
+  ModelSelectionError,
+} from "./application.js";
+export type {
+  AcquireOptions,
+  Application,
+  ApplicationSession,
+  Mitome,
+  MitomeCli,
+  MitomeHost,
+  MitomeOptions,
+  ProviderDiscovery,
+} from "./application.js";
 export { configDirectory, configDirectoryMessage } from "./config.js";
 export { CredentialDescriptorSchema } from "./credential.js";
 export type { AuthCapability, AuthenticateOptions, CredentialDescriptor } from "./credential.js";

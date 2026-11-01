@@ -2,10 +2,10 @@ import { join } from "node:path";
 
 /**
  * Resolves Mitome's shared config directory (`$MITOME_HOME` verbatim, else
- * `$XDG_CONFIG_HOME/mitome`, with APPDATA/HOME fallbacks). Consumers store
- * their own files under it: the CLI's default `index.ts` and `.env`, and
- * provider-owned credential stores like `auth.json`. Undefined when no config
- * root is set. `env`/`platform` are injectable so tests need no process globals.
+ * `$XDG_CONFIG_HOME/mitome`, with APPDATA/HOME fallbacks): the default home of
+ * provider-owned credential stores like `auth.json`. Nothing else is loaded or
+ * discovered there. Undefined when no config root is set. `env`/`platform` are
+ * injectable so tests need no process globals.
  */
 export const configDirectory = (
   env: Readonly<Record<string, string | undefined>> = process.env,

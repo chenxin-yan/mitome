@@ -1,5 +1,11 @@
 # @mitome/cli
 
-The `mitome` command. The compiled binary embeds Bun. It currently provides only `--help` and `--version`; the native application loader and run/auth commands are pending.
+The `mitome` command. The compiled binary embeds Bun and loads one explicitly selected application module (`--app <file>`) whose default export is `defineMitome(...)` from `@mitome/core`.
 
-See the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) for the CLI/TUI migration gates.
+```text
+mitome run --app <file> [--provider <id>] [--model <provider/model>] [--grace <duration>] [input]
+mitome providers --app <file>
+mitome auth status|login|logout --app <file> [--provider <id>]
+```
+
+`run` is one-shot: it reads one input (the argument, else all of non-terminal stdin), runs one Turn and writes only the rendered result to stdout. See the [CLI guide](https://mitome.sh/docs/cli).

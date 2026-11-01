@@ -142,52 +142,16 @@ _Avoid_: Token, key, login
 
 ## Current source vocabulary
 
-These terms describe machinery still present in source, not requirements for the accepted redesign.
+These terms name source constructs the language above does not already cover.
 
-**Agent Definition**:
-The current declaration grouping an Agent's Providers, Default Model and Extensions.
-_Avoid_: Agent program, Definition (bare)
+**Application**:
+An Agent program composed by `defineMitome` with optional infrastructure and Providers, optional Default and fallback Models, and optional CLI mapping and serving Hosts. One acquisition builds its infrastructure once and serves explicit fresh Sessions until shutdown.
+_Avoid_: Agent Definition, Mitome Definition
 
-**Mitome Definition**:
-The current composition pairing an Agent Definition, Hosts and optional Transcript persistence; the future optional Host composition contract is not yet specified.
-_Avoid_: Agent Definition, Agent program
-
-**Mitome Definition module**:
-The currently selected executable module supplying one Mitome Definition.
-_Avoid_: Implicit project configuration, sandbox
-
-**Mitome Definition directory**:
-The selected directory containing a Mitome Definition module.
-_Avoid_: Implicit project root
-
-**Extension**:
-The current reusable unit contributing Tools, Instructions and lifecycle behavior, not mandatory target agent packaging.
-_Avoid_: Plugin, Toolkit
-
-**Hook**:
-A current Extension's named lifecycle behavior to observe, transform, veto or propose.
-_Avoid_: Required target protocol, event listener
-
-**Resource**:
-The current Extension-private services held for its Session lifetime, not a prohibition on shared infrastructure in the target.
-_Avoid_: Execution state, universal dependency policy
-
-**Session grant**:
-A current Host-local convenience decision for later Tool-origin asks during one live Session, never an override of author policy or predicate failure.
-_Avoid_: Auto-approve, durable authority
-
-**Runner**:
-The CLI subprocess loading the selected composition and running Hosts or one-shot output; current code also calls it the Child Host.
-_Avoid_: Worker, Agent
-
-**Child Host**:
-The current CLI capability delegating execution, dependency installation or Provider authentication to a subprocess.
-_Avoid_: Subagent, Agent
-
-**Prompter**:
-The current CLI capability for interactive terminal input during setup and authentication.
-_Avoid_: Agent, Host
+**Application module**:
+The file explicitly selected with `--app` whose default export is one Application; no directory, home or project location is searched.
+_Avoid_: Project configuration, Definition directory
 
 **Auth capability**:
-The current Provider-owned login/logout entry used by credential bootstrap.
+The Provider-owned login/logout entry the CLI's `auth login` and `auth logout` delegate to.
 _Avoid_: Auth plugin, Session
