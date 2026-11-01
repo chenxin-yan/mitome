@@ -38,8 +38,8 @@ type Slot = {
 type Item = {
   readonly kind: "message" | "reasoning" | "function_call";
   /**
-   * Id of the stream parts this item emits: its output index, else a sequence id (`#n`) that no
-   * output index or other item can take.
+   * Id of the stream parts this item emits: the output index it started with, else a sequence id
+   * (`#n`) that no output index or other item can take. An index adopted later does not change it.
    */
   readonly partId: string;
   itemId: string | undefined;
