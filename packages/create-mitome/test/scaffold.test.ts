@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, test } from "vitest";
 import packageJson from "../package.json" with { type: "json" };
 import rootPackage from "../../../package.json" with { type: "json" };
+import { configDirectoryMessage } from "@mitome/core";
 import { knownModelIds } from "../src/model-hints.js";
 import {
   customModel,
@@ -71,7 +72,6 @@ describe("scaffold plans", () => {
     // Codex has no environment credential, so its README carries a runnable login step.
     const codexReadme = projectPlan({ provider: "openai-codex", model: "m" }).get("README.md")!;
     expect(codexReadme).toContain("npm install\nnode --input-type=module -e '");
-    expect(codexReadme).toContain("await login({ configDirectory: configDirectory(),");
     expect(codexReadme).not.toContain("OPENAI_API_KEY");
   });
 
@@ -143,6 +143,41 @@ describe("generated TypeScript", () => {
     ]);
     await expect(tsc).resolves.toMatchObject({ stdout: "" });
   }, 60_000);
+});
+
+describe("generated Codex login step", () => {
+  // The README's `node -e` program, run like a user would from a project with the packages
+  // installed (this package's node_modules stand in for the install). PATH is empty, so no browser
+  // opens; the flow falls back to the printed URL and pasted redirect.
+  const loginProgram = () => {
+    const readme = projectPlan({ provider: "openai-codex", model: "m" }).get("README.md")!;
+    return readme.slice(readme.indexOf("-e '") + 4, readme.indexOf("\n'\n"));
+  };
+  const runLogin = (env: Record<string, string>, closeAtPrompt: boolean) =>
+    new Promise<{ code: number | null; stderr: string }>((resolve) => {
+      const child = spawn(process.execPath, ["--input-type=module", "-e", loginProgram()], {
+        cwd: packageDirectory,
+        env: { PATH: "", ...env },
+      });
+      let stderr = "";
+      child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+      child.stdout.on("data", (chunk: Buffer) => {
+        if (closeAtPrompt && String(chunk).includes("Paste the redirect URL")) child.stdin.end();
+      });
+      child.on("close", (code) => resolve({ code, stderr }));
+    });
+
+  test("ends login when stdin closes while the redirect prompt is pending", async () => {
+    const result = await runLogin({ MITOME_HOME: await directory() }, true);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("OAuth input closed.");
+  }, 15_000);
+
+  test("names the config-directory remedy when no config root is set", async () => {
+    const result = await runLogin({}, false);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(configDirectoryMessage);
+  }, 15_000);
 });
 
 describe("create-mitome executable", () => {
