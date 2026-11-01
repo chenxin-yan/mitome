@@ -288,10 +288,12 @@ describe("the loaded Approval channel", () => {
         expect(yield* channel.pending).toEqual([]);
         const turn = yield* Effect.forkChild(session.run("charge"));
         let pending = yield* channel.pending;
-        while (pending.length === 0) {
+        // Bounded, so a Turn that never asks fails here rather than at the runner timeout.
+        for (let i = 0; i < 200 && pending.length === 0; i++) {
           yield* Effect.sleep(5);
           pending = yield* channel.pending;
         }
+        expect(pending).toHaveLength(1);
         const [request] = pending;
         expect((yield* channel.pending)[0]).toBe(request);
         expect({ ...request, decide: undefined }).toMatchObject({
