@@ -26,7 +26,7 @@
     "check:types": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "test": "vitest run --testTimeout 15000"
+    "test": "bun run build && vitest run --testTimeout 15000"
   },
   "devDependencies": {
     "@effect/platform-bun": "catalog:",
