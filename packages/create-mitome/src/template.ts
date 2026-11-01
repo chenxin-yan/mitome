@@ -106,16 +106,21 @@ const tsconfigSource = `${JSON.stringify(
 const gitignoreSource = "node_modules/\n";
 
 // Runnable as written after `npm install`: `login` needs a config directory plus line I/O. The
-// line iterator settles a pending read with `undefined` when stdin closes, as `login` requires.
+// line iterator settles a pending read with `undefined` when stdin closes, as `login` requires;
+// closing the interface lets the command exit when the browser callback wins instead.
 const codexLogin = `node --input-type=module -e '
 import { createInterface } from "node:readline";
 import { configDirectory, configDirectoryMessage } from "@mitome/core";
 import { login } from "@mitome/providers/openai-codex";
 const directory = configDirectory();
 if (directory === undefined) throw new Error(configDirectoryMessage);
-const lines = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
-await login({ configDirectory: directory, input: async () => (await lines.next()).value, output: console.log });
-await lines.return();
+const terminal = createInterface({ input: process.stdin });
+const lines = terminal[Symbol.asyncIterator]();
+try {
+  await login({ configDirectory: directory, input: async () => (await lines.next()).value, output: console.log });
+} finally {
+  terminal.close();
+}
 '`;
 
 const readmeSource = (provider: Provider): string => {

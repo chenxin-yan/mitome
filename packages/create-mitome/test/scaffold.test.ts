@@ -1,6 +1,15 @@
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { lstat, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -153,10 +162,10 @@ describe("generated Codex login step", () => {
     const readme = projectPlan({ provider: "openai-codex", model: "m" }).get("README.md")!;
     return readme.slice(readme.indexOf("-e '") + 4, readme.indexOf("\n'\n"));
   };
-  const runLogin = (env: Record<string, string>, closeAtPrompt: boolean) =>
+  const runLogin = (env: Record<string, string>, closeAtPrompt: boolean, cwd = packageDirectory) =>
     new Promise<{ code: number | null; stderr: string }>((resolve) => {
       const child = spawn(process.execPath, ["--input-type=module", "-e", loginProgram()], {
-        cwd: packageDirectory,
+        cwd,
         env: { PATH: "", ...env },
       });
       let stderr = "";
@@ -171,6 +180,32 @@ describe("generated Codex login step", () => {
     const result = await runLogin({ MITOME_HOME: await directory() }, true);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("OAuth input closed.");
+  }, 15_000);
+
+  test("exits once the browser callback wins, while stdin is still open", async () => {
+    // Only `login` is stubbed: it starts the pasted-URL read, then succeeds as a callback would.
+    const project = await directory();
+    const providers = join(project, "node_modules/@mitome/providers");
+    await mkdir(providers, { recursive: true });
+    await symlink(
+      join(packageDirectory, "node_modules/@mitome/core"),
+      join(project, "node_modules/@mitome/core"),
+      "dir",
+    );
+    await writeFile(
+      join(providers, "package.json"),
+      JSON.stringify({
+        name: "@mitome/providers",
+        type: "module",
+        exports: { "./openai-codex": "./codex.js" },
+      }),
+    );
+    await writeFile(
+      join(providers, "codex.js"),
+      "export const login = async ({ input }) => { void input(); await new Promise((r) => setTimeout(r, 50)); };\n",
+    );
+    const result = await runLogin({ MITOME_HOME: project }, false, project);
+    expect(result).toEqual({ code: 0, stderr: "" });
   }, 15_000);
 
   test("names the config-directory remedy when no config root is set", async () => {
