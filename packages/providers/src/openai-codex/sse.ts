@@ -241,7 +241,12 @@ const locate = (
   const item = found[0];
   if (item === undefined) return { item, index, ids };
   if (found.some((other) => other !== item)) throw contradiction();
-  if (index !== undefined && state.byIndex.get(index) !== item) throw contradiction();
+  if (index !== undefined && state.byIndex.get(index) !== item) {
+    // An item started without an output index adopts the first one an event supplies.
+    const indexed = [...state.byIndex.values()].includes(item);
+    if (indexed || state.byIndex.has(index)) throw contradiction();
+    state.byIndex.set(index, item);
+  }
   for (const id of ids) {
     if (item.itemId === undefined) {
       item.itemId = id;

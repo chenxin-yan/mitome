@@ -566,6 +566,20 @@ describe("Codex SSE decoder", () => {
       ],
     },
     {
+      name: "adopts an output_index first supplied after an item_id-only start",
+      events: [
+        { type: "response.output_item.added", item: { type: "message", id: "msg-3" } },
+        { type: "response.output_text.delta", item_id: "msg-3", output_index: 3, delta: "hi" },
+        { type: "response.output_item.done", output_index: 3, item: { type: "message" } },
+      ],
+      expected: [
+        { type: "text-start", id: "#0" },
+        { type: "text-delta", id: "#0", delta: "hi" },
+        { type: "text-end", id: "#0" },
+        { type: "finish", reason: "stop" },
+      ],
+    },
+    {
       name: "accepts item_id-only argument events through the Tool Call item alias",
       events: [
         {
