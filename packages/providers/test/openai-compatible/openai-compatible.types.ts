@@ -10,7 +10,7 @@ const provider = openaiCompatible({
   baseUrl: "http://localhost:1234/v1",
   apiKeyEnv: "ACME_API_KEY",
 });
-const contract: Assert<Equal<typeof provider, Provider<"acme", readonly []>>> = true;
+const contract: Assert<Equal<typeof provider, Provider<"acme", readonly [], string, never>>> = true;
 void contract;
 
 // @ts-expect-error A compatible endpoint requires its base URL.

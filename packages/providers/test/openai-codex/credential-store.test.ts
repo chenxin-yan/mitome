@@ -1,7 +1,7 @@
 import { afterAll, describe, expect } from "vitest";
 import { it } from "@effect/vitest";
 import { Effect, Layer, Predicate } from "effect";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

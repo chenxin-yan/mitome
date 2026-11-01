@@ -1,5 +1,5 @@
 import { Data, Effect, Schema } from "effect";
-import { type HttpClient } from "effect/unstable/http";
+import { type HttpClient } from "effect/http";
 import { exchangeToken, type OAuthToken, type OAuthTokenFailure } from "../shared/oauth.js";
 import { type OAuthCredential } from "./types.js";
 

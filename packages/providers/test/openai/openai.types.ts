@@ -12,7 +12,11 @@ type Assert<T extends true> = T;
 
 const publicContracts: [
   Assert<
-    Equal<typeof openai, (options?: OpenAiOptions) => Provider<"openai", typeof knownModelIds>>
+    // Provisioning fails with the missing-key message and needs nothing further.
+    Equal<
+      typeof openai,
+      (options?: OpenAiOptions) => Provider<"openai", typeof knownModelIds, string, never>
+    >
   >,
   Assert<Equal<string extends KnownModelId ? true : false, false>>,
 ] = [true, true];

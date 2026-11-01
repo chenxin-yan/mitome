@@ -47,13 +47,9 @@ const main = async (): Promise<void> => {
     const model =
       selectedModel === customModel ? validateModelId(await question("Model ID: ")) : selectedModel;
     if (model === undefined) throw new Error("Model ID is required");
-    const flavor = await choose(question, "Template", [
-      { label: "Promise-first", value: "promise" },
-      { label: "Effect-native", value: "effect" },
-    ] as const);
     // npm create mitome <dir> forwards <dir> as the first CLI argument.
     const directory = resolve(process.argv[2] ?? ".");
-    await writeScaffold(directory, projectPlan({ flavor, provider, model }));
+    await writeScaffold(directory, projectPlan({ provider, model }));
     console.log(`Created a Mitome Agent in ${basename(directory)}.`);
   } finally {
     terminal.close();

@@ -7,8 +7,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Result, Schema } from "effect";
 import { knownModelIds as codexIds } from "../packages/providers/src/openai-codex/models.ts";
-import { catalogUrl, toolCapableOpenAiModels } from "../packages/cli/src/catalog.ts";
-import type { OpenAiCatalogModel } from "../packages/cli/src/catalog.ts";
+import { catalogUrl, toolCapableOpenAiModels } from "./models-dev.ts";
+import type { OpenAiCatalogModel } from "./models-dev.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const snapshotPath = join(root, "scripts", "models-dev.snapshot.json");

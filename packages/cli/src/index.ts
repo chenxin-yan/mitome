@@ -1,119 +1,14 @@
 import * as BunRuntime from "@effect/platform-bun/BunRuntime";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { Effect, Layer } from "effect";
-import { Argument, CliOutput, Command, Flag } from "effect/unstable/cli";
+import { CliOutput, Command } from "effect/cli";
 import cliPackage from "../package.json" with { type: "json" };
-import { runAuth } from "./commands/auth.js";
-import { runAdd, runRemove } from "./commands/dependencies.js";
-import { runExtensionList } from "./commands/extensions.js";
-import { runInit } from "./commands/init.js";
-import { runInstall, runMessage } from "./commands/run.js";
-import { runServe } from "./commands/serve.js";
-import { Prompter } from "./prompter.js";
-import { fail, type ExitCode } from "./support.js";
 
-const useExitCode = <A extends ExitCode, E, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(Effect.tap((exitCode) => Effect.sync(() => (process.exitCode = exitCode))));
-
-const useFlag = Flag.string("use").pipe(
-  Flag.withDescription("Path to a Mitome Definition module or directory"),
-  Flag.optional,
-);
-const messageArgument = Argument.string("message").pipe(
-  Argument.withDescription("Message to send to the Agent"),
-  Argument.optional,
-);
-const printFlag = Flag.boolean("print").pipe(
-  Flag.withAlias("p"),
-  Flag.withDescription("Force one-shot output"),
-);
-const yesFlag = Flag.boolean("yes").pipe(
-  Flag.withDescription(
-    "In one-shot output, approve Approval requests flagged by the Tool author (not policy asks)",
-  ),
-);
-const packageArgument = Argument.string("package").pipe(
-  Argument.withDescription("Extension package to add or remove"),
-);
-const portFlag = Flag.integer("port").pipe(
-  Flag.withDescription("Port for Channel Hosts that expose handle"),
-  Flag.withDefault(3000),
-);
-
-const definitionCommandConfig = {
-  use: useFlag,
-};
-
-const addCommand = Command.make(
-  "add",
-  { ...definitionCommandConfig, package: packageArgument },
-  (options) => useExitCode(runAdd(options)),
-).pipe(Command.withDescription("Add an Extension to the Mitome Definition"));
-const removeCommand = Command.make(
-  "remove",
-  { ...definitionCommandConfig, package: packageArgument },
-  (options) => useExitCode(runRemove(options)),
-).pipe(Command.withDescription("Remove an Extension from the Mitome Definition"));
-const extensionListCommand = Command.make("list", definitionCommandConfig, (options) =>
-  useExitCode(runExtensionList(options)),
-).pipe(Command.withDescription("List resolved Extensions"));
-const extensionCommand = Command.make("ext", {}, () =>
-  fail("Usage: mitome ext list [--use <path>]"),
-).pipe(
-  Command.withDescription("Inspect resolved Extensions"),
-  Command.withSubcommands([extensionListCommand]),
-);
-const installCommand = Command.make("install", definitionCommandConfig, (options) =>
-  useExitCode(runInstall(options)),
-).pipe(Command.withDescription("Install Mitome Definition dependencies"));
-const serveCommand = Command.make(
-  "serve",
-  { ...definitionCommandConfig, port: portFlag },
-  (options) => useExitCode(runServe(options)),
-).pipe(Command.withDescription("Run the Mitome Definition's Channel Hosts until stopped"));
-const initCommand = Command.make("init", {}, () => useExitCode(runInit())).pipe(
-  Command.withDescription("Create a default Mitome Definition"),
-);
-const loginCommand = Command.make("login", definitionCommandConfig, ({ use }) =>
-  useExitCode(runAuth("login", use)),
-).pipe(Command.withDescription("Authenticate the Mitome Definition's Providers"));
-const logoutCommand = Command.make("logout", definitionCommandConfig, ({ use }) =>
-  useExitCode(runAuth("logout", use)),
-).pipe(Command.withDescription("Remove stored Provider Credentials"));
-const authCommand = Command.make("auth", {}, () =>
-  fail("Usage: mitome auth <login|logout> [--use <path>]"),
-).pipe(
-  Command.withDescription("Manage Mitome Definition authentication"),
-  Command.withSubcommands([loginCommand, logoutCommand]),
-);
-
-const command = Command.make(
-  "mitome",
-  {
-    print: printFlag,
-    yes: yesFlag,
-    message: messageArgument,
-    use: useFlag,
-  },
-  (options) => useExitCode(runMessage(options)),
-).pipe(
-  Command.withDescription("Run a Mitome Definition"),
-  Command.withSubcommands([
-    addCommand,
-    removeCommand,
-    extensionCommand,
-    installCommand,
-    serveCommand,
-    initCommand,
-    authCommand,
-  ]),
-);
+const command = Command.make("mitome").pipe(Command.withDescription("Mitome command line"));
 
 export const runCli = Command.runWith(command, { version: cliPackage.version });
 
 if (import.meta.main) {
-  const { childHostLayer } = await import("./child-host.js");
   const platform = Layer.merge(BunServices.layer, CliOutput.layer(CliOutput.defaultFormatter()));
-  const services = Layer.merge(childHostLayer, Prompter.layer).pipe(Layer.provideMerge(platform));
-  BunRuntime.runMain(runCli(process.argv.slice(2)).pipe(Effect.provide(services)));
+  BunRuntime.runMain(runCli(process.argv.slice(2)).pipe(Effect.provide(platform)));
 }

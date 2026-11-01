@@ -1,12 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { Cause, Clock, Data, Effect, Match, Schema } from "effect";
-import {
-  FetchHttpClient,
-  HttpClient,
-  HttpClientRequest,
-  type HttpClientError,
-} from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/http";
 
 /** The per-Provider half of an OAuth2 PKCE flow: who we are and where we talk. */
 export interface OAuthConfig {

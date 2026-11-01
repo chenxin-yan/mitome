@@ -1,8 +1,16 @@
 import { Effect, Schedule, Stream } from "effect";
-import { AiError, LanguageModel } from "effect/unstable/ai";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { AiError, LanguageModel } from "effect/ai";
+import { reportModelRequest } from "@mitome/core";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { CredentialStore } from "./credential-store.js";
-import { credentialError, httpError, requestFor } from "./request.js";
+import {
+  credentialError,
+  hasRefusal,
+  httpError,
+  invalidOutput,
+  requestFor,
+  toolChoiceFor,
+} from "./request.js";
 import { decodeStream } from "./sse.js";
 import { type OAuthCredential } from "./types.js";
 
@@ -15,6 +23,7 @@ export const streamText = (
   options: LanguageModel.ProviderOptions,
 ) => {
   const execute = (
+    toolChoice: "auto" | "none",
     store: CredentialStore["Service"],
     credential: OAuthCredential,
     retried: boolean,
@@ -35,9 +44,10 @@ export const streamText = (
         "session-id": sessionId,
         "x-client-request-id": sessionId,
       }),
-      HttpClientRequest.bodyJsonUnsafe(requestFor(model, options, sessionId)),
+      HttpClientRequest.bodyJsonUnsafe(requestFor(model, options, sessionId, toolChoice)),
     );
-    const response = HttpClient.execute(request).pipe(
+    // Each attempt, including retries and the re-execution after a 401, is one Model request.
+    const response = Effect.andThen(reportModelRequest, HttpClient.execute(request)).pipe(
       Effect.mapError(httpError),
       Effect.flatMap((response) => {
         if (
@@ -76,7 +86,7 @@ export const streamText = (
             Effect.ignore,
             Effect.andThen(store.credential(credential)),
             Effect.mapError(credentialError),
-            Effect.flatMap((next) => execute(store, next, true)),
+            Effect.flatMap((next) => execute(toolChoice, store, next, true)),
           );
         }
         return Effect.succeed(
@@ -87,9 +97,25 @@ export const streamText = (
   };
   return Stream.unwrap(
     Effect.gen(function* () {
+      // Rejected before credentials or any request, so no attempt is counted.
+      const toolChoice = toolChoiceFor(options.toolChoice);
+      if (toolChoice === undefined) {
+        return yield* AiError.make({
+          module: "OpenAI Codex",
+          method: "streamText",
+          reason: new AiError.InvalidUserInputError({
+            description: `Codex does not support Tool choice ${JSON.stringify(options.toolChoice)}`,
+          }),
+        });
+      }
+      if (hasRefusal(options.prompt)) {
+        return yield* invalidOutput(
+          "Codex cannot send a conversation that contains a refusal: the Codex request has no refusal input form",
+        );
+      }
       const store = yield* CredentialStore;
       const credential = yield* store.credential().pipe(Effect.mapError(credentialError));
-      return yield* execute(store, credential, false);
+      return yield* execute(toolChoice, store, credential, false);
     }),
   ).pipe(decodeStream);
 };

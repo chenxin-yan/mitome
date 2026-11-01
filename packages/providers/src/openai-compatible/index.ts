@@ -6,7 +6,12 @@
 
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat";
 import { Layer } from "effect";
-import { makeProvider, type ModelMetadataMap, type ValidProviderId } from "@mitome/core";
+import {
+  makeProvider,
+  type ModelMetadataMap,
+  type ValidProviderId,
+  withModelRequestAccounting,
+} from "@mitome/core";
 import { apiKeyClientLayer } from "../shared/api-key-client.js";
 
 /** Empty: compatible endpoints share no catalog, so every endpoint-native Model id is accepted as-is. */
@@ -41,8 +46,11 @@ export const openaiCompatible = <const Id extends string>(
     knownModelIds,
     options.apiKeyEnv,
     (model) =>
-      OpenAiLanguageModel.layer({ model }).pipe(
-        Layer.provide(apiKeyClientLayer(options.apiKeyEnv, baseUrl, OpenAiClient.layer)),
+      withModelRequestAccounting(
+        "openai-compatible",
+        OpenAiLanguageModel.layer({ model }).pipe(
+          Layer.provide(apiKeyClientLayer(options.apiKeyEnv, baseUrl, OpenAiClient.layer)),
+        ),
       ),
     options.models,
   );

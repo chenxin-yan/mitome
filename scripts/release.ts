@@ -26,10 +26,7 @@ export function releasePackages(directory = root): ReleasePackage[] {
   const platformDirectories = readdirSync(join(directory, "packages/cli/npm")).sort();
   const directories = [
     "core",
-    "sdk",
     "providers",
-    "channels",
-    "tui",
     ...platformDirectories.map((name) => `cli/npm/${name}`),
     "cli",
     "create-mitome",

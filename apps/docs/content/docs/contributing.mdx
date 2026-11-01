@@ -8,7 +8,7 @@ Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxi
 
 ## Repository layout
 
-- `packages/core`, `packages/sdk`, `packages/providers`, `packages/tui`, `packages/cli`, `packages/create-mitome`: the published packages, one directory each, with tests under `test/`.
+- `packages/core`, `packages/providers`, `packages/cli`, `packages/create-mitome`: the published packages, one directory each, with tests under `test/`.
 - `apps/docs`: this site (fumadocs on TanStack Start); pages live in `apps/docs/content/docs`.
 - `docs/adr`: architecture decision records; `CONTEXT.md` at the root is the domain glossary every page and identifier follows. `docs/plans/effect-native-library.md` is the canonical redesign plan; `docs/research` is supporting evidence.
 - `scripts`: a private workspace for repository tooling and release fixture tests.
@@ -36,8 +36,6 @@ bun run build:docs   # builds the site
 
 `build:docs` fails on an internal link to a page that does not exist and on an `<auto-type-table>` whose type cannot be resolved, so it is the documentation gate as well. Anchors within a page are not checked. `bun run check:fix` applies lint and format fixes.
 
-`@mitome/tui` enumerates its test files explicitly in its `test` script because `.tsx` tests need the OpenTUI preload while the Host test must run without it; add new TUI test files there or they will not run.
-
 ## Generated artifacts
 
 One artifact is generated and git-ignored; do not edit it by hand. The second is hand-maintained and committed.
@@ -54,10 +52,6 @@ Every user-visible change adds a changeset: run `bun changeset`, or write the ma
 ## Recording decisions
 
 An architecture decision that changes a public contract or a cross-cutting rule gets an ADR in `docs/adr`, numbered sequentially, in the style of its neighbours: the decision in prose, then consequences. Mixed decisions retain meaningful guarantees with `status: amended by ADR-NNNN` and a successor link. For this prerelease redesign, fully obsolete decisions and Promise/Extension API guides are removed; Git history preserves them. Repair inbound links and navigation on deletion. New runnable examples and reference pages must accompany verified implementation, never proposed signatures. Terms go in the glossary-only `CONTEXT.md`; use the term it defines and none of the ones it says to avoid.
-
-## Manual TUI check
-
-Automated tests cover the TUI view model and shell; before a release, also run an Agent in a real terminal and confirm: Enter inserts a newline and `Alt-Enter` sends; Model text streams before the Turn ends; `Escape` interrupts and the next Message succeeds; `Ctrl-O` lists Transcripts and `Enter` resumes one; `Ctrl-N` starts a fresh Session; `Ctrl-C` exits and restores the terminal.
 
 ## Issue labels
 
