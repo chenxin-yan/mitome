@@ -105,12 +105,23 @@ const tsconfigSource = `${JSON.stringify(
 
 const gitignoreSource = "node_modules/\n";
 
+// Runnable as written after `npm install`: `login` needs a config directory plus line I/O.
+const codexLogin = `node --input-type=module -e '
+import { createInterface } from "node:readline/promises";
+import { configDirectory } from "@mitome/core";
+import { login } from "@mitome/providers/openai-codex";
+const lines = createInterface({ input: process.stdin });
+await login({ configDirectory: configDirectory(), input: () => lines.question("").catch(() => undefined), output: console.log });
+lines.close();
+'`;
+
 const readmeSource = (provider: Provider): string => {
   const credential =
     provider === "openai"
       ? "Set `OPENAI_API_KEY`."
-      : "Store a ChatGPT Codex Credential with the `login` export of `@mitome/providers/openai-codex`.";
-  return `# Mitome Agent\n\n## Next steps\n\n${credential}\n\n\`\`\`sh\nnpm install\nnode index.ts\n\`\`\`\n`;
+      : "Store a ChatGPT Codex Credential in Mitome's config directory with the login command below.";
+  const login = provider === "openai" ? "" : `${codexLogin}\n`;
+  return `# Mitome Agent\n\n## Next steps\n\n${credential}\n\n\`\`\`sh\nnpm install\n${login}node index.ts\n\`\`\`\n`;
 };
 
 export const projectPlan = (options: ScaffoldOptions): FileMap =>

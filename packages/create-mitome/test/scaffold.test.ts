@@ -68,6 +68,11 @@ describe("scaffold plans", () => {
     expect(plan.get(".gitignore")).toBe("node_modules/\n");
     expect(plan.get("README.md")).toContain("OPENAI_API_KEY");
     expect(plan.get("README.md")).toContain("node index.ts\n");
+    // Codex has no environment credential, so its README carries a runnable login step.
+    const codexReadme = projectPlan({ provider: "openai-codex", model: "m" }).get("README.md")!;
+    expect(codexReadme).toContain("npm install\nnode --input-type=module -e '");
+    expect(codexReadme).toContain("await login({ configDirectory: configDirectory(),");
+    expect(codexReadme).not.toContain("OPENAI_API_KEY");
   });
 
   test("names an existing file before writing any scaffold file", async () => {
