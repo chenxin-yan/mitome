@@ -10,7 +10,7 @@ import {
   toolOutcomes,
   Turn,
 } from "../../src/index.js";
-import { call, scriptedModel, text } from "../support/step.js";
+import { call, scriptedModel } from "../support/step.js";
 
 // Earlier Tool outcomes stay on the Turn's execution record after a later call fails (#180 story
 // 26), readable through the registration that produced them while the Session lives.
@@ -135,7 +135,6 @@ describe("recorded Tool outcomes", () => {
                           usage: { inputTokens: {}, outputTokens: {} },
                         },
                       ],
-                      [text("z")],
                     ],
                     [],
                   ),

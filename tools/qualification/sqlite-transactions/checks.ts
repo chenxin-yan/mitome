@@ -92,6 +92,8 @@ const effectPackage = fileURLToPath(import.meta.resolve("effect/package.json"));
 const adapterModule = fileURLToPath(import.meta.resolve(`${adapterName}/SqliteClient`));
 const adapterEffectPackage = createRequire(adapterModule).resolve("effect/package.json");
 const directory = mkdtempSync(join(tmpdir(), "mitome-sqlite-transactions-"));
+// Also runs when opening the peer or an identity assertion throws before the checks start.
+process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const filename = join(directory, "checks.sqlite");
 const peer = await openPeer(filename);
 
@@ -289,5 +291,4 @@ try {
   await Effect.runPromise(program.pipe(Effect.provide(Driver.layer({ filename, busyTimeout: 0 }))));
 } finally {
   peer.close();
-  rmSync(directory, { recursive: true, force: true });
 }

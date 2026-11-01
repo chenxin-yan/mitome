@@ -100,7 +100,7 @@ Published-package execution does not prove full type compatibility, Node 24/Bun 
 
 ### Development-only SQLite integration
 
-Current (2026-09-28): Effect `4.0.0-rc.118` releases the failed-COMMIT cleanup below in `effect/sql/SqlClient` and both adapters. Root `devDependencies` pin both adapters at `4.0.0-rc.118`, matching `effect`, with no package patch; the same checks run against the released packages. The next two paragraphs describe the superseded rc.117 patch.
+Current (2026-10-02): Effect `4.0.0-rc.118` released the failed-COMMIT cleanup below in `effect/sql/SqlClient` and both adapters, and stable `4.0.0` keeps it. Root `devDependencies` pin both adapters at `4.0.0`, matching `effect`, with no package patch; the same checks run against the released packages. The next two paragraphs describe the superseded rc.117 patch. Statements elsewhere in this file that repository dependencies remain rc.108, or that no dependency change is authorized, are dated to their sections and superseded by this pin.
 
 The owner selected SQLite and approved the verified minimal upstream fix as a temporary patch for **repository development and backend tests only**. Root `devDependencies` pin `@effect/sql-sqlite-node` and `@effect/sql-sqlite-bun` at `4.0.0-rc.117`, matching `effect`. Bun `patchedDependencies` (`patches/`) patch the shared `SqlClient` and both adapters' source, JS and declarations; each patched file carries a removal TODO. Both patched sources were first qualified in isolation on each real runtime; the checks below also fail as intended against untouched, no-poison and driver-state scratch copies (external evidence).
 

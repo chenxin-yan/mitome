@@ -133,7 +133,7 @@ describe("controlled Steps after their Turn", () => {
         }),
       );
       // The late response cannot stage into the ended Turn, but its request stays counted.
-      expect(Exit.isFailure(outcome.exit)).toBe(true);
+      expect(defect(outcome.exit)).toBe(true);
       expect(outcome.usage).toEqual({ generations: 1, dispatches: 0, physicalRequests: 1 });
       expect(outcome.history).toEqual([]);
     }),

@@ -1,6 +1,6 @@
 # Native execution baseline qualification (#181)
 
-Current status (2026-09-28): **the catalog and the two SQLite development adapters are pinned to Effect `4.0.0-rc.118`; see [Installed rc.118 upgrade](#installed-rc118-upgrade-2026-09-28).** The rc.117 sections below are dated history.
+Current status (2026-10-02): **the catalog and the two SQLite development adapters are pinned to stable Effect `4.0.0`, with no local package patches; see the patch-removal note under [Installed rc.118 upgrade](#installed-rc118-upgrade-2026-09-28).** The rc.118, rc.117 and rc.108 sections below are dated history.
 
 ## Installed rc.118 upgrade (2026-09-28)
 
@@ -260,6 +260,8 @@ This matches v2's recorded reasons for its compensations and the `Fiber.join` ob
 Bun 1.4.0 and Node 26.7.0 on Linux x64 only; no Node 24 floor, macOS or Windows run. The storage, Provider and Model are fakes, with no real storage, HTTP, TUI, Provider or native-platform check. Compile-only type evidence is not runtime evidence. These results make no public-export, durability or machine-failure claim. The isolated rc.117 result does not qualify Mitome's exported surface or the non-core `@effect/*` packages, and the SQL gate is out of scope. The fixture omits the Effect language-service plugin, so its diagnostics are not evidence.
 
 ## Reproduce
+
+**From a checkout.** After `bun install`, the current fixture runs in place: `cd tools/qualification/native-baseline && bun checks.ts && bun ../../../node_modules/typescript/bin/tsc -p tsconfig.json` (both exit 0 on installed Effect `4.0.0`). The external runner below additionally replays the dated evidence and its mutation/negative controls; it is a record of that run, not a checkout requirement.
 
 **Final verification revision (current).** Evidence lives in `/home/cyan/.local/state/mitome/effect-native-stack/181-final-evidence/`. It needs the worktree `node_modules` from `bun install --frozen-lockfile --backend=copyfile`. Rerun:
 
