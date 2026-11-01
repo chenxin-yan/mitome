@@ -164,7 +164,9 @@ export interface Session<out PersistenceError = never> {
    * staged Messages publish once, after the program succeeds, its child fibers and the Turn Scope
    * have finished and any store save is confirmed. Child fibers the program forks are interrupted
    * and awaited before the Turn Scope closes, and those its cleanup forks before the Turn saves,
-   * commits or returns and before the Session releases its dependencies. Turn Scope finalizers run
+   * commits or returns and before the Session releases its dependencies. Work a finalizer forks
+   * into the closing Turn Scope itself (`Effect.forkScoped`) is natively interrupted without being
+   * awaited, so it is not covered: fork it as a child and join it instead. Turn Scope finalizers run
    * in native reverse order, so a finalizer must join any child that needs a resource a later
    * finalizer releases. Only a joined child's failure fails the Turn. Otherwise committed
    * history is unchanged, though completed external effects are not undone. Interrupting the
@@ -221,8 +223,10 @@ interface TurnRecord<A, E> {
 
 const make = Effect.fn("@mitome/core/makeSession")(function* (
   store: SessionStore | undefined,
-  limits: ExecutionLimits,
+  options: ExecutionLimits,
 ) {
+  // Snapshot so later changes to the caller's object cannot move a live Session's bounds.
+  const limits = { generations: options.generations, dispatches: options.dispatches };
   if (![limits.generations, limits.dispatches].every((n) => Number.isSafeInteger(n) && n >= 0)) {
     return yield* Effect.die(new RangeError("Execution limits must be non-negative integers"));
   }

@@ -143,7 +143,8 @@ export const localTools = <Tools extends Record<string, Tool.Any>, EX = never, R
     }
     const gated = (gate: Gate<Tools>) => {
       // SAFETY: filled below with a wrapper for every own handler key checked against the Toolkit.
-      const output = {} as GatedHandlers<Tools>;
+      // No prototype, so a Tool named `__proto__` gets an own gated binding, not a prototype swap.
+      const output = Object.create(null) as GatedHandlers<Tools>;
       // SAFETY: the own keys of `handlers` were just checked to be exactly the Toolkit's Tool names.
       for (const name of Object.keys(handlers) as Array<keyof Toolkit.HandlersFrom<Tools>>) {
         const handler = handlers[name];
@@ -394,17 +395,20 @@ const dispatch = <Tools extends Record<string, Tool.Any>, R>(
             : withServices(Effect.suspend(() => policy(request))),
           "deny",
         );
-        if (decision === "deny") return yield* denial("Tool call was denied by policy");
+        // Fail closed on anything outside the declared results, e.g. from untyped callers.
+        if (decision !== "allow" && decision !== "ask") {
+          return yield* denial("Tool call was denied by policy");
+        }
         if (decision === "ask") {
           const granted =
             consent !== undefined &&
-            (yield* orDeny(withServices(Effect.suspend(() => consent(request))), false));
+            (yield* orDeny(withServices(Effect.suspend(() => consent(request))), false)) === true;
           if (!granted) return yield* denial("Tool call did not receive consent");
         }
         // Current authority after any wait. Interruption of the owning Turn stays native.
         if (
           authority !== undefined &&
-          !(yield* orDeny(withServices(Effect.suspend(() => authority(request))), false))
+          (yield* orDeny(withServices(Effect.suspend(() => authority(request))), false)) !== true
         ) {
           return yield* denial("Tool call is no longer authorized");
         }

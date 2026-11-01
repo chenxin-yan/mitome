@@ -122,8 +122,10 @@ export const getProviderMetadata = <E, R>(
 
 /**
  * The Model binding a Provider provisions for one Provider-native Model id, built only when the
- * Layer is, with the Provider's provisioning error and requirements. It deliberately exposes only
- * the Model and its request accounting, not other services the provisioning Layer builds. It fails before any Model
+ * Layer is, with the Provider's provisioning error and requirements. Its type exposes only the
+ * Model and its request accounting. At runtime it keeps the other services the provisioning Layer
+ * builds, because native bindings read some of them from the caller's context on each request
+ * (OpenAI WebSocket mode's `OpenAiSocket` and `ResponseIdTracker`). It fails before any Model
  * request unless the binding declares request accounting for the exact Model it builds, so it can
  * serve controlled Steps. This neither parses Qualified Model ids nor applies defaults; selection
  * belongs to the composing application.

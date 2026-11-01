@@ -384,6 +384,29 @@ describe("controlled Step", () => {
     }),
   );
 
+  it.effect("gates a Tool named __proto__ through its own binding, never an ambient handler", () =>
+    Effect.gen(function* () {
+      const log: Array<string> = [];
+      const Proto = Tool.make("__proto__", {
+        parameters: Schema.Struct({ key: Schema.String }),
+        success: Schema.String,
+      });
+      const kit = Toolkit.make(Proto);
+      const ambient = kit.toLayer({
+        ["__proto__"]: () => Effect.sync(() => (log.push("ambient"), "ambient")),
+      });
+      const program = Effect.gen(function* () {
+        const tools = yield* localTools(kit, {
+          ["__proto__"]: () => Effect.sync(() => (log.push("local"), "local")),
+        });
+        return yield* step({ tools, policy: () => Effect.succeed("deny") });
+      }).pipe(Effect.provide(ambient));
+      const { exit } = yield* turnOf(program, scriptedModel([[call("c1", "__proto__")]], log));
+      expect(Exit.isFailure(exit) && AiError.isAiError(Cause.squash(exit.cause))).toBe(true);
+      expect(log).toEqual(["generate:0"]);
+    }),
+  );
+
   it.effect("fails closed on denial, policy failure and missing consent", () =>
     Effect.gen(function* () {
       const run = (
@@ -408,6 +431,14 @@ describe("controlled Step", () => {
         { policy: () => Effect.succeed("ask" as const) },
         { policy: () => Effect.succeed("ask" as const), consent: () => Effect.succeed(false) },
         { policy: () => Effect.succeed("ask" as const), consent: () => Effect.fail("offline") },
+        // Malformed results from untyped callers (here parsed JSON) deny rather than read as
+        // truthy permission.
+        { policy: () => Effect.succeed(JSON.parse('"allow "')) },
+        {
+          policy: () => Effect.succeed("ask" as const),
+          consent: () => Effect.succeed(JSON.parse('"yes"')),
+        },
+        { authority: () => Effect.succeed(JSON.parse("1")) },
       ]) {
         const { exit, log } = yield* run(options);
         // Error-mode `write` fails the Step with the library's native AiError; its handler never ran.
@@ -817,8 +848,8 @@ describe("controlled Step", () => {
         const fiber = yield* Effect.forkChild(
           turnOf(program, scriptedModel([[call("a", "write"), call("b", "read")]], log)),
         );
-        yield* Effect.yieldNow;
-        while (!log.includes("write:a:start")) yield* Effect.yieldNow;
+        // Bounded, so a handler that never starts fails at the assertion, not the runner timeout.
+        for (let i = 0; i < 1000 && !log.includes("write:a:start"); i++) yield* Effect.yieldNow;
         expect(log).toEqual(["generate:0", "write:a:start"]);
         yield* Fiber.interrupt(fiber);
         // The held handler was interrupted and its cleanup ran before the Turn returned.
@@ -874,6 +905,21 @@ describe("controlled Step", () => {
           Exit.fail(new ExecutionLimitError({ limit: "generations", bound: 1 })),
         );
         expect(log).toEqual(["generate:0", "read:a"]);
+
+        // A live Session keeps the bounds it was made with, whatever the caller's object becomes.
+        const bounds = { generations: 1, dispatches: 256 };
+        const raised = yield* turnOf(
+          Effect.gen(function* () {
+            bounds.generations = 64;
+            const tools = yield* localTools(Tools, handlers([]));
+            return yield* loop({ tools });
+          }),
+          scriptedModel([[call("a", "read")], [text("never")]], []),
+          bounds,
+        );
+        expect(raised.exit).toEqual(
+          Exit.fail(new ExecutionLimitError({ limit: "generations", bound: 1 })),
+        );
 
         const dispatchLog: Array<string> = [];
         const caught = Effect.gen(function* () {
@@ -945,7 +991,8 @@ describe("controlled Step", () => {
             return yield* loop({ tools });
           }).pipe(Effect.provide(scriptedModel([[call("a", "write")], [text("done")]], log)));
           const fiber = yield* Effect.forkChild(session.run(program));
-          while (!log.includes("write:a:start")) yield* Effect.yieldNow;
+          for (let i = 0; i < 1000 && !log.includes("write:a:start"); i++) yield* Effect.yieldNow;
+          expect(log).toContain("write:a:start");
           yield* Scope.close(observerScope, Exit.void);
           yield* Deferred.succeed(hold, undefined);
           const final = yield* Fiber.join(fiber);
