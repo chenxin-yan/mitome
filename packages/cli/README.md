@@ -4,8 +4,9 @@ The `mitome` command. The compiled binary embeds Bun and loads one explicitly se
 
 ```text
 mitome run --app <file> [--provider <id>] [--model <provider/model>] [--grace <duration>] [input]
+mitome tui --app <file> [--provider <id>] [--model <provider/model>] [--grace <duration>]
 mitome providers --app <file>
 mitome auth status|login|logout --app <file> [--provider <id>]
 ```
 
-`run` is one-shot: it reads one input (the argument, else all of non-terminal stdin), runs one Turn and writes only the rendered result to stdout. See the [CLI guide](https://mitome.sh/docs/cli).
+`run` is one-shot: it reads one input (the argument, else all of non-terminal stdin), runs one Turn and writes only the rendered result to stdout. `tui` runs repeated Turns of one Session in a terminal and decides the application's Tool Approvals. See the [CLI guide](https://mitome.sh/docs/cli).
