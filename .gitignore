@@ -14,3 +14,5 @@ packages/create-mitome/src/model-hints.ts
 .env.*
 !.env.example
 packages/*/LICENSE
+packages/cli/npm/*/LICENSE
+packages/cli/npm/*/bin/

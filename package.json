@@ -5,6 +5,7 @@
     "packages": [
       "apps/*",
       "packages/*",
+      "packages/cli/npm/*",
       "scripts"
     ],
     "catalog": {
@@ -36,7 +37,9 @@
     "check:types": "tsc",
     "test": "turbo run test",
     "dev:docs": "turbo run dev --filter=@mitome/docs",
+    "dev:cli": "bun scripts/dev-cli.ts",
     "build": "turbo run build",
+    "build:pkgs": "turbo run build --filter='./packages/*'",
     "build:docs": "turbo run build --filter=@mitome/docs",
     "version-packages": "changeset version && bun install --lockfile-only",
     "prepare": "effect-tsgo patch"
