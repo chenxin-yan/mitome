@@ -1,8 +1,21 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
+    "//#hints:generate": {
+      "inputs": [
+        "$TURBO_ROOT$/scripts/generate-model-hints.ts",
+        "$TURBO_ROOT$/scripts/models-dev.ts",
+        "$TURBO_ROOT$/scripts/models-dev.snapshot.json",
+        "$TURBO_ROOT$/packages/providers/src/openai-codex/models.ts",
+        "$TURBO_ROOT$/packages/create-mitome/package.json"
+      ],
+      "outputs": [
+        "packages/providers/src/openai/models.ts",
+        "packages/create-mitome/src/model-hints.ts"
+      ]
+    },
     "build": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#hints:generate"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/scripts/build-lib.ts"],
       "outputs": ["dist/**"]
     },
@@ -14,12 +27,12 @@
       "outputs": []
     },
     "lint": {
-      "dependsOn": ["^build", "//#lint:root"],
+      "dependsOn": ["^build", "//#hints:generate", "//#lint:root"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.oxlintrc.json", "$TURBO_ROOT$/tools/oxlint/**"],
       "outputs": []
     },
     "lint:fix": {
-      "dependsOn": ["^build", "//#lint:root:fix"],
+      "dependsOn": ["^build", "//#hints:generate", "//#lint:root:fix"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.oxlintrc.json"],
       "outputs": [],
       "cache": false
@@ -38,7 +51,7 @@
       "cache": false
     },
     "check:types": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#hints:generate"],
       "outputs": []
     }
   }

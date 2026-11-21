@@ -1,0 +1,399 @@
+import { createServer } from "node:http";
+import { type AddressInfo } from "node:net";
+import { describe, expect, it, vi } from "@effect/vitest";
+import { WebSocketServer } from "ws";
+import { Cause, Effect, Exit, Schema, Stream } from "effect";
+import { LanguageModel, Prompt, type Response as AiResponse, Tool, Toolkit } from "effect/ai";
+import { Provider } from "@mitome/core";
+import { fakeFetch, runWithKey, sse } from "../support.js";
+import { openai } from "../../src/openai/index.js";
+
+type Json = Schema.Json;
+type JsonObject = { readonly [key: string]: Json };
+interface FollowUpRequest {
+  readonly input?: ReadonlyArray<JsonObject>;
+}
+
+const key = "MITOME_OPENAI_TEST_KEY";
+const run = runWithKey(key);
+const response = (id: string, output: ReadonlyArray<Json> = []) => ({
+  id,
+  object: "response",
+  model: "gpt-5.6",
+  created_at: 1,
+  output,
+});
+const message = (id: string, text: string, status: "in_progress" | "completed") => ({
+  id,
+  type: "message",
+  role: "assistant",
+  status,
+  content: text === "" ? [] : [{ type: "output_text", text, annotations: [] }],
+});
+const event = (type: string, data: JsonObject = {}) => ({
+  type,
+  ...data,
+});
+/** SSE frames for one output item: created → added → deltas → done → completed. */
+const itemStream = (
+  respId: string,
+  inProgress: { readonly id: string } & JsonObject,
+  deltaType: string,
+  deltas: ReadonlyArray<string>,
+  done: JsonObject,
+): ReadonlyArray<string> => {
+  let seq = 0;
+  return [
+    event("response.created", {
+      sequence_number: ++seq,
+      response: response(respId),
+    }),
+    event("response.output_item.added", {
+      output_index: 0,
+      sequence_number: ++seq,
+      item: inProgress,
+    }),
+    ...deltas.map((delta) =>
+      event(deltaType, {
+        item_id: inProgress.id,
+        output_index: 0,
+        content_index: 0,
+        delta,
+        sequence_number: ++seq,
+      }),
+    ),
+    event("response.output_item.done", {
+      output_index: 0,
+      sequence_number: ++seq,
+      item: done,
+    }),
+    event("response.completed", {
+      sequence_number: ++seq,
+      response: response(respId, [done]),
+    }),
+  ].map(sse);
+};
+const echo = Tool.make("echo", {
+  parameters: Schema.Struct({ text: Schema.String }),
+  success: Schema.String,
+});
+const Echo = Toolkit.make(echo);
+const echoHandlers = Echo.toLayer({ echo: ({ text }) => Effect.succeed(text) });
+/** One Tool-resolving streamed generation, then the follow-up generation carrying its results. */
+const toolContinuation = Effect.gen(function* () {
+  const prompt = Prompt.make("Hi");
+  const first = yield* Stream.runCollect(LanguageModel.streamText({ prompt, toolkit: Echo }));
+  const second = yield* Stream.runCollect(
+    LanguageModel.streamText({
+      prompt: Prompt.concat(prompt, Prompt.fromResponseParts([...first])),
+    }),
+  );
+  return { first: [...first], second: [...second] };
+}).pipe(Effect.provide(echoHandlers));
+const textDeltas = (parts: ReadonlyArray<AiResponse.AnyPart>) =>
+  parts.flatMap((part) => (part.type === "text-delta" ? [part.delta] : []));
+const textStream = (respId: string, msgId: string, deltas: ReadonlyArray<string>) =>
+  itemStream(
+    respId,
+    message(msgId, "", "in_progress"),
+    "response.output_text.delta",
+    deltas,
+    message(msgId, deltas.join(""), "completed"),
+  );
+
+describe("openai", () => {
+  it("exposes its credential descriptor without provisioning a Model", () => {
+    expect(Provider.credentialDescriptor(openai({ apiKeyEnv: "MITOME_TEST_API_KEY" }))).toBe(
+      "MITOME_TEST_API_KEY",
+    );
+  });
+
+  it("passes model ids unchanged and streams official Responses output incrementally", async () => {
+    const requests: Array<{
+      readonly model: string;
+      readonly stream: boolean;
+      readonly authorization: string | null;
+    }> = [];
+    const { promise: secondReleased, resolve: releaseSecond } = Promise.withResolvers<void>();
+    const { promise: firstChunkSent, resolve: firstChunk } = Promise.withResolvers<void>();
+    const fetch = fakeFetch(async (request) => {
+      expect(new URL(request.url).pathname).toBe("/v1/responses");
+      // SAFETY: this controlled client request is emitted from the OpenAI request schema.
+      const body = (await request.json()) as {
+        model: string;
+        stream: boolean;
+      };
+      requests.push({
+        model: body.model,
+        stream: body.stream,
+        authorization: request.headers.get("authorization"),
+      });
+      const frames = textStream("resp-1", "msg-1", ["hel", "lo"]);
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          async start(controller) {
+            const enqueue = (value: string) => controller.enqueue(new TextEncoder().encode(value));
+            // frames[0..2]: created, item added, first delta.
+            for (const frame of frames.slice(0, 3)) enqueue(frame);
+            firstChunk();
+            await secondReleased;
+            for (const frame of frames.slice(3)) enqueue(frame);
+            controller.close();
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    });
+
+    const provider = openai({
+      apiKeyEnv: key,
+      baseUrl: "https://test.invalid/v1/",
+      transport: "http",
+    });
+    const parts: Array<AiResponse.AnyPart> = [];
+    const { promise: output, resolve: firstOutput } = Promise.withResolvers<void>();
+    const generation = run(
+      LanguageModel.streamText({ prompt: "Hi" }).pipe(
+        Stream.runForEach((part) =>
+          Effect.sync(() => {
+            parts.push(part);
+            if (part.type === "text-delta") firstOutput();
+          }),
+        ),
+        Effect.provide(Provider.model(provider, "gpt-5.6")),
+      ),
+      fetch,
+    );
+    await firstChunkSent;
+    await output;
+    expect(textDeltas(parts)).toEqual(["hel"]);
+    releaseSecond();
+    await generation;
+    expect(textDeltas(parts)).toEqual(["hel", "lo"]);
+    expect(parts.at(-1)).toMatchObject({ type: "finish", reason: "stop" });
+    expect(requests).toEqual([
+      {
+        model: "gpt-5.6",
+        stream: true,
+        authorization: "Bearer synthetic-key",
+      },
+    ]);
+  });
+
+  it("rejects explicit WebSocket outside Bun and Node when selected", async () => {
+    const nodeProcess = globalThis.process;
+    vi.stubGlobal("process", undefined);
+    try {
+      const provider = openai({ apiKeyEnv: key, transport: "websocket" });
+      const exit = await run(
+        Effect.exit(
+          LanguageModel.generateText({ prompt: "Hi" }).pipe(
+            Effect.provide(Provider.model(provider, "gpt-5.6")),
+          ),
+        ),
+      );
+      expect(Cause.squash(Exit.isFailure(exit) ? exit.cause : Cause.empty)).toMatchObject({
+        message: "OpenAI WebSocket transport requires a Bun or Node server runtime",
+      });
+    } finally {
+      vi.stubGlobal("process", nodeProcess);
+    }
+  });
+
+  it("fails first use when its environment credential is missing", async () => {
+    const provider = openai({ apiKeyEnv: key });
+    const error = await run(
+      Effect.flip(
+        LanguageModel.generateText({ prompt: "Hi" }).pipe(
+          Effect.provide(Provider.model(provider, "gpt-5.6")),
+        ),
+      ),
+      globalThis.fetch,
+      {},
+    );
+    expect(error).toMatchObject({
+      _tag: "MissingCredentialError",
+      message: `Environment variable ${key} is not set or empty`,
+    });
+  });
+
+  it("surfaces backend model rejection after the request without preflight", async () => {
+    let requests = 0;
+    const fetch = fakeFetch(() => {
+      requests += 1;
+      return Response.json({ error: { message: "model not found" } }, { status: 404 });
+    });
+    const provider = openai({
+      apiKeyEnv: key,
+      baseUrl: "https://test.invalid/v1",
+      transport: "http",
+    });
+    const error = await run(
+      Effect.flip(
+        Stream.runDrain(LanguageModel.streamText({ prompt: "Hi" })).pipe(
+          Effect.provide(Provider.model(provider, "future-private-model")),
+        ),
+      ),
+      fetch,
+    );
+    expect(error).toMatchObject({ _tag: "AiError", reason: { _tag: "InvalidRequestError" } });
+    expect(requests).toBe(1);
+  });
+
+  it("uses one Responses WebSocket by default for Tool continuations", async () => {
+    let upgrades = 0;
+    let httpRequests = 0;
+    const authorizations: Array<string | null> = [];
+    const frames: Array<JsonObject> = [];
+    const streamEvents = (...stream: ReadonlyArray<string>): ReadonlyArray<JsonObject> =>
+      stream.map((frame) =>
+        Schema.decodeSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)))(
+          frame.slice("data: ".length),
+        ),
+      );
+    const server = createServer((_request, response) => {
+      httpRequests += 1;
+      response.writeHead(500).end("WebSocket upgrade required");
+    });
+    const webSocketServer = new WebSocketServer({ server, path: "/v1/responses" });
+    webSocketServer.on("connection", (socket, request) => {
+      upgrades += 1;
+      authorizations.push(request.headers.authorization ?? null);
+      socket.on("message", (raw) => {
+        // SAFETY: ws message payloads are binary-compatible with ArrayBuffer when not a Buffer.
+        const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+        const frame = Schema.decodeSync(
+          Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)),
+        )(bytes.toString());
+        frames.push(frame);
+        if (frames.length === 1) {
+          const functionCall = {
+            type: "function_call",
+            id: "fc-1",
+            call_id: "call-1",
+            name: "echo",
+            arguments: '{"text":"hello"}',
+            status: "completed",
+          };
+          for (const event of streamEvents(
+            ...itemStream(
+              "resp-tool",
+              { ...functionCall, arguments: "", status: "in_progress" },
+              "response.function_call_arguments.delta",
+              ['{"text":"hello"}'],
+              functionCall,
+            ),
+          ))
+            socket.send(JSON.stringify(event));
+          return;
+        }
+        for (const event of streamEvents(...textStream("resp-done", "msg-done", ["done"])))
+          socket.send(JSON.stringify(event));
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    try {
+      const provider = openai({
+        apiKeyEnv: key,
+        // SAFETY: the successfully listening TCP server has an AddressInfo address.
+        baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
+      });
+      const { first, second } = await run(
+        toolContinuation.pipe(Effect.provide(Provider.model(provider, "gpt-5.6"))),
+      );
+      expect(
+        first.filter((part) => part.type === "tool-call" || part.type === "tool-result"),
+      ).toMatchObject([
+        { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
+        { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },
+      ]);
+      expect(textDeltas(second)).toEqual(["done"]);
+      expect(second.at(-1)).toMatchObject({ type: "finish", reason: "stop" });
+      expect(upgrades).toBe(1);
+      expect(authorizations).toEqual(["Bearer synthetic-key"]);
+      expect(httpRequests).toBe(0);
+      expect(frames).toHaveLength(2);
+      expect(frames.map((frame) => frame.type)).toEqual(["response.create", "response.create"]);
+      expect(frames.every((frame) => !("stream" in frame) && !("background" in frame))).toBe(true);
+      expect(frames[1]).toMatchObject({ previous_response_id: "resp-tool" });
+      expect(frames[1]?.input).toEqual([
+        {
+          type: "function_call_output",
+          call_id: "call-1",
+          // @effect/ai-openai rc.117 sends string results unquoted.
+          output: "hello",
+        },
+      ]);
+    } finally {
+      webSocketServer.clients.forEach((socket) => socket.terminate());
+      webSocketServer.close();
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
+  it("maps Responses function calls and their results across generations", async () => {
+    let calls = 0;
+    let followUp: FollowUpRequest = {};
+    const fetch = fakeFetch(async (request) => {
+      // SAFETY: this controlled client request is emitted from the OpenAI request schema.
+      const body = (await request.json()) as {
+        readonly tools?: ReadonlyArray<Json>;
+        readonly input?: ReadonlyArray<JsonObject>;
+      };
+      calls += 1;
+      if (calls === 1) {
+        expect(body.tools).toHaveLength(1);
+        const functionCall = {
+          type: "function_call",
+          id: "fc-1",
+          call_id: "call-1",
+          name: "echo",
+          arguments: '{"text":"hello"}',
+          status: "completed",
+        };
+        return new Response(
+          itemStream(
+            "resp-tool",
+            { ...functionCall, arguments: "", status: "in_progress" },
+            "response.function_call_arguments.delta",
+            ['{"text":"hello"}'],
+            functionCall,
+          ).join(""),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }
+      followUp = body;
+      return new Response(textStream("resp-done", "msg-done", ["done"]).join(""), {
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    const provider = openai({
+      apiKeyEnv: key,
+      baseUrl: "https://test.invalid/v1",
+      transport: "http",
+    });
+    const { first, second } = await run(
+      toolContinuation.pipe(Effect.provide(Provider.model(provider, "gpt-5.6"))),
+      fetch,
+    );
+    expect(
+      first.filter((part) => part.type === "tool-call" || part.type === "tool-result"),
+    ).toMatchObject([
+      { type: "tool-call", id: "call-1", name: "echo", params: { text: "hello" } },
+      { type: "tool-result", id: "call-1", name: "echo", result: "hello", isFailure: false },
+    ]);
+    expect(textDeltas(second)).toEqual(["done"]);
+    expect(second.at(-1)).toMatchObject({ type: "finish", reason: "stop" });
+    expect(calls).toBe(2);
+    expect(followUp.input).toContainEqual({
+      type: "function_call_output",
+      call_id: "call-1",
+      // @effect/ai-openai rc.117 sends string results unquoted.
+      output: "hello",
+    });
+  });
+});

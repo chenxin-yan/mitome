@@ -1,0 +1,56 @@
+import { describe, expect, it } from "@effect/vitest";
+import { Config, ConfigProvider, Effect, Layer, Redacted } from "effect";
+import * as Context from "effect/Context";
+import { MissingCredentialError, apiKeyClientLayer } from "../../src/shared/api-key-client.js";
+
+class TestClient extends Context.Service<TestClient, {}>()("test/TestClient") {}
+
+const key = "MITOME_LATE_API_KEY_TEST";
+
+describe("API-key client", () => {
+  it.live("reads an environment key set after Provider construction", () =>
+    Effect.promise(async () => {
+      const previous = process.env[key];
+      delete process.env[key];
+      try {
+        // Populate Effect's process-wide default provider before the key exists.
+        await Effect.runPromise(Effect.result(Config.String(key)));
+        let observed: string | undefined;
+        const layer = apiKeyClientLayer(key, "https://test.invalid", ({ apiKey }) => {
+          observed = apiKey === undefined ? undefined : Redacted.value(apiKey);
+          return Layer.succeed(TestClient, {});
+        });
+
+        process.env[key] = "late-key";
+        await Effect.runPromise(Effect.scoped(Layer.build(layer)));
+        expect(observed).toBe("late-key");
+      } finally {
+        if (previous === undefined) delete process.env[key];
+        else process.env[key] = previous;
+      }
+    }),
+  );
+
+  it.effect("reports only absent input as a missing key", () =>
+    Effect.gen(function* () {
+      const layer = apiKeyClientLayer(key, "https://test.invalid", () =>
+        Layer.succeed(TestClient, {}),
+      );
+      const build = (provider: ConfigProvider.ConfigProvider) =>
+        Effect.flip(
+          Effect.scoped(Layer.build(layer)).pipe(
+            Effect.provideService(ConfigProvider.ConfigProvider, provider),
+          ),
+        );
+      const empty = yield* build(ConfigProvider.fromEnv({ env: { [key]: "" } }));
+      expect(empty).toBeInstanceOf(MissingCredentialError);
+      const unreadable = yield* build(
+        ConfigProvider.make(() =>
+          Effect.fail(new ConfigProvider.SourceError({ message: "vault unreachable" })),
+        ),
+      );
+      expect(unreadable).toBeInstanceOf(Config.ConfigError);
+      expect(unreadable.message).toContain("vault unreachable");
+    }),
+  );
+});

@@ -30,8 +30,14 @@
           "@effect/ai-openai/OpenAiLanguageModel",
           "@effect/platform-bun/BunRuntime",
           "@effect/platform-bun/BunServices",
+          "@effect/platform-node-shared/NodeChildProcessSpawner",
+          "@effect/platform-node-shared/NodeFileSystem",
+          "@effect/platform-node-shared/NodePath",
           "@effect/vitest#beforeEach",
           "@effect/vitest#it",
+          "effect/FileSystem",
+          "effect/Path",
+          "effect/PlatformError",
           "effect/Stdio",
           "effect/ai/AiError",
           "effect/ai/LanguageModel",
@@ -50,6 +56,8 @@
           "effect/http/HttpClientError",
           "effect/http/HttpClientRequest",
           "effect/http/HttpClientResponse",
+          "effect/process/ChildProcess",
+          "effect/process/ChildProcessSpawner",
           "effect/socket/Socket",
           "effect/testing/TestConsole"
         ]
