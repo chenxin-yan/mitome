@@ -1,5 +1,5 @@
 ---
-status: authoring superseded by ADR-0057; package boundary retained
+status: authoring superseded by ADR-0057 and ADR-0058; package boundary retained by ADR-0061
 ---
 
 # Keep small first-party features together without heavy root imports

@@ -12,6 +12,14 @@ _Avoid_: Bot, assistant
 The author-supplied behavior of an Agent, invoked to perform a Turn and return an application result independently of its conversational Messages.
 _Avoid_: Agent Definition, mandatory agent wrapper
 
+**Extension**:
+A reusable, named value describing what it adds to an Agent: Tools and Instructions, decisions on Tool Calls, and Commands a person can invoke. What it adds is a record, or an Effect that returns one and runs when a Session starts. It is merged into the Agent before anything runs and cannot change committed history.
+_Avoid_: Plugin, Hook, add-on
+
+**Configuration**:
+An Agent together with the Providers, the Model and the services it runs with, among them the storage and each Host's options, in one place; what the command line loads. The Agent itself names none of them.
+_Avoid_: Mitome Definition, settings, project configuration
+
 **Delegation**:
 Explicitly starting another Agent program in its own child Session, distinct from a nested function call sharing the current Session. The caller may await its result or continue with a background-work handle; ownership determines its lifetime.
 _Avoid_: Function call, automatic fork, subprocess
@@ -21,7 +29,7 @@ A live interaction owning shared conversational state across Agent invocations, 
 _Avoid_: Chat, conversation
 
 **Turn**:
-One managed Agent program invocation, potentially containing several Steps, whose identity survives supported recovery and whose staged conversation commits once after successful completion and durable save when persistence is enabled. Failure does not commit partial conversation or undo completed external effects.
+One managed Agent program invocation, potentially containing several Steps, whose identity survives supported recovery and whose conversation commits as it goes: each completed Step commits what is staged as an Entry, and what is still staged commits when the program succeeds. Failure keeps the Entries already committed, drops what was still staged, and does not undo completed external effects.
 _Avoid_: Request, Step
 
 **Step**:
@@ -37,27 +45,31 @@ Work explicitly queued for a separate Turn after preceding work, with its own ap
 _Avoid_: Steering, implicit retry, another Step
 
 **Message**:
-One user, Agent, or Tool contribution to a Session.
+One user, Agent, or Tool contribution to a Session, holding plain data: what a schema encodes a live value to, not the live value.
 _Avoid_: Prompt, request
 
 **Instructions**:
-Ordered static text guiding an Agent, distinct from ephemeral per-Step changes to its Model Prompt.
+Ordered static text guiding an Agent, distinct from ephemeral per-Step changes to its Model Context.
 _Avoid_: System prompt (the composed whole), prompt fragment
 
 **Skill**:
 A reusable package of task instructions and optional resources, explicitly made available to an Agent. Its content guides behavior but does not grant Tool authority or automatically execute code.
 _Avoid_: Tool, Extension, permission grant
 
-**Model Prompt**:
+**Model Context**:
 The ordered Messages supplied to a Model for one Step, derived from Instructions, the selected Branch's history and applicable Checkpoint, and staged Turn Messages.
-_Avoid_: User Message, input (bare)
+_Avoid_: Model Prompt, prompt (bare), User Message, input (bare)
 
 **Transcript**:
 The durable owner of a committed History tree, its associated Checkpoints and one shared Execution position, which may outlive a Session and seed new Sessions; a selected Branch's linear conversation is a projection.
 _Avoid_: Session, history (bare), execution log
 
+**Entry**:
+The Messages committed together under the Entry the conversation continued from, normally one Step with what the program staged before it.
+_Avoid_: Commit, node, message (for the unit stored)
+
 **History tree**:
-The ancestry of Messages preserving alternate continuations as Branches.
+The ancestry of Entries preserving alternate continuations as Branches.
 _Avoid_: Transcript, execution log
 
 **Branch**:
@@ -73,7 +85,7 @@ Information explicitly carried from an abandoned Branch into a new continuation.
 _Avoid_: Checkpoint, Compaction, recovery record
 
 **Compaction**:
-Replacing a prefix of Messages with a summary in the Model Prompt while preserving canonical Messages.
+Replacing a prefix of Messages with a summary in the Model Context while preserving canonical Messages.
 _Avoid_: Summarization (the act), truncation, context pruning
 
 **Checkpoint**:
@@ -88,6 +100,10 @@ _Avoid_: Transcript, Checkpoint, Resource
 A named capability explicitly exposed to a Model for inspecting or affecting something outside the Model; merely providing an implementation service does not expose a Tool.
 _Avoid_: Function, command, service
 
+**Command**:
+A named ability a person invokes by typing `/name` at the start of an input, where a Tool is called by the Model. An Extension names its own; a Command takes the text after its name and returns what the Host should do next: show text, or start a Turn.
+_Avoid_: Tool, Action, slash command, shortcut
+
 **Tool Call**:
 One Model-requested invocation of a Tool within a Step, subject to author policy and any required Approval before execution.
 _Avoid_: Function call, invocation (bare)
@@ -96,12 +112,16 @@ _Avoid_: Function call, invocation (bare)
 An authorized decision permitting a pending Tool Call after policy checks; it is distinct from replay safety and cannot authorize a second execution merely by being repeated.
 _Avoid_: Permission, confirmation, replay guarantee
 
+**Approver**:
+Whoever answers a pending Tool Call's request for Approval, supplied by the Host or the code that runs the Turn. An Approver cannot override a policy denial.
+_Avoid_: Consent, policy
+
 **Provider capability grant**:
 An explicit bounded authorization for a Provider-executed Tool capability before a Model request, distinct from approving one Tool Call's exact arguments or permitting replay.
 _Avoid_: Approval, Session grant, blanket permission
 
 **Host**:
-An optional integration connecting an Agent to people or applications through a surface, with responsibility for interaction and consent presentation rather than Agent behavior.
+An optional integration connecting an Agent to people or applications through a surface. It brings Messages in, presents results, and supplies who answers a pending Approval; it does not define Agent behavior.
 _Avoid_: Extension, Frontend, client, harness
 
 **Channel**:
@@ -159,10 +179,6 @@ _Avoid_: Implicit project configuration, sandbox
 **Mitome Definition directory**:
 The selected directory containing a Mitome Definition module.
 _Avoid_: Implicit project root
-
-**Extension**:
-The current reusable unit contributing Tools, Instructions and lifecycle behavior, not mandatory target agent packaging.
-_Avoid_: Plugin, Toolkit
 
 **Hook**:
 A current Extension's named lifecycle behavior to observe, transform, veto or propose.

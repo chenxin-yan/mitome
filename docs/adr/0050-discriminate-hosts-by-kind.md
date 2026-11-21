@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0056 and ADR-0057
+status: amended by ADR-0056, ADR-0057 and ADR-0058
 ---
 
 # Keep Host kinds and capabilities explicit

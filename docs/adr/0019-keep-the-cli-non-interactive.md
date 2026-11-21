@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0050, ADR-0051 and ADR-0057
+status: amended by ADR-0050, ADR-0051, ADR-0057, ADR-0059 and ADR-0060
 ---
 
 # Keep one-shot CLI execution non-interactive

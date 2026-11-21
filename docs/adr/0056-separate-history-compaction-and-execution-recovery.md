@@ -1,5 +1,5 @@
 ---
-status: accepted; authoring amended by ADR-0057
+status: accepted; authoring amended by ADR-0057, commit boundary amended by ADR-0066
 ---
 
 # Separate history, Compaction, and execution recovery

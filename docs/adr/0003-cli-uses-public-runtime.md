@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0056 and ADR-0057
+status: amended by ADR-0056, ADR-0057 and ADR-0066
 ---
 
 # Build the CLI on the public in-process runtime

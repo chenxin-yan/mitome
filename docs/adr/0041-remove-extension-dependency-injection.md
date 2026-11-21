@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0057
+status: amended by ADR-0057 and ADR-0058
 ---
 
 # Do not rebuild native dependency injection as a framework graph

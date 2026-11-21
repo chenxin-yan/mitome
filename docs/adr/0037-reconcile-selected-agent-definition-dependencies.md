@@ -1,5 +1,5 @@
 ---
-status: amended by ADR-0057
+status: amended by ADR-0057 and ADR-0060
 ---
 
 # Reconcile explicitly selected module dependencies before import
