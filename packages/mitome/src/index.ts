@@ -1,11 +1,27 @@
 /**
- * Effect-native Sessions, Turns, controlled Steps, the Provider contract and the Approver.
+ * Effect-native Agents, Extensions and Configurations, and the Sessions, Turns, controlled Steps,
+ * Provider contract and Approver they run on.
  *
  * @module @mitome/core
  */
 
-// Namespace modules hold only their public names; internals live in `session/internal.ts`.
+// Namespace modules hold only their public names; internals live in modules the root does not export.
+export * as Agent from "./agent/agent.js";
+export * as Command from "./agent/command.js";
+export * as Extension from "./agent/extension.js";
+export * as Mitome from "./agent/mitome.js";
 export * as Provider from "./session/provider.js";
+export * as Session from "./agent/session.js";
+export {
+  CommandFailedError,
+  CommandNotFoundError,
+  MitomeClosedError,
+  ModelSelectionError,
+  TextMappingError,
+  TranscriptSelectionError,
+} from "./agent/errors.js";
+export { Transcripts } from "./agent/transcripts.js";
+export type { TranscriptsService } from "./agent/transcripts.js";
 export {
   ModelRequestAccounting,
   reportModelRequest,
