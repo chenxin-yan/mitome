@@ -83,6 +83,7 @@ describe("mitome command", () => {
       const help = yield* cli(["--help"]);
       expect(Exit.isSuccess(help.exit)).toBe(true);
       for (const name of ["run", "providers", "auth"]) expect(help.logs).toContain(name);
+      expect(help.logs).toContain("With no subcommand, open the terminal");
 
       const version = yield* cli(["--version"]);
       expect(Exit.isSuccess(version.exit)).toBe(true);
@@ -95,6 +96,48 @@ describe("mitome command", () => {
       const result = yield* cli(["--unknown"]);
       expect(Exit.isFailure(result.exit)).toBe(true);
       expect(result.errors).toContain("ERROR");
+      expect(yield* events).toEqual([]);
+    }),
+  );
+});
+
+describe("bare mitome", () => {
+  it.effect("needs a terminal on stdin and stdout and loads nothing otherwise", () =>
+    Effect.gen(function* () {
+      for (const args of [[], ["--config", fixture]]) {
+        for (const terminal of [false, true]) {
+          // The test Stdio reports a non-terminal stdout either way.
+          const result = yield* cli(args, { terminal });
+          expect(Exit.isFailure(result.exit)).toBe(true);
+          expect(result.errors).toContain(
+            "mitome needs a terminal on standard input and output; use mitome run otherwise.",
+          );
+          expect(result.stdout).toBe("");
+        }
+      }
+      expect(yield* events).toEqual([]);
+    }),
+  );
+
+  it.effect("has no tui subcommand", () =>
+    Effect.gen(function* () {
+      const result = yield* cli(["tui"]);
+      expect(Exit.isFailure(result.exit)).toBe(true);
+      expect(result.errors).toContain('Unknown subcommand "tui" for "mitome"');
+      expect(yield* events).toEqual([]);
+    }),
+  );
+
+  it.effect("has no attachment or initial-input options", () =>
+    Effect.gen(function* () {
+      for (const args of [
+        ["--config", fixture, "--attach", "http://localhost"],
+        ["--config", fixture, "hello"],
+      ]) {
+        const result = yield* cli(args);
+        expect(Exit.isFailure(result.exit)).toBe(true);
+        expect(result.errors).toContain("ERROR");
+      }
       expect(yield* events).toEqual([]);
     }),
   );

@@ -31,6 +31,11 @@ for (const [target, packageName] of Object.entries(targets)) {
       "--compile-autoload-package-json",
       "src/index.ts",
       `--target=${target}`,
+      // OpenTUI's Bun loader picks its Linux library by OPENTUI_LIBC; left unset, the bundle keeps
+      // both branches and needs both native packages.
+      ...(target.startsWith("bun-linux-")
+        ? [`--define=process.env.OPENTUI_LIBC="${target.includes("-musl") ? "musl" : "glibc"}"`]
+        : []),
       `--outfile=${artifact}`,
     ],
     { cwd: packageDirectory, stdout: "inherit", stderr: "inherit" },

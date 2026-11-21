@@ -4,6 +4,7 @@ import {
   type Mitome,
   stateDirectory,
   stateDirectoryMessage,
+  Transcripts,
 } from "@mitome/core";
 import {
   Cause,
@@ -19,8 +20,15 @@ import {
   Stream,
 } from "effect";
 import { CliError } from "effect/cli";
-import { loadConfiguration, type LoadedConfiguration } from "./configuration.js";
+import {
+  loadConfiguration,
+  type LoadedConfiguration,
+  type LoadedInstance,
+} from "./configuration.js";
 import { describe, runtimeError, userError } from "./errors.js";
+// makeApprovals allocates the terminal Host's own channel; it needs no service to provide.
+// oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports
+import { makeApprovals } from "./terminal/approvals.js";
 
 // TODO: split this file into one file per command when the next command is added. It is named
 // for a mechanism, and the rest of the codebase groups files by domain.
@@ -101,104 +109,196 @@ const failingWith = (prefix: string) =>
     cause instanceof CliError.UserError ? cause : userError(`${prefix}${describe(cause)}`, cause),
   );
 
-export interface RunOptions {
+/**
+ * What every executing command selects: the Configuration, its Model, its shutdown grace and the
+ * conversation to continue.
+ */
+export interface ConfigurationOptions {
   readonly config: Option.Option<string>;
   readonly provider: Option.Option<string>;
   readonly model: Option.Option<string>;
   readonly grace: number;
   /** `--continue`: `""` for the conversation most recently written here, otherwise an id. */
   readonly continue: Option.Option<string>;
+}
+
+export interface RunOptions extends ConfigurationOptions {
   readonly input: Option.Option<string>;
 }
 
 /**
- * One-shot execution: load, read input, acquire, parse, allocate one fresh Session in a new
- * conversation under the working directory or in the one `--continue` selects, run one Turn,
- * render, then close the Session and shut down within the grace. A render failure after the Turn
- * committed is reported and never reruns the Turn. No Approver is provided: nobody is present, so
- * a Tool Call that needs Approval is denied, the Model is told, and the Turn continues.
+ * Runs `work` with the standalone grace: its shutdown is bounded once the work ends however it
+ * ends, and from the first SIGINT or SIGTERM. `work` passes `onShutdown` to `acquire`.
+ */
+const withGrace = Effect.fnUntraced(function* <A, E, R>(
+  grace: number,
+  work: (onShutdown: Effect.Effect<void>) => Effect.Effect<A, E, R>,
+) {
+  const deadline = yield* graceDeadline(grace);
+  // The command's work ends here, however it ends; the Scope's cleanup then runs bounded.
+  const startDeadline = Effect.sync(deadline.start);
+  return yield* work(startDeadline).pipe(Effect.onExit(() => startDeadline));
+}, Effect.scoped);
+
+/** Acquires the Configuration once, with the Model the options select. */
+const acquire = (
+  configuration: LoadedConfiguration,
+  options: ConfigurationOptions,
+  onShutdown: Effect.Effect<void>,
+) =>
+  configuration
+    .acquire({
+      provider: Option.getOrUndefined(options.provider),
+      model: Option.getOrUndefined(options.model),
+      // Also bounds the unwind of a failed startup, which runs before acquire returns.
+      onShutdown,
+    })
+    .pipe(failingWith("Could not start the Configuration: "));
+
+/**
+ * Allocates the one Session the command keeps, in a new conversation under `here`, the directory
+ * the command started in, or in the one `--continue` selects. `conversation` names it for a person
+ * when the Configuration keeps history, saying what was continued.
+ */
+const openSession = Effect.fnUntraced(function* (
+  instance: LoadedInstance,
+  options: ConfigurationOptions,
+  here: string,
+) {
+  const id = Option.getOrUndefined(options.continue);
+  const session = yield* instance
+    .session({
+      transcript: id === undefined ? { create: here } : id === "" ? { latest: here } : { open: id },
+    })
+    .pipe(
+      // Raised by the Configuration's own copy of @mitome/core, so recognised by tag and reason.
+      Effect.mapError((cause) =>
+        !Predicate.isTagged(cause, "TranscriptSelectionError")
+          ? cause
+          : Predicate.hasProperty(cause, "reason") && cause.reason === "no-store"
+            ? userError(
+                "This Configuration keeps no history, so there is no conversation to continue.",
+              )
+            : userError(
+                id === ""
+                  ? `There is no conversation to continue in ${here}.`
+                  : `There is no conversation "${id}" to continue.`,
+              ),
+      ),
+      failingWith(""),
+    );
+  if (id === undefined) {
+    const kept = yield* instance
+      .provide(Effect.map(Transcripts, Predicate.isNotUndefined))
+      .pipe(failingWith(""));
+    return { session, conversation: kept ? `Conversation ${session.transcript}.` : undefined };
+  }
+  // The Entries of the Branch continued, from the root to the position.
+  const parents = new Map(
+    (yield* session.tree.pipe(failingWith("Could not read the conversation: "))).map((entry) => [
+      entry.id,
+      entry.parent,
+    ]),
+  );
+  let entries = 0;
+  for (
+    let at = yield* session.position.pipe(failingWith(""));
+    at !== undefined;
+    at = parents.get(at)
+  ) {
+    entries += 1;
+  }
+  const counted = `${entries} ${entries === 1 ? "Entry" : "Entries"}`;
+  return { session, conversation: `Continued conversation ${session.transcript} (${counted}).` };
+});
+
+/**
+ * One-shot execution: load, read input, acquire, parse, allocate one fresh Session, run one Turn,
+ * render, then close the Session and shut down within the grace. Input the Configuration rejects
+ * starts no conversation. A render failure after the Turn committed is reported and never reruns
+ * the Turn. No Approver is provided: nobody is present, so a Tool Call that needs Approval is
+ * denied, the Model is told, and the Turn continues.
  */
 export const runApplication = (options: RunOptions) =>
-  Effect.scoped(
+  withGrace(options.grace, (onShutdown) =>
     Effect.gen(function* () {
-      const deadline = yield* graceDeadline(options.grace);
-      // The command's work ends here, however it ends; the Scope's cleanup then runs bounded.
-      const startDeadline = Effect.sync(deadline.start);
-      yield* execute(options, startDeadline).pipe(Effect.onExit(() => startDeadline));
+      // Read before the Configuration loads, since its code may change the working directory.
+      const here = process.cwd();
+      const configuration = yield* loadConfiguration(options.config);
+      const text = yield* readInput(options.input);
+      const instance = yield* acquire(configuration, options, onShutdown);
+      const input = yield* instance
+        .provide(configuration.text.parse(text))
+        .pipe(failingWith("Could not parse the input: "));
+      const { session, conversation } = yield* openSession(instance, options, here);
+      // Only what was continued: a new conversation would add a line to every run's stderr.
+      if (Option.isSome(options.continue) && conversation !== undefined) {
+        yield* Console.error(conversation);
+      }
+      const result = yield* session.run(input).pipe(failingWith("The Agent failed: "));
+      const rendered = yield* instance
+        .provide(configuration.text.render(result))
+        .pipe(failingWith("The Turn succeeded, but its result could not be rendered: "));
+      if (!Predicate.isString(rendered)) {
+        return yield* userError(
+          "The Turn succeeded, but text.render did not produce a string; it is not rerun",
+        );
+      }
+      yield* writeResult(rendered);
     }),
   );
 
-const execute = (options: RunOptions, onShutdown: Effect.Effect<void>) =>
-  Effect.gen(function* () {
-    // Read before the Configuration loads, since its code may change the working directory.
-    const here = process.cwd();
-    const configuration = yield* loadConfiguration(options.config);
-    const text = yield* readInput(options.input);
-    const instance = yield* configuration
-      .acquire({
-        provider: Option.getOrUndefined(options.provider),
-        model: Option.getOrUndefined(options.model),
-        // Also bounds the unwind of a failed startup, which runs before acquire returns.
-        onShutdown,
-      })
-      .pipe(failingWith("Could not start the Configuration: "));
-    // Parsed before the Session exists, so input the Configuration rejects starts no conversation.
-    const input = yield* instance
-      .provide(configuration.text.parse(text))
-      .pipe(failingWith("Could not parse the input: "));
-    const id = Option.getOrUndefined(options.continue);
-    const session = yield* instance
-      .session({
-        transcript:
-          id === undefined ? { create: here } : id === "" ? { latest: here } : { open: id },
-      })
-      .pipe(
-        // Raised by the Configuration's own copy of @mitome/core, so recognised by tag and reason.
-        Effect.mapError((cause) =>
-          !Predicate.isTagged(cause, "TranscriptSelectionError")
-            ? cause
-            : Predicate.hasProperty(cause, "reason") && cause.reason === "no-store"
-              ? userError(
-                  "This Configuration keeps no history, so there is no conversation to continue.",
-                )
-              : userError(
-                  id === ""
-                    ? `There is no conversation to continue in ${here}.`
-                    : `There is no conversation "${id}" to continue.`,
-                ),
-        ),
-        failingWith(""),
-      );
-    yield* Effect.addFinalizer(() => session.close);
-    if (id !== undefined) {
-      // The Entries of the Branch continued, from the root to the position.
-      const parents = new Map(
-        (yield* session.tree.pipe(failingWith("Could not read the conversation: "))).map(
-          (entry) => [entry.id, entry.parent],
-        ),
-      );
-      let entries = 0;
-      for (
-        let at = yield* session.position.pipe(failingWith(""));
-        at !== undefined;
-        at = parents.get(at)
-      ) {
-        entries += 1;
+/**
+ * Interactive execution over one acquired Configuration and one retained Session, until the user
+ * closes the terminal. It needs a terminal on stdin and stdout, checked before anything is loaded;
+ * OpenTUI is imported only then. The terminal answers each Turn's Approvals. It is restored before
+ * shutdown begins, and closing exits like SIGINT, with shutdown bounded by the grace.
+ */
+export const runTerminalApplication = (options: ConfigurationOptions) =>
+  withGrace(options.grace, (onShutdown) =>
+    Effect.gen(function* () {
+      const stdio = yield* Stdio.Stdio;
+      if (!(yield* stdio.stdinIsTerminal) || !(yield* stdio.stdoutIsTerminal)) {
+        return yield* userError(
+          "mitome needs a terminal on standard input and output; use mitome run otherwise.",
+        );
       }
-      const counted = `${entries} ${entries === 1 ? "Entry" : "Entries"}`;
-      yield* Console.error(`Continued conversation ${session.transcript} (${counted}).`);
-    }
-    const result = yield* session.run(input).pipe(failingWith("The Agent failed: "));
-    const rendered = yield* instance
-      .provide(configuration.text.render(result))
-      .pipe(failingWith("The Turn succeeded, but its result could not be rendered: "));
-    if (!Predicate.isString(rendered)) {
-      return yield* userError(
-        "The Turn succeeded, but text.render did not produce a string; it is not rerun",
+      // Read before the Configuration loads, since its code may change the working directory.
+      const here = process.cwd();
+      const configuration = yield* loadConfiguration(options.config);
+      const instance = yield* acquire(configuration, options, onShutdown);
+      const { session, conversation } = yield* openSession(instance, options, here);
+      const approvals = yield* makeApprovals;
+      const { runTerminal } = yield* Effect.promise(() => import("./terminal/terminal.js"));
+      yield* runTerminal({
+        parseInput: (text) => instance.provide(configuration.text.parse(text)),
+        run: (input) => approvals.provideApprover(session.run(input)),
+        renderResult: (result) => instance.provide(configuration.text.render(result)),
+        history: session.history,
+        turns: session.turns,
+        approvals,
+        conversation,
+      }).pipe(
+        failingWith("The terminal failed: "),
+        // However it closed, a signal included, the terminal is restored by now and no longer
+        // shows the id, and the Session is still open. An empty conversation has nothing to continue.
+        Effect.ensuring(
+          session.position.pipe(
+            Effect.flatMap((position) =>
+              conversation === undefined || position === undefined
+                ? Effect.void
+                : Console.error(
+                    `Conversation ${session.transcript} is kept; continue it with mitome --continue=${session.transcript}`,
+                  ),
+            ),
+            Effect.ignore,
+          ),
+        ),
       );
-    }
-    yield* writeResult(rendered);
-  });
+      // The user closed the terminal: end like SIGINT, exiting 130 once shutdown settles.
+      return yield* Effect.interrupt;
+    }),
+  );
 
 const modelHint = (provider: Mitome.ProviderDiscovery, modelId: string) => {
   const window = provider.models[modelId]?.contextWindow;
