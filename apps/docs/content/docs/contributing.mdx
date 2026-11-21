@@ -1,17 +1,18 @@
 ---
 title: Contributing
-description: Repository layout, toolchain, the gates a change must pass, and how decisions are recorded.
+description: Repository layout, toolchain, the gates a change must pass, generated artifacts, and how decisions are recorded.
 icon: GitPullRequest
 ---
 
-Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxin-yan/mitome). Issues are the triage surface; open one before a large change. The [canonical library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) records the accepted redesign and open proof gates; [#174](https://github.com/chenxin-yan/mitome/issues/174) remains its single delivery roadmap. The Promise-facing code has been removed; design acceptance is not implementation readiness.
+Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxin-yan/mitome). Issues are the triage surface; open one before a large change. The [canonical library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) records the accepted redesign and open proof gates; [#174](https://github.com/chenxin-yan/mitome/issues/174) remains its single delivery roadmap. The [MVP plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/mvp-plan.md) records what the current packages implement.
 
 ## Repository layout
 
+- `packages/mitome`, `packages/providers`, `packages/cli`, `packages/create-mitome`: one directory each, with tests under `test/`. These four, plus the platform packages under `packages/cli/npm/`, form the planned release cohort; none is published yet. The terminal is part of `packages/cli`.
 - `packages/config`: the shared TypeScript configuration.
 - `apps/docs`: this site (fumadocs on TanStack Start); pages live in `apps/docs/content/docs`.
 - `docs/adr`: architecture decision records; `CONTEXT.md` at the root is the domain glossary every page and identifier follows. `docs/plans/effect-native-library.md` is the canonical redesign plan; `docs/research` is supporting evidence.
-- `scripts`: a private workspace for repository tooling and its tests.
+- `scripts`: a private workspace for repository tooling, release fixtures and their tests.
 - `.changeset`: pending release notes.
 
 ## Toolchain
@@ -22,27 +23,40 @@ Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxi
 bun install
 ```
 
-Turbo runs package tasks; the root scripts below wrap it.
+Turbo runs package tasks; the root scripts below wrap it. `bun run build` also compiles the `mitome` command to `packages/cli/dist/local/mitome`, and `bun run dev:cli` runs it from source with `MITOME_HOME` set to the git-ignored `.dev-home`.
 
 ## Gates
 
-Every change must pass, in this order:
+To match CI, run:
 
 ```sh
-bun run check        # lint, format check, type check
-bun run test         # all workspace tests
-bun run build:docs   # builds the site
+bun install --frozen-lockfile
+bunx turbo run lint //#fmt check:types //#check:types build
+bun run test
 ```
 
-`build:docs` fails on an internal link to a page that does not exist and on an `<auto-type-table>` whose type cannot be resolved, so it is the documentation gate as well. Anchors within a page are not checked. `bun run check:fix` applies lint and format fixes.
+`bun run build:docs` is the site-only build. It fails on an internal link to a page that does not exist and on an `<auto-type-table>` whose type cannot be resolved, so it is the documentation gate as well. Anchors within a page are not checked. `bun run check:fix` applies lint and format fixes.
+
+## Generated artifacts
+
+Two hint modules are generated and git-ignored; do not edit them by hand: `packages/providers/src/openai/models.ts` and `packages/create-mitome/src/model-hints.ts`. The snapshot and the Codex and Anthropic catalogs are committed inputs.
+
+| Artifact                                                                            | Command                 | Source                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI Model catalog and the Model choices of `npm create mitome` and `mitome init` | `bun run hints:refresh` | [models.dev](https://models.dev); the snapshot is committed at `scripts/models-dev.snapshot.json` and `hints:generate` uses it offline.                                                                     |
+| Codex and Anthropic Model catalogs                                                  | none                    | Hand-maintained in `packages/providers/src/openai-codex/models.ts` and `packages/providers/src/anthropic/models.ts`; `hints:generate` copies them into those choices. Update them when the services change. |
 
 ## Releasing
 
-Every user-visible change adds a changeset: run `bun changeset`, or write the markdown file under `.changeset` by hand. All packages share one version; the release workflow opens a version pull request from pending changesets and publishes every package when it merges.
+Every user-visible change adds a changeset: run `bun changeset`, or write the markdown file under `.changeset` by hand. The release cohort shares one version; the release workflow opens a version pull request from pending changesets and publishes the cohort together when it merges.
 
 ## Recording decisions
 
-An architecture decision that changes a public contract or a cross-cutting rule gets an ADR in `docs/adr`, numbered sequentially, in the style of its neighbours: the decision in prose, then consequences. Mixed decisions retain meaningful guarantees with `status: amended by ADR-NNNN` and a successor link. For this prerelease redesign, fully obsolete decisions and Promise/Extension API guides are removed; Git history preserves them. Repair inbound links and navigation on deletion. New runnable examples and reference pages must accompany verified implementation, never proposed signatures. Terms go in the glossary-only `CONTEXT.md`; use the term it defines and none of the ones it says to avoid.
+An architecture decision that changes a public contract or a cross-cutting rule gets an ADR in `docs/adr`, numbered sequentially, in the style of its neighbours: the decision in prose, then consequences. Mixed decisions retain meaningful guarantees with `status: amended by ADR-NNNN` and a successor link. For this prerelease redesign, fully obsolete decisions and Promise/Extension API guides are removed; Git history preserves them. Repair inbound links and navigation on deletion. Code samples in these pages must be copied from, or checked against, code that compiles in the repository, never proposed signatures. Terms go in the glossary-only `CONTEXT.md`; use the term it defines and none of the ones it says to avoid.
+
+## Manual terminal check
+
+Automated tests drive the terminal through OpenTUI's test renderer and the compiled `mitome` through a pseudo-terminal on Linux. Before a release, also run `mitome --config <directory>` in a real terminal on each supported platform and confirm: Enter inserts a newline and Alt-Enter sends; repeated submissions reuse one Session; a pending Approval is decided only after Tab, with `y` or `n`; Esc interrupts and the next submission succeeds; Ctrl-C exits and restores the terminal.
 
 ## Issue labels
 

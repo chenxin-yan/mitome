@@ -1,15 +1,43 @@
 ---
 title: Introduction
-description: Mitome's accepted direction and the status of its prerelease redesign.
+description: What Mitome is, the two ways to start, what is implemented today, and what is not yet.
 icon: Rocket
 ---
 
-Mitome is a TypeScript library and CLI/TUI for user-defined AI Agents.
+Mitome is a TypeScript library and command line for user-defined AI Agents, built on Effect.
 
-**The Effect-native redesign is accepted, not implemented.** The Promise-facing SDK, its Agent Definitions and Extensions, Channels and the old CLI and TUI have been removed without a compatibility surface. Their prerelease guides and reference pages have been removed rather than retained as a legacy manual; no new runnable API examples are published until the contracts are proven and implemented.
+**Prerelease, and nothing is published to npm yet.** The packages below have build and test targets in the [repository](https://github.com/chenxin-yan/mitome), and any of them may still change. Until a release, the install commands on these pages do not work: `npm install -g @mitome/cli` and `npm create mitome` find nothing, and neither does the install `mitome init` runs.
 
-The [canonical library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) separates accepted direction, open contracts and dependency-ordered proof/implementation gates. [ADR-0057](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0057-use-effect-native-functions-and-optional-host-composition.md) records the architecture; [roadmap #174](https://github.com/chenxin-yan/mitome/issues/174) tracks delivery.
+## Two ways to start
 
-The target is plain Effect agent functions with explicit scoped Sessions, whole-function Turns, native infrastructure and Tool types, and optional Host composition. TUI and mountable HTTP come first; messaging integrations come later. The full replacement still requires durable recovery, History trees, Compaction, Skills, controls and subagents. A process-local demo is an internal proof, not a smaller public release or a durability guarantee.
+**An Agent in the terminal.** Install the command, write the default Configuration, sign in and open it:
 
-See [Design decisions](/docs/design-decisions), [Security](/docs/security), [Versioning](/docs/versioning), and [Contributing](/docs/contributing). Shared vocabulary lives in the repository's [CONTEXT.md](https://github.com/chenxin-yan/mitome/blob/main/CONTEXT.md).
+```sh
+npm install -g @mitome/cli
+mitome init                         # asks for a Provider and Model, writes the default Configuration
+export OPENAI_API_KEY="your key"    # or the sign-in mitome init prints for your Provider
+mitome
+```
+
+See [`mitome init`](/docs/cli#init) and [Agents and Configurations](/docs/agents#a-configuration).
+
+**An application that embeds an Agent.** Scaffold a project that uses Mitome as a library (with Node.js 24.2 or later):
+
+```sh
+npm create mitome my-app
+```
+
+It writes `src/agent.ts` and `src/main.ts`, which runs the Agent with `Session.make(agent)`; its README says how to set the credential and run it. It writes no Configuration and does not use the `mitome` command. See [Embed an Agent in an application](/docs/agents#embed-an-agent-in-an-application).
+
+## What is implemented
+
+Implemented today, in one process and in memory:
+
+- `@mitome/core`: describe an Agent as data with `Agent.make` and `Extension.make`, name it with its Providers and Model in a Configuration with `Mitome.make`, and run it with `Session.make(agent)`. See [Agents and Configurations](/docs/agents).
+- `@mitome/providers`: OpenAI, OpenAI-compatible, OpenAI Codex (ChatGPT) and Anthropic (API key) Providers.
+- `@mitome/cli`: `mitome init` writes the default Configuration; the `mitome` command opens a Configuration in the terminal, where Approvals are answered with `y` or `n`, and `mitome run` runs it once without an Approver, so with the default program an ask is denied. See [CLI](/docs/cli).
+- `create-mitome`: `npm create mitome` writes an application that embeds an Agent.
+
+Not yet: streaming output, saved history, `mitome serve` and Channels, first-party Extensions such as coding Tools, Skills and MCP, and the Anthropic Console sign-in. The [MVP plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/mvp-plan.md) lists what comes next; the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) records the longer-term direction and its open contracts.
+
+See also [Design decisions](/docs/design-decisions), [Security](/docs/security), [Versioning](/docs/versioning) and [Contributing](/docs/contributing). Shared vocabulary lives in the repository's [CONTEXT.md](https://github.com/chenxin-yan/mitome/blob/main/CONTEXT.md).

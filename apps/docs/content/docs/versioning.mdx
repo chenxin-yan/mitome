@@ -1,13 +1,13 @@
 ---
 title: Versioning and stability
-description: Prerelease breaking changes and the Effect version rule.
+description: Prerelease breaking changes, the release status and the Effect version rule.
 icon: Tags
 ---
 
-Mitome is prerelease. There is no compatibility promise across the accepted Effect-native redesign. The Promise-facing SDK and its Effect facade have been removed. The new API, export layout and storage contracts are not yet implemented; obsolete guides are removed rather than offered as a legacy surface.
+Mitome is prerelease, and nothing is published to npm yet. Its packages (`@mitome/core`, `@mitome/providers`, `@mitome/cli` with its platform binaries, and `create-mitome`) release together at one version. The core package is published as `@mitome/core` because npm refuses the name `mitome`; it switches to `mitome` when that name is available ([ADR-0061](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0061-ship-one-package-and-gate-what-enters-its-core.md)).
 
-Until 1.0, public functions, options, event fields and stored representations may change without a deprecation period. Published stored formats still need explicit versioning and migration decisions, not silent reinterpretation. See the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) for proof and delivery gates.
+Until 1.0, public functions, options, event fields and stored representations may change without a deprecation period. Published stored formats still need explicit versioning and migration decisions, not silent reinterpretation. Mitome has no built-in durable Session history or recovery format; its built-in Credential store persists Provider logins.
 
 ## The Effect version
 
-While Effect 4 is a release candidate, Mitome pins its exact version as a regular dependency. Code using Effect across the library boundary must match that version to preserve type/runtime identity. Check the repository catalog and installed dependency tree; do not copy a version from an unverified design sketch. [ADR-0046](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0046-pin-effect-as-a-regular-dependency-during-rc.md) revisits this rule when Effect 4 is stable.
+Mitome depends on Effect 4.1.6 exactly, as a regular dependency, and is built on its `effect/ai` and `effect/cli` modules. Code that passes Effect values across the library boundary must use the same version, to preserve type and runtime identity; check the repository catalog rather than copying a version from elsewhere. A Configuration written by `mitome init` and an application written by `npm create mitome` pin `@mitome/core`, `@mitome/providers` and `effect` exactly to the versions of the release that wrote them. [ADR-0046](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0046-pin-effect-as-a-regular-dependency-during-rc.md) chose the exact pin while Effect 4 was a release candidate and prefers a compatible peer range once it is stable; that revisit has not been made.
