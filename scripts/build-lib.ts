@@ -1,8 +1,12 @@
 import { mkdtemp, rename, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const packageDirectory = process.cwd();
-const babelExecutable = Bun.resolveSync("@babel/cli/bin/babel.js", import.meta.dir);
+// Babel 8 exports only its manifest, so the executable is located beside it.
+const babelExecutable = join(
+  dirname(Bun.resolveSync("@babel/cli/package.json", import.meta.dir)),
+  "bin/babel.js",
+);
 const distDirectory = join(packageDirectory, "dist");
 const temporaryDirectory = await mkdtemp(join(packageDirectory, ".mitome-dist-"));
 
