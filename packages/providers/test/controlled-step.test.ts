@@ -22,6 +22,7 @@ import { FetchHttpClient } from "effect/http";
 import { WebSocketServer } from "ws";
 import { type ExecutionUsage, type ModelRequestAccounting, Provider, Turn } from "@mitome/core";
 import { localTools, loop, Session, step } from "@mitome/core/kernel";
+import { anthropic } from "../src/anthropic/index.js";
 import { writeCredential } from "../src/openai-codex/credential-store.js";
 import { platformLayer } from "../src/shared/platform.js";
 import { codex } from "../src/openai-codex/index.js";
@@ -180,8 +181,12 @@ const body = async (request: IncomingMessage): Promise<Record<string, Json>> => 
 
 interface Upstream {
   readonly url: string;
-  /** Model requests received, with the path and parsed body of each. */
-  readonly requests: Array<{ readonly path: string; readonly body: Record<string, Json> }>;
+  /** Model requests received, with the path, parsed body and headers of each. */
+  readonly requests: Array<{
+    readonly path: string;
+    readonly body: Record<string, Json>;
+    readonly headers: IncomingMessage["headers"];
+  }>;
   /** Other requests (authentication), which are not Model requests. */
   readonly other: Array<string>;
   readonly upgrades: () => number;
@@ -210,7 +215,7 @@ const upstream = async (
         others.push(path);
         return other(path, response);
       }
-      requests.push({ path, body: parsed });
+      requests.push({ path, body: parsed, headers: request.headers });
       respond(replies.shift() ?? "text", response);
     })();
   });
@@ -578,6 +583,85 @@ describe.each(bindings)("controlled Step through $name", (binding) => {
       });
       expect(looped.log).toEqual([]);
     }));
+});
+
+// Anthropic Messages (non-streaming, as controlled generation uses).
+const anthropicReply = (reply: Reply, response: ServerResponse) => {
+  const message = (stopReason: string, content: ReadonlyArray<Json>) => ({
+    id: "msg-test",
+    type: "message",
+    role: "assistant",
+    model: "claude-sonnet-4-6",
+    content,
+    stop_reason: stopReason,
+    stop_sequence: null,
+    usage: {
+      input_tokens: 1,
+      output_tokens: 1,
+      cache_creation: null,
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: null,
+      service_tier: "standard",
+    },
+  });
+  const toolUse = (index: number, name: string, value: string) => ({
+    type: "tool_use",
+    id: `toolu-${index}`,
+    name,
+    input: { key: value },
+  });
+  if (reply === "calls") {
+    return json(
+      response,
+      200,
+      message("tool_use", [toolUse(1, "first", "a"), toolUse(2, "second", "b")]),
+    );
+  }
+  return json(response, 200, message("end_turn", [{ type: "text", text: "done" }]));
+};
+
+describe("controlled Step through anthropic", () => {
+  it("runs Tool Calls, sends their results back and counts every request", async () => {
+    const server = await upstream("/v1/messages", ["calls", "text"], anthropicReply);
+    try {
+      const outcome = await run(
+        runTurn(
+          Provider.model(anthropic({ apiKeyEnv: key, baseUrl: server.url }), "claude-sonnet-4-6"),
+        ),
+      );
+      expect(Exit.isSuccess(outcome.exit)).toBe(true);
+      expect(outcome.log).toEqual(["first:start", "first:end", "second:start", "second:end"]);
+      expect(outcome.history.map((message) => message.role)).toEqual([
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+      ]);
+      expect(outcome.usage).toEqual({ generations: 2, dispatches: 2, physicalRequests: 2 });
+      expect(server.requests).toHaveLength(2);
+      expect(server.requests[1]?.body.messages).toContainEqual({
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "toolu-1",
+            content: "first:a",
+            is_error: false,
+            cache_control: null,
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "toolu-2",
+            content: "second:b",
+            is_error: false,
+            cache_control: null,
+          },
+        ],
+      });
+    } finally {
+      await server.stop();
+    }
+  });
 });
 
 describe.each(bindings.filter((binding) => binding.name.startsWith("openai (")))(
@@ -4017,7 +4101,7 @@ describe.each(bindings)("Model redirects through $name", (binding) => {
           other.push(`${request.method} ${path}`);
           return void response.writeHead(400).end();
         }
-        requests.push({ path, body: {} });
+        requests.push({ path, body: {}, headers: request.headers });
         headers.push(request.headers);
         response.writeHead(status, { location: `${targetUrl}${path}` }).end();
       });
