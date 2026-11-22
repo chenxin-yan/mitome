@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
 // Generates model-hint modules from the committed snapshot (ADR-0028).
 // --refresh first fetches models.dev and updates that snapshot; normal generation
-// is deterministic and offline. Codex hints stay hand-maintained in the provider.
-import { existsSync } from "node:fs";
+// is deterministic and offline. Codex and Anthropic hints stay hand-maintained in the provider.
 import { readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Result, Schema } from "effect";
+import { knownModelIds as anthropicIds } from "../packages/providers/src/anthropic/models.ts";
 import { knownModelIds as codexIds } from "../packages/providers/src/openai-codex/models.ts";
 import { catalogUrl, toolCapableOpenAiModels } from "./models-dev.ts";
 import type { OpenAiCatalogModel } from "./models-dev.ts";
@@ -16,15 +17,18 @@ const snapshotPath = join(root, "scripts", "models-dev.snapshot.json");
 const openAiHintsPath = join(root, "packages", "providers", "src", "openai", "models.ts");
 const createMitomeHintsPath = join(root, "packages", "create-mitome", "src", "model-hints.ts");
 
-const NonEmptyString = Schema.String.check(Schema.isNonEmpty());
 // contextWindow is absent, never guessed, when models.dev reports no usable limit.context.
 const SnapshotModel = Schema.Struct({
-  id: NonEmptyString,
+  id: Schema.NonEmptyString,
   contextWindow: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
 });
 const ModelSnapshotFromJson = Schema.fromJsonString(
   Schema.Struct({ openai: Schema.NonEmptyArray(SnapshotModel) }),
 );
+// The versions a scaffolded project pins: exactly what the workspace installed for its catalog
+// entries, so the packed scaffold carries them without the monorepo and every project it writes
+// installs the same packages, even where the catalog names a range.
+const PackageFromJson = Schema.fromJsonString(Schema.Struct({ version: Schema.NonEmptyString }));
 
 const fetchOpenAiModels = async (): Promise<Array<OpenAiCatalogModel>> => {
   const response = await fetch(catalogUrl, {
@@ -91,14 +95,20 @@ ${metadataItems}
 `,
 );
 
-// The scaffold package is optional; test its manifest, since ignored dist/ or node_modules/ can outlive it.
-if (existsSync(join(root, "packages", "create-mitome", "package.json"))) {
-  await writeFile(
-    createMitomeHintsPath,
-    `${header}
+const resolveFromScaffold = createRequire(
+  join(root, "packages", "create-mitome", "package.json"),
+).resolve;
+const installedVersion = async (name: string): Promise<string> =>
+  Schema.decodeUnknownSync(PackageFromJson)(
+    await readFile(resolveFromScaffold(`${name}/package.json`), "utf8"),
+  ).version;
+await writeFile(
+  createMitomeHintsPath,
+  `${header}
 export const knownModelIds: {
   readonly openai: ReadonlyArray<string>;
   readonly "openai-codex": ReadonlyArray<string>;
+  readonly anthropic: ReadonlyArray<string>;
 } = {
   openai: [
 ${items(openAiIds, "    ")}
@@ -106,9 +116,20 @@ ${items(openAiIds, "    ")}
   "openai-codex": [
 ${items(codexIds, "    ")}
   ],
+  anthropic: [
+${items(anthropicIds, "    ")}
+  ],
 };
-`,
-  );
-}
 
-console.log(`Generated model hints: ${openAiIds.length} OpenAI ids, ${codexIds.length} Codex ids.`);
+/** The exact versions the workspace installed for the catalog entries a generated project pins. */
+export const catalogVersions = {
+  effect: ${JSON.stringify(await installedVersion("effect"))},
+  typescript: ${JSON.stringify(await installedVersion("typescript"))},
+  "@types/node": ${JSON.stringify(await installedVersion("@types/node"))},
+} as const;
+`,
+);
+
+console.log(
+  `Generated model hints: ${openAiIds.length} OpenAI ids, ${codexIds.length} Codex ids, ${anthropicIds.length} Anthropic ids.`,
+);
