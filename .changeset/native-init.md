@@ -1,0 +1,9 @@
+---
+"@mitome/cli": minor
+---
+
+Add `mitome init`, which writes the default Configuration into the config directory (`$MITOME_HOME`, else `$XDG_CONFIG_HOME/mitome`): `agent.ts` with a `dice` Extension whose `roll` Tool needs Approval, `index.ts` with `Mitome.make`, `package.json`, `tsconfig.json`, `.gitignore` and a README. It asks on a terminal for the Provider (`openai`, `openai-codex` or `anthropic`) and one of its known Models or a custom id; `--provider` and `--model` answer instead, and without a terminal both are required. It refuses, changing nothing, when the config directory is not empty, and writes all of the files or none: if one cannot be created or the command is interrupted while writing, it removes what it wrote and never overwrites an existing file. A config directory it creates is private to the user (mode `0700`); an existing one keeps its mode.
+
+It then installs the dependencies in that directory with the `mitome` binary itself acting as Bun's installer, unless `--no-install` is given, and checks that `@mitome/core`, `@mitome/providers` and `effect` are present afterwards at the pinned versions where the Configuration resolves them (also in a parent `node_modules`, as a hoisting workspace installs them), so an installer that reports success without installing (a dry-run or skip-install setting) is a failure, and another installed version, as a workspace override can cause, is reported with the version expected and the one found. A failed or interrupted install keeps the files, prints the directory and the command that installs the dependencies with the executable that ran (`BUN_BE_BUN=1 <mitome> install`, or a PowerShell form on Windows), and exits nonzero. The generated README gives the install and API-key commands for both POSIX shells and PowerShell.
+
+A missing default Configuration says to create it with `mitome init`, or to select another with `--config`.

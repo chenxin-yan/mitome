@@ -1,7 +1,4 @@
-import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, isAbsolute, join } from "node:path";
-import { pathToFileURL } from "node:url";
 import {
   configDirectory,
   configDirectoryMessage,
@@ -19,6 +16,7 @@ import {
   type Scope,
 } from "effect";
 import { describe, runtimeError, userError } from "./errors.js";
+import { liveInstallCommand } from "./template.js";
 
 const Callback = Schema.declare(Predicate.isFunction);
 
@@ -58,14 +56,14 @@ const UnresolvedImport = Schema.Struct({
  * file, not an uninstalled package. Without the importing file nothing is claimed, since whether a
  * package is installed depends on where it is looked for.
  */
-const missingPackage = (cause: unknown) => {
+const missingPackage = (path: Path.Path, cause: unknown) => {
   if (!Schema.is(UnresolvedImport)(cause)) return undefined;
   const specifier = /Cannot find (?:package|module) '([^']+)'/.exec(cause.message)?.[1];
   const importer = /(?: imported from |\nRequire stack:\n- )(.+)/.exec(cause.message)?.[1];
   if (
     specifier === undefined ||
     importer === undefined ||
-    !isAbsolute(importer) ||
+    !path.isAbsolute(importer) ||
     /^(?:[./\\#]|[a-z][a-z\d+.-]*:)/i.test(specifier)
   )
     return undefined;
@@ -74,10 +72,20 @@ const missingPackage = (cause: unknown) => {
 };
 
 /** Whether `name` has a `package.json` where Node would look for it from the file `from`. */
-const installed = (name: string, from: string) =>
-  (createRequire(from).resolve.paths(name) ?? []).some((directory) =>
-    existsSync(join(directory, name, "package.json")),
-  );
+const installed = Effect.fnUntraced(function* (name: string, from: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  for (const directory of createRequire(from).resolve.paths(name) ?? []) {
+    // Any error counts as absent, as for a module lookup.
+    if (
+      yield* fs
+        .exists(path.join(directory, name, "package.json"))
+        .pipe(Effect.orElseSucceed(() => false))
+    )
+      return true;
+  }
+  return false;
+});
 
 /** An acquired Configuration as the CLI sees it: its own types are erased by dynamic import. */
 export type LoadedInstance = Mitome.Instance<unknown, unknown, unknown, unknown, unknown>;
@@ -159,7 +167,7 @@ const configurationPath = Effect.fnUntraced(function* (config: Option.Option<str
   const stats = yield* statPath(path);
   if (stats === undefined) {
     return yield* userError(
-      `No Configuration at ${path}. Create one with npm create mitome, or select another with --config <path>.`,
+      `No Configuration at ${path}. Create the default one with mitome init, or select another with --config <path>.`,
     );
   }
   if (stats.type !== "File") {
@@ -177,19 +185,35 @@ const configurationPath = Effect.fnUntraced(function* (config: Option.Option<str
  */
 export const loadConfiguration = Effect.fnUntraced(function* (config: Option.Option<string>) {
   const { path, realPath } = yield* configurationPath(config);
-  const namespace = yield* Effect.tryPromise({
-    try: (): Promise<{ readonly default?: unknown }> => import(pathToFileURL(path).href),
-    catch: (cause) => {
-      const missing = missingPackage(cause);
+  const paths = yield* Path.Path;
+  const failed = (cause: unknown) => userError(`Could not load ${path}: ${describe(cause)}`, cause);
+  const namespace = yield* paths.toFileUrl(path).pipe(
+    Effect.mapError((error) => failed(runtimeError(error))),
+    Effect.flatMap((url) =>
+      Effect.tryPromise({
+        try: (): Promise<{ readonly default?: unknown }> => import(url.href),
+        catch: failed,
+      }),
+    ),
+    Effect.catch((error) => {
+      const missing = missingPackage(paths, error.cause);
       // An installed package can still fail to resolve, for example an unexported subpath.
-      return missing === undefined || installed(missing.name, missing.importer)
-        ? userError(`Could not load ${path}: ${describe(cause)}`, cause)
-        : userError(
-            `Could not load ${path}: package "${missing.name}" is not installed. Run npm install in ${dirname(realPath)}.`,
-            cause,
+      return missing === undefined
+        ? Effect.fail(error)
+        : installed(missing.name, missing.importer).pipe(
+            Effect.flatMap((found) =>
+              Effect.fail(
+                found
+                  ? error
+                  : userError(
+                      `Could not load ${path}: package "${missing.name}" is not installed. Install the Configuration's dependencies by running this in ${paths.dirname(realPath)}: ${liveInstallCommand()}`,
+                      error.cause,
+                    ),
+              ),
+            ),
           );
-    },
-  });
+    }),
+  );
   if (namespace.default === undefined) {
     return yield* userError(
       `${path} must default-export Mitome.make(...); select another with --config <path>`,

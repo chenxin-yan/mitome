@@ -2,7 +2,10 @@
 
 The `mitome` command. The compiled binary embeds Bun and loads one Configuration: a module whose default export is `Mitome.make(...)` from `@mitome/core`. Without `--config` it loads `index.ts` in the config directory (`$MITOME_HOME`, else `$XDG_CONFIG_HOME/mitome`, by default `~/.config/mitome`); `--config` selects a directory (its `index.ts`) or a file instead. It never searches the current directory.
 
+`mitome init` writes the default Configuration into the config directory: `agent.ts` (an Agent with a `dice` Extension whose `roll` Tool needs Approval), `index.ts`, `package.json`, `tsconfig.json`, `.gitignore` and a README. It asks for the Provider (`openai`, `openai-codex` or `anthropic`) and one of its Models on a terminal, or takes `--provider` and `--model`, and refuses a config directory that is not empty. It then installs the dependencies there with itself as Bun's installer (`BUN_BE_BUN=1 mitome install`), unless `--no-install` is given; if that fails, the files stay and it prints the command to run.
+
 ```text
+mitome init [--provider <id>] [--model <id>] [--no-install]
 mitome [--config <path>] [--provider <id>] [--model <provider/model>] [--grace <duration>]
 mitome run [--config <path>] [--provider <id>] [--model <provider/model>] [--grace <duration>] [input]
 mitome providers [--config <path>]

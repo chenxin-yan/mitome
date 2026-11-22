@@ -19,6 +19,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import cliPackage from "../package.json" with { type: "json" };
+import { installCommand, type Shell, shellQuote } from "../src/template.ts";
 
 const binary = fileURLToPath(new URL("../dist/local/mitome", import.meta.url));
 const launcher = fileURLToPath(new URL("../scripts/mitome.mjs", import.meta.url));
@@ -162,15 +163,15 @@ describe("compiled mitome", () => {
     await writeFile(join(configuration, "subpath.cjs"), 'require("sample/missing");\n');
     await writeFile(join(outer, "package.json"), '{ "name": "outer", "main": "index.cjs" }\n');
     await writeFile(join(outer, "index.cjs"), 'require("inner/missing");\n');
+    // The binary names itself as the installer, as `mitome init` does.
+    const shell: Shell = process.platform === "win32" ? "powershell" : "posix";
+    const install = `Install the Configuration's dependencies by running this in ${real}: ${installCommand(shellQuote(binary, shell), shell)}`;
     for (const [source, message] of [
       [
         'import "mitome-missing/sub/path";\n',
-        `package "mitome-missing" is not installed. Run npm install in ${real}.`,
+        `package "mitome-missing" is not installed. ${install}`,
       ],
-      [
-        'import "./helper.cjs";\n',
-        `package "mitome-missing-cjs" is not installed. Run npm install in ${real}.`,
-      ],
+      ['import "./helper.cjs";\n', `package "mitome-missing-cjs" is not installed. ${install}`],
       ['import "./missing.ts";\n', "./missing.ts"],
       ['import "sample/missing";\n', "Cannot find package 'sample'"],
       ['import "./subpath.cjs";\n', "Cannot find module 'sample/missing'"],
@@ -369,5 +370,85 @@ describe("compiled mitome", () => {
     expect(elapsed).toBeGreaterThanOrEqual(250);
     expect(elapsed).toBeLessThan(5_000);
     expect(await events()).not.toContain("infra:release");
+  });
+});
+
+describe("compiled mitome init", () => {
+  test("writes a default Configuration that providers and run load without --config", async () => {
+    // MITOME_HOME starts missing, beside a node_modules where this package's devDependencies stand
+    // in for the install, so the written index.ts resolves @mitome/core and @mitome/providers.
+    const root = join(directory, "init-accepted");
+    const home = join(root, "home");
+    await mkdir(root);
+    await symlink(
+      fileURLToPath(new URL("../node_modules", import.meta.url)),
+      join(root, "node_modules"),
+      "dir",
+    );
+    const env = { MITOME_HOME: home };
+    const init = await start(
+      ["init", "--provider", "openai", "--model", "gpt-5.6", "--no-install"],
+      "",
+      env,
+    ).result;
+    expect(init).toMatchObject({ code: 0, stderr: "" });
+    expect(init.stdout).toContain(`Wrote the default Configuration to ${home}.`);
+
+    const providers = await start(["providers"], "", env).result;
+    expect(providers).toMatchObject({ code: 0, stderr: "" });
+    expect(providers.stdout).toMatch(/^openai\n/);
+    expect(providers.stdout).toContain("default: openai/gpt-5.6\n");
+
+    // No credential: acquisition stops at the Provider before any request.
+    const run = await start(["run", "hi"], "", env).result;
+    expect(run).toMatchObject({ code: 1, stdout: "" });
+    expect(run.stderr).toContain("Could not start the Configuration: ");
+    expect(run.stderr).toContain("OPENAI_API_KEY");
+    await rm(root, { recursive: true });
+  });
+
+  test("acts as Bun's installer when BUN_BE_BUN=1 is set", async () => {
+    const scratch = join(directory, "install-scratch");
+    await mkdir(scratch);
+    await writeFile(join(scratch, "package.json"), '{ "name": "scratch", "private": true }\n');
+    const child = spawn(binary, ["install"], {
+      cwd: scratch,
+      env: { HOME: directory, PATH: "", BUN_BE_BUN: "1" },
+    });
+    const [stdout, code] = await Promise.all([
+      text(child.stdout),
+      new Promise<number | null>((resolve) => child.on("close", resolve)),
+    ]);
+    expect(code).toBe(0);
+    expect(stdout).toContain("bun install v");
+    await rm(scratch, { recursive: true });
+  });
+
+  test("keeps the written files and exits nonzero when its own install fails", async () => {
+    // A HOME whose global bunfig points the installer at a loopback port nothing listens on, with
+    // an empty cache of its own: the install fails without the network. `offline = true` is not
+    // enough, as some Bun versions still download with it.
+    const root = join(directory, "init-offline");
+    const home = join(root, "mitome");
+    await mkdir(join(root, "cache"), { recursive: true });
+    await writeFile(
+      join(root, ".bunfig.toml"),
+      `[install]\nregistry = "http://127.0.0.1:1/"\n\n[install.cache]\ndir = ${JSON.stringify(join(root, "cache"))}\n`,
+    );
+    const init = await start(
+      ["init", "--provider", "anthropic", "--model", "claude-sonnet-5"],
+      "",
+      { HOME: root, MITOME_HOME: home },
+    ).result;
+    expect(init.code).toBe(1);
+    expect(init.stderr).toContain(
+      `Wrote the default Configuration to ${home}, but its dependencies are not installed: `,
+    );
+    const shell: Shell = process.platform === "win32" ? "powershell" : "posix";
+    expect(init.stderr).toContain(
+      `Install them by running this in ${home}: ${installCommand(shellQuote(binary, shell), shell)}`,
+    );
+    expect(await readFile(join(home, "index.ts"), "utf8")).toContain("providers: [anthropic()],");
+    await rm(root, { recursive: true });
   });
 });
