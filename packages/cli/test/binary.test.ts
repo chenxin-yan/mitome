@@ -271,6 +271,19 @@ describe("compiled mitome", () => {
     expect(await events()).toEqual([]);
   });
 
+  test.each(["plain", "zero"])(
+    "exits 1 when an auth capability fails with a %s rejection",
+    async (rejection) => {
+      const { code, stderr } = await start(
+        ["auth", "login", "--config", fixture, "--provider", "oauth"],
+        "",
+        { MITOME_FIXTURE_AUTH_REJECT: rejection },
+      ).result;
+      expect(stderr).toContain("oauth login failed: fixture rejection");
+      expect(code).toBe(1);
+    },
+  );
+
   test("drains cleanup after SIGINT before releasing infrastructure", async () => {
     await writeFile(log, "");
     const { child, result } = start(["run", "--config", fixture, "wait"]);
@@ -370,6 +383,64 @@ describe("compiled mitome", () => {
     expect(elapsed).toBeGreaterThanOrEqual(250);
     expect(elapsed).toBeLessThan(5_000);
     expect(await events()).not.toContain("infra:release");
+  });
+});
+
+// The fake `ant` is a POSIX shell script; Windows cannot run it, so these tests are skipped there.
+describe.skipIf(process.platform === "win32")("compiled mitome auth with Anthropic's ant", () => {
+  const anthropicFixture = fileURLToPath(new URL("fixtures/anthropic", import.meta.url));
+  const login = ["auth", "login", "--config", anthropicFixture, "--provider", "anthropic"];
+
+  /** A directory holding only a fake `ant` that runs `script`, so PATH reaches nothing else. */
+  const fakeAnt = async (script: string) => {
+    const bin = await mkdtemp(join(directory, "bin-"));
+    await writeFile(join(bin, "ant"), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+    // No real Anthropic profile is in reach either: HOME is already the test directory.
+    return { PATH: bin, ANTHROPIC_CONFIG_DIR: directory };
+  };
+
+  test("exits with ant's exit status, keeping the diagnostic", async () => {
+    const { code, stderr } = await start(login, "", await fakeAnt("exit 3")).result;
+    expect(code).toBe(3);
+    expect(stderr).toContain(
+      "anthropic login failed: ant auth login --profile=mitome exited with status 3.",
+    );
+  });
+
+  test("stops ant when it is stopped", async () => {
+    const pidFile = join(directory, "ant.pid");
+    // The fake becomes this test's own runtime, waiting; its PATH holds only the fake.
+    const { child, result } = start(login, "", {
+      ...(await fakeAnt(
+        'echo $$ > "$ANT_PID_FILE"\nexec "$ANT_RUNTIME" -e "setTimeout(() => {}, 30000)"',
+      )),
+      ANT_PID_FILE: pidFile,
+      ANT_RUNTIME: process.execPath,
+    });
+    let pid: number | undefined;
+    for (let attempt = 0; attempt < 500 && pid === undefined; attempt++) {
+      const text = await readFile(pidFile, "utf8").catch(() => "");
+      if (text.endsWith("\n")) pid = Number(text);
+      else await delay(10);
+    }
+    expect(pid).toBeDefined();
+    const alive = () => {
+      try {
+        process.kill(pid!, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    try {
+      child.kill("SIGTERM");
+      await new Promise((resolve) => child.once("exit", resolve));
+      for (let attempt = 0; attempt < 200 && alive(); attempt++) await delay(10);
+      expect(alive()).toBe(false);
+    } finally {
+      if (alive()) process.kill(pid!, "SIGKILL");
+      await result;
+    }
   });
 });
 

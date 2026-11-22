@@ -14,6 +14,7 @@ import {
   Path,
   Predicate,
   Queue,
+  Runtime,
   Schema,
   Scope,
   Stdio,
@@ -339,12 +340,15 @@ const findProvider = (app: LoadedConfiguration, id: string) => {
     : Effect.succeed(provider);
 };
 
-/** Offline credential facts: environment presence, or that an Auth capability exists. */
+const presence = (env: string) => `${env} ${process.env[env] ? "present" : "missing"}`;
+
+/** Offline credential facts: environment presence, and that an Auth capability exists. */
 const credentialStatus = (provider: Mitome.ProviderDiscovery): string => {
   const credential = provider.credential;
   if (credential === undefined) return `${provider.id}: needs no credential`;
-  if (Predicate.isString(credential)) {
-    return `${provider.id}: ${credential} ${process.env[credential] ? "present" : "missing"}`;
+  if (Predicate.isString(credential)) return `${provider.id}: ${presence(credential)}`;
+  if ("env" in credential) {
+    return `${provider.id}: ${presence(credential.env)}; sign-in available; sign-in status unknown`;
   }
   return `${provider.id}: auth capability available; credential status unknown`;
 };
@@ -430,10 +434,11 @@ const lineInput = (stdio: Stdio.Stdio, scope: Scope.Scope) =>
 
 /**
  * Logs in or out with the selected Provider. Environment credentials are only explained: the CLI
- * neither stores them nor changes the calling shell. An Auth capability is imported from the
+ * neither stores them nor changes the calling shell. A Provider that also signs in runs its sign-in
+ * instead. An Auth capability is imported from the
  * module the Provider names and runs against the state directory, where every Configuration's
- * Providers read their stored Credentials; it may need network access and a browser, and is
- * interrupted when the command is.
+ * Providers read their stored Credentials, for the profile the Provider names; it may need network
+ * access and a browser, and is interrupted when the command is.
  */
 export const authenticate = Effect.fnUntraced(function* (
   operation: "login" | "logout",
@@ -478,8 +483,23 @@ export const authenticate = Effect.fnUntraced(function* (
     stateDirectory: directory,
     input,
     output: (text) => void process.stdout.write(text),
+    profile: credential.capability.profile,
   };
-  const authenticating: unknown = capability.authenticate(options);
+  const failed = (cause: unknown) => {
+    // A capability that ran a program fails with its exit status; mitome exits with it, but
+    // never with success or a status the system would truncate.
+    const status = Runtime.getErrorExitCode(cause);
+    return Object.assign(userError(`${provider.id} ${operation} failed: ${describe(cause)}`), {
+      [Runtime.errorExitCode]:
+        Number.isInteger(status) && status >= 1 && status <= 255 ? status : 1,
+    });
+  };
+  // The capability is foreign code: a synchronous throw fails the command as its Effect failing would.
+  const authenticating = yield* Effect.try({
+    // oxlint-disable-next-line anti-slop/no-unknown-returns -- foreign code's result, checked to be an Effect below
+    try: (): unknown => capability.authenticate(options),
+    catch: failed,
+  });
   if (!Effect.isEffect(authenticating)) {
     return yield* userError(
       `The ${provider.id} auth capability's authenticate did not return an Effect`,
@@ -488,6 +508,6 @@ export const authenticate = Effect.fnUntraced(function* (
   // SAFETY: a Provider's capability module implements @mitome/core's AuthCapability contract, checked
   // above only as far as returning an Effect.
   yield* (authenticating as ReturnType<AuthCapability["authenticate"]>).pipe(
-    Effect.mapError((cause) => userError(`${provider.id} ${operation} failed: ${describe(cause)}`)),
+    Effect.mapError(failed),
   );
 }, Effect.scoped);

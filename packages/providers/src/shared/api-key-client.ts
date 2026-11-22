@@ -3,13 +3,23 @@ import { FetchHttpClient, HttpClient } from "effect/http";
 import { reportModelRequest } from "@mitome/core";
 import { rejectingModelRedirects } from "./model-http-client.js";
 
-/** The Provider's API-key environment variable is unset or empty when its Model is provisioned. */
+/**
+ * The Provider's API-key environment variable is unset or empty when its Model is provisioned, and
+ * it has no sign-in to read instead.
+ */
 export class MissingCredentialError extends Schema.TaggedError<
   MissingCredentialError,
   { readonly brand: unique symbol }
->()("MissingCredentialError", { apiKeyEnv: Schema.String }) {
+>()("MissingCredentialError", {
+  apiKeyEnv: Schema.String,
+  /** How to sign in instead, for a Provider that also reads a sign-in. */
+  signIn: Schema.optional(Schema.String),
+}) {
   override get message(): string {
-    return `Environment variable ${this.apiKeyEnv} is not set or empty`;
+    const missing = `Environment variable ${this.apiKeyEnv} is not set or empty`;
+    return this.signIn === undefined
+      ? missing
+      : `${missing}. Set it to an API key, or ${this.signIn}.`;
   }
 }
 
@@ -19,7 +29,7 @@ export class MissingCredentialError extends Schema.TaggedError<
  * again, unreported). Only executions count: a WebSocket handshake that merely preprocesses a
  * request is not a Model request.
  */
-const reportingHttpClient = Layer.effect(
+export const reportingHttpClient = Layer.effect(
   HttpClient.HttpClient,
   Effect.flatMap(HttpClient.HttpClient, (client) =>
     rejectingModelRedirects(

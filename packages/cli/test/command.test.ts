@@ -15,6 +15,8 @@ import { liveInstallCommand } from "../src/template.ts";
 
 const fixture = fileURLToPath(new URL("fixtures/config", import.meta.url));
 const relativeFixture = fileURLToPath(new URL("fixtures/relative", import.meta.url));
+const anthropicFixture = fileURLToPath(new URL("fixtures/anthropic", import.meta.url));
+const anthropicWorkFixture = fileURLToPath(new URL("fixtures/anthropic-work", import.meta.url));
 const historyFixture = fileURLToPath(new URL("fixtures/history", import.meta.url));
 const directory = await mkdtemp(join(tmpdir(), "mitome-cli-"));
 const log = join(directory, "events.log");
@@ -330,6 +332,14 @@ describe("mitome run", () => {
           "is not a mitome/1 Configuration made by Mitome.make; select another with --config <path>",
         ],
         [
+          // A Struct would drop an undeclared `env`; the invalid name must not pass as a sign-in only.
+          yield* write(
+            "bad-env.ts",
+            'export default { protocol: "mitome/1", discovery: [{ id: "x", modelIds: [], models: {}, credential: { env: "BAD-NAME", capability: { module: "./auth.js" } } }], text: { parse: () => 1, render: () => 1 }, acquire: () => 123 };\n',
+          ),
+          "is not a mitome/1 Configuration made by Mitome.make; select another with --config <path>",
+        ],
+        [
           yield* write(
             "not-effect.ts",
             'export default { protocol: "mitome/1", discovery: [], text: { parse: () => 1, render: () => 1 }, acquire: () => 123 };\n',
@@ -550,6 +560,25 @@ describe("mitome providers and auth", () => {
     }),
   );
 
+  it.effect("reports an auth capability that throws as its Provider's failure", () =>
+    Effect.gen(function* () {
+      const config = join(directory, "throwing.ts");
+      yield* Effect.promise(async () => {
+        await writeFile(
+          join(directory, "throwing-auth.ts"),
+          'export const authenticate = () => { throw new Error("setup failed"); };\n',
+        );
+        await writeFile(
+          config,
+          'export default { protocol: "mitome/1", discovery: [{ id: "throwing", modelIds: [], models: {}, credential: { capability: { module: "./throwing-auth.ts" } } }], text: { parse: () => 1, render: () => 1 }, acquire: () => 1 };\n',
+        );
+      });
+      const result = yield* cli(["auth", "login", "--config", config]);
+      expect(Exit.isFailure(result.exit)).toBe(true);
+      expect(result.errors).toContain("throwing login failed: setup failed");
+    }),
+  );
+
   it.effect("gives an auth capability one line of standard input per read, then undefined", () =>
     Effect.gen(function* () {
       const config = join(directory, "reading.ts");
@@ -584,6 +613,93 @@ describe("mitome providers and auth", () => {
       yield* Fiber.interrupt(login);
       expect(yield* events).toEqual([`auth:login:${home}`, "auth:interrupted"]);
     }),
+  );
+
+  // The fake `ant` is a POSIX shell script; Windows cannot run it, so this test is skipped there.
+  it.effect.skipIf(process.platform === "win32")(
+    "reports an API key beside a sign-in and signs in and out through Anthropic's ant for the Provider's profile",
+    () =>
+      Effect.gen(function* () {
+        const bin = join(directory, "bin");
+        const empty = join(directory, "empty-bin");
+        const anthropicHome = join(directory, "anthropic-home");
+        yield* Effect.promise(async () => {
+          await mkdir(bin, { recursive: true });
+          await mkdir(empty, { recursive: true });
+          await mkdir(anthropicHome, { recursive: true });
+          // Records its arguments and exits with FAKE_ANT_EXIT, using only shell builtins.
+          await writeFile(
+            join(bin, "ant"),
+            '#!/bin/sh\necho "ant:$*" >> "$MITOME_FIXTURE_LOG"\nexit "${FAKE_ANT_EXIT:-0}"\n',
+            { mode: 0o755 },
+          );
+        });
+        const variables = [
+          "PATH",
+          "HOME",
+          "ANTHROPIC_CONFIG_DIR",
+          "ANTHROPIC_API_KEY",
+          "FAKE_ANT_EXIT",
+        ] as const;
+        const saved = variables.map((name) => process.env[name]);
+        const restore = Effect.sync(() =>
+          variables.forEach((name, index) => {
+            const value = saved[index];
+            if (value === undefined) delete process.env[name];
+            else process.env[name] = value;
+          }),
+        );
+        const auth = (operation: string, config = anthropicFixture) =>
+          cli(["auth", operation, "--config", config, "--provider", "anthropic"]);
+        const [missing, present, login, logout, work, failed, absent] = yield* Effect.gen(
+          function* () {
+            // Nothing here may reach the person's own `ant` or Anthropic profiles.
+            process.env.PATH = bin;
+            process.env.HOME = anthropicHome;
+            process.env.ANTHROPIC_CONFIG_DIR = anthropicHome;
+            delete process.env.ANTHROPIC_API_KEY;
+            const missing = yield* cli(["auth", "status", "--config", anthropicFixture]);
+            process.env.ANTHROPIC_API_KEY = "secret-value";
+            const present = yield* cli(["auth", "status", "--config", anthropicFixture]);
+            const login = yield* auth("login");
+            const logout = yield* auth("logout");
+            const work = [
+              yield* auth("login", anthropicWorkFixture),
+              yield* auth("logout", anthropicWorkFixture),
+            ];
+            process.env.FAKE_ANT_EXIT = "3";
+            const failed = yield* auth("login");
+            process.env.PATH = empty;
+            const absent = yield* auth("login");
+            return [missing, present, login, logout, work, failed, absent] as const;
+          },
+        ).pipe(Effect.ensuring(restore));
+        expect(missing.logs).toBe(
+          "anthropic: ANTHROPIC_API_KEY missing; sign-in available; sign-in status unknown",
+        );
+        expect(present.logs).toBe(
+          "anthropic: ANTHROPIC_API_KEY present; sign-in available; sign-in status unknown",
+        );
+        expect(Exit.isSuccess(login.exit)).toBe(true);
+        expect(Exit.isSuccess(logout.exit)).toBe(true);
+        for (const result of work) expect(Exit.isSuccess(result.exit)).toBe(true);
+        expect(Exit.isFailure(failed.exit)).toBe(true);
+        expect(failed.errors).toContain(
+          "anthropic login failed: ant auth login --profile=mitome exited with status 3.",
+        );
+        expect(Exit.isFailure(absent.exit)).toBe(true);
+        expect(absent.errors).toContain(
+          "anthropic login failed: The Claude Console sign-in runs `ant`, Anthropic's CLI, which is not installed or not on PATH. Install it from https://github.com/anthropics/anthropic-cli (for example `brew install anthropics/tap/ant`), then run `mitome auth login --provider anthropic` again.",
+        );
+        // A Configuration reading another profile signs in and out of that profile, never `mitome`.
+        expect(yield* events).toEqual([
+          "ant:auth login --profile=mitome",
+          "ant:auth logout --profile=mitome",
+          "ant:auth login --profile=work",
+          "ant:auth logout --profile=work",
+          "ant:auth login --profile=mitome",
+        ]);
+      }),
   );
 
   it.effect(

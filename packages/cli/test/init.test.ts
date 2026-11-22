@@ -223,6 +223,10 @@ describe("mitome init", () => {
               `  ${liveInstallCommand}`,
               "Then:",
               `  ${signIn(choice, shell)}`,
+              // Anthropic takes an API key or a sign-in.
+              ...(choice.id === "anthropic"
+                ? ["  or sign in instead: mitome auth login --provider anthropic"]
+                : []),
               "  mitome",
             ].join("\n"),
           );
@@ -682,11 +686,22 @@ describe("Configuration plans", () => {
     )!;
     expect(codexReadme).toContain(codexLogin);
     expect(codexReadme).not.toContain("OPENAI_API_KEY");
-    expect(
-      configurationPlan({ provider: providerOf("anthropic"), model: "claude-sonnet-5" }).get(
-        "README.md",
-      ),
-    ).toContain('export ANTHROPIC_API_KEY="your key"');
+    const anthropicReadme = configurationPlan({
+      provider: providerOf("anthropic"),
+      model: "claude-sonnet-5",
+    }).get("README.md")!;
+    expect(anthropicReadme).toContain('export ANTHROPIC_API_KEY="your key"');
+    expect(anthropicReadme).toContain(
+      "Or sign in instead; an API key in the environment takes precedence:\n\n```sh\nmitome auth login --provider anthropic\n```",
+    );
+    expect(readme).not.toContain("Or sign in instead");
+    // `ant` keeps Anthropic's sign-in; Mitome's state directory and auth.json play no part in it.
+    expect(anthropicReadme).not.toContain("auth.json");
+    expect(anthropicReadme).not.toContain("Mitome's state directory");
+    expect(anthropicReadme).toContain(
+      "Mitome uses `ant`'s profile, not a separate Mitome credential store, and the sign-in is not kept here: Anthropic's CLI, `ant`, owns it and keeps it in its `mitome` profile, in Anthropic's config directory (`ANTHROPIC_CONFIG_DIR` if set; otherwise `$XDG_CONFIG_HOME/anthropic` or `~/.config/anthropic`, and on Windows `%APPDATA%\\Anthropic` or `%USERPROFILE%\\AppData\\Roaming\\Anthropic`).",
+    );
+    expect(readme).toContain("Logins are stored in Mitome's state directory");
   });
 
   it("writes commands for the user's shell", () => {
