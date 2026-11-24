@@ -17,13 +17,21 @@ Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxi
 
 ## Toolchain
 
-[mise](https://mise.jdx.dev) installs the pinned Node version from `.node-version`, the pnpm version from `packageManager` in `package.json`, and the Bun version from `mise.toml`. pnpm installs the workspace; Bun runs the CLI, compiles its binary and runs the scripts that use its APIs. Then:
+[mise](https://mise.jdx.dev) installs the pinned Node version from `.node-version`, the pnpm version from `packageManager` in `package.json`, and the Bun version from `mise.toml`. pnpm installs the workspace; [Vite+](https://viteplus.dev) (`vp`, run as `pnpm vp`) formats, lints, type-checks, runs the tests and runs the workspace's tasks; Bun runs the CLI, compiles its binary and runs the scripts that use its APIs. Then:
 
 ```sh
 pnpm install
 ```
 
-Turbo runs package tasks; the root scripts below wrap it. `pnpm run build` also compiles the `mitome` command to `packages/cli/dist/local/mitome`, and `pnpm run dev:cli` runs it from source with `MITOME_HOME` set to the git-ignored `.dev-home` and `ANTHROPIC_CONFIG_DIR` to a directory inside it.
+The install also sets up a commit hook that checks and fixes the staged files, and patches the `typescript` package's `tsc` with `effect-tsgo patch` so that an editor using the workspace TypeScript shows Effect's diagnostics. Tasks live in each package's `vite.config.ts`, with the shared ones in `vite.shared.ts`; `pnpm vp run <task>` runs one after the tasks it depends on, from cache when nothing it reads changed. `pnpm run build` builds every package and compiles the `mitome` command to `packages/cli/dist/local/mitome`, and `pnpm run dev:cli` runs it from source with `MITOME_HOME` set to the git-ignored `.dev-home` and `ANTHROPIC_CONFIG_DIR` to a directory inside it.
+
+Narrower commands:
+
+```sh
+pnpm vp run --filter @mitome/core test   # one package's tests, after the builds they need
+pnpm vp test run test/agent/agent.test.ts   # one test file, from its package directory
+bun --bun vp test run test/command.test.ts  # the same in packages/cli, whose tests need the Bun runtime
+```
 
 ## Gates
 
@@ -31,15 +39,16 @@ To match CI, run:
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm exec turbo run lint //#fmt check:types //#check:types build
+pnpm vp run check
+pnpm run build
 pnpm test
 ```
 
-`pnpm run build:docs` is the site-only build. It fails on an internal link to a page that does not exist and on an `<auto-type-table>` whose type cannot be resolved, so it is the documentation gate as well. Anchors within a page are not checked. `pnpm run check:fix` applies lint and format fixes.
+`pnpm vp run check` formats, lints and type-checks the whole repository with Effect's diagnostics, which it gets by running `vp check` through `effect-tsgo`; a bare `vp check` misses them. `pnpm run check:fix` applies format and lint fixes. `pnpm run build:docs` is the site-only build. It fails on an internal link to a page that does not exist and on an `<auto-type-table>` whose type cannot be resolved, so it is the documentation gate as well. Anchors within a page are not checked.
 
 ## Generated artifacts
 
-Two hint modules are generated and git-ignored; do not edit them by hand: `packages/providers/src/openai/models.ts` and `packages/create-mitome/src/model-hints.ts`. The snapshot and the Codex and Anthropic catalogs are committed inputs.
+Two hint modules are generated and git-ignored; do not edit them by hand: `packages/providers/src/openai/models.ts` and `packages/create-mitome/src/model-hints.ts`. The `hints:generate` task writes them, and the check and every build run it first. The snapshot and the Codex and Anthropic catalogs are committed inputs.
 
 | Artifact                                                                            | Command                  | Source                                                                                                                                                                                                      |
 | ----------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

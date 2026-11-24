@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { connect } from "node:net";
-import { afterAll, describe, expect, test, vi } from "vitest";
+import { afterAll, describe, expect, test, vi } from "vite-plus/test";
 import { Effect, Fiber, Schema } from "effect";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";

@@ -4,15 +4,11 @@
   "type": "module",
   "sideEffects": false,
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "start": "vite preview",
-    "preview": "vite preview",
+    "dev": "vp dev",
+    "start": "vp preview",
+    "preview": "vp preview",
     "deploy": "pnpm --workspace-root run build:docs && wrangler deploy",
-    "cf-typegen": "wrangler types",
-    "check:types": "tsc --noEmit",
-    "lint": "oxlint .",
-    "lint:fix": "oxlint --fix ."
+    "cf-typegen": "wrangler types"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.46",
@@ -24,7 +20,7 @@
     "lucide-react": "^1.77.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "vite": "^8.3.8"
+    "vite": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.70.1",
@@ -37,6 +33,7 @@
     "@vitejs/plugin-react": "^6.3.0",
     "tailwindcss": "^4.3.5",
     "typescript": "catalog:",
+    "vite-plus": "catalog:",
     "wrangler": "^4.166.0",
     "zod": "^4.6.7"
   }

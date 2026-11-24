@@ -1,6 +1,6 @@
 // The real OpenTUI test renderer driving `runTerminal` over a real acquired Configuration: a native
 // Session, scripted Model, registered Tools and the terminal's own Approval channel as its Approver.
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "vite-plus/test";
 import {
   Agent,
   Mitome,

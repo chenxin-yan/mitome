@@ -1,3 +1,13 @@
+## Commands
+
+Run the narrowest one that covers the change; `pnpm vp` is the workspace's Vite+.
+
+- Check (format, lint, type-check with Effect's diagnostics): `pnpm vp run check`; fixes: `pnpm run check:fix`. A bare `vp check` misses the Effect diagnostics.
+- Every package's tests: `pnpm test`; one package's: `pnpm vp run --filter @mitome/core test`.
+- One test file, from its package directory: `pnpm vp test run test/agent/agent.test.ts`; in `packages/cli`, `bun --bun vp test run <file>`.
+- Build, including the CLI binary at `packages/cli/dist/local/mitome`: `pnpm run build`.
+- The CLI from source, against the git-ignored `.dev-home`: `pnpm run dev:cli <arguments>`.
+
 ## Agent skills
 
 ### Issue tracker

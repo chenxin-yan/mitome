@@ -1,5 +1,4 @@
-import { defineRule } from "@oxlint/plugins";
-import type { ESTree, SourceCode, Variable } from "@oxlint/plugins";
+import { defineRule, type ESTree, type SourceCode, type Variable } from "vite-plus/lint/plugins";
 
 import {
   arrayMethodTarget,

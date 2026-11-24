@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { checkArchives, copyNotices, releasePackages, unpublishedPackages } from "./release.ts";
 
-const root = resolve(import.meta.dir, "..");
+const root = resolve(import.meta.dirname, "..");
 const packages = releasePackages();
 
 test("the cohort and dependency order are checked, including drift in a platform version", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "vite-plus/test";
 import { Effect, Layer, Predicate, Schema, Stream } from "effect";
 import { LanguageModel, Prompt } from "effect/ai";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";

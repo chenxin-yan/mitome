@@ -1,5 +1,4 @@
-import { defineRule } from "@oxlint/plugins";
-import type { ESTree, Variable } from "@oxlint/plugins";
+import { defineRule, type ESTree, type Variable } from "vite-plus/lint/plugins";
 
 type BroadTypeKind = "top" | "object" | "record";
 

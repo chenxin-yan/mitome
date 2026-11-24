@@ -11,11 +11,13 @@ To update, install upstream's `install-anti-slop` skill (`npx skills add dmmulro
 
 The update adopts the incoming generic and Effect rule implementations, including the array pipeline, reducer accumulator, readable spacing, Effect tag, and Effect match rules. It also adopts upstream's lexical scope and type-alias resolution, safety-comment ownership, known-value analysis, and borrowed static `.shape` member exemption. The readable-spacing implementation retains its source notice in `vendor/eslint-stylistic/`.
 
-The generic and Effect entry points register every rule from the adopted revision under the existing `anti-slop` and `anti-slop-effect` plugin names. Rule enablement remains repository policy in `.oxlintrc.json` and requires owner approval.
+The generic and Effect entry points register every rule from the adopted revision under the existing `anti-slop` and `anti-slop-effect` plugin names. Rule enablement remains repository policy in the `lint` block of the root `vite.config.ts` and requires owner approval.
 
 ## Intentional local deviations
 
+- The rules import the plugin API from `vite-plus/lint/plugins`, the copy that ships with the Oxlint Vite+ runs, in place of `@oxlint/plugins`.
 - `no-manual-tagged-construction` is disabled only for test files because matcher expectation objects such as `toMatchObject({ _tag: "Failure" })` are assertions, not domain construction. Other Effect rules remain enabled in tests.
+- `no-module-mocking` also recognizes `vi` imported from `vite-plus/test`, which is where this repository's tests import it.
 - The dictionary helper explicitly falls back to `null` after safe-array analysis so it typechecks with this repository's `noUncheckedIndexedAccess` setting; runtime behavior is unchanged.
 
 The previous local `shared/ast.ts`, Reflect rule factory, and renamed shape-rule export were dropped in favor of upstream's layout. All callers moved together, the registered rule names are unchanged, and no duplicate helper implementations remain.

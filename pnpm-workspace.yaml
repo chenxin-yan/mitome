@@ -14,8 +14,10 @@ catalog:
   "@effect/platform-node-shared": 4.1.6
   "@effect/vitest": 4.1.6
   effect: 4.1.6
-  vitest: 5.1.1
+  vitest: 5.1.0
   "@types/node": ^26.6.6
+  vite: npm:@voidzero-dev/vite-plus-core@8.3.8000
+  vite-plus: 1.7.0
 
 # The docs build runs both through the platform packages their optionalDependencies install; their
 # install scripts only re-check those binaries.
@@ -28,6 +30,11 @@ supportedArchitectures:
   os: [current]
   cpu: [current]
   libc: [glibc, musl]
+
+# Vite plugins and @effect/vitest resolve the Vite+ core and the Vitest that `vp` runs.
+overrides:
+  vite@*: "catalog:"
+  vitest@*: "catalog:"
 
 minimumReleaseAgeExclude:
   - "@effect/ai-anthropic@4.1.6"

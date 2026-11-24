@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const executable = process.platform === "win32" ? "mitome.exe" : "mitome";
 // The package manager installs only the optional dependency matching this
 // platform (os/cpu/libc), so try the glibc and musl flavors in detected order.
-const glibc = process.report?.getReport().header.glibcVersionRuntime !== undefined;
+const glibc = process.report.getReport().header.glibcVersionRuntime !== undefined;
 const suffixes = process.platform === "linux" ? (glibc ? ["", "-musl"] : ["-musl", ""]) : [""];
 let binary;
 for (const suffix of suffixes) {
