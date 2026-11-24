@@ -44,18 +44,18 @@ try {
       // The root LICENSE is the single source; tarballs need a per-package copy.
       await cp(join(rootDirectory, "LICENSE"), join(pkg.directory, "LICENSE"));
       await run(
-        [process.execPath, "pm", "pack", "--destination", archivesDirectory, "--ignore-scripts"],
+        ["pnpm", "pack", "--pack-destination", archivesDirectory, "--ignore-scripts"],
         pkg.directory,
       );
     }
   }
   for (const pkg of publicPackages) {
     const archive = archiveFor(pkg);
-    await run([process.execPath, "x", "publint", "--strict", archive]);
+    await run(["pnpm", "exec", "publint", "--strict", archive]);
     if (pkg !== cli) {
       await run([
-        process.execPath,
-        "x",
+        "pnpm",
+        "exec",
         "attw",
         "--profile",
         "esm-only",
@@ -67,8 +67,10 @@ try {
     }
   }
 
-  const catalog = (await Bun.file(join(rootDirectory, "package.json")).json()).workspaces.catalog;
-  const effectVersion: string = catalog.effect;
+  const workspace = await Bun.file(join(rootDirectory, "pnpm-workspace.yaml")).text();
+  // SAFETY: the repository's own workspace file, whose catalog pins Effect.
+  const { catalog } = Bun.YAML.parse(workspace) as { catalog: { effect: string } };
+  const effectVersion = catalog.effect;
   const nodeTypesVersion = catalogVersions["@types/node"];
   const installedEffectManifest = Bun.resolveSync("effect/package.json", rootDirectory);
   const installedEffectVersion: string = (await Bun.file(installedEffectManifest).json()).version;
@@ -96,8 +98,16 @@ try {
     recursive: true,
     dereference: true,
   });
+  // Silent: Effect's file listing runs to thousands of lines; a failure is still reported.
   await run(
-    [process.execPath, "pm", "pack", "--destination", dirname(effectDirectory), "--ignore-scripts"],
+    [
+      "pnpm",
+      "--silent",
+      "pack",
+      "--pack-destination",
+      dirname(effectDirectory),
+      "--ignore-scripts",
+    ],
     effectDirectory,
   );
   // Platform binary packages are release-time artifacts; the fixture gates
@@ -194,7 +204,7 @@ if (text !== "ok") throw new Error("Session smoke did not complete.");
   );
   // Typechecking the consumer against the packed declarations is the leak gate:
   // it fails if any published .d.ts references types the tarballs cannot resolve.
-  await run([process.execPath, "x", "tsc", "-p", join(consumerDirectory, "tsconfig.json")]);
+  await run(["pnpm", "exec", "tsc", "-p", join(consumerDirectory, "tsconfig.json")]);
   await run([process.execPath, "smoke.ts"], consumerDirectory);
   const createdDirectory = join(temporaryDirectory, "created-app");
   await mkdir(createdDirectory);
@@ -225,7 +235,7 @@ if (text !== "ok") throw new Error("Session smoke did not complete.");
     throw new Error("create-mitome did not select the chosen OpenAI Model.");
   }
   await symlink(nodeModules, join(createdDirectory, "node_modules"), "dir");
-  await run([process.execPath, "x", "tsc", "-p", join(createdDirectory, "tsconfig.json")]);
+  await run(["pnpm", "exec", "tsc", "-p", join(createdDirectory, "tsconfig.json")]);
   if (suppliedArchives) {
     const cliConsumer = join(temporaryDirectory, "cli-consumer");
     await mkdir(cliConsumer);

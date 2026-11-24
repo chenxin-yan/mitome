@@ -14,16 +14,16 @@
     "FFMPEG-SOURCE.md",
     "third-party"
   ],
-  "os": [
-    "linux"
-  ],
-  "cpu": [
-    "arm64"
-  ],
-  "libc": [
-    "musl"
-  ],
   "publishConfig": {
+    "os": [
+      "linux"
+    ],
+    "cpu": [
+      "arm64"
+    ],
+    "libc": [
+      "musl"
+    ],
     "access": "public"
   }
 }

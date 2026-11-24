@@ -173,13 +173,18 @@ test("tarballs must match the cohort, contain platform binaries and native notic
   const archives = join(directory, "archives");
   mkdirSync(join(contents, "package/bin"), { recursive: true });
   mkdirSync(archives);
-  const pack = (version: string, effect: string): void => {
+  const pack = (
+    version: string,
+    effect: string,
+    restricted = { os: ["linux"], cpu: ["x64"], libc: ["glibc"] },
+  ): void => {
     writeFileSync(
       join(contents, "package/package.json"),
       JSON.stringify({
         name: platform.name,
         version,
         dependencies: { effect },
+        ...restricted,
       }),
     );
     execFileSync("tar", ["-czf", join(archives, platform.archive), "-C", contents, "package"]);
@@ -200,6 +205,8 @@ test("tarballs must match the cohort, contain platform binaries and native notic
     writeFileSync(join(contents, "package/third-party/opentui/LICENSE"), "fixture");
     pack(platform.version, "1.0.0");
     expect(() => checkArchives([platform], archives)).not.toThrow();
+    pack(platform.version, "1.0.0", { os: ["linux"], cpu: ["x64"], libc: [] });
+    expect(() => checkArchives([platform], archives)).toThrow("does not restrict its libc");
     pack("9.9.9", "1.0.0");
     expect(() => checkArchives([platform], archives)).toThrow();
     pack(platform.version, "catalog:");

@@ -9,7 +9,7 @@
         "$TURBO_ROOT$/packages/providers/src/openai-codex/models.ts",
         "$TURBO_ROOT$/packages/providers/src/anthropic/models.ts",
         "$TURBO_ROOT$/packages/create-mitome/package.json",
-        "$TURBO_ROOT$/bun.lock"
+        "$TURBO_ROOT$/pnpm-lock.yaml"
       ],
       "outputs": [
         "packages/providers/src/openai/models.ts",

@@ -14,13 +14,13 @@
     "FFMPEG-SOURCE.md",
     "third-party"
   ],
-  "os": [
-    "win32"
-  ],
-  "cpu": [
-    "x64"
-  ],
   "publishConfig": {
+    "os": [
+      "win32"
+    ],
+    "cpu": [
+      "x64"
+    ],
     "access": "public"
   }
 }

@@ -17,38 +17,38 @@ Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxi
 
 ## Toolchain
 
-[mise](https://mise.jdx.dev) installs the pinned Node version from `.node-version` and the Bun version from `packageManager` in `package.json`. Then:
+[mise](https://mise.jdx.dev) installs the pinned Node version from `.node-version`, the pnpm version from `packageManager` in `package.json`, and the Bun version from `mise.toml`. pnpm installs the workspace; Bun runs the CLI, compiles its binary and runs the scripts that use its APIs. Then:
 
 ```sh
-bun install
+pnpm install
 ```
 
-Turbo runs package tasks; the root scripts below wrap it. `bun run build` also compiles the `mitome` command to `packages/cli/dist/local/mitome`, and `bun run dev:cli` runs it from source with `MITOME_HOME` set to the git-ignored `.dev-home` and `ANTHROPIC_CONFIG_DIR` to a directory inside it.
+Turbo runs package tasks; the root scripts below wrap it. `pnpm run build` also compiles the `mitome` command to `packages/cli/dist/local/mitome`, and `pnpm run dev:cli` runs it from source with `MITOME_HOME` set to the git-ignored `.dev-home` and `ANTHROPIC_CONFIG_DIR` to a directory inside it.
 
 ## Gates
 
 To match CI, run:
 
 ```sh
-bun install --frozen-lockfile
-bunx turbo run lint //#fmt check:types //#check:types build
-bun run test
+pnpm install --frozen-lockfile
+pnpm exec turbo run lint //#fmt check:types //#check:types build
+pnpm test
 ```
 
-`bun run build:docs` is the site-only build. It fails on an internal link to a page that does not exist and on an `<auto-type-table>` whose type cannot be resolved, so it is the documentation gate as well. Anchors within a page are not checked. `bun run check:fix` applies lint and format fixes.
+`pnpm run build:docs` is the site-only build. It fails on an internal link to a page that does not exist and on an `<auto-type-table>` whose type cannot be resolved, so it is the documentation gate as well. Anchors within a page are not checked. `pnpm run check:fix` applies lint and format fixes.
 
 ## Generated artifacts
 
 Two hint modules are generated and git-ignored; do not edit them by hand: `packages/providers/src/openai/models.ts` and `packages/create-mitome/src/model-hints.ts`. The snapshot and the Codex and Anthropic catalogs are committed inputs.
 
-| Artifact                                                                            | Command                 | Source                                                                                                                                                                                                      |
-| ----------------------------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenAI Model catalog and the Model choices of `npm create mitome` and `mitome init` | `bun run hints:refresh` | [models.dev](https://models.dev); the snapshot is committed at `scripts/models-dev.snapshot.json` and `hints:generate` uses it offline.                                                                     |
-| Codex and Anthropic Model catalogs                                                  | none                    | Hand-maintained in `packages/providers/src/openai-codex/models.ts` and `packages/providers/src/anthropic/models.ts`; `hints:generate` copies them into those choices. Update them when the services change. |
+| Artifact                                                                            | Command                  | Source                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI Model catalog and the Model choices of `npm create mitome` and `mitome init` | `pnpm run hints:refresh` | [models.dev](https://models.dev); the snapshot is committed at `scripts/models-dev.snapshot.json` and `hints:generate` uses it offline.                                                                     |
+| Codex and Anthropic Model catalogs                                                  | none                     | Hand-maintained in `packages/providers/src/openai-codex/models.ts` and `packages/providers/src/anthropic/models.ts`; `hints:generate` copies them into those choices. Update them when the services change. |
 
 ## Releasing
 
-Every user-visible change adds a changeset: run `bun changeset`, or write the markdown file under `.changeset` by hand. The release cohort shares one version; the release workflow opens a version pull request from pending changesets and publishes the cohort together when it merges.
+Every user-visible change adds a changeset: run `pnpm exec changeset`, or write the markdown file under `.changeset` by hand. The release cohort shares one version; the release workflow opens a version pull request from pending changesets and publishes the cohort together when it merges.
 
 ## Recording decisions
 

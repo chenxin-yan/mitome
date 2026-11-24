@@ -15,8 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
-      - run: bun install --frozen-lockfile
-      - run: bun run hints:refresh
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run hints:refresh
       - name: Add changeset when hints changed
         run: |
           git diff --quiet -- scripts/models-dev.snapshot.json && exit 0
@@ -33,4 +33,4 @@ jobs:
           branch: chore/refresh-model-hints
           title: "chore: refresh model hints from models.dev"
           commit-message: "chore: refresh model hints from models.dev"
-          body: Automated `bun run hints:refresh`. Review the diff; CI runs on this PR as usual.
+          body: Automated `pnpm run hints:refresh`. Review the diff; CI runs on this PR as usual.

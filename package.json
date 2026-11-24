@@ -1,27 +1,6 @@
 {
   "name": "mitome-monorepo",
   "private": true,
-  "workspaces": {
-    "packages": [
-      "apps/*",
-      "packages/*",
-      "packages/cli/npm/*",
-      "scripts"
-    ],
-    "catalog": {
-      "typescript": "7.0.2",
-      "@types/bun": "^1.4.5",
-      "@effect/ai-anthropic": "4.1.6",
-      "@effect/ai-openai": "4.1.6",
-      "@effect/ai-openai-compat": "4.1.6",
-      "@effect/platform-bun": "4.1.6",
-      "@effect/platform-node-shared": "4.1.6",
-      "@effect/vitest": "4.1.6",
-      "effect": "4.1.6",
-      "vitest": "5.1.1",
-      "@types/node": "^26.6.6"
-    }
-  },
   "type": "module",
   "scripts": {
     "hints:generate": "bun scripts/generate-model-hints.ts",
@@ -41,7 +20,7 @@
     "build": "turbo run build",
     "build:pkgs": "turbo run build --filter='./packages/*'",
     "build:docs": "turbo run build --filter=@mitome/docs",
-    "version-packages": "changeset version && bun install --lockfile-only",
+    "version-packages": "changeset version && pnpm install --lockfile-only",
     "prepare": "effect-tsgo patch"
   },
   "dependencies": {
@@ -63,8 +42,5 @@
     "turbo": "^2.11.13",
     "typescript": "catalog:"
   },
-  "engines": {
-    "bun": ">=1.4.0"
-  },
-  "packageManager": "bun@1.4.5"
+  "packageManager": "pnpm@12.21.0"
 }
