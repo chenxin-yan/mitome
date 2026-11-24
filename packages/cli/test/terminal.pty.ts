@@ -1,6 +1,7 @@
 // The compiled bare `mitome` in a real pseudo-terminal (Bun.Terminal), against the offline fixture
 // Configuration: real raw mode, real keys and real signals. Runs on the Bun runtime; POSIX only, so
 // it is skipped on Windows.
+// @module-tag dist
 import { afterAll, beforeEach, describe, expect, test } from "vite-plus/test";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";

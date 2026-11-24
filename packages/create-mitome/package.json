@@ -20,11 +20,14 @@
   "sideEffects": false,
   "exports": {
     "./template": {
-      "types": "./dist/template.d.ts",
+      "@mitome/source": "./src/template.ts",
       "default": "./dist/template.js"
     }
   },
   "publishConfig": {
+    "exports": {
+      "./template": "./dist/template.js"
+    },
     "access": "public"
   },
   "devDependencies": {

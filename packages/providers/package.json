@@ -16,23 +16,29 @@
   "sideEffects": false,
   "exports": {
     "./anthropic": {
-      "types": "./dist/anthropic/index.d.ts",
+      "@mitome/source": "./src/anthropic/index.ts",
       "default": "./dist/anthropic/index.js"
     },
     "./openai": {
-      "types": "./dist/openai/index.d.ts",
+      "@mitome/source": "./src/openai/index.ts",
       "default": "./dist/openai/index.js"
     },
-    "./openai-compatible": {
-      "types": "./dist/openai-compatible/index.d.ts",
-      "default": "./dist/openai-compatible/index.js"
-    },
     "./openai-codex": {
-      "types": "./dist/openai-codex/index.d.ts",
+      "@mitome/source": "./src/openai-codex/index.ts",
       "default": "./dist/openai-codex/index.js"
+    },
+    "./openai-compatible": {
+      "@mitome/source": "./src/openai-compatible/index.ts",
+      "default": "./dist/openai-compatible/index.js"
     }
   },
   "publishConfig": {
+    "exports": {
+      "./anthropic": "./dist/anthropic/index.js",
+      "./openai": "./dist/openai/index.js",
+      "./openai-codex": "./dist/openai-codex/index.js",
+      "./openai-compatible": "./dist/openai-compatible/index.js"
+    },
     "access": "public"
   },
   "dependencies": {

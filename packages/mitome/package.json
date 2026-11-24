@@ -17,16 +17,21 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "@mitome/source": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./kernel": {
-      "types": "./dist/kernel.d.ts",
+      "@mitome/source": "./src/kernel.ts",
       "default": "./dist/kernel.js"
     },
     "./package.json": "./package.json"
   },
   "publishConfig": {
+    "exports": {
+      ".": "./dist/index.js",
+      "./kernel": "./dist/kernel.js",
+      "./package.json": "./package.json"
+    },
     "access": "public"
   },
   "dependencies": {

@@ -559,6 +559,7 @@ describe("Codex SSE", () => {
     ["a stale 401", credential("stale-access", "shared-refresh")],
   ])(
     "exchanges a rotating Credential once across processes racing on %s",
+    { tags: ["dist"], timeout: 15_000 },
     async (_, stored) => {
       const race = await raceRotation(
         stored,
@@ -574,7 +575,6 @@ describe("Codex SSE", () => {
         },
       });
     },
-    15_000,
   );
 });
 

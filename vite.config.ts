@@ -15,19 +15,15 @@ export default defineConfig({
     tasks: {
       // The one static gate: format, lint and type-check, with Effect's diagnostics from the
       // Effect-patched linter and checker that effect-tsgo runs in place of the stock ones. The
-      // packages type-check against each other's built declarations.
+      // packages type-check against each other's sources, so nothing needs building first.
       check: {
         command: "effect-tsgo vp check",
-        dependsOn: [
-          "hints:generate",
-          "@mitome/core#build",
-          "@mitome/providers#build",
-          "create-mitome#build",
-        ],
+        dependsOn: ["hints:generate"],
       },
-      // Every package's tests, each after only the builds it needs: `vp run -r test` would also hold
-      // each package's tests until those of the packages it depends on had passed. The `test` script
-      // runs it, as a name cannot be both a package.json script and a task.
+      // Every package's tests from source (`test:task`) and of built output (`test:dist:task`), each
+      // after only the builds it needs: `vp run -r test` would also hold each package's tests until those of the
+      // packages it depends on had passed. The `test` and `test:dist` scripts run them, as a name
+      // cannot be both a package.json script and a task.
       "test:task": {
         command: [],
         dependsOn: [
@@ -36,6 +32,16 @@ export default defineConfig({
           "create-mitome#test",
           "@mitome/cli#test",
           "@mitome/scripts#test",
+        ],
+      },
+      "test:dist:task": {
+        command: [],
+        dependsOn: [
+          "@mitome/core#test:dist",
+          "@mitome/providers#test:dist",
+          "create-mitome#test:dist",
+          "@mitome/cli#test:dist",
+          "@mitome/scripts#test:dist",
         ],
       },
       "hints:generate": {
