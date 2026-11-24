@@ -3,6 +3,7 @@ packages:
   - packages/*
   - packages/cli/npm/*
   - scripts
+  - dev/agent
 
 catalog:
   typescript: 7.0.2

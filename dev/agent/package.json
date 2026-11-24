@@ -1,0 +1,13 @@
+{
+  "name": "@mitome/dev-agent",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mitome/core": "workspace:*",
+    "@mitome/providers": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@mitome/config": "workspace:*"
+  }
+}

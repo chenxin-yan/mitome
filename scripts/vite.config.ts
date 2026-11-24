@@ -1,7 +1,8 @@
 import { defineConfig } from "vite-plus";
-import { hintsFirst, upstreamBuild } from "../vite.shared.ts";
+import { hintsFirst, testConfig, upstreamBuild } from "../vite.shared.ts";
 
 export default defineConfig({
+  ...testConfig,
   run: {
     tasks: {
       // dev-cli.test.ts runs the source CLI with Bun, whose reads Vite Task cannot see.

@@ -1,9 +1,18 @@
 #!/usr/bin/env bun
-// Runs the CLI from source against the git-ignored .dev-home sandbox (ADR-0030).
+// Runs the CLI from source against the tracked development Configuration in dev/agent, with
+// Mitome's state and config in the git-ignored .dev-home sandbox (ADR-0030).
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+// pnpm passes on the `--` that ends its own options in `pnpm run dev:cli -- <arguments>`.
+const args = process.argv[2] === "--" ? process.argv.slice(3) : process.argv.slice(2);
+// Everything after a `--` is input for the CLI's command, so flags are read and added before it.
+const end = args.includes("--") ? args.indexOf("--") : args.length;
+const flags = args.slice(0, end);
+// `init` writes the default Configuration into .dev-home and selects none.
+const selected =
+  flags[0] === "init" || flags.some((arg) => arg === "--config" || arg.startsWith("--config="));
 
 // The sources import the generated model-hint modules, which a fresh clone lacks and a branch
 // switch leaves stale. Generating them reads only the repository; `vp run hints:generate` would
@@ -20,7 +29,9 @@ const child = Bun.spawn(
     // The workspace packages' sources, so an edit shows without a build (vite.shared.ts).
     "--conditions=@mitome/source",
     join(root, "packages", "cli", "src", "index.ts"),
-    ...process.argv.slice(2),
+    ...flags,
+    ...(selected ? [] : ["--config", join(root, "dev", "agent")]),
+    ...args.slice(end),
   ],
   {
     env: {
