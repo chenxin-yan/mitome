@@ -32,6 +32,6 @@ export const answer = Effect.scoped(
 );
 ```
 
-`Mitome.make({ agent, providers, model })` names an Agent with the Providers and Model it runs with; that Configuration is what a Host such as the `mitome` command (`@mitome/cli`) loads.
+`Mitome.make({ agent, providers, model })` names an Agent with the Providers and Model it runs with; that Configuration is what a Host such as the `mitome` command (`@mitome/cli`) loads. The subpath `@mitome/core/terminal` holds the terminal's options: `terminal({ keys })` goes in the Configuration's `provide` and binds its keys. The subpath `@mitome/core/kernel` holds the layer under an Agent (a Session without an Agent, `step`, `loop` and `localTools`), for a Provider's tests and for building another runtime.
 
 See [Agents and Configurations](https://mitome.sh/docs/agents). A Session's history is a tree of Entries, one for each completed Step that had something to commit; it is kept in memory unless a `Transcripts` service is provided, as `jsonlTranscripts()` from `@mitome/transcripts` does. The conversation holds plain data, never live objects: a Tool's schema turns a live value (a `Date`, a class instance) into data, the kernel checks at the door that every Message it keeps is plain data (`isPlainData`) and serialises nothing, and each store chooses its own format for that data. Streaming is not implemented yet.

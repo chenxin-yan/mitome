@@ -18,6 +18,8 @@ const relativeFixture = fileURLToPath(new URL("fixtures/relative", import.meta.u
 const anthropicFixture = fileURLToPath(new URL("fixtures/anthropic", import.meta.url));
 const anthropicWorkFixture = fileURLToPath(new URL("fixtures/anthropic-work", import.meta.url));
 const historyFixture = fileURLToPath(new URL("fixtures/history", import.meta.url));
+const keysFixture = (name: string) =>
+  fileURLToPath(new URL(`fixtures/keys/${name}.ts`, import.meta.url));
 const directory = await mkdtemp(join(tmpdir(), "mitome-cli-"));
 const log = join(directory, "events.log");
 // Holds both the default Configuration and the stored credentials.
@@ -44,13 +46,18 @@ interface Io {
 /** Runs the CLI in-process with scripted standard I/O. */
 const cli = (
   args: ReadonlyArray<string>,
-  options: { readonly stdin?: Stream.Stream<Uint8Array>; readonly terminal?: boolean } = {},
+  options: {
+    readonly stdin?: Stream.Stream<Uint8Array>;
+    readonly terminal?: boolean;
+    readonly stdoutTerminal?: boolean;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const io: Io = { stdout: [] };
     const stdio = Stdio.layerTest({
       stdin: options.stdin ?? Stream.die(new Error("stdin must not be read")),
       stdinIsTerminal: Effect.succeed(options.terminal ?? false),
+      stdoutIsTerminal: Effect.succeed(options.stdoutTerminal ?? false),
       stdout: () =>
         Sink.forEach((chunk) =>
           Effect.sync(() =>
@@ -145,6 +152,66 @@ describe("bare mitome", () => {
         expect(result.errors).toContain("ERROR");
       }
       expect(yield* events).toEqual([]);
+    }),
+  );
+});
+
+describe("bare mitome refuses to open the terminal", () => {
+  const opened = (name: string) =>
+    cli(["--config", keysFixture(name)], { terminal: true, stdoutTerminal: true });
+
+  it.effect("without the terminal's options, showing the lines to add", () =>
+    Effect.gen(function* () {
+      const result = yield* opened("none");
+      expect(Exit.isFailure(result.exit)).toBe(true);
+      expect(result.errors).toContain(
+        [
+          `The terminal has no keys: ${keysFixture("none")} does not provide its options. Add these lines to it:`,
+          '  import { terminal } from "@mitome/core/terminal";',
+          "  provide: terminal({",
+          "    keys: {",
+          "      enter: terminal.submit,",
+          '      "shift+enter": terminal.newline,',
+          '      "ctrl+j": terminal.newline,',
+          "      escape: terminal.interrupt,",
+          '      "ctrl+d": "/quit",',
+          "    },",
+          "  }),  // in Mitome.make({ ... }); with other services, provide: [terminal({ ... }), ...]",
+        ].join("\n"),
+      );
+      // Acquired to read the options, and released again.
+      expect(yield* events).toEqual(["provision:echo", "release-model:echo"]);
+    }),
+  );
+
+  it.effect("without a key that sends the input", () =>
+    Effect.gen(function* () {
+      const result = yield* opened("unsent");
+      expect(Exit.isFailure(result.exit)).toBe(true);
+      expect(result.errors).toContain(
+        `No key sends the input: bind one to terminal.submit in the terminal({ keys }) that ${keysFixture("unsent")} provides, for example:\n  enter: terminal.submit,`,
+      );
+    }),
+  );
+
+  it.effect("with a key it keeps for itself, naming it", () =>
+    Effect.gen(function* () {
+      const result = yield* opened("refused");
+      expect(Exit.isFailure(result.exit)).toBe(true);
+      expect(result.errors).toContain(
+        `Key "tab" in ${keysFixture("refused")} cannot be bound: it always moves between an Approval and the input.`,
+      );
+    }),
+  );
+
+  it.effect("when an Extension names a Command the terminal names itself", () =>
+    Effect.gen(function* () {
+      const result = yield* opened("clash");
+      expect(Exit.isFailure(result.exit)).toBe(true);
+      expect(result.errors).toContain(
+        'Extension "exit" names a Command /quit, which the terminal names itself; the terminal does not open while the Agent uses that Extension.',
+      );
+      expect(yield* events).toEqual(["provision:echo", "release-model:echo"]);
     }),
   );
 });

@@ -24,12 +24,17 @@
       "@mitome/source": "./src/kernel.ts",
       "default": "./dist/kernel.js"
     },
+    "./terminal": {
+      "@mitome/source": "./src/terminal.ts",
+      "default": "./dist/terminal.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
     "exports": {
       ".": "./dist/index.js",
       "./kernel": "./dist/kernel.js",
+      "./terminal": "./dist/terminal.js",
       "./package.json": "./package.json"
     },
     "access": "public"

@@ -29,7 +29,7 @@ The current directory is never searched. Loading imports the module and runs its
 `mitome init` writes the default Configuration into the config directory, installs its dependencies there and prints what to do next. Afterwards bare `mitome` opens it and `mitome run` runs it once, without `--config`.
 
 - **Provider and Model.** `--provider` is `openai`, `openai-codex` or `anthropic`; `--model` is one of its Model ids, without the `provider/` prefix. With both flags no terminal is needed. Otherwise standard input and output must be terminals, and `init` asks only for what is missing: the Provider from a list, then one of its known Models or a custom Model id.
-- **Files.** `agent.ts` (an Agent whose `dice` Extension adds a `roll` Tool that needs Approval), `index.ts` (its Configuration for the chosen Provider and Model), `package.json`, `tsconfig.json`, `.gitignore` and `README.md`; see the generated `agent.ts`, `index.ts` and `package.json` in [Agents and Configurations](/docs/agents#a-configuration). On POSIX, `init` requests mode `0700` for a config directory it creates and leaves the mode of an existing empty one unchanged; on Windows, check the directory's access permissions.
+- **Files.** `agent.ts` (an Agent whose `dice` Extension adds a `roll` Tool that needs Approval), `index.ts` (its Configuration for the chosen Provider and Model, with the terminal's [starter keys](#commands-and-keys)), `package.json`, `tsconfig.json`, `.gitignore` and `README.md`; see the generated `agent.ts`, `index.ts` and `package.json` in [Agents and Configurations](/docs/agents#a-configuration). On POSIX, `init` requests mode `0700` for a config directory it creates and leaves the mode of an existing empty one unchanged; on Windows, check the directory's access permissions.
 - **Refusal.** The config directory must be missing or empty. Otherwise `init` changes nothing and says so, before asking anything. It never overwrites a file, and if one cannot be written it removes what it wrote.
 - **Install.** The command installs the dependencies itself, acting as Bun's installer (`BUN_BE_BUN=1 mitome install` in the config directory), so no other package manager is needed. With `--no-install` it writes the files, prints that command and stops. When the install fails, reports success without installing anything, or leaves another version than the pinned one (reported as the version expected and the one found), the files stay and `init` prints the command to run in the config directory; an interrupted install prints the same. The printed command names the binary by its full path; on Windows it is written for PowerShell. Until Mitome is published to npm, the install fails because the packages it installs are not there.
 - **Next steps.** After a successful install, `init` prints how to get the Provider's credential (`export OPENAI_API_KEY="your key"`, `export ANTHROPIC_API_KEY="your key"`, their PowerShell form on Windows, or `mitome auth login --provider openai-codex`), for Anthropic `or sign in instead: mitome auth login --provider anthropic`, and then `mitome`; with `--no-install` it prints the install command first, then those steps. After a failed or interrupted install it prints only the install command; the generated README gives the credential step.
@@ -37,20 +37,73 @@ The current directory is never searched. Loading imports the module and runs its
 
 ## mitome
 
-Bare `mitome` opens the terminal. It needs a terminal on standard input and output and otherwise refuses, before loading anything, and points to `mitome run`. It acquires the Configuration once and keeps one Session until you close it.
+Bare `mitome` opens the terminal. It needs a terminal on standard input and output and otherwise refuses, before loading anything, and points to `mitome run`. It acquires the Configuration once and keeps one Session until you close it or start a new conversation with `/new`. It opens only with the keys the Configuration binds; see [Commands and keys](#commands-and-keys).
 
-- **Submissions.** Each submission's text goes through the Agent's `text.parse`, runs as one Turn and is shown through `text.render`. While a submission runs you can edit the next draft, but Alt-Enter does not queue it: press it again once the terminal is ready. If parsing fails or is interrupted, no Turn starts; otherwise the terminal reports the Turn's outcome (succeeded, failed or interrupted) and renders a successful result.
+- **Submissions.** Each submission's text goes through the Agent's `text.parse`, runs as one Turn and is shown through `text.render`. While a submission runs you can edit the next draft, but sending does not queue it: send it again once the terminal is ready. If parsing fails or is interrupted, no Turn starts; otherwise the terminal reports the Turn's outcome (succeeded, failed or interrupted) and renders a successful result.
 - **Approvals.** A Tool Call that needs Approval shows its Turn id, Tool-call id, Tool name and its parameters as the JSON the Model sent, without fields the Tool does not declare, indented, with control characters escaped. Press Tab to focus it, then `y` to allow or `n` to deny it; typing in the editor decides nothing. A decision made after the Turn ended changes nothing.
 
-| Key       | Effect                                                         |
-| --------- | -------------------------------------------------------------- |
-| Alt-Enter | Submit the editor's text (Enter inserts a newline)             |
-| Esc       | Interrupt the running submission                               |
-| Tab       | Move focus between the editor and a pending Approval           |
-| `y` / `n` | Allow or deny the focused Approval                             |
-| Ctrl-C    | Close the terminal and shut the Configuration down (exits 130) |
+| Key             | Effect                                                           |
+| --------------- | ---------------------------------------------------------------- |
+| bound in `keys` | Send, start a new line, interrupt, or type a Command and send it |
+| Tab             | Move focus between the editor and a pending Approval             |
+| `y` / `n`       | Allow or deny the focused Approval                               |
+| Ctrl-C          | Close the terminal and shut the Configuration down (exits 130)   |
 
 Closing restores the terminal first and then shuts down as described under [Shutdown and grace](#shutdown-and-grace).
+
+### Commands and keys
+
+The terminal's keys are part of the Configuration: `terminal({ keys })` from `@mitome/core/terminal`, in `Mitome.make`'s `provide`. There are no default keys. `mitome init` writes this starter set:
+
+```ts
+import { terminal } from "@mitome/core/terminal";
+
+provide: terminal({
+  keys: {
+    enter: terminal.submit,
+    "shift+enter": terminal.newline,
+    "ctrl+j": terminal.newline,
+    escape: terminal.interrupt,
+    "ctrl+d": "/quit",
+  },
+}),
+```
+
+A key is bound to one of the terminal's controls, `terminal.submit` (send the input), `terminal.newline` (start a new line) or `terminal.interrupt` (interrupt what runs), or to text that starts with `/`. A key is looked up as the terminal reports it and, on a layout that is not Latin, also as the Latin key at the same place, so `ctrl+j` works on any layout. A key bound to text acts as if that text were typed into an empty editor and sent, and leaves your draft as it is, so `"ctrl+t": "/todos"` runs the `todos` Command. Only bound keys send or start a new line: Enter sends only because the starter set binds it. Typing, moving the cursor and deleting stay the editor's own keys; a bound key such as Ctrl+D replaces what the editor did with it.
+
+A key is written in lowercase as its modifiers, in the order `ctrl`, `alt`, `shift`, then one key name, joined by `+`: `ctrl+d`, `alt+enter`, `ctrl+alt+shift+f12`. The key names are `a` to `z`, `0` to `9`, `enter`, `escape`, `tab`, `space`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown` and `f1` to `f12`. `terminal()` throws a `TypeError` for an unknown field, a key written otherwise, and a value that is neither a control nor text starting with `/`.
+
+When it opens, the terminal refuses these keys, naming the key and why:
+
+- `ctrl+c` and `tab`, which always close the terminal and move between an Approval and the editor.
+- A letter, digit or `space` with no modifier or only `shift`, which would take the key away from typing.
+
+Some keys reach the terminal only when the terminal speaks the enhanced keyboard protocol, which the terminal asks for when it opens. Without it, Shift+Enter arrives as Enter and sends, and other keys such as Ctrl+Enter or Ctrl+I arrive as a different key. Ctrl+J starts a new line in every terminal. Inside tmux, turn on its extended keys to get them.
+
+Without the terminal's options, the terminal does not open and shows the lines to add:
+
+```text
+The terminal has no keys: /home/me/.config/mitome/index.ts does not provide its options. Add these lines to it:
+  import { terminal } from "@mitome/core/terminal";
+  provide: terminal({
+    keys: {
+      enter: terminal.submit,
+      "shift+enter": terminal.newline,
+      "ctrl+j": terminal.newline,
+      escape: terminal.interrupt,
+      "ctrl+d": "/quit",
+    },
+  }),  // in Mitome.make({ ... }); with other services, provide: [terminal({ ... }), ...]
+```
+
+With options but no key bound to `terminal.submit`, it says so and suggests `enter: terminal.submit,`.
+
+An input is a Command only when its first character is `/`, followed by a Command's name and then a space or the end (see [Commands](/docs/agents#commands)). While the editor's text starts with `/`, the terminal lists the Commands whose names begin with what follows it, each with its description, as many as fit above the editor and then a line saying how many more there are; typing more narrows the list. The terminal names two Commands of its own:
+
+- `/quit` closes the terminal as Ctrl-C does.
+- `/new` ends the current conversation and starts a new one for the working directory, as starting `mitome` without `--continue` does. What is on the screen stays; below the editor the terminal shows the new conversation when the Configuration keeps history. The new conversation starts the Extensions again; if one of them then names `/quit` or `/new`, or the new conversation cannot start, the terminal stays in the current one and says why.
+
+Every other name runs the Extension's Command. A reply is shown below the input, marked as not sent to the Model, and is neither sent to the Model nor kept in history; a prompt runs as a Turn with its text as the input, through `text.parse`. An unknown name (`There is no command /name`) and a Command that fails (`Command /name failed`) are shown, and nothing reaches the Model. A Command is refused while a Turn or another submission runs, as any submission is. When an Extension names a Command `quit` or `new`, the terminal does not open, naming the Command and the Extension.
 
 ## run
 

@@ -14,6 +14,7 @@ import {
   Transcripts,
   withModelRequestAccounting,
 } from "@mitome/core";
+import { terminal } from "@mitome/core/terminal";
 
 /** One store's conversations by id, and the one most recently written under each scope. */
 interface Store {
@@ -88,6 +89,25 @@ export const remembering = Provider.make("scripted", {
   provision: () => model,
 });
 
+const transcripts = Layer.sync(Transcripts, () => {
+  const name = process.env.MITOME_FIXTURE_HISTORY ?? "";
+  const store = stores.get(name) ?? { conversations: new Map(), latest: new Map() };
+  stores.set(name, store);
+  return {
+    // Recorded as the latest as soon as it is created, as a store may, which a CLI that opens
+    // its conversation too early would show; every write makes it the latest again.
+    create: (scope) =>
+      Effect.sync(() => {
+        const made = transcript(store, crypto.randomUUID(), scope);
+        store.conversations.set(made.id, made);
+        store.latest.set(scope, made.id);
+        return made;
+      }),
+    latest: (scope) => Effect.sync(() => store.conversations.get(store.latest.get(scope) ?? "")),
+    open: (id) => Effect.sync(() => store.conversations.get(id)),
+  };
+});
+
 export default Mitome.make({
   agent: Agent.make({
     // Refuses `unparseable`, as an Agent's own text mapping may.
@@ -97,24 +117,7 @@ export default Mitome.make({
       render: (text: string) => Effect.succeed(text),
     },
   }),
-  provide: Layer.sync(Transcripts, () => {
-    const name = process.env.MITOME_FIXTURE_HISTORY ?? "";
-    const store = stores.get(name) ?? { conversations: new Map(), latest: new Map() };
-    stores.set(name, store);
-    return {
-      // Recorded as the latest as soon as it is created, as a store may, which a CLI that opens
-      // its conversation too early would show; every write makes it the latest again.
-      create: (scope) =>
-        Effect.sync(() => {
-          const made = transcript(store, crypto.randomUUID(), scope);
-          store.conversations.set(made.id, made);
-          store.latest.set(scope, made.id);
-          return made;
-        }),
-      latest: (scope) => Effect.sync(() => store.conversations.get(store.latest.get(scope) ?? "")),
-      open: (id) => Effect.sync(() => store.conversations.get(id)),
-    };
-  }),
+  provide: [terminal({ keys: { enter: terminal.submit, "ctrl+d": "/quit" } }), transcripts],
   providers: [remembering],
   model: "scripted/remember",
 });

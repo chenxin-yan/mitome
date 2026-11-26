@@ -11,6 +11,7 @@ import {
   type ProviderChoice,
 } from "create-mitome/template";
 import { runtimeError } from "./errors.js";
+import { starterProvide, terminalImport } from "./terminal/keys.js";
 
 export interface InitOptions {
   readonly provider: ProviderChoice;
@@ -56,6 +57,7 @@ export const liveInstallCommand = (): string =>
 
 const configurationSource = ({ provider, model }: InitOptions): string =>
   `import { Mitome } from "@mitome/core";
+${terminalImport}
 ${provider.import}
 import { agent } from "./agent.js";
 
@@ -63,6 +65,7 @@ export default Mitome.make({
   agent,
   providers: [${provider.factory}],
   model: ${JSON.stringify(`${provider.id}/${model}`)},
+${starterProvide("  ")}
 });
 `;
 
@@ -106,7 +109,7 @@ const readmeSource = (provider: ProviderChoice): string => `# Mitome Configurati
 This directory is Mitome's default Configuration: \`mitome\` loads \`index.ts\` here when no \`--config\` is given. Keep it in Git to use the same Agent on another machine.
 
 - \`agent.ts\` describes the Agent: its Instructions and the Extensions it uses. The \`dice\` Extension adds a \`roll\` Tool that needs Approval.
-- \`index.ts\` is the Configuration: the Agent with the Providers and the Model it runs with.
+- \`index.ts\` is the Configuration: the Agent with the Providers and the Model it runs with, and the keys of the terminal.
 
 ## Sign in
 
@@ -142,6 +145,8 @@ ${provider.signIn.command}
 mitome                    # opens the terminal
 mitome run "Roll a die."  # runs once and prints the result
 \`\`\`
+
+In the terminal, Enter sends, Ctrl+J starts a new line (and Shift+Enter where the terminal reports it; elsewhere it sends), Escape interrupts, and Ctrl+D or \`/quit\` closes it; \`/new\` starts a new conversation. Typing \`/\` lists the Commands. Change the keys in \`index.ts\`.
 
 A Tool that needs Approval is asked about in the terminal (\`mitome\`) and denied in \`mitome run\`, which tells the Model and finishes.
 

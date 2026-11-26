@@ -4,6 +4,7 @@
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel } from "effect/ai";
 import { Mitome, Provider, reportModelRequest, withModelRequestAccounting } from "@mitome/core";
+import { terminal } from "@mitome/core/terminal";
 import { record } from "../record.ts";
 import { agent, Greeting } from "./agent.ts";
 
@@ -49,7 +50,7 @@ export const echoModel = (modelId: string) =>
     ),
   );
 
-const scripted = Provider.make("scripted", {
+export const scripted = Provider.make("scripted", {
   modelIds: ["echo"],
   credential: "FIXTURE_API_KEY",
   provision: (modelId) => {
@@ -82,9 +83,21 @@ const layer = Layer.effect(
   ),
 );
 
+/** The starter keys `mitome init` writes, and a key that runs the billing Command. */
+export const keys = terminal({
+  keys: {
+    enter: terminal.submit,
+    "shift+enter": terminal.newline,
+    "ctrl+j": terminal.newline,
+    escape: terminal.interrupt,
+    "ctrl+d": "/quit",
+    "ctrl+b": "/balance",
+  },
+});
+
 export default Mitome.make({
   agent,
-  provide: layer,
+  provide: [layer, keys],
   providers: [scripted, oauth],
   model: "scripted/echo",
 });

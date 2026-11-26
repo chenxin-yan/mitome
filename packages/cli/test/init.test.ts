@@ -42,9 +42,11 @@ import {
   providerChoices,
 } from "create-mitome/template";
 import { Mitome } from "@mitome/core";
+import { TerminalOptions } from "@mitome/core/terminal";
 import cliPackage from "../package.json" with { type: "json" };
 import { runCli } from "../src/index.ts";
 import { Installer, type InstallerService } from "../src/init.ts";
+import { terminalKeys } from "../src/terminal/keys.ts";
 import {
   configurationPlan,
   type FileMap,
@@ -790,6 +792,36 @@ describe("generated TypeScript", () => {
         ["agent", "use", 0, "parts", "tools", "tools", "roll", "needsApproval"],
         true,
       );
+    }
+  });
+
+  it("every Provider variant gives the terminal the starter keys, which it opens with", async () => {
+    const root = await generated();
+    for (const [provider] of providers) {
+      const path = join(root, provider, "index.ts");
+      expect(await readFile(path, "utf8")).toContain(
+        [
+          "  provide: terminal({",
+          "    keys: {",
+          "      enter: terminal.submit,",
+          '      "shift+enter": terminal.newline,',
+          '      "ctrl+j": terminal.newline,',
+          "      escape: terminal.interrupt,",
+          '      "ctrl+d": "/quit",',
+          "    },",
+          "  }),",
+          "});",
+        ].join("\n"),
+      );
+      const generated: { readonly default: { readonly provide: Layer.Layer<never> } } =
+        await import(pathToFileURL(path).href);
+      const keys = await Effect.runPromise(
+        Effect.map(TerminalOptions, (options) => options).pipe(
+          Effect.provide(generated.default.provide),
+          Effect.flatMap((options) => terminalKeys(options, path)),
+        ),
+      );
+      expect([...keys.keys()]).toEqual(["enter", "shift+enter", "ctrl+j", "escape", "ctrl+d"]);
     }
   });
 });

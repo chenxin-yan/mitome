@@ -2,6 +2,11 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite-plus";
 
 const local = (path: string) => fileURLToPath(new URL(path, import.meta.url));
+// A later override replaces an earlier one's options for the same rule, so each repeats this.
+const rootOmitsSubpaths = {
+  regex: "(^|/)(kernel|terminal)(\\.[jt]s)?$",
+  message: "The root entry never imports a subpath such as kernel or terminal (ADR-0061).",
+};
 const docsOutput = [
   "apps/docs/.output/",
   "apps/docs/.tanstack/",
@@ -146,12 +151,19 @@ export default defineConfig({
         },
       },
       {
+        files: ["packages/mitome/src/**"],
+        rules: {
+          "eslint/no-restricted-imports": ["error", { patterns: [rootOmitsSubpaths] }],
+        },
+      },
+      {
         files: ["packages/mitome/src/session/**"],
         rules: {
           "eslint/no-restricted-imports": [
             "error",
             {
               patterns: [
+                rootOmitsSubpaths,
                 {
                   regex: "(^|/)agent/",
                   message: "session/ runs a conversation and never imports agent/ (ADR-0061).",

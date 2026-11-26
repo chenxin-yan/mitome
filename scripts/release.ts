@@ -58,6 +58,8 @@ type PackageManifest = {
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
+  /** Published entries; a packed manifest maps each to one file. */
+  exports?: Record<string, string>;
   os?: string[];
   cpu?: string[];
   libc?: string[];
@@ -160,6 +162,18 @@ export function checkArchives(packages: ReadonlyArray<ReleasePackage>, directory
         if (platform.name.startsWith("@mitome/cli-")) {
           assert.equal(manifest.optionalDependencies?.[platform.name], platform.version);
         }
+      }
+    }
+    if (pkg.name === "@mitome/core") {
+      // Every Configuration that opens the terminal imports its options from this subpath.
+      assert.equal(
+        manifest.exports?.["./terminal"],
+        "./dist/terminal.js",
+        `${pkg.name} does not export ./terminal`,
+      );
+      const files = execFileSync("tar", ["-tzf", archive], { encoding: "utf8" }).split("\n");
+      for (const file of ["dist/terminal.js", "dist/terminal.d.ts"]) {
+        assert.ok(files.includes(`package/${file}`), `${pkg.name} is missing ${file}`);
       }
     }
     if (pkg.name.startsWith("@mitome/cli-")) {

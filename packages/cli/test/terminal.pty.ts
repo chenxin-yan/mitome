@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 const binary = fileURLToPath(new URL("../dist/local/mitome", import.meta.url));
 const fixture = fileURLToPath(new URL("fixtures/config", import.meta.url));
 const history = fileURLToPath(new URL("fixtures/history", import.meta.url));
+const unkeyed = fileURLToPath(new URL("fixtures/keys/none.ts", import.meta.url));
 const directory = await mkdtemp(join(tmpdir(), "mitome-pty-"));
 const log = join(directory, "events.log");
 const selected = ["--config", fixture];
@@ -23,7 +24,7 @@ const ICANON = process.platform === "darwin" ? 0x100 : 0x2;
 const ECHO = 0x8;
 const enterAlternate = "\u001b[?1049h";
 const leaveAlternate = "\u001b[?1049l";
-const altEnter = "\u001b\r";
+const enter = "\r";
 const tab = "\t";
 
 const events = async () => (await readFile(log, "utf8")).split("\n").filter(Boolean);
@@ -58,6 +59,7 @@ const open = (args: ReadonlyArray<string>, env: Readonly<Record<string, string>>
     terminal,
     output: () => output,
     write: (text: string) => void terminal.write(text),
+    until,
     /** Frames are cell diffs, so wait for single words rather than whole lines. */
     shows: (word: string) => until(() => output.includes(word), JSON.stringify(word)),
     logged: (event: string) => until(async () => (await events()).includes(event), event),
@@ -84,11 +86,11 @@ describe.skipIf(process.platform === "win32")("compiled bare mitome", { timeout:
     // Raw mode while the terminal is live.
     expect(tui.terminal.localFlags & ICANON).toBe(0);
     tui.write("hello");
-    tui.write(altEnter);
+    tui.write(enter);
     await tui.logged("program:hello");
     await tui.shows("succeeded;");
     tui.write("charge");
-    tui.write(altEnter);
+    tui.write(enter);
     await tui.shows("Approval");
     await tui.shows('"cents"');
     expect(await events()).not.toContain("charge:250");
@@ -124,7 +126,7 @@ describe.skipIf(process.platform === "win32")("compiled bare mitome", { timeout:
     const tui = open([], { MITOME_HOME: home });
     await tui.shows("Ready");
     tui.write("charge");
-    tui.write(altEnter);
+    tui.write(enter);
     await tui.shows("Approval");
     tui.write(tab);
     tui.write("n");
@@ -144,7 +146,7 @@ describe.skipIf(process.platform === "win32")("compiled bare mitome", { timeout:
     const tui = open(selected);
     await tui.shows("Ready");
     tui.write("wait");
-    tui.write(altEnter);
+    tui.write(enter);
     await tui.logged("turn:wait");
     tui.write("\u0003");
     const { code, restored, output } = await tui.exited();
@@ -173,7 +175,7 @@ describe.skipIf(process.platform === "win32")("compiled bare mitome", { timeout:
     const tui = open(selected);
     await tui.shows("Ready");
     tui.write("wait");
-    tui.write(altEnter);
+    tui.write(enter);
     await tui.logged("turn:wait");
     // Restoring the terminal then fails, which must not count as the terminal failing.
     tui.child.kill("SIGHUP");
@@ -195,7 +197,7 @@ describe.skipIf(process.platform === "win32")("compiled bare mitome", { timeout:
       const tui = open([...selected, "--grace", "300ms"]);
       await tui.shows("Ready");
       tui.write("hold");
-      tui.write(altEnter);
+      tui.write(enter);
       await tui.logged("turn:hold");
       const started = Date.now();
       close(tui);
@@ -220,7 +222,7 @@ describe.skipIf(process.platform === "win32")("compiled bare mitome", { timeout:
       const tui = open(["--config", history]);
       await tui.shows("Conversation");
       tui.write("hello");
-      tui.write(altEnter);
+      tui.write(enter);
       await tui.shows("heard:");
       close(tui);
       const { code, output } = await tui.exited();
@@ -240,7 +242,7 @@ describe.skipIf(process.platform === "win32")("compiled bare mitome", { timeout:
     const tui = open(["--config", spaced]);
     await tui.shows("Conversation");
     tui.write("hello");
-    tui.write(altEnter);
+    tui.write(enter);
     await tui.shows("heard:");
     tui.write("\u0003");
     const { output } = await tui.exited();
@@ -267,6 +269,70 @@ describe.skipIf(process.platform === "win32")("compiled bare mitome", { timeout:
     expect(output).toContain(
       `There is no conversation to continue in ${await realpath(directory)}.`,
     );
+  });
+
+  test("sends with the bound Enter only, breaks a line with Ctrl+J, and runs a key's Command", async () => {
+    const tui = open(selected);
+    await tui.shows("Ready");
+    await tui.shows("enter send");
+    tui.write("one");
+    // Alt+Enter is not bound in this Configuration, and Ctrl+J arrives as a line feed.
+    tui.write("\u001b\r");
+    tui.write("\n");
+    tui.write("two");
+    tui.write("\u0002");
+    await tui.logged("balance:");
+    await tui.shows("nothing");
+    expect(await events()).not.toContain("program:one");
+    tui.write(enter);
+    // One input of two lines.
+    await tui.logged("program:one");
+    expect(await events()).toContain("two");
+    tui.write("\u0003");
+    expect((await tui.exited()).code).toBe(130);
+  });
+
+  test("/quit closes and restores the terminal as Ctrl-C does", async () => {
+    const tui = open(selected);
+    await tui.shows("Ready");
+    tui.write("/quit");
+    tui.write(enter);
+    const { code, restored, output } = await tui.exited();
+    expect(code).toBe(130);
+    expect(restored).toBe(true);
+    expect(restoredScreen(output)).toBe(true);
+    expect((await events()).at(-1)).toBe("infra:release");
+  });
+
+  test("/new starts a new conversation, and closing says how to continue that one", async () => {
+    const tui = open(["--config", history]);
+    await tui.shows("Conversation");
+    tui.write("hello");
+    tui.write(enter);
+    await tui.shows("heard:");
+    tui.write("/new");
+    tui.write(enter);
+    await tui.shows("Started");
+    const mark = tui.output().length;
+    tui.write("again");
+    tui.write(enter);
+    await tui.until(() => tui.output().slice(mark).includes("heard"), "the reply");
+    tui.write("\u0003");
+    const { code, output } = await tui.exited();
+    expect(code).toBe(130);
+    const [, first] = /Conversation (\S+)\./.exec(output) ?? [];
+    const after = output.slice(output.lastIndexOf(leaveAlternate));
+    const [, kept] = /Conversation (\S+) is kept/.exec(after) ?? [];
+    expect(kept).toBeDefined();
+    expect(kept).not.toBe(first);
+  });
+
+  test("refuses to open without the terminal's options, before entering the terminal", async () => {
+    const tui = open(["--config", unkeyed]);
+    const { code, output } = await tui.exited();
+    expect(code).toBe(1);
+    expect(output).not.toContain(enterAlternate);
+    expect(output).toContain("The terminal has no keys");
   });
 
   test("a startup failure exits 1 without ever entering the terminal", async () => {

@@ -79,7 +79,7 @@ An architecture decision that changes a public contract or a cross-cutting rule 
 
 ## Manual terminal check
 
-Automated tests drive the terminal through OpenTUI's test renderer and the compiled `mitome` through a pseudo-terminal on Linux. Before a release, also run `mitome --config <directory>` in a real terminal on each supported platform and confirm: Enter inserts a newline and Alt-Enter sends; repeated submissions reuse one Session; a pending Approval is decided only after Tab, with `y` or `n`; Esc interrupts and the next submission succeeds; Ctrl-C exits and restores the terminal.
+Automated tests drive the terminal through OpenTUI's test renderer and the compiled `mitome` through a pseudo-terminal on Linux. Before a release, also run `mitome --config <directory>` in a real terminal on each supported platform and confirm, with the starter keys `mitome init` writes: Enter sends and Ctrl+J inserts a newline; typing `/` lists the Commands, `/new` starts a new conversation and Ctrl+D closes; repeated submissions reuse one Session; a pending Approval is decided only after Tab, with `y` or `n`; Escape interrupts and the next submission succeeds; Ctrl-C exits and restores the terminal.
 
 ## Issue labels
 
