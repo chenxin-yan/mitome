@@ -4,9 +4,9 @@ description: Prerelease breaking changes, the release status and the Effect vers
 icon: Tags
 ---
 
-Mitome is prerelease, and nothing is published to npm yet. Its packages (`@mitome/core`, `@mitome/providers`, `@mitome/cli` with its platform binaries, and `create-mitome`) release together at one version. The core package is published as `@mitome/core` because npm refuses the name `mitome`; it switches to `mitome` when that name is available ([ADR-0061](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0061-ship-one-package-and-gate-what-enters-its-core.md)).
+Mitome is prerelease, and nothing is published to npm yet. Its packages (`@mitome/core`, `@mitome/providers`, `@mitome/transcripts`, `@mitome/cli` with its platform binaries, and `create-mitome`) release together at one version. The core package is published as `@mitome/core` because npm refuses the name `mitome`; it switches to `mitome` when that name is available ([ADR-0061](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0061-ship-one-package-and-gate-what-enters-its-core.md)).
 
-Until 1.0, public functions, options, event fields and stored representations may change without a deprecation period. Published stored formats still need explicit versioning and migration decisions, not silent reinterpretation. Mitome has no built-in durable Session history or recovery format; its built-in Credential store persists Provider logins.
+Until 1.0, public functions, options, event fields and stored representations may change without a deprecation period. Published stored formats still need explicit versioning and migration decisions, not silent reinterpretation. `@mitome/transcripts` writes conversations in a versioned format (version 1): a file of another version fails to open instead of being read as this one. There is no recovery format for a Turn interrupted by a crash; the built-in Credential store persists Provider logins.
 
 ## The Effect version
 

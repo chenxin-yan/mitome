@@ -123,7 +123,7 @@ try {
     if (/"(?:catalog|workspace):/.test(JSON.stringify(manifest))) {
       throw new Error(`${pkg.name} tarball retains a workspace-only dependency protocol.`);
     }
-    if (["@mitome/core", "@mitome/providers"].includes(pkg.name)) {
+    if (["@mitome/core", "@mitome/providers", "@mitome/transcripts"].includes(pkg.name)) {
       if (manifest.dependencies?.effect !== effectVersion) {
         throw new Error(`${pkg.name} tarball does not install exact Effect ${effectVersion}.`);
       }
@@ -137,6 +137,7 @@ try {
       consumerDirectory,
       join(nodeModules, "@mitome", "core"),
       join(nodeModules, "@mitome", "providers"),
+      join(nodeModules, "@mitome", "transcripts"),
       join(nodeModules, "@effect", "ai-anthropic"),
       join(nodeModules, "@effect", "ai-openai"),
       join(nodeModules, "@effect", "ai-openai-compat"),
@@ -167,6 +168,7 @@ try {
 import { LanguageModel, Prompt } from "effect/ai";
 import {
   Provider,
+  Transcripts,
   Turn,
   withModelRequestAccounting,
 } from "@mitome/core";
@@ -175,6 +177,7 @@ import { anthropic } from "@mitome/providers/anthropic";
 import { openai } from "@mitome/providers/openai";
 import { openaiCompatible } from "@mitome/providers/openai-compatible";
 import { codex } from "@mitome/providers/openai-codex";
+import { jsonlTranscripts } from "@mitome/transcripts/jsonl";
 
 if (openai().id !== "openai" || codex().id !== "openai-codex" || anthropic().id !== "anthropic") throw new Error("Official Provider packages were not installed.");
 if (openaiCompatible({ id: "local", baseUrl: "http://localhost" }).id !== "local") throw new Error("OpenAI-compatible package was not installed.");
@@ -200,6 +203,25 @@ const text = await Effect.runPromise(
   ).pipe(Effect.provide(Provider.model(provider, "default"))),
 );
 if (text !== "ok") throw new Error("Session smoke did not complete.");
+// Each provide builds the Layer again, as a process that starts again would.
+const conversation = (selection: "create" | "latest") =>
+  Effect.gen(function* () {
+    const transcripts = yield* Transcripts;
+    if (transcripts === undefined) throw new Error("jsonlTranscripts did not provide Transcripts.");
+    const transcript = selection === "create" ? yield* transcripts.create("smoke") : yield* transcripts.latest("smoke");
+    if (transcript === undefined) throw new Error("The kept conversation was not found.");
+    return yield* Session.make({ transcript });
+  }).pipe(Effect.provide(jsonlTranscripts({ directory: "transcripts" })));
+const kept = await Effect.runPromise(
+  Effect.scoped(
+    Effect.gen(function* () {
+      const session = yield* conversation("create");
+      yield* session.run(Effect.flatMap(Turn, (turn) => turn.stage(Prompt.userMessage({ content: [Prompt.textPart({ text: "kept" })] }))));
+      return (yield* (yield* conversation("latest")).history).length;
+    }),
+  ),
+);
+if (kept !== 1) throw new Error("jsonlTranscripts did not keep the conversation.");
 `,
   );
   // Typechecking the consumer against the packed declarations is the leak gate:

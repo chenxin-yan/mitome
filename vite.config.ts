@@ -29,6 +29,7 @@ export default defineConfig({
         dependsOn: [
           "@mitome/core#test",
           "@mitome/providers#test",
+          "@mitome/transcripts#test",
           "create-mitome#test",
           "@mitome/cli#test",
           "@mitome/scripts#test",
@@ -39,6 +40,7 @@ export default defineConfig({
         dependsOn: [
           "@mitome/core#test:dist",
           "@mitome/providers#test:dist",
+          "@mitome/transcripts#test:dist",
           "create-mitome#test:dist",
           "@mitome/cli#test:dist",
           "@mitome/scripts#test:dist",
@@ -160,7 +162,7 @@ export default defineConfig({
         },
       },
       {
-        files: ["packages/providers/src/**", "packages/cli/src/**"],
+        files: ["packages/providers/src/**", "packages/transcripts/src/**", "packages/cli/src/**"],
         rules: {
           "eslint/no-restricted-imports": [
             "error",
@@ -177,8 +179,11 @@ export default defineConfig({
         },
       },
       {
-        // The one file that binds the Providers' services to Node (ADR-0065).
-        files: ["packages/providers/src/shared/platform.ts"],
+        // The files that bind the Providers' and the Transcripts' services to Node (ADR-0065).
+        files: [
+          "packages/providers/src/shared/platform.ts",
+          "packages/transcripts/src/platform.ts",
+        ],
         rules: {
           "eslint/no-restricted-imports": "off",
         },

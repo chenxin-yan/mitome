@@ -29,6 +29,7 @@
     "@mitome/config": "workspace:*",
     "@mitome/core": "workspace:*",
     "@mitome/providers": "workspace:*",
+    "@mitome/transcripts": "workspace:*",
     "@opentui/core": "0.9.7",
     "@types/bun": "catalog:",
     "create-mitome": "workspace:*",

@@ -418,6 +418,9 @@ describe("mitome run --continue", () => {
         expect(result.errors).toContain(
           "This Configuration keeps no history, so there is no conversation to continue.",
         );
+        expect(result.errors).toContain(
+          '  import { jsonlTranscripts } from "@mitome/transcripts/jsonl";\n  provide: jsonlTranscripts(),',
+        );
         expect(yield* events).not.toContain("program:hello");
       }
     }),

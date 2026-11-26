@@ -61,7 +61,7 @@ const transcript = (store: Store, id: string, scope: string): Session.Transcript
   };
 };
 
-const remembering = withModelRequestAccounting(
+const model = withModelRequestAccounting(
   "fixture",
   Layer.effect(
     LanguageModel.LanguageModel,
@@ -81,6 +81,12 @@ const remembering = withModelRequestAccounting(
     }),
   ),
 );
+
+/** Answers with every user text in its Model Context. */
+export const remembering = Provider.make("scripted", {
+  modelIds: ["remember"],
+  provision: () => model,
+});
 
 export default Mitome.make({
   agent: Agent.make({
@@ -109,6 +115,6 @@ export default Mitome.make({
       open: (id) => Effect.sync(() => store.conversations.get(id)),
     };
   }),
-  providers: [Provider.make("scripted", { modelIds: ["remember"], provision: () => remembering })],
+  providers: [remembering],
   model: "scripted/remember",
 });

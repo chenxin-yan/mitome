@@ -331,6 +331,9 @@ importers:
       '@mitome/providers':
         specifier: workspace:*
         version: link:../../packages/providers
+      '@mitome/transcripts':
+        specifier: workspace:*
+        version: link:../../packages/transcripts
       effect:
         specifier: 'catalog:'
         version: 4.1.6
@@ -356,6 +359,9 @@ importers:
       '@mitome/providers':
         specifier: workspace:*
         version: link:../providers
+      '@mitome/transcripts':
+        specifier: workspace:*
+        version: link:../transcripts
       '@opentui/core':
         specifier: 0.9.7
         version: 0.9.7(typescript@7.0.2)(web-tree-sitter@0.25.10)
@@ -516,6 +522,37 @@ importers:
         specifier: ^8.23.0
         version: 8.23.0
 
+  packages/transcripts:
+    dependencies:
+      '@effect/platform-node-shared':
+        specifier: 'catalog:'
+        version: 4.1.6(effect@4.1.6)
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.6
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.6(effect@4.1.6)(vitest@5.1.0)
+      '@mitome/config':
+        specifier: workspace:*
+        version: link:../config
+      '@mitome/core':
+        specifier: workspace:*
+        version: link:../mitome
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.6.6
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vite-plus:
+        specifier: 'catalog:'
+        version: 1.7.0(@arethetypeswrong/core@0.18.5)(@types/node@26.6.6)(@vitest/ui@5.1.0)(esbuild@0.28.2)(jiti@2.7.0)(publint@0.3.25)(typescript@7.0.2)(yaml@2.9.1)
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@26.6.6)(@vitest/browser-preview@5.1.0)(@vitest/ui@5.1.0)(@voidzero-dev/vite-plus-core@8.3.8000(@arethetypeswrong/core@0.18.5)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(publint@0.3.25)(typescript@7.0.2)(yaml@2.9.1))
+
   scripts:
     devDependencies:
       '@mitome/cli':
@@ -527,6 +564,9 @@ importers:
       '@mitome/providers':
         specifier: workspace:*
         version: link:../packages/providers
+      '@mitome/transcripts':
+        specifier: workspace:*
+        version: link:../packages/transcripts
       create-mitome:
         specifier: workspace:*
         version: link:../packages/create-mitome

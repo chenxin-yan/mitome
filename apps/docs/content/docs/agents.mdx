@@ -8,7 +8,7 @@ An Agent is plain data: its Instructions, the Extensions it uses, how it decides
 
 Two tools write a starting point: `mitome init` writes the default Configuration, and `npm create mitome` writes an application that embeds an Agent. Both write the same Agent.
 
-Mitome's APIs come from `@mitome/core`, Effect and its AI APIs from `effect` and `effect/ai`, and the Providers from their `@mitome/providers` subpaths (`/openai`, `/openai-compatible`, `/openai-codex` and `/anthropic`). Nothing is published to npm yet (see [Versioning](/docs/versioning)).
+Mitome's APIs come from `@mitome/core`, Effect and its AI APIs from `effect` and `effect/ai`, the Providers from their `@mitome/providers` subpaths (`/openai`, `/openai-compatible`, `/openai-codex` and `/anthropic`), and the file store for history from `@mitome/transcripts/jsonl`. Nothing is published to npm yet (see [Versioning](/docs/versioning)).
 
 ## An Agent and an Extension
 
@@ -148,6 +148,28 @@ Next to them, `mitome init` writes a `package.json`, a `tsconfig.json`, a `.giti
 
 `mitome init` writes into the config directory (`~/.config/mitome` by default; see [which Configuration runs](/docs/cli#which-configuration-runs)), where bare `mitome` and `mitome run` find it. Keep the directory in Git to use the same Agent elsewhere; `mitome --config <directory>` runs a Configuration kept anywhere else.
 
+## Keep history
+
+A Configuration keeps its conversations in memory only, and `mitome init` writes one that does. To keep them in files, so that `mitome --continue` can pick one up again, add `@mitome/transcripts` to the Configuration's dependencies and these two lines to its `index.ts`:
+
+```ts title="index.ts"
+import { Mitome } from "@mitome/core";
+import { openai } from "@mitome/providers/openai";
+import { jsonlTranscripts } from "@mitome/transcripts/jsonl";
+import { agent } from "./agent.js";
+
+export default Mitome.make({
+  agent,
+  providers: [openai()],
+  model: "openai/gpt-5.6",
+  provide: jsonlTranscripts(),
+});
+```
+
+`jsonlTranscripts()` provides the `Transcripts` service, which hands out conversations; a Configuration that already provides a Layer lists both, `provide: [jsonlTranscripts(), layer]`. Each conversation is one file, `<id>.jsonl`, in the `transcripts` directory under the state directory (`~/.local/state/mitome/transcripts` by default; see [auth](/docs/cli#auth) for how the state directory is found), or in the directory `jsonlTranscripts({ directory })` names. On POSIX systems the directory is created readable by its owner only and each file is written so, because conversations hold what Tools read and ran; on Windows these modes set no owner-only ACL, so see [Security](/docs/security#protect-credentials-and-stored-data). Its lines are the stored bytes of [the conversation's plain data](#the-conversation-holds-plain-data), written as JSON: the store applies the same rule to what it is given, and JSON keeps all of plain data but fields of `undefined` and the sign of `-0`, which the conversation already lacks. Each line is appended and synced before the Session publishes it, so what a Turn kept survives the process: every Entry it committed, even if it then failed or was interrupted. A Step still running when the process stops is lost, though its Tools may have run.
+
+A conversation is a tree of Entries, and the next Turn continues from its stored position. `mitome` and `mitome run` start a new conversation for the working directory; `--continue` continues the one most recently written there and `--continue=<id>` the one with that id (see [CLI](/docs/cli#continue-a-conversation)). From code, `instance.session({ transcript })` and `Session.make(agent, { transcript })` take `{ create: scope }`, `{ latest: scope }` or `{ open: id }`, where the scope is a label of the Host's choosing, and `session.transcript` is the conversation's id. Two Sessions on one conversation never overwrite each other: the one whose view is stale has its next commit refused and stops.
+
 ## Embed an Agent in an application
 
 `Session.make(agent)` allocates, in the caller's Scope, a fresh Session whose `run(input)` runs the Agent as one Turn. What the program needs stays a requirement of `run`, and what the Extensions need one of `Session.make`; for the default program that is the Model: provide `Provider.model(openai(), "gpt-5.6")` for a real one, or a scripted Model in a test. Whoever calls `run` decides who answers Approvals by providing an `Approver`, or none.
@@ -247,4 +269,4 @@ export const main = Effect.scoped(
 
 ## Not yet
 
-These are designed or planned, not implemented: streaming output and its events; Extensions that shape the Model Context or watch events; asking the person a question or notifying them from Extension code, and allowing a Tool for the rest of a Session; installing a Configuration's dependencies before it runs (a missing install names the command to run); keeping conversations beyond the process (no store for `Transcripts` ships yet), navigating a conversation's tree from the terminal, and continuing a Turn interrupted by a crash; slash commands in the terminal, queued Messages, `mitome serve`, Channels, schedules and Delegation; and first-party Extensions (coding Tools, Skills, MCP, web).
+These are designed or planned, not implemented: streaming output and its events; Extensions that shape the Model Context or watch events; asking the person a question or notifying them from Extension code, and allowing a Tool for the rest of a Session; installing a Configuration's dependencies before it runs (a missing install names the command to run); navigating a conversation's tree from the terminal, and continuing a Turn interrupted by a crash; Commands in the terminal, queued Messages, `mitome serve`, Channels, schedules and Delegation; and first-party Extensions (coding Tools, Skills, MCP, web).
