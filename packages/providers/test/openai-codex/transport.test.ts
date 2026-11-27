@@ -1,0 +1,611 @@
+import { describe, expect, test } from "vitest";
+import { Effect, Layer, Predicate, Schema, Stream } from "effect";
+import { LanguageModel, Prompt } from "effect/ai";
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
+import {
+  CredentialStore,
+  CredentialUnavailableError,
+  type CredentialError,
+} from "../../src/openai-codex/credential-store.js";
+import { token } from "../../src/openai-codex/oauth-token.js";
+import { requestFor } from "../../src/openai-codex/request.js";
+import { streamText } from "../../src/openai-codex/transport.js";
+import { type OAuthCredential } from "../../src/openai-codex/types.js";
+import { CredentialStoreError } from "../../src/shared/credential-store.js";
+import { sse } from "../support.js";
+
+const credential = (
+  access = "synthetic-access",
+  expires = Date.now() + 3_600_000,
+): OAuthCredential => ({
+  type: "oauth",
+  access,
+  refresh: `${access}-refresh`,
+  expires,
+  accountId: `${access}-account`,
+});
+
+type Exchange = (
+  current: OAuthCredential,
+  rejected: OAuthCredential,
+) => Effect.Effect<OAuthCredential, CredentialError>;
+
+/** A store whose Credential is always fresh, so only a Provider rejection reaches `exchange`. */
+const memoryCredentialStoreLayer = (
+  initial: OAuthCredential,
+  exchange: Exchange = (current) => Effect.succeed(current),
+): Layer.Layer<CredentialStore> =>
+  Layer.sync(CredentialStore, () => {
+    let current = initial;
+    return {
+      loadCredential: Effect.sync(() => current),
+      credential: (rejected) =>
+        rejected === undefined
+          ? Effect.sync(() => current)
+          : exchange(current, rejected).pipe(
+              Effect.tap((next) =>
+                Effect.sync(() => {
+                  current = next;
+                }),
+              ),
+            ),
+    };
+  });
+
+const failingCredentialStoreLayer = (error: CredentialError): Layer.Layer<CredentialStore> =>
+  Layer.succeed(CredentialStore, {
+    loadCredential: Effect.fail(error),
+    credential: () => Effect.fail(error),
+  });
+
+type JsonObject = { readonly [key: string]: Schema.Json };
+
+const optionsFor = (prompt: Prompt.Prompt): LanguageModel.ProviderOptions => ({
+  prompt,
+  tools: [],
+  responseFormat: { type: "text" },
+  toolChoice: "auto",
+  span: Effect.runSync(Effect.makeSpan("provider-test")),
+  previousResponseId: undefined,
+  incrementalPrompt: undefined,
+});
+
+const providerOptions = optionsFor(Prompt.make("Hi"));
+
+const completed = () =>
+  new Response(sse({ type: "response.completed" }), {
+    headers: { "content-type": "text/event-stream" },
+  });
+
+type TestRequest = Parameters<Parameters<typeof HttpClient.make>[0]>[0];
+type TestResponse = Response | HttpClientError.HttpClientError;
+
+const clientFor = (fetch: (request: TestRequest, url: URL) => TestResponse) =>
+  HttpClient.make((request, url) => {
+    const response = fetch(request, url);
+    return HttpClientError.isHttpClientError(response)
+      ? Effect.fail(response)
+      : Effect.succeed(HttpClientResponse.fromWeb(request, response));
+  });
+
+const runWithLayer = (
+  layer: Layer.Layer<CredentialStore>,
+  fetch: (request: TestRequest, url: URL) => TestResponse,
+  client = clientFor(fetch),
+  options = providerOptions,
+) => {
+  return Effect.runPromise(
+    Stream.runCollect(
+      streamText("gpt-5.4", "https://codex.test/backend-api", "session-1", options),
+    ).pipe(Effect.provide(Layer.merge(layer, Layer.succeed(HttpClient.HttpClient, client)))),
+  );
+};
+
+const run = (
+  initial: OAuthCredential,
+  fetch: (request: TestRequest, url: URL) => TestResponse,
+  exchange: (
+    current: OAuthCredential,
+    rejected: OAuthCredential,
+    client: ReturnType<typeof HttpClient.make>,
+  ) => Effect.Effect<OAuthCredential, CredentialError> = (current) => Effect.succeed(current),
+) => {
+  const client = clientFor(fetch);
+  return runWithLayer(
+    memoryCredentialStoreLayer(initial, (current, rejected) => exchange(current, rejected, client)),
+    fetch,
+    client,
+  );
+};
+
+describe("Codex transport", () => {
+  test("constructs the documented Provider request and Credential headers", async () => {
+    let request:
+      | {
+          readonly method: string;
+          readonly url: string;
+          readonly headers: Record<string, string>;
+          readonly body: JsonObject;
+        }
+      | undefined;
+
+    await run(credential(), (outgoing, url) => {
+      const body = Predicate.isTagged(outgoing.body, "Uint8Array")
+        ? Schema.decodeSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)))(
+            new TextDecoder().decode(outgoing.body.body),
+          )
+        : {};
+      request = { method: outgoing.method, url: url.toString(), headers: outgoing.headers, body };
+      return completed();
+    });
+
+    expect(request).toEqual({
+      method: "POST",
+      url: "https://codex.test/backend-api/codex/responses",
+      headers: expect.objectContaining({
+        authorization: "Bearer synthetic-access",
+        "chatgpt-account-id": "synthetic-access-account",
+        originator: "mitome",
+        "openai-beta": "responses=experimental",
+        accept: "text/event-stream",
+        "content-type": "application/json",
+        "session-id": "session-1",
+        "x-client-request-id": "session-1",
+        "user-agent": `mitome (${process.platform} ${process.arch})`,
+      }),
+      body: expect.objectContaining({
+        model: "gpt-5.4",
+        instructions: "",
+        store: false,
+        stream: true,
+        input: [{ role: "user", content: "Hi" }],
+        text: { verbosity: "low" },
+        include: ["reasoning.encrypted_content"],
+        prompt_cache_key: "session-1",
+        tool_choice: "auto",
+        parallel_tool_calls: true,
+      }),
+    });
+  });
+
+  test("replays encrypted reasoning immediately before its function call", () => {
+    const prompt = Prompt.fromMessages([
+      Prompt.makeMessage("assistant", {
+        content: [
+          Prompt.makePart("reasoning", {
+            text: "Checked the repository.",
+            options: {
+              openai: { itemId: "reasoning-1", encryptedContent: "encrypted-reasoning" },
+            },
+          }),
+          Prompt.makePart("tool-call", {
+            id: "call-1",
+            name: "lookup",
+            params: { query: "mitome" },
+            providerExecuted: false,
+          }),
+        ],
+      }),
+    ]);
+
+    expect(requestFor("gpt-5.4", optionsFor(prompt), "session-1", "auto")).toMatchObject({
+      include: ["reasoning.encrypted_content"],
+      input: [
+        {
+          type: "reasoning",
+          id: "reasoning-1",
+          encrypted_content: "encrypted-reasoning",
+          summary: [{ type: "summary_text", text: "Checked the repository." }],
+        },
+        {
+          type: "function_call",
+          call_id: "call-1",
+          name: "lookup",
+          arguments: '{"query":"mitome"}',
+        },
+      ],
+    });
+  });
+
+  test("replays encrypted reasoning immediately before its assistant text", () => {
+    const prompt = Prompt.fromMessages([
+      Prompt.makeMessage("assistant", {
+        content: [
+          Prompt.makePart("reasoning", {
+            text: "Checked the repository.",
+            options: {
+              openai: { itemId: "reasoning-1", encryptedContent: "encrypted-reasoning" },
+            },
+          }),
+          Prompt.makePart("text", { text: "The repository is ready." }),
+        ],
+      }),
+      Prompt.makeMessage("user", {
+        content: [Prompt.makePart("text", { text: "Continue." })],
+      }),
+    ]);
+
+    expect(requestFor("gpt-5.4", optionsFor(prompt), "session-1", "auto").input).toEqual([
+      {
+        type: "reasoning",
+        id: "reasoning-1",
+        encrypted_content: "encrypted-reasoning",
+        summary: [{ type: "summary_text", text: "Checked the repository." }],
+      },
+      { role: "assistant", content: "The repository is ready." },
+      { role: "user", content: "Continue." },
+    ]);
+  });
+
+  test("keeps every system Message, in order, as the instructions", () => {
+    const prompt = Prompt.fromMessages([
+      Prompt.makeMessage("system", { content: "Step instructions." }),
+      Prompt.makeMessage("system", { content: "Conversation instructions." }),
+      Prompt.makeMessage("user", { content: [Prompt.makePart("text", { text: "Hi" })] }),
+    ]);
+
+    expect(requestFor("gpt-5.4", optionsFor(prompt), "session-1", "auto")).toMatchObject({
+      instructions: "Step instructions.\n\nConversation instructions.",
+      input: [{ role: "user", content: "Hi" }],
+    });
+  });
+
+  test("replays assistant text in place, coalescing only adjacent text", () => {
+    const reasoning = Prompt.makePart("reasoning", {
+      text: "",
+      options: { openai: { itemId: "reasoning-1", encryptedContent: "encrypted-reasoning" } },
+    });
+    const prompt = Prompt.fromMessages([
+      Prompt.makeMessage("assistant", {
+        content: [
+          Prompt.makePart("text", { text: "A" }),
+          Prompt.makePart("text", { text: "B" }),
+          reasoning,
+          Prompt.makePart("text", { text: "C" }),
+          Prompt.makePart("tool-call", {
+            id: "call-1",
+            name: "lookup",
+            params: {},
+            providerExecuted: false,
+          }),
+          Prompt.makePart("text", { text: "D" }),
+        ],
+      }),
+    ]);
+
+    expect(requestFor("gpt-5.4", optionsFor(prompt), "session-1", "auto").input).toEqual([
+      { role: "assistant", content: "AB" },
+      {
+        type: "reasoning",
+        id: "reasoning-1",
+        encrypted_content: "encrypted-reasoning",
+        summary: [],
+      },
+      { role: "assistant", content: "C" },
+      { type: "function_call", call_id: "call-1", name: "lookup", arguments: "{}" },
+      { role: "assistant", content: "D" },
+    ]);
+  });
+
+  test("rejects a user file part before any request", async () => {
+    let requests = 0;
+    const prompt = Prompt.fromMessages([
+      Prompt.makeMessage("user", {
+        content: [
+          Prompt.makePart("text", { text: "What is this?" }),
+          Prompt.makePart("file", { mediaType: "image/png", data: new Uint8Array([1]) }),
+        ],
+      }),
+    ]);
+    await expect(
+      runWithLayer(
+        memoryCredentialStoreLayer(credential()),
+        () => {
+          requests += 1;
+          return completed();
+        },
+        undefined,
+        optionsFor(prompt),
+      ),
+    ).rejects.toMatchObject({
+      reason: {
+        _tag: "InvalidUserInputError",
+        description: 'Codex cannot send a user Message part of type "file"',
+      },
+    });
+    expect(requests).toBe(0);
+  });
+
+  test("sends a Tool's model output in place of its result", () => {
+    const prompt = Prompt.fromMessages([
+      Prompt.makeMessage("tool", {
+        content: [
+          Prompt.makePart("tool-result", {
+            id: "call-1",
+            name: "save",
+            isFailure: false,
+            result: { secret: "private" },
+            modelOutput: [Prompt.textPart({ text: "saved" }), Prompt.textPart({ text: "twice" })],
+            providerExecuted: false,
+          }),
+        ],
+      }),
+    ]);
+
+    const request = requestFor("gpt-5.4", optionsFor(prompt), "session-1", "auto");
+    expect(request.input).toEqual([
+      { type: "function_call_output", call_id: "call-1", output: "saved\ntwice" },
+    ]);
+    expect(JSON.stringify(request)).not.toContain("private");
+  });
+
+  test("rejects a Tool model output it cannot send before any request", async () => {
+    let requests = 0;
+    const prompt = Prompt.fromMessages([
+      Prompt.makeMessage("tool", {
+        content: [
+          Prompt.makePart("tool-result", {
+            id: "call-1",
+            name: "screenshot",
+            isFailure: false,
+            result: { secret: "private" },
+            modelOutput: [Prompt.filePart({ mediaType: "image/png", data: new Uint8Array([1]) })],
+            providerExecuted: false,
+          }),
+        ],
+      }),
+    ]);
+    await expect(
+      runWithLayer(
+        memoryCredentialStoreLayer(credential()),
+        () => {
+          requests += 1;
+          return completed();
+        },
+        undefined,
+        optionsFor(prompt),
+      ),
+    ).rejects.toMatchObject({
+      reason: {
+        _tag: "InvalidUserInputError",
+        description: 'Codex cannot send a Tool model output part of type "file"',
+      },
+    });
+    expect(requests).toBe(0);
+  });
+
+  test("rejects a JSON response format before any request", async () => {
+    let requests = 0;
+    await expect(
+      runWithLayer(
+        memoryCredentialStoreLayer(credential()),
+        () => {
+          requests += 1;
+          return completed();
+        },
+        undefined,
+        {
+          ...providerOptions,
+          responseFormat: { type: "json", objectName: "answer", schema: Schema.String },
+        },
+      ),
+    ).rejects.toMatchObject({
+      reason: {
+        _tag: "InvalidUserInputError",
+        description: 'Codex does not support response format "json"',
+      },
+    });
+    expect(requests).toBe(0);
+  });
+
+  test("preserves Credential auth and storage error taxonomy", async () => {
+    const unavailable = new CredentialUnavailableError({
+      message:
+        "Codex Credential is unavailable. Authenticate through your application; with the Mitome CLI, run `mitome auth login --provider openai-codex`.",
+    });
+    await expect(
+      runWithLayer(failingCredentialStoreLayer(unavailable), () => completed()),
+    ).rejects.toMatchObject({
+      reason: {
+        _tag: "AuthenticationError",
+        isRetryable: false,
+        message: expect.stringContaining("mitome auth login --provider openai-codex"),
+      },
+    });
+
+    const storage = new CredentialStoreError({
+      message: "Credential storage failed",
+      code: "EACCES",
+    });
+    await expect(
+      runWithLayer(failingCredentialStoreLayer(storage), () => completed()),
+    ).rejects.toMatchObject({
+      reason: {
+        _tag: "UnknownError",
+        description: "Credential storage failed (EACCES)",
+        isRetryable: false,
+      },
+    });
+  });
+
+  test("preserves HttpClient request taxonomy", async () => {
+    let requests = 0;
+    await expect(
+      run(credential(), (request) => {
+        requests += 1;
+        return new HttpClientError.HttpClientError({
+          reason: new HttpClientError.InvalidUrlError({
+            request,
+            description: "invalid Codex URL",
+          }),
+        });
+      }),
+    ).rejects.toMatchObject({
+      reason: { _tag: "NetworkError", reason: "InvalidUrlError", isRetryable: false },
+    });
+    expect(requests).toBe(1);
+  });
+
+  test("retries retryable pre-SSE failures at most twice", async () => {
+    let networkRequests = 0;
+    await run(credential(), (request) => {
+      networkRequests += 1;
+      return networkRequests === 1
+        ? new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({
+              request,
+              description: "connection reset",
+            }),
+          })
+        : completed();
+    });
+    expect(networkRequests).toBe(2);
+
+    let transientRequests = 0;
+    await run(credential(), () => {
+      transientRequests += 1;
+      return transientRequests === 1 ? new Response("busy", { status: 503 }) : completed();
+    });
+    expect(transientRequests).toBe(2);
+
+    let exhaustedRequests = 0;
+    await expect(
+      run(credential(), () => {
+        exhaustedRequests += 1;
+        return new Response("busy", { status: 503 });
+      }),
+    ).rejects.toMatchObject({ reason: { _tag: "InternalProviderError" } });
+    expect(exhaustedRequests).toBe(3);
+  });
+
+  test("does not retry non-retryable status or SSE failures", async () => {
+    let invalidRequests = 0;
+    await expect(
+      run(credential(), () => {
+        invalidRequests += 1;
+        return Response.json({ error: { message: "model not found" } }, { status: 400 });
+      }),
+    ).rejects.toMatchObject({
+      reason: {
+        _tag: "InvalidRequestError",
+        description: expect.stringContaining("model not found"),
+      },
+    });
+    expect(invalidRequests).toBe(1);
+
+    let streamRequests = 0;
+    await expect(
+      run(credential(), () => {
+        streamRequests += 1;
+        return new Response(
+          sse({ type: "error", error: { message: "stream failed after headers" } }),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    ).rejects.toMatchObject({ reason: { description: "stream failed after headers" } });
+    expect(streamRequests).toBe(1);
+  });
+
+  test("names the rejected Credential to the store after a 401 and retries once", async () => {
+    const rejections: Array<string> = [];
+    const authorizations: Array<string | undefined> = [];
+
+    await run(
+      credential("first-access"),
+      (request) => {
+        authorizations.push(request.headers.authorization);
+        return authorizations.length === 1 ? new Response("", { status: 401 }) : completed();
+      },
+      (_current, rejected) =>
+        Effect.sync(() => {
+          rejections.push(rejected.access);
+          return credential("retried-access");
+        }),
+    );
+
+    expect(rejections).toEqual(["first-access"]);
+    expect(authorizations).toEqual(["Bearer first-access", "Bearer retried-access"]);
+  });
+
+  test("drains a 401 response before refreshing", async () => {
+    let drained = false;
+    let drainedBeforeRefresh = false;
+    let requests = 0;
+
+    await run(
+      credential(),
+      () => {
+        requests += 1;
+        if (requests > 1) return completed();
+        return new Response(
+          new ReadableStream(
+            {
+              pull(controller) {
+                drained = true;
+                controller.close();
+              },
+            },
+            { highWaterMark: 0 },
+          ),
+          { status: 401 },
+        );
+      },
+      () =>
+        Effect.sync(() => {
+          drainedBeforeRefresh = drained;
+          return credential("retried-access");
+        }),
+    );
+
+    expect({ drainedBeforeRefresh, requests }).toEqual({ drainedBeforeRefresh: true, requests: 2 });
+  });
+
+  test("turns a refreshed token without an account claim into an AiError", async () => {
+    const claimlessAccess = `header.${Buffer.from("{}").toString("base64url")}.signature`;
+
+    await expect(
+      run(
+        credential(),
+        (_request, url) =>
+          url.host === "auth.test"
+            ? Response.json({
+                access_token: claimlessAccess,
+                refresh_token: "refreshed-secret",
+                expires_in: 3_600,
+              })
+            : new Response("", { status: 401 }),
+        (_current, _rejected, client) =>
+          token("https://auth.test/token", {}).pipe(
+            Effect.provideService(HttpClient.HttpClient, client),
+          ),
+      ),
+    ).rejects.toMatchObject({
+      reason: {
+        _tag: "AuthenticationError",
+        isRetryable: false,
+        message: "OAuth access token did not contain an account.",
+      },
+    });
+  });
+
+  test("fails after one Credential refresh when the Provider keeps returning 401", async () => {
+    let requests = 0;
+    let refreshes = 0;
+
+    await expect(
+      run(
+        credential(),
+        () => {
+          requests += 1;
+          return new Response("", { status: 401 });
+        },
+        () =>
+          Effect.sync(() => {
+            refreshes += 1;
+            return credential("retried-access");
+          }),
+      ),
+    ).rejects.toMatchObject({ reason: { _tag: "AuthenticationError" } });
+    expect({ requests, refreshes }).toEqual({ requests: 2, refreshes: 1 });
+  });
+});

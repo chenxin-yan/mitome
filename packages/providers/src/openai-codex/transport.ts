@@ -1,0 +1,128 @@
+import { Effect, Schedule, Stream } from "effect";
+import { AiError, LanguageModel } from "effect/ai";
+import { reportModelRequest } from "@mitome/core";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import { CredentialStore } from "./credential-store.js";
+import {
+  credentialError,
+  hasRefusal,
+  httpError,
+  invalidOutput,
+  requestFor,
+  toolChoiceFor,
+  unsupportedInput,
+} from "./request.js";
+import { decodeStream } from "./sse.js";
+import { type OAuthCredential } from "./types.js";
+
+const requestRetrySchedule = Schedule.exponential("100 millis").pipe(Schedule.upTo({ times: 2 }));
+
+export const streamText = (
+  model: string,
+  baseUrl: string,
+  sessionId: string,
+  options: LanguageModel.ProviderOptions,
+) => {
+  const execute = (
+    toolChoice: "auto" | "none",
+    store: CredentialStore["Service"],
+    credential: OAuthCredential,
+    retried: boolean,
+  ): Effect.Effect<
+    Stream.Stream<Uint8Array, AiError.AiError>,
+    AiError.AiError,
+    HttpClient.HttpClient
+  > => {
+    const request = HttpClientRequest.post(`${baseUrl}/codex/responses`).pipe(
+      HttpClientRequest.setHeaders({
+        Authorization: `Bearer ${credential.access}`,
+        "chatgpt-account-id": credential.accountId,
+        originator: "mitome",
+        "User-Agent": `mitome (${process.platform} ${process.arch})`,
+        "OpenAI-Beta": "responses=experimental",
+        accept: "text/event-stream",
+        "content-type": "application/json",
+        "session-id": sessionId,
+        "x-client-request-id": sessionId,
+      }),
+      HttpClientRequest.bodyJsonUnsafe(requestFor(model, options, sessionId, toolChoice)),
+    );
+    // Each attempt, including retries and the re-execution after a 401, is one Model request.
+    const response = Effect.andThen(reportModelRequest, HttpClient.execute(request)).pipe(
+      Effect.mapError(httpError),
+      Effect.filterOrElse(
+        (response) =>
+          (response.status >= 200 && response.status < 300) ||
+          (response.status === 401 && !retried),
+        // The backend's error detail ("model not found", quota) beats a bare status.
+        (response) =>
+          response.text.pipe(
+            Effect.orElseSucceed(() => ""),
+            Effect.flatMap((body) =>
+              Effect.fail(
+                AiError.make({
+                  module: "OpenAI Codex",
+                  method: "streamText",
+                  reason: AiError.reasonFromHttpStatus(
+                    body === ""
+                      ? { status: response.status }
+                      : { status: response.status, description: body.slice(0, 512) },
+                  ),
+                }),
+              ),
+            ),
+          ),
+      ),
+      Effect.retry({
+        while: (error) => error.isRetryable,
+        schedule: requestRetrySchedule,
+      }),
+    );
+    return response.pipe(
+      Effect.flatMap((response) => {
+        if (response.status === 401) {
+          return response.text.pipe(
+            Effect.ignore,
+            Effect.andThen(store.credential(credential)),
+            Effect.mapError(credentialError),
+            Effect.flatMap((next) => execute(toolChoice, store, next, true)),
+          );
+        }
+        return Effect.succeed(
+          HttpClientResponse.stream(Effect.succeed(response)).pipe(Stream.mapError(httpError)),
+        );
+      }),
+    );
+  };
+  return Stream.unwrap(
+    Effect.gen(function* () {
+      // Rejected before credentials or any request, so no attempt is counted.
+      const toolChoice = toolChoiceFor(options.toolChoice);
+      if (toolChoice === undefined) {
+        return yield* AiError.make({
+          module: "OpenAI Codex",
+          method: "streamText",
+          reason: new AiError.InvalidUserInputError({
+            description: `Codex does not support Tool choice ${JSON.stringify(options.toolChoice)}`,
+          }),
+        });
+      }
+      const unsupported = unsupportedInput(options);
+      if (unsupported !== undefined) {
+        return yield* AiError.make({
+          module: "OpenAI Codex",
+          method: "streamText",
+          reason: new AiError.InvalidUserInputError({ description: unsupported }),
+        });
+      }
+      if (hasRefusal(options.prompt)) {
+        return yield* invalidOutput(
+          "Codex cannot send a conversation that contains a refusal: the Codex request has no refusal input form",
+        );
+      }
+      const store = yield* CredentialStore;
+      const credential = yield* store.credential().pipe(Effect.mapError(credentialError));
+      return yield* execute(toolChoice, store, credential, false);
+    }),
+  ).pipe(decodeStream);
+};

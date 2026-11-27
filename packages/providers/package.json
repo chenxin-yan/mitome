@@ -1,0 +1,63 @@
+{
+  "name": "@mitome/providers",
+  "version": "0.0.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chenxin-yan/mitome.git",
+    "directory": "packages/providers"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./openai": {
+      "types": "./dist/openai/index.d.ts",
+      "default": "./dist/openai/index.js"
+    },
+    "./openai-compatible": {
+      "types": "./dist/openai-compatible/index.d.ts",
+      "default": "./dist/openai-compatible/index.js"
+    },
+    "./openai-codex": {
+      "types": "./dist/openai-codex/index.d.ts",
+      "default": "./dist/openai-codex/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun ../../scripts/build-lib.ts",
+    "check:types": "tsc",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@effect/ai-openai": "catalog:",
+    "@effect/ai-openai-compat": "catalog:",
+    "@effect/platform-node-shared": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@mitome/config": "workspace:*",
+    "@mitome/core": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/ws": "^8.18.2",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "ws": "^8.23.0"
+  },
+  "peerDependencies": {
+    "@mitome/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
