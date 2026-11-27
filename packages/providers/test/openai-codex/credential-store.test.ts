@@ -1,8 +1,8 @@
 import { afterAll, describe, expect } from "vitest";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Predicate } from "effect";
+import { Effect, Exit, Fiber, Layer, Predicate } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -140,6 +140,77 @@ describe("Codex Credential freshness", () => {
 
       expect(endpoint.exchanged).toEqual(["other-access-refresh"]);
       expect(result.refresh).toBe("rotated-refresh-1");
+    }),
+  );
+
+  it.live("persists a rotated Credential when the caller that refreshed it is interrupted", () =>
+    Effect.gen(function* () {
+      const stateDirectory = yield* directory(credential("expired-access", 1));
+      let answered = () => {};
+      const exchanged = new Promise<void>((resolve) => (answered = resolve));
+      const body = JSON.stringify({
+        access_token: jwt("rotated-account"),
+        refresh_token: "rotated-refresh",
+        expires_in: 3_600,
+      });
+      const client = HttpClient.make((request) =>
+        Effect.sync(() => {
+          answered();
+          // The endpoint has rotated the grant; its body arrives after the caller is interrupted.
+          return HttpClientResponse.fromWeb(
+            request,
+            new Response(
+              new ReadableStream({
+                start: (controller) =>
+                  void setTimeout(() => {
+                    controller.enqueue(new TextEncoder().encode(body));
+                    controller.close();
+                  }, 100),
+              }),
+              { headers: { "content-type": "application/json" } },
+            ),
+          );
+        }),
+      );
+      const endpoint = { exchanged: [], layer: Layer.succeed(HttpClient.HttpClient, client) };
+
+      const only = yield* Effect.forkChild(usableCredential(stateDirectory, endpoint));
+      yield* Effect.promise(() => exchanged);
+      yield* Fiber.interrupt(only);
+
+      expect(Exit.hasInterrupts(yield* Fiber.await(only))).toBe(true);
+      expect(
+        yield* loadCredential(stateDirectory).pipe(Effect.provide(platformLayer)),
+      ).toMatchObject({ refresh: "rotated-refresh" });
+      const locked = yield* Effect.promise(() =>
+        stat(join(stateDirectory, "auth.lock")).then(
+          () => true,
+          () => false,
+        ),
+      );
+      expect(locked).toBe(false);
+    }),
+  );
+
+  it.live("writes nothing when the locked recheck finds a Credential another process rotated", () =>
+    Effect.gen(function* () {
+      const endpoint = tokenEndpoint();
+      const stateDirectory = yield* directory(credential("expired-access", 1));
+      const path = join(stateDirectory, "auth.json");
+      const lock = join(stateDirectory, "auth.lock");
+      // Another process holds the lock while it rotates the Credential.
+      yield* Effect.promise(() => writeFile(lock, ""));
+      const waiter = yield* Effect.forkChild(usableCredential(stateDirectory, endpoint));
+      yield* Effect.sleep(50);
+      const rotated = credential("rotated-access", Date.now() + 3_600_000);
+      yield* Effect.promise(() => writeFile(path, JSON.stringify({ "openai-codex": rotated })));
+      const before = yield* Effect.promise(() => stat(path));
+      yield* Effect.promise(() => rm(lock));
+
+      expect(yield* Fiber.join(waiter)).toEqual(rotated);
+      expect(endpoint.exchanged).toEqual([]);
+      const after = yield* Effect.promise(() => stat(path));
+      expect([after.ino, after.mtimeMs]).toEqual([before.ino, before.mtimeMs]);
     }),
   );
 });

@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -621,46 +621,180 @@ const anthropicReply = (reply: Reply, response: ServerResponse) => {
 };
 
 describe("controlled Step through anthropic", () => {
+  /**
+   * Runs `use` with only `server` reachable and a temporary Anthropic config directory as home, so
+   * no profile but the one `prepare` writes there can be read, then stops `server`.
+   */
+  const isolated = async <A>(
+    server: Upstream,
+    use: (fetch: typeof globalThis.fetch) => Promise<A>,
+    prepare: (configDirectory: string) => Promise<void> = async () => {},
+  ): Promise<A> => {
+    const configDirectory = await mkdtemp(join(tmpdir(), "mitome-controlled-step-anthropic-"));
+    directories.push(configDirectory);
+    const previous = {
+      ANTHROPIC_CONFIG_DIR: process.env.ANTHROPIC_CONFIG_DIR,
+      HOME: process.env.HOME,
+    };
+    process.env.ANTHROPIC_CONFIG_DIR = configDirectory;
+    process.env.HOME = configDirectory;
+    try {
+      await prepare(configDirectory);
+      return await use((input, init) => {
+        const url = new Request(input, init).url;
+        return new URL(url).origin === server.url
+          ? globalThis.fetch(input, init)
+          : Promise.reject(new Error(`No test answers ${url}`));
+      });
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      await server.stop();
+    }
+  };
+
   it("runs Tool Calls, sends their results back and counts every request", async () => {
     const server = await upstream("/v1/messages", ["calls", "text"], anthropicReply);
-    try {
-      const outcome = await run(
+    const outcome = await isolated(server, (fetch) =>
+      run(
         runTurn(
           Provider.model(anthropic({ apiKeyEnv: key, baseUrl: server.url }), "claude-sonnet-4-6"),
         ),
+        fetch,
+      ),
+    );
+    expect(Exit.isSuccess(outcome.exit)).toBe(true);
+    expect(outcome.log).toEqual(["first:start", "first:end", "second:start", "second:end"]);
+    expect(outcome.history.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    expect(outcome.usage).toEqual({ generations: 2, dispatches: 2, physicalRequests: 2 });
+    expect(server.requests).toHaveLength(2);
+    expect(server.requests[1]?.body.messages).toContainEqual({
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "toolu-1",
+          content: "first:a",
+          is_error: false,
+          cache_control: null,
+        },
+        {
+          type: "tool_result",
+          tool_use_id: "toolu-2",
+          content: "second:b",
+          is_error: false,
+          cache_control: null,
+        },
+      ],
+    });
+  });
+
+  /**
+   * Runs `use` isolated, with the `mitome` profile signed in for `server`, whose own host serves
+   * both its Model requests and its token refresh.
+   */
+  const withProfile = <A>(
+    server: Upstream,
+    credentials: Record<string, Json>,
+    use: (fetch: typeof globalThis.fetch) => Promise<A>,
+  ): Promise<A> =>
+    isolated(server, use, async (configDirectory) => {
+      await mkdir(join(configDirectory, "configs"));
+      await mkdir(join(configDirectory, "credentials"), { mode: 0o700 });
+      await writeFile(
+        join(configDirectory, "configs", "mitome.json"),
+        JSON.stringify({
+          authentication: { type: "user_oauth", client_id: "synthetic-client" },
+          base_url: server.url,
+        }),
       );
-      expect(Exit.isSuccess(outcome.exit)).toBe(true);
-      expect(outcome.log).toEqual(["first:start", "first:end", "second:start", "second:end"]);
-      expect(outcome.history.map((message) => message.role)).toEqual([
-        "user",
-        "assistant",
-        "tool",
-        "assistant",
-      ]);
-      expect(outcome.usage).toEqual({ generations: 2, dispatches: 2, physicalRequests: 2 });
-      expect(server.requests).toHaveLength(2);
-      expect(server.requests[1]?.body.messages).toContainEqual({
-        role: "user",
-        content: [
-          {
-            type: "tool_result",
-            tool_use_id: "toolu-1",
-            content: "first:a",
-            is_error: false,
-            cache_control: null,
-          },
-          {
-            type: "tool_result",
-            tool_use_id: "toolu-2",
-            content: "second:b",
-            is_error: false,
-            cache_control: null,
-          },
-        ],
-      });
-    } finally {
-      await server.stop();
-    }
+      await writeFile(
+        join(configDirectory, "credentials", "mitome.json"),
+        JSON.stringify(credentials),
+        { mode: 0o600 },
+      );
+    });
+
+  const profileModel = Provider.model(
+    anthropic({ apiKeyEnv: "MITOME_CONTROLLED_STEP_UNSET_KEY" }),
+    "claude-sonnet-4-6",
+  );
+
+  /** Anthropic's answer to a bearer token it does not accept. */
+  const unauthorized = (reply: Reply, response: ServerResponse) =>
+    reply === "unauthorized"
+      ? json(response, 401, {
+          type: "error",
+          error: { type: "authentication_error", message: "Invalid bearer token" },
+        })
+      : anthropicReply(reply, response);
+
+  const refreshed = (path: string, response: ServerResponse) => {
+    if (path !== "/v1/oauth/token") return void response.writeHead(404).end();
+    json(response, 200, { access_token: "refreshed-access", expires_in: 3_600 });
+  };
+
+  it("signs in through the Claude Console profile, not counting the token refresh", async () => {
+    const server = await upstream("/v1/messages", ["calls", "text"], anthropicReply, refreshed);
+    const outcome = await withProfile(
+      server,
+      { access_token: "expired-access", expires_at: 1, refresh_token: "r" },
+      (fetch) => run(runTurn(profileModel), fetch, {}),
+    );
+    expect(Exit.isSuccess(outcome.exit)).toBe(true);
+    expect(outcome.log).toEqual(["first:start", "first:end", "second:start", "second:end"]);
+    expect(outcome.usage).toEqual({ generations: 2, dispatches: 2, physicalRequests: 2 });
+    expect(server.requests.map((request) => request.headers.authorization)).toEqual([
+      "Bearer refreshed-access",
+      "Bearer refreshed-access",
+    ]);
+    expect(server.other).toEqual(["/v1/oauth/token"]);
+  });
+
+  it("refreshes a token the API rejects and sends the request once more, counting both", async () => {
+    const server = await upstream(
+      "/v1/messages",
+      ["unauthorized", "text"],
+      unauthorized,
+      refreshed,
+    );
+    const outcome = await withProfile(
+      server,
+      { access_token: "rejected-access", expires_at: 4_000_000_000, refresh_token: "r" },
+      (fetch) => run(runTurn(profileModel, { custom: true }), fetch, {}),
+    );
+    expect(Exit.isSuccess(outcome.exit)).toBe(true);
+    expect(outcome.usage).toEqual({ generations: 1, dispatches: 0, physicalRequests: 2 });
+    expect(server.requests.map((request) => request.headers.authorization)).toEqual([
+      "Bearer rejected-access",
+      "Bearer refreshed-access",
+    ]);
+    expect(server.other).toEqual(["/v1/oauth/token"]);
+  });
+
+  it("returns a second rejection instead of retrying again", async () => {
+    const server = await upstream(
+      "/v1/messages",
+      ["unauthorized", "unauthorized", "text"],
+      unauthorized,
+      refreshed,
+    );
+    const outcome = await withProfile(
+      server,
+      { access_token: "rejected-access", expires_at: 4_000_000_000, refresh_token: "r" },
+      (fetch) => run(runTurn(profileModel, { custom: true }), fetch, {}),
+    );
+    expect(Exit.isFailure(outcome.exit)).toBe(true);
+    expect(outcome.usage).toMatchObject({ physicalRequests: 2 });
+    expect(server.requests).toHaveLength(2);
+    expect(server.other).toEqual(["/v1/oauth/token"]);
   });
 });
 

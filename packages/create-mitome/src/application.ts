@@ -116,7 +116,7 @@ const tsconfigSource = `${JSON.stringify(
 // program, an entry point, runs the Effect it returns. The line iterator settles a pending read
 // with `undefined` when stdin closes, as `login` requires; closing the interface lets the command
 // exit when the browser callback wins instead.
-const loginStep = (signIn: NonNullable<ProviderChoice["signIn"]>) => `node --input-type=module -e '
+const loginStep = (signIn: { readonly import: string }) => `node --input-type=module -e '
 import { createInterface } from "node:readline";
 import { Effect } from "effect";
 import { stateDirectory, stateDirectoryMessage } from "@mitome/core";
@@ -138,8 +138,10 @@ const readmeSource = ({ name, provider, model }: ApplicationOptions): string => 
   const credential =
     signIn === undefined
       ? `Set \`${apiKeyEnv}\` to your API key.`
-      : `Sign in once: the \`node -e\` command below stores a Credential in Mitome's state directory (by default \`~/.local/state/mitome\`; \`MITOME_HOME\` moves it), where \`${factory}\` reads it. With the Mitome CLI, when its Configuration lists the \`${id}\` Provider, \`${signIn.command}\` stores the same Credential.`;
-  const login = signIn === undefined ? "" : `${loginStep(signIn)}\n`;
+      : "import" in signIn
+        ? `Sign in once: the \`node -e\` command below stores a Credential in Mitome's state directory (by default \`~/.local/state/mitome\`; \`MITOME_HOME\` moves it), where \`${factory}\` reads it. With the Mitome CLI, when its Configuration lists the \`${id}\` Provider, \`${signIn.command}\` stores the same Credential.`
+        : `Set \`${apiKeyEnv}\` to your API key, or sign in once with \`${signIn.appCommand}\`, whose sign-in \`${factory}\` reads when \`${apiKeyEnv}\` is unset. With the Mitome CLI, when its Configuration lists the \`${id}\` Provider, \`${signIn.command}\` runs the same sign-in.`;
+  const login = signIn !== undefined && "import" in signIn ? `${loginStep(signIn)}\n` : "";
   return `# ${name}
 
 An application that embeds a Mitome Agent.

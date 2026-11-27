@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Cause, Context, Effect, Exit, Layer, Predicate, Stream } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Predicate, Schema, Stream } from "effect";
 import { LanguageModel } from "effect/ai";
-import { Provider, withModelRequestAccounting } from "../src/index.js";
+import { CredentialDescriptorSchema, Provider, withModelRequestAccounting } from "../src/index.js";
 import { getProviderMetadata, isProvider, parseQualifiedModelId } from "../src/session/internal.js";
 import { testLanguageModel } from "./support/provider.js";
 
@@ -28,6 +28,31 @@ describe("Provider.make", () => {
         provision: () => stubLayer,
       }),
     ).toThrowError("Provider credential must be a valid environment variable name");
+    const capability = { module: "./auth.js" };
+    expect(() =>
+      Provider.make("example", {
+        modelIds: [],
+        credential: { env: "INVALID-NAME", capability },
+        provision: () => stubLayer,
+      }),
+    ).toThrowError("Provider credential must be a valid environment variable name");
+    const both = Provider.make("example", {
+      modelIds: [],
+      credential: { env: "EXAMPLE_KEY", capability },
+      provision: () => stubLayer,
+    });
+    expect(Provider.credentialDescriptor(both)).toEqual({ env: "EXAMPLE_KEY", capability });
+  });
+
+  it("decodes an API-key variable with a sign-in without dropping the variable", () => {
+    const decode = Schema.decodeUnknownSync(CredentialDescriptorSchema);
+    const both = { env: "EXAMPLE_KEY", capability: { module: "./auth.js", profile: "work" } };
+    expect(decode(both)).toEqual(both);
+    expect(decode({ capability: { module: "./a.js" } })).toEqual({
+      capability: { module: "./a.js" },
+    });
+    // An invalid variable is not dropped to leave a sign-in only.
+    expect(() => decode({ env: "BAD-NAME", capability: { module: "./auth.js" } })).toThrow();
   });
 
   it("takes its Credential and Model metadata as optional fields", () => {

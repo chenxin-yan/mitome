@@ -143,6 +143,31 @@ describe("Credential storage", () => {
     });
   });
 
+  // A umask applies only to POSIX modes, and only a process of its own can change it.
+  test.skipIf(process.platform === "win32")(
+    "writes storage readable and writable by its owner alone under any umask, replacing a wider file",
+    async () => {
+      const stateDirectory = await directory();
+      await mkdir(stateDirectory, { recursive: true });
+      const path = join(stateDirectory, "auth.json");
+      await writeFile(path, JSON.stringify({ other: { retained: true } }), { mode: 0o644 });
+      const source = new URL("../../dist/shared/credential-store.js", import.meta.url).href;
+      const platform = new URL("../../dist/shared/platform.js", import.meta.url).href;
+      // The mask takes the owner's read permission away from every file the process creates.
+      const writer = spawnRuntime([
+        "-e",
+        `process.umask(0o477); import { Effect } from "effect"; const { modifyCredential } = await import(${JSON.stringify(source)}); const { platformLayer } = await import(${JSON.stringify(platform)}); for (const key of ["first", "second"]) await Effect.runPromise(modifyCredential(${JSON.stringify(stateDirectory)}, key, () => Effect.succeed([{ type: "oauth" }, undefined])).pipe(Effect.provide(platformLayer)));`,
+      ]);
+      expect(await writer.exited).toBe(0);
+      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      expect(await contents(stateDirectory)).toMatchObject({
+        other: { retained: true },
+        first: { type: "oauth" },
+        second: { type: "oauth" },
+      });
+    },
+  );
+
   it.effect("times out a contended storage lock on the Effect Clock", () =>
     Effect.gen(function* () {
       const stateDirectory = yield* Effect.promise(directory);
@@ -173,7 +198,7 @@ describe("Credential storage", () => {
       const stateDirectory = yield* Effect.promise(directory);
       const path = join(stateDirectory, "auth.lock");
       const fiber = yield* Effect.forkChild(
-        modifyCredential(stateDirectory, "alpha", () => Effect.never).pipe(
+        modifyCredential(stateDirectory, "alpha", () => Effect.interruptible(Effect.never)).pipe(
           Effect.provide(platformLayer),
         ),
         { startImmediately: true },

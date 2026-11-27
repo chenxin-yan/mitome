@@ -5,6 +5,7 @@ import { rmdir } from "node:fs/promises";
 import { Effect, FileSystem, Path, Predicate } from "effect";
 import {
   exampleAgentSource,
+  gitignoreSource,
   pinnedDependencies,
   type ProviderChoice,
 } from "create-mitome/template";
@@ -27,9 +28,9 @@ export const shellQuote = (path: string, shell: Shell): string =>
       ? path
       : `'${path.replaceAll("'", "'\\''")}'`;
 
-/** How `provider` gets its credential, as a command to run before `mitome`. */
+/** How `provider` gets its credential, as a command to run before `mitome`: its API key if it takes one. */
 export const signIn = (provider: ProviderChoice, shell: Shell): string =>
-  provider.signIn !== undefined
+  provider.signIn !== undefined && provider.apiKeyEnv === undefined
     ? provider.signIn.command
     : shell === "powershell"
       ? `$env:${provider.apiKeyEnv} = "your key"`
@@ -94,14 +95,10 @@ const tsconfigSource = `${JSON.stringify(
   2,
 )}\n`;
 
-// The credential store writes a login to `.auth-<pid>-<uuid>` before renaming it to auth.json;
-// an abrupt stop can leave that plaintext file behind.
-const gitignoreSource = "node_modules/\n/auth.json\n/auth.lock\n/.auth-*\n";
-
-const credentialSource = ({ apiKeyEnv, signIn }: ProviderChoice): string =>
-  signIn === undefined
-    ? `Set \`${apiKeyEnv}\` in the environment that runs \`mitome\`; Mitome does not store it:`
-    : "Sign in with your ChatGPT account; the login is stored in Mitome's state directory:";
+const credentialSource = ({ apiKeyEnv }: ProviderChoice): string =>
+  apiKeyEnv === undefined
+    ? "Sign in with your ChatGPT account; the login is stored in Mitome's state directory:"
+    : `Set \`${apiKeyEnv}\` in the environment that runs \`mitome\`; Mitome does not store it:`;
 
 const readmeSource = (provider: ProviderChoice): string => `# Mitome Configuration
 
@@ -127,6 +124,16 @@ In PowerShell:
 ${signIn(provider, "powershell")}
 \`\`\`
 `
+}${
+  provider.apiKeyEnv === undefined || provider.signIn === undefined
+    ? ""
+    : `
+Or sign in instead; an API key in the environment takes precedence:
+
+\`\`\`sh
+${provider.signIn.command}
+\`\`\`
+`
 }
 ## Run
 
@@ -139,7 +146,11 @@ A Tool that needs Approval is asked about in the terminal (\`mitome\`) and denie
 
 After cloning this directory, install its dependencies by running \`${installCommand("mitome", "posix")}\` in it (in PowerShell: \`${installCommand("mitome", "powershell")}\`).
 
-Logins are stored in Mitome's state directory (by default \`~/.local/state/mitome\`), not here. \`MITOME_HOME\` puts the config and state directories in the same directory on purpose; set, it puts \`auth.json\` next to \`index.ts\`, which is why \`.gitignore\` ignores it.
+${
+  provider.id === "anthropic"
+    ? "Mitome uses `ant`'s profile, not a separate Mitome credential store, and the sign-in is not kept here: Anthropic's CLI, `ant`, owns it and keeps it in its `mitome` profile, in Anthropic's config directory (`ANTHROPIC_CONFIG_DIR` if set; otherwise `$XDG_CONFIG_HOME/anthropic` or `~/.config/anthropic`, and on Windows `%APPDATA%\\Anthropic` or `%USERPROFILE%\\AppData\\Roaming\\Anthropic`)."
+    : "Logins are stored in Mitome's state directory (by default `~/.local/state/mitome`), not here. `MITOME_HOME` puts the config and state directories in the same directory on purpose; set, it puts `auth.json` next to `index.ts`, which is why `.gitignore` ignores it."
+}
 `;
 
 export const configurationPlan = (options: InitOptions): FileMap =>

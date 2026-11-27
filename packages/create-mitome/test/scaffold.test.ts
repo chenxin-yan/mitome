@@ -110,7 +110,12 @@ describe("application plans", () => {
     expect(codexReadme).toContain('import { login } from "@mitome/providers/openai-codex";');
     expect(codexReadme).toContain("`mitome auth login --provider openai-codex`");
     expect(codexReadme).not.toContain("OPENAI_API_KEY");
-    expect(plan("anthropic", "claude-sonnet-5").get("README.md")).toContain("`ANTHROPIC_API_KEY`");
+    // Anthropic takes an API key or reads the profile Anthropic's CLI signs in.
+    const anthropicReadme = plan("anthropic", "claude-sonnet-5").get("README.md")!;
+    expect(anthropicReadme).toContain("`ANTHROPIC_API_KEY`");
+    expect(anthropicReadme).toContain("`ant auth login --profile=mitome`");
+    expect(anthropicReadme).toContain("`mitome auth login --provider anthropic`");
+    expect(anthropicReadme).toContain('npm install\nnpm start -- "roll a die"\n');
   });
 
   test("names the package after the directory, as npm accepts it", () => {
@@ -123,23 +128,6 @@ describe("application plans", () => {
     expect(packageName("日本語")).toBe("mitome-app");
     expect(packageName("favicon.ico")).toBe("mitome-app");
     expect(packageName("node_modules")).toBe("mitome-app");
-  });
-
-  test("says how each Provider's credential is obtained", () => {
-    expect(providerChoices.map(({ id, apiKeyEnv, signIn }) => ({ id, apiKeyEnv, signIn }))).toEqual(
-      [
-        { id: "openai", apiKeyEnv: "OPENAI_API_KEY", signIn: undefined },
-        {
-          id: "openai-codex",
-          apiKeyEnv: undefined,
-          signIn: {
-            command: "mitome auth login --provider openai-codex",
-            import: 'import { login } from "@mitome/providers/openai-codex";',
-          },
-        },
-        { id: "anthropic", apiKeyEnv: "ANTHROPIC_API_KEY", signIn: undefined },
-      ],
-    );
   });
 
   test("pins exact versions: the workspace's TypeScript and Node types for type-checking", async () => {
@@ -291,7 +279,7 @@ describe("generated application", () => {
     new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
       const child = spawn(process.execPath, args, {
         cwd,
-        env: { HOME: cwd, MITOME_HOME: cwd, PATH: "" },
+        env: { HOME: cwd, MITOME_HOME: cwd, ANTHROPIC_CONFIG_DIR: cwd, PATH: "" },
       });
       let stdout = "";
       let stderr = "";
@@ -315,12 +303,14 @@ describe("generated application", () => {
   }, 60_000);
 
   test("every Provider variant's main.ts exits with the Provider's missing-credential message", async () => {
-    // Plain Node, as `npm start` runs it, with no credentials and an empty MITOME_HOME, so the
-    // Provider stops before any network request. stdin is a pipe, not a terminal.
+    // Plain Node, as `npm start` runs it, with no credentials and an empty MITOME_HOME, HOME and
+    // ANTHROPIC_CONFIG_DIR (so no Anthropic profile either), so the Provider stops before any
+    // network request. stdin is a pipe, not a terminal.
     const credentials = {
       openai: "Environment variable OPENAI_API_KEY is not set or empty",
       "openai-codex": "Codex Credential is unavailable.",
-      anthropic: "Environment variable ANTHROPIC_API_KEY is not set or empty",
+      anthropic:
+        "Environment variable ANTHROPIC_API_KEY is not set or empty. Set it to an API key, or sign in to the Claude Console",
     } as const;
     const root = await generated();
     for (const [id] of variants) {

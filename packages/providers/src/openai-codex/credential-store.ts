@@ -94,8 +94,9 @@ const credential = Effect.fnUntraced(function* (
   if (yield* usable(stored, rejected)) return stored;
   return yield* modifyCredential(stateDirectory, provider, (locked) =>
     Effect.gen(function* () {
-      const current = yield* credentialFrom(locked);
-      if (yield* usable(current, rejected)) return [current, current];
+      // Interruptible until the exchange is sent: the endpoint may rotate the token from then on.
+      const current = yield* Effect.interruptible(credentialFrom(locked));
+      if (yield* Effect.interruptible(usable(current, rejected))) return [locked, current];
       const next = yield* token(tokenUrl, {
         grant_type: "refresh_token",
         refresh_token: current.refresh,

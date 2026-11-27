@@ -188,7 +188,14 @@ export const initConfiguration = Effect.fnUntraced(function* (options: InitOptio
       ),
     ),
   );
-  const nextSteps = [signIn(choice.provider, shell), "mitome"];
+  const { apiKeyEnv, signIn: alternative } = choice.provider;
+  const nextSteps = [
+    signIn(choice.provider, shell),
+    ...(apiKeyEnv !== undefined && alternative !== undefined
+      ? [`or sign in instead: ${alternative.command}`]
+      : []),
+    "mitome",
+  ];
   const install = liveInstallCommand();
   if (options.noInstall) {
     return yield* Console.log(

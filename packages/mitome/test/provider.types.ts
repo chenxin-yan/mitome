@@ -1,6 +1,11 @@
 import { Effect, Layer, type Types } from "effect";
 import { LanguageModel } from "effect/ai";
-import { type AuthCapability, type AuthenticateOptions, Provider } from "../src/index.js";
+import {
+  type AuthCapability,
+  type AuthenticateOptions,
+  type CredentialDescriptor,
+  Provider,
+} from "../src/index.js";
 
 // SAFETY: this compile-only fixture never executes the LanguageModel service.
 const layer = Layer.succeed(LanguageModel.LanguageModel, {} as LanguageModel.LanguageModel);
@@ -32,3 +37,15 @@ const promised: AuthCapability = { authenticate: async () => {} };
 void contract;
 void capability;
 void promised;
+
+// A Provider declares an API-key variable, a sign-in, or both.
+const descriptors: ReadonlyArray<CredentialDescriptor> = [
+  "EXAMPLE_KEY",
+  { capability: { module: "./auth.js" } },
+  { env: "EXAMPLE_KEY", capability: { module: "./auth.js" } },
+  { env: "EXAMPLE_KEY", capability: { module: "./auth.js", profile: "work" } },
+];
+// @ts-expect-error A variable inside an object needs the sign-in beside it.
+const variableOnly: CredentialDescriptor = { env: "EXAMPLE_KEY" };
+void descriptors;
+void variableOnly;

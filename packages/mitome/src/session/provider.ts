@@ -3,7 +3,7 @@ import { LanguageModel } from "effect/ai";
 import { StepProtocolError } from "./errors.js";
 import { getProviderMetadata, providerMetadata } from "./internal.js";
 import { ModelRequestAccounting } from "./accounting.js";
-import { CredentialDescriptorSchema } from "./credential.js";
+import { EnvironmentVariableName } from "./credential.js";
 import type { CredentialDescriptor } from "./credential.js";
 
 // Module-private runtime brand complements WeakMap metadata with compile-time Provider identity.
@@ -84,7 +84,12 @@ export const make = <
   if (id.length === 0 || id.includes("/")) {
     throw new TypeError("Provider id must be non-empty and contain no '/'");
   }
-  if (Predicate.isString(credential) && !Schema.is(CredentialDescriptorSchema)(credential)) {
+  const env = Predicate.isString(credential)
+    ? credential
+    : credential !== undefined && "env" in credential
+      ? credential.env
+      : undefined;
+  if (env !== undefined && !Schema.is(EnvironmentVariableName)(env)) {
     throw new TypeError("Provider credential must be a valid environment variable name");
   }
 

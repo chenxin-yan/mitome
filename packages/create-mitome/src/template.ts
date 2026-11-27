@@ -18,10 +18,17 @@ export interface ProviderChoice {
   readonly label: string;
   readonly import: string;
   readonly factory: string;
-  /** The environment variable holding the API key; absent when the Provider signs in through its `login` instead. */
+  /** The environment variable holding the API key; absent when the Provider only signs in. */
   readonly apiKeyEnv?: string;
-  /** How a Provider without an API key signs in: the CLI command, or the import line of its `login` for an application. */
-  readonly signIn?: { readonly command: string; readonly import: string };
+  /**
+   * How the Provider signs in, if it can; an API key in `apiKeyEnv` wins over it. `command` is the
+   * Mitome CLI's. An application imports the Provider's `login` (`import`), or runs `appCommand`
+   * once, which writes the sign-in the Provider reads.
+   */
+  readonly signIn?: { readonly command: string } & (
+    | { readonly import: string }
+    | { readonly appCommand: string }
+  );
 }
 
 /** The Providers offered, in prompt order; the first is the default. */
@@ -49,6 +56,10 @@ export const providerChoices: ReadonlyArray<ProviderChoice> = [
     import: 'import { anthropic } from "@mitome/providers/anthropic";',
     factory: "anthropic()",
     apiKeyEnv: "ANTHROPIC_API_KEY",
+    signIn: {
+      command: "mitome auth login --provider anthropic",
+      appCommand: "ant auth login --profile=mitome",
+    },
   },
 ];
 
