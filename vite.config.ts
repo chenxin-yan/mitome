@@ -231,15 +231,23 @@ export default defineConfig({
         },
       },
       {
-        // The preset turns this on for TypeScript files in an override of its own.
-        files: ["**/*.{ts,tsx,mts,cts}"],
-        rules: {
-          "typescript/only-throw-error": "off",
-        },
-      },
-      {
         files: ["apps/docs/**"],
         plugins: ["react"],
+        rules: {
+          // TanStack Router's notFound() and redirect() are thrown by design and are not Errors.
+          "typescript/only-throw-error": [
+            "error",
+            {
+              allow: [
+                {
+                  from: "package",
+                  package: "@tanstack/router-core",
+                  name: ["NotFoundError", "Redirect"],
+                },
+              ],
+            },
+          ],
+        },
         env: {
           browser: true,
         },
