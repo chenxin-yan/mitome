@@ -147,7 +147,6 @@ export default defineConfig({
       "typescript/use-unknown-in-catch-callback-variable": "off",
       "unicorn/catch-error-name": "off",
       "unicorn/consistent-function-scoping": "off",
-      "unicorn/prefer-native-coercion-functions": "off",
       "vitest/expect-expect": "off",
       "vitest/no-conditional-expect": "off",
       "vitest/require-mock-type-parameters": "off",

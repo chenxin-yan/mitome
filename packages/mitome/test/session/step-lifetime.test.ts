@@ -188,7 +188,7 @@ describe("Tool result projection and codecs", () => {
     // Native value is a number; its encoded (wire) form is a string.
     success: Schema.String.pipe(
       Schema.decodeTo(Schema.Finite, {
-        decode: SchemaGetter.transform((value: string) => Number(value)),
+        decode: SchemaGetter.transform(Number),
         encode: SchemaGetter.transform((value: number) => `n=${value}`),
       }),
     ),
