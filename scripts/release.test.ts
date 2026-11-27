@@ -1,10 +1,19 @@
 import { expect, test } from "bun:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { checkArchives, releasePackages, unpublishedPackages } from "./release.ts";
+import { checkArchives, copyNotices, releasePackages, unpublishedPackages } from "./release.ts";
 
 const root = resolve(import.meta.dir, "..");
 const packages = releasePackages();
@@ -35,6 +44,84 @@ test("the cohort and dependency order are checked, including drift in a platform
     manifest.version = "9.9.9";
     writeFileSync(manifestPath, JSON.stringify(manifest));
     expect(() => releasePackages(directory)).toThrow("must match the fixed release group");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("every platform package lists the notices of the native library its binary embeds", () => {
+  for (const pkg of packages.filter((pkg) => pkg.name.startsWith("@mitome/cli-"))) {
+    const manifest = JSON.parse(readFileSync(join(pkg.directory, "package.json"), "utf8"));
+    expect(manifest.files).toEqual(
+      expect.arrayContaining(["LICENSE-FFMPEG", "FFMPEG-SOURCE.md", "third-party"]),
+    );
+    // What the native OpenTUI packages declare for the library each binary embeds.
+    expect(manifest.license).toBe("MIT AND LGPL-2.1-or-later");
+  }
+  const launcher = packages.find((pkg) => pkg.name === "@mitome/cli")!;
+  expect(JSON.parse(readFileSync(join(launcher.directory, "package.json"), "utf8")).license).toBe(
+    "MIT",
+  );
+});
+
+test("pack copies every notice of the installed native package, and fails on a missing one", () => {
+  const opentui = dirname(realpathSync(join(root, "packages/cli/node_modules/@opentui/core")));
+  const native = join(opentui, `core-${process.platform}-${process.arch}`);
+  const directory = mkdtempSync(join(tmpdir(), "release-notices-"));
+  try {
+    copyNotices(native, directory);
+    expect(readdirSync(directory).sort()).toEqual([
+      "FFMPEG-SOURCE.md",
+      "LICENSE-FFMPEG",
+      "third-party",
+    ]);
+    const copied = readdirSync(join(directory, "third-party/opentui")).sort();
+    expect(copied).toEqual(
+      [
+        ...readdirSync(native)
+          .filter((name) => /^(?:LICENSE|LICENSE-.+|AUTHORS-.+|PATENTS-.+)$/.test(name))
+          .filter((name) => name !== "LICENSE-FFMPEG"),
+        "README.md",
+      ].sort(),
+    );
+    // The README identifies the repository and revision whose paths `FFMPEG-SOURCE.md` names.
+    const manifest = JSON.parse(readFileSync(join(native, "package.json"), "utf8"));
+    const readme = readFileSync(join(directory, "third-party/opentui/README.md"), "utf8");
+    expect(readme).toContain(
+      `\`@opentui/core-${process.platform}-${process.arch}\` ${manifest.version}`,
+    );
+    expect(readme).toContain(`built from ${manifest.repository.url}.`);
+    // Packages built from scratch, so the installed one (hard-linked to Bun's cache) is untouched
+    // and its own `gitHead`, present or not, decides nothing here.
+    const fixture = (name: string, gitHead: string | undefined): string => {
+      const native = join(directory, name);
+      mkdirSync(native);
+      for (const notice of ["LICENSE-FFMPEG", "FFMPEG-SOURCE.md", "LICENSE"]) {
+        writeFileSync(join(native, notice), notice);
+      }
+      writeFileSync(
+        join(native, "package.json"),
+        JSON.stringify({
+          name: manifest.name,
+          version: manifest.version,
+          repository: { url: "https://example.test/opentui" },
+          gitHead,
+        }),
+      );
+      copyNotices(native, join(directory, `from-${name}`));
+      return readFileSync(join(directory, `from-${name}/third-party/opentui/README.md`), "utf8");
+    };
+    expect(fixture("tagged", "abc123")).toContain(
+      `built from https://example.test/opentui. The files \`FFMPEG-SOURCE.md\` refers to, such as its build script, are paths in that repository at revision abc123 (version ${manifest.version}).`,
+    );
+    expect(fixture("untagged", undefined)).toContain(
+      `are paths in that repository at the revision released as version ${manifest.version}.`,
+    );
+    expect(copied).toEqual(expect.arrayContaining(["LICENSE", "LICENSE-YOGA", "AUTHORS-LIBWEBP"]));
+    expect(readFileSync(join(directory, "third-party/opentui/LICENSE-YOGA"), "utf8")).toBe(
+      readFileSync(join(native, "LICENSE-YOGA"), "utf8"),
+    );
+    expect(() => copyNotices(join(opentui, "core-missing"), directory)).toThrow("ENOENT");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -79,7 +166,7 @@ test("a retry selects only missing versions, and rejects registry errors or wron
   );
 });
 
-test("tarballs must match the cohort, contain platform binaries, and resolve workspace protocols", () => {
+test("tarballs must match the cohort, contain platform binaries and native notices, and resolve workspace protocols", () => {
   const directory = mkdtempSync(join(tmpdir(), "release-archives-"));
   const platform = packages.find((pkg) => pkg.name === "@mitome/cli-linux-x64")!;
   const contents = join(directory, "contents");
@@ -101,6 +188,16 @@ test("tarballs must match the cohort, contain platform binaries, and resolve wor
     pack(platform.version, "1.0.0");
     expect(() => checkArchives([platform], archives)).toThrow("missing its binary");
     writeFileSync(join(contents, "package/bin/mitome"), "fixture", { mode: 0o755 });
+    pack(platform.version, "1.0.0");
+    expect(() => checkArchives([platform], archives)).toThrow("missing LICENSE-FFMPEG");
+    writeFileSync(join(contents, "package/LICENSE-FFMPEG"), "fixture");
+    pack(platform.version, "1.0.0");
+    expect(() => checkArchives([platform], archives)).toThrow("missing FFMPEG-SOURCE.md");
+    writeFileSync(join(contents, "package/FFMPEG-SOURCE.md"), "fixture");
+    mkdirSync(join(contents, "package/third-party/opentui"), { recursive: true });
+    pack(platform.version, "1.0.0");
+    expect(() => checkArchives([platform], archives)).toThrow("missing third-party/opentui");
+    writeFileSync(join(contents, "package/third-party/opentui/LICENSE"), "fixture");
     pack(platform.version, "1.0.0");
     expect(() => checkArchives([platform], archives)).not.toThrow();
     pack("9.9.9", "1.0.0");

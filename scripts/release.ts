@@ -2,11 +2,54 @@
 // JSON itself rather than with Effect's Schema.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { cpSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+// OpenTUI's native library, which each CLI binary embeds, statically links LGPL FFmpeg; its
+// notices must ship with every platform package.
+const ffmpegNotices = ["LICENSE-FFMPEG", "FFMPEG-SOURCE.md"];
+// The library's other notices (OpenTUI's own and those of the code it embeds) ship beside them.
+const otherNotice = /^(?:LICENSE|LICENSE-.+|AUTHORS-.+|PATENTS-.+)$/;
+const thirdParty = "third-party/opentui";
+
+/** Copies the notices of the native OpenTUI package at `native` into a platform package. */
+export function copyNotices(native: string, destination: string): void {
+  for (const notice of ffmpegNotices) {
+    cpSync(join(native, notice), join(destination, notice));
+  }
+  const notices = readdirSync(native).filter(
+    (name) => otherNotice.test(name) && !ffmpegNotices.includes(name),
+  );
+  assert.ok(notices.length > 0, `${native} ships no notices`);
+  mkdirSync(join(destination, thirdParty), { recursive: true });
+  for (const notice of notices) {
+    cpSync(join(native, notice), join(destination, thirdParty, notice));
+  }
+  // `FFMPEG-SOURCE.md` names files by their path in OpenTUI's repository, which a platform
+  // package does not otherwise identify.
+  const manifest: {
+    name: string;
+    version: string;
+    // Publishing normalizes a repository shorthand into this object.
+    repository?: { url?: string };
+    gitHead?: string;
+  } = JSON.parse(readFileSync(join(native, "package.json"), "utf8"));
+  const repository = manifest.repository?.url;
+  assert.ok(repository, `${native} names no repository`);
+  const revision =
+    manifest.gitHead === undefined
+      ? `the revision released as version ${manifest.version}`
+      : `revision ${manifest.gitHead} (version ${manifest.version})`;
+  writeFileSync(
+    join(destination, thirdParty, "README.md"),
+    `# OpenTUI\n\nThis package embeds the native library of \`${manifest.name}\` ${manifest.version}, ` +
+      `built from ${repository}. The files \`FFMPEG-SOURCE.md\` refers to, such as its build ` +
+      `script, are paths in that repository at ${revision}. The other notices in this directory ` +
+      `are OpenTUI's own and those of the code it embeds.\n`,
+  );
+}
 
 type PackageManifest = {
   name: string;
@@ -118,6 +161,13 @@ export function checkArchives(packages: ReadonlyArray<ReleasePackage>, directory
       const executable = pkg.name.includes("-win32-") ? "mitome.exe" : "mitome";
       const files = execFileSync("tar", ["-tzf", archive], { encoding: "utf8" }).split("\n");
       assert.ok(files.includes(`package/bin/${executable}`), `${pkg.name} is missing its binary`);
+      for (const notice of ffmpegNotices) {
+        assert.ok(files.includes(`package/${notice}`), `${pkg.name} is missing ${notice}`);
+      }
+      assert.ok(
+        files.some((file) => file.startsWith(`package/${thirdParty}/`) && !file.endsWith("/")),
+        `${pkg.name} is missing ${thirdParty}`,
+      );
     }
   }
 }
@@ -135,8 +185,13 @@ if (import.meta.main) {
       const directory = resolve(archiveDirectory);
       mkdirSync(directory, { recursive: true });
       assert.equal(readdirSync(directory).length, 0, "Artifact directory must be empty");
+      // The native packages are optional dependencies of @opentui/core, installed beside it.
+      const opentui = dirname(realpathSync(join(root, "packages/cli/node_modules/@opentui/core")));
       for (const pkg of packages) {
         cpSync(join(root, "LICENSE"), join(pkg.directory, "LICENSE"));
+        if (pkg.name.startsWith("@mitome/cli-")) {
+          copyNotices(join(opentui, pkg.name.replace("@mitome/cli-", "core-")), pkg.directory);
+        }
         run(
           "bun",
           ["pm", "pack", "--filename", join(directory, pkg.archive), "--ignore-scripts"],

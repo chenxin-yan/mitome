@@ -15,4 +15,7 @@ packages/create-mitome/src/model-hints.ts
 !.env.example
 packages/*/LICENSE
 packages/cli/npm/*/LICENSE
+packages/cli/npm/*/LICENSE-FFMPEG
+packages/cli/npm/*/FFMPEG-SOURCE.md
+packages/cli/npm/*/third-party/
 packages/cli/npm/*/bin/

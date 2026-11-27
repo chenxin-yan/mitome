@@ -4,7 +4,14 @@ import { Cause, Effect, Layer, Logger, Runtime } from "effect";
 import { Argument, CliOutput, Command, Flag } from "effect/cli";
 import cliPackage from "../package.json" with { type: "json" };
 import { describe } from "./errors.js";
-import { authenticate, authStatus, listProviders, parseGrace, runApplication } from "./commands.js";
+import {
+  authenticate,
+  authStatus,
+  listProviders,
+  parseGrace,
+  runApplication,
+  runTerminalApplication,
+} from "./commands.js";
 
 const config = Flag.String("config").pipe(
   Flag.withDescription(
@@ -17,6 +24,10 @@ const provider = Flag.String("provider").pipe(
   Flag.optional,
 );
 
+const model = Flag.String("model").pipe(
+  Flag.withDescription("Qualified Model id (provider/model); never falls back"),
+  Flag.optional,
+);
 const resume = Flag.String("continue").pipe(
   Flag.withOptionalValue(""),
   Flag.withMetavar("id"),
@@ -25,21 +36,19 @@ const resume = Flag.String("continue").pipe(
   ),
   Flag.optional,
 );
+const grace = Flag.String("grace").pipe(
+  Flag.mapTryCatch(parseGrace, describe),
+  Flag.withDefault(5000),
+  Flag.withDescription("How long shutdown may take once it begins, as <n>ms or <n>s"),
+);
 
 const run = Command.make(
   "run",
   {
     config,
     provider,
-    model: Flag.String("model").pipe(
-      Flag.withDescription("Qualified Model id (provider/model); never falls back"),
-      Flag.optional,
-    ),
-    grace: Flag.String("grace").pipe(
-      Flag.mapTryCatch(parseGrace, describe),
-      Flag.withDefault(5000),
-      Flag.withDescription("How long shutdown may take once it begins, as <n>ms or <n>s"),
-    ),
+    model,
+    grace,
     continue: resume,
     input: Argument.String("input").pipe(
       Argument.withDescription("Input text; without it, non-terminal standard input is read"),
@@ -72,8 +81,17 @@ const auth = Command.make("auth").pipe(
   ]),
 );
 
-const command = Command.make("mitome").pipe(
-  Command.withDescription("Run a Mitome Configuration's Agent and manage its Provider logins"),
+const command = Command.make(
+  "mitome",
+  { config, provider, model, grace, continue: resume },
+  runTerminalApplication,
+).pipe(
+  Command.withDescription(
+    "Open a Mitome Configuration's Agent in the terminal; subcommands run it once and manage its Provider logins",
+  ),
+  Command.withExamples([
+    { command: "mitome", description: "With no subcommand, open the terminal" },
+  ]),
   Command.withSubcommands([run, providers, auth]),
 );
 

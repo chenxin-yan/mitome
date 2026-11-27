@@ -2,14 +2,17 @@
   "name": "@mitome/cli-linux-x64-musl",
   "version": "0.0.0",
   "description": "The mitome CLI binary for linux-x64-musl",
-  "license": "MIT",
+  "license": "MIT AND LGPL-2.1-or-later",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/chenxin-yan/mitome.git",
     "directory": "packages/cli/npm/cli-linux-x64-musl"
   },
   "files": [
-    "bin"
+    "bin",
+    "LICENSE-FFMPEG",
+    "FFMPEG-SOURCE.md",
+    "third-party"
   ],
   "os": [
     "linux"
