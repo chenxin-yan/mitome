@@ -93,6 +93,18 @@ export default defineConfig({
       correctness: "error",
     },
     rules: {
+      // @effect/vitest's test functions are test blocks too.
+      "vitest/no-standalone-expect": [
+        "error",
+        {
+          additionalTestBlockFunctions: [
+            "it.effect",
+            "it.live",
+            "it.effect.skipIf",
+            "it.live.skipIf",
+          ],
+        },
+      ],
       "typescript/no-unnecessary-condition": [
         "error",
         {
@@ -151,7 +163,6 @@ export default defineConfig({
       "unicorn/text-encoding-identifier-case": "off",
       "vitest/expect-expect": "off",
       "vitest/no-conditional-expect": "off",
-      "vitest/no-standalone-expect": "off",
       "vitest/require-mock-type-parameters": "off",
       "vitest/require-to-throw-message": "off",
       "vitest/valid-expect": "off",
