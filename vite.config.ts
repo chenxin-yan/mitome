@@ -146,7 +146,6 @@ export default defineConfig({
       "mitome/no-schema-unknown-type": "error",
       "vite-plus/prefer-vite-plus-imports": "error",
       // Turned off on adopting @cloudflare/oxlint-config; each is evaluated in a commit of its own.
-      "typescript/no-explicit-any": "off",
       "typescript/no-unsafe-argument": "off",
       "typescript/no-unsafe-assignment": "off",
       "typescript/no-unsafe-call": "off",

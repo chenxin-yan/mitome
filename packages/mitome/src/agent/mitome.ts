@@ -79,7 +79,8 @@ type ProvidedServices<Provide> = LayerServices<ProvidedLayer<Provide>>;
  */
 type Supplied<Keys, Provide> = "provide" extends Keys
   ? [Provided] extends [Provide]
-    ? any
+    ? // oxlint-disable-next-line typescript/no-explicit-any -- until `Provide` is inferred, anything counts as provided, as described above
+      any
     : ProvidedServices<Provide>
   : never;
 
@@ -496,6 +497,7 @@ export const make = <
   E,
   R extends Supplied<Keys, Provide> | Turn | Scope.Scope | ModelServicesOf<Providers>,
   Use extends ReadonlyArray<
+    // oxlint-disable-next-line typescript/no-explicit-any -- any Extension's Tools, which its handlers make invariant
     Extension<any, unknown, Supplied<Keys, Provide> | ModelServicesOf<Providers>>
   >,
   RPolicy,

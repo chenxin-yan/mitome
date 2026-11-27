@@ -128,10 +128,23 @@ export interface Agent<
 }
 
 /** Any Agent; `any` because its program's input is contravariant. */
+// oxlint-disable-next-line typescript/no-explicit-any -- no other type admits every Agent, its input being contravariant
 export type AnyAgent = Agent<any, any, any, any, ReadonlyArray<any>, any, any, any, any, any>;
 
-const fields: ReadonlyArray<keyof AgentOptions<any, any, any, any, any, any, any, any, any, any>> =
-  ["instructions", "use", "policy", "limits", "program", "text"];
+const fields: ReadonlyArray<
+  keyof AgentOptions<
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    [],
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    unknown
+  >
+> = ["instructions", "use", "policy", "limits", "program", "text"];
 
 /** Whether given limits are a record, which is copied before its bounds are checked. */
 const isRecord = (limits: ExecutionLimits | undefined): limits is ExecutionLimits =>
@@ -197,6 +210,7 @@ export function make<
 ): Agent<Input, A, E, R, Use, RPolicy, EParse, RParse, ERender, RRender> & {
   readonly program: Program<Input, A, E, R, Use, RPolicy>;
 } & TextRequired<Input, A, TextMapping<Input, A, EParse, RParse, ERender, RRender>>;
+// oxlint-disable-next-line typescript/no-explicit-any -- the implementation signature, which every overload's options must satisfy
 export function make(options: AgentOptions<any, any, any, any, any, any, any, any, any, any>) {
   const agent = snapshot("Agent", options, fields);
   if (agent.use !== undefined && !Array.isArray(agent.use)) {

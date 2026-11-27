@@ -9,7 +9,7 @@ interface TestModelOptions {
 }
 
 // Deliberately raw Service fake rather than the LanguageModel.make pipeline.
-type TestModelStream = Stream.Stream<Response.AnyPart, unknown, any>;
+type TestModelStream = Stream.Stream<Response.AnyPart, unknown, unknown>;
 
 export const testLanguageModel = (
   streamText: (options: TestModelOptions) => TestModelStream,

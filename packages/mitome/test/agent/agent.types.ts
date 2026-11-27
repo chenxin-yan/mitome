@@ -94,9 +94,12 @@ const turnPolicy = (call: Extension.ToolCall) =>
   );
 const steady = Extension.make("steady", { policy: turnPolicy });
 const steadySetup = Extension.make("steady", Effect.succeed({ policy: turnPolicy }));
-declare const steadyRecord: Exclude<(typeof steady)["parts"], Effect.Effect<any, any, any>>;
+declare const steadyRecord: Exclude<
+  (typeof steady)["parts"],
+  Effect.Effect<unknown, unknown, unknown>
+>;
 declare const steadySetupRecord: Effect.Success<
-  Extract<(typeof steadySetup)["parts"], Effect.Effect<any, any, any>>
+  Extract<(typeof steadySetup)["parts"], Effect.Effect<unknown, unknown, unknown>>
 >;
 export const policyContracts = [
   exact<typeof steady, Extension.Extension<{}, never, never>>(true),
