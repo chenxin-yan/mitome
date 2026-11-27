@@ -186,11 +186,19 @@ describe("Credential storage", () => {
       );
       // Let each real filesystem rejection register its next Clock-driven retry.
       yield* Effect.promise(
-        () => new Promise<void>((resolve) => globalThis.setTimeout(resolve, 25)),
+        () =>
+          new Promise<void>((resolve) => {
+            globalThis.setTimeout(resolve, 25);
+          }),
       );
       for (let seconds = 0; seconds < 31; seconds += 1) {
         yield* TestClock.adjust("1 second");
-        yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+        yield* Effect.promise(
+          () =>
+            new Promise<void>((resolve) => {
+              setImmediate(resolve);
+            }),
+        );
       }
       expect((yield* Fiber.join(fiber)).message).toBe(
         `Credential storage lock timed out: ${lock}. If no other process is authenticating, delete ${lock} and retry.`,

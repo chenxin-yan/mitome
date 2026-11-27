@@ -33,7 +33,8 @@ import {
   Scheduler,
   Stream,
 } from "effect";
-import { LanguageModel, type Response as AiResponse, Tool, Toolkit } from "effect/ai";
+import { LanguageModel, Tool, Toolkit } from "effect/ai";
+import type { Response as AiResponse } from "effect/ai";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { Provider } from "@mitome/core";
 import { fakeFetch as answerEveryOrigin, runWithKey } from "../support.js";
@@ -63,7 +64,9 @@ const fakeFetch = (
 ) =>
   answerEveryOrigin((request) => {
     const origin = new URL(request.url).origin;
-    if (!origins.includes(origin)) throw new Error(`No test answers ${origin}`);
+    if (!origins.includes(origin)) {
+      throw new Error(`No test answers ${origin}`);
+    }
     return handle(request);
   });
 
@@ -258,8 +261,11 @@ describe("anthropic", () => {
       });
       expect(requests).toBe(0);
     } finally {
-      if (previous === undefined) delete process.env[key];
-      else process.env[key] = previous;
+      if (previous === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previous;
+      }
     }
   });
 });
@@ -267,7 +273,7 @@ describe("anthropic", () => {
 describe("anthropic with the Claude Console profile", () => {
   const unsetKey = "MITOME_ANTHROPIC_UNSET_TEST_KEY";
   const baseUrl = testOrigin;
-  const nowSeconds = () => Math.floor(Date.now() / 1_000);
+  const nowSeconds = () => Math.floor(Date.now() / 1000);
   const posix = process.platform !== "win32";
   let profiles = 0;
 
@@ -336,7 +342,7 @@ describe("anthropic with the Claude Console profile", () => {
   /** Answers Model requests with text and token requests with `tokenReply`, recording both. */
   const upstream = (
     tokenReply: () => Response | Promise<Response> = () =>
-      Response.json({ access_token: "access-2", expires_in: 3_600, refresh_token: "refresh-2" }),
+      Response.json({ access_token: "access-2", expires_in: 3600, refresh_token: "refresh-2" }),
   ) => {
     const model: Array<Headers> = [];
     const token: Array<TokenRequest> = [];
@@ -399,7 +405,7 @@ describe("anthropic with the Claude Console profile", () => {
   ];
 
   it("sends an API key unchanged when one is set, even beside a profile", async () => {
-    const { name } = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() + 3_600));
+    const { name } = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() + 3600));
     const { model, token, fetch } = upstream();
     await generate(name, fetch, { [unsetKey]: "synthetic-key" });
     expect(model).toHaveLength(1);
@@ -412,7 +418,7 @@ describe("anthropic with the Claude Console profile", () => {
   it("authenticates with the profile's token, merging the OAuth beta and naming the workspace", async () => {
     const { name } = await writeProfile(
       userOAuth({ workspace_id: "wrkspc_1" }),
-      tokens("access-1", nowSeconds() + 3_600),
+      tokens("access-1", nowSeconds() + 3600),
     );
     const { model, token, fetch } = upstream();
     await run(
@@ -476,9 +482,11 @@ describe("anthropic with the Claude Console profile", () => {
       }),
       refresh_token: "refresh-2",
     });
-    expect(rewritten.expires_at).toBeGreaterThanOrEqual(before + 3_600);
+    expect(rewritten.expires_at).toBeGreaterThanOrEqual(before + 3600);
     // Windows has no POSIX modes, and Mitome checks them only elsewhere.
-    if (posix) expect((await stat(credentialsPath)).mode & 0o777).toBe(0o600);
+    if (posix) {
+      expect((await stat(credentialsPath)).mode & 0o777).toBe(0o600);
+    }
     // No temporary copy or lock is left beside it.
     expect(
       (await readdir(join(configDirectory, "credentials"))).filter((file) => file.startsWith(name)),
@@ -488,8 +496,10 @@ describe("anthropic with the Claude Console profile", () => {
   it("refreshes once for concurrent requests", async () => {
     const { name } = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() - 10));
     const { model, token, fetch } = upstream(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      return Response.json({ access_token: "access-2", expires_in: 3_600 });
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
+      return Response.json({ access_token: "access-2", expires_in: 3600 });
     });
     await run(
       Effect.all(
@@ -506,7 +516,9 @@ describe("anthropic with the Claude Console profile", () => {
   it("shares one failed refresh among concurrent requests", async () => {
     const { name } = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() - 10));
     const { model, token, fetch } = upstream(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
       return Response.json({ error: "temporarily_unavailable" }, { status: 429 });
     });
     const errors = await run(
@@ -535,13 +547,15 @@ describe("anthropic with the Claude Console profile", () => {
       tokens("access-1", nowSeconds() - 10),
     );
     let answered = () => {};
-    const exchanged = new Promise<void>((resolve) => (answered = resolve));
+    const exchanged = new Promise<void>((resolve) => {
+      answered = resolve;
+    });
     const { model, token, fetch } = upstream(() => {
       answered();
       // The endpoint has rotated the grant; its body arrives after the caller is interrupted.
       const body = JSON.stringify({
         access_token: "access-2",
-        expires_in: 3_600,
+        expires_in: 3600,
         refresh_token: "refresh-2",
       });
       return new Response(
@@ -611,7 +625,9 @@ describe("anthropic with the Claude Console profile", () => {
     );
     expect(await readFile(lock, "utf8")).toBe("");
     await rm(lock);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100);
+    });
     expect(token).toEqual([]);
     expect(model).toEqual([]);
   });
@@ -647,6 +663,7 @@ describe("anthropic with the Claude Console profile", () => {
     expect(authorizations(model)).toEqual(["Bearer access-2"]);
   });
 
+  // oxlint-disable-next-line vitest/expect-expect -- passes when every later generation completes in time
   it("leaves later callers able to refresh wherever the caller starting a refresh is interrupted", async () => {
     const { name, credentialsPath } = await writeProfile(
       userOAuth(),
@@ -691,7 +708,9 @@ describe("anthropic with the Claude Console profile", () => {
               ),
             );
             yield* Deferred.await(checked);
-            for (let step = 0; step < steps; step++) yield* Effect.yieldNow;
+            for (let step = 0; step < steps; step++) {
+              yield* Effect.yieldNow;
+            }
             yield* Fiber.interrupt(first);
             yield* generate.pipe(Effect.timeout("2 seconds"));
           }
@@ -720,8 +739,10 @@ describe("anthropic with the Claude Console profile", () => {
     const viaLink = await writeProfile(at(link), undefined);
     const direct = await writeProfile(at(target), undefined);
     const { model, token, fetch } = upstream(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      return Response.json({ access_token: "access-2", expires_in: 3_600 });
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
+      return Response.json({ access_token: "access-2", expires_in: 3600 });
     });
     // Two Sessions, so only the lock can keep them from refreshing twice.
     await Promise.all([generate(viaLink.name, fetch), generate(direct.name, fetch)]);
@@ -734,17 +755,14 @@ describe("anthropic with the Claude Console profile", () => {
   it("uses a token another process rotated between requests", async () => {
     const { name, credentialsPath } = await writeProfile(
       userOAuth(),
-      tokens("access-1", nowSeconds() + 3_600),
+      tokens("access-1", nowSeconds() + 3600),
     );
     const { model, token, fetch } = upstream();
     await run(
       Effect.gen(function* () {
         yield* LanguageModel.generateText({ prompt: "a" });
         yield* Effect.promise(() =>
-          writeFile(
-            credentialsPath,
-            JSON.stringify(tokens("access-rotated", nowSeconds() + 3_600)),
-          ),
+          writeFile(credentialsPath, JSON.stringify(tokens("access-rotated", nowSeconds() + 3600))),
         );
         yield* LanguageModel.generateText({ prompt: "b" });
       }).pipe(Effect.provide(layerOf(name))),
@@ -758,7 +776,7 @@ describe("anthropic with the Claude Console profile", () => {
   it("fails closed when the profile is pointed at another host during a Session", async () => {
     const { name, credentialsPath } = await writeProfile(
       userOAuth({ base_url: "https://a.test" }),
-      tokens("access-a", nowSeconds() + 3_600),
+      tokens("access-a", nowSeconds() + 3600),
     );
     const sent: Array<readonly [string, string | null]> = [];
     const fetch = fakeFetch(
@@ -777,10 +795,7 @@ describe("anthropic with the Claude Console profile", () => {
             configPath(name),
             JSON.stringify(userOAuth({ base_url: "https://b.test" })),
           );
-          await writeFile(
-            credentialsPath,
-            JSON.stringify(tokens("access-b", nowSeconds() + 3_600)),
-          );
+          await writeFile(credentialsPath, JSON.stringify(tokens("access-b", nowSeconds() + 3600)));
         });
         return yield* Effect.flip(LanguageModel.generateText({ prompt: "b" }));
       }).pipe(Effect.provide(layerOf(name, {}))),
@@ -800,7 +815,7 @@ describe("anthropic with the Claude Console profile", () => {
     async () => {
       const { name, credentialsPath } = await writeProfile(
         userOAuth({ base_url: "https://a.test" }),
-        tokens("access-a", nowSeconds() + 3_600),
+        tokens("access-a", nowSeconds() + 3600),
       );
       const mkfifo = (process.env.PATH ?? "")
         .split(delimiter)
@@ -833,7 +848,7 @@ describe("anthropic with the Claude Console profile", () => {
                     configPath(name),
                     JSON.stringify(userOAuth({ base_url: "https://b.test" })),
                   );
-                  await writer.writeFile(JSON.stringify(tokens("access-b", nowSeconds() + 3_600)));
+                  await writer.writeFile(JSON.stringify(tokens("access-b", nowSeconds() + 3600)));
                 } finally {
                   await writer.close();
                 }
@@ -864,7 +879,7 @@ describe("anthropic with the Claude Console profile", () => {
     );
     const { model, token, fetch } = upstream(async () => {
       await rm(credentialsPath);
-      return Response.json({ access_token: "access-2", expires_in: 3_600, refresh_token: "r-2" });
+      return Response.json({ access_token: "access-2", expires_in: 3600, refresh_token: "r-2" });
     });
     const error = await failure(name, fetch);
     expect(token).toHaveLength(1);
@@ -878,7 +893,7 @@ describe("anthropic with the Claude Console profile", () => {
   it.each([
     [
       "succeeded",
-      () => Response.json({ access_token: "access-2", expires_in: 3_600, refresh_token: "r-2" }),
+      () => Response.json({ access_token: "access-2", expires_in: 3600, refresh_token: "r-2" }),
     ],
     ["was rejected", () => Response.json({ error: "invalid_grant" }, { status: 400 })],
   ] as const)(
@@ -888,7 +903,7 @@ describe("anthropic with the Claude Console profile", () => {
         userOAuth(),
         tokens("access-1", nowSeconds() - 10),
       );
-      const newer = tokens("access-new", nowSeconds() + 3_600, { refresh_token: "refresh-new" });
+      const newer = tokens("access-new", nowSeconds() + 3600, { refresh_token: "refresh-new" });
       // The exchange is answered only once the credentials have been replaced.
       const { model, token, fetch } = upstream(async () => {
         await writeFile(credentialsPath, JSON.stringify(newer));
@@ -907,7 +922,7 @@ describe("anthropic with the Claude Console profile", () => {
     const target = join(await realpath(credentials), "moving-target.json");
     const other = join(await realpath(credentials), "moving-other.json");
     const link = join(configDirectory, "moving-link.json");
-    const fresh = (access: string) => JSON.stringify(tokens(access, nowSeconds() + 3_600));
+    const fresh = (access: string) => JSON.stringify(tokens(access, nowSeconds() + 3600));
     await writeFile(target, fresh("access-target"), { mode: 0o600 });
     await writeFile(other, fresh("access-other"), { mode: 0o600 });
     const { name } = await writeProfile(
@@ -965,7 +980,7 @@ describe("anthropic with the Claude Console profile", () => {
   const rejectingOnce = (
     beforeRejecting: () => Promise<void>,
     tokenReply: () => Response = () =>
-      Response.json({ access_token: "access-2", expires_in: 3_600, refresh_token: "refresh-2" }),
+      Response.json({ access_token: "access-2", expires_in: 3600, refresh_token: "refresh-2" }),
   ) => {
     const model: Array<Headers> = [];
     const token: Array<Schema.Json> = [];
@@ -975,7 +990,9 @@ describe("anthropic with the Claude Console profile", () => {
         return tokenReply();
       }
       model.push(request.headers);
-      if (model.length > 1) return Response.json(message([{ type: "text", text: "ok" }]));
+      if (model.length > 1) {
+        return Response.json(message([{ type: "text", text: "ok" }]));
+      }
       await beforeRejecting();
       return unauthorized();
     });
@@ -985,10 +1002,10 @@ describe("anthropic with the Claude Console profile", () => {
   it("retries a rejected token with a fresh one another process put in its place, without refreshing", async () => {
     const { name, credentialsPath } = await writeProfile(
       userOAuth(),
-      tokens("access-1", nowSeconds() + 3_600),
+      tokens("access-1", nowSeconds() + 3600),
     );
     const { model, token, fetch } = rejectingOnce(() =>
-      writeFile(credentialsPath, JSON.stringify(tokens("access-other", nowSeconds() + 3_600))),
+      writeFile(credentialsPath, JSON.stringify(tokens("access-other", nowSeconds() + 3600))),
     );
     await generate(name, fetch);
     expect(authorizations(model)).toEqual(["Bearer access-1", "Bearer access-other"]);
@@ -996,7 +1013,7 @@ describe("anthropic with the Claude Console profile", () => {
   });
 
   it("refreshes through the fetch of the request, not the one the Model was built with", async () => {
-    const { name } = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() + 3_600));
+    const { name } = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() + 3600));
     const built = upstream();
     const requested = rejectingOnce(async () => {});
     await run(
@@ -1018,11 +1035,11 @@ describe("anthropic with the Claude Console profile", () => {
   });
 
   it("streams with a refreshed token when the stream is refused before it opens", async () => {
-    const { name } = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() + 3_600));
+    const { name } = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() + 3600));
     const model: Array<Headers> = [];
     const fetch = fakeFetch((request) => {
       if (new URL(request.url).pathname === "/v1/oauth/token") {
-        return Response.json({ access_token: "access-2", expires_in: 3_600 });
+        return Response.json({ access_token: "access-2", expires_in: 3600 });
       }
       model.push(request.headers);
       return model.length === 1 ? unauthorized() : documentedStream();
@@ -1041,7 +1058,7 @@ describe("anthropic with the Claude Console profile", () => {
   it("refreshes a rejected token when the one put in its place has expired", async () => {
     const { name, credentialsPath } = await writeProfile(
       userOAuth(),
-      tokens("access-1", nowSeconds() + 3_600),
+      tokens("access-1", nowSeconds() + 3600),
     );
     const { model, token, fetch } = rejectingOnce(() =>
       writeFile(credentialsPath, JSON.stringify(tokens("access-expired", nowSeconds() - 10))),
@@ -1054,12 +1071,12 @@ describe("anthropic with the Claude Console profile", () => {
   it("keeps a new grant but returns the rejection when the refresh gives back the rejected token", async () => {
     const { name, credentialsPath } = await writeProfile(
       userOAuth(),
-      tokens("access-1", nowSeconds() + 3_600),
+      tokens("access-1", nowSeconds() + 3600),
     );
     const { model, token, fetch } = rejectingOnce(
       async () => {},
       () =>
-        Response.json({ access_token: "access-1", expires_in: 3_600, refresh_token: "refresh-2" }),
+        Response.json({ access_token: "access-1", expires_in: 3600, refresh_token: "refresh-2" }),
     );
     const error = await failure(name, fetch);
     expect(authorizations(model)).toEqual(["Bearer access-1"]);
@@ -1076,27 +1093,31 @@ describe("anthropic with the Claude Console profile", () => {
   it("refreshes a rejected token that the refresh for another rejected token answers with", async () => {
     const { name, credentialsPath } = await writeProfile(
       userOAuth(),
-      tokens("access-A", nowSeconds() + 3_600),
+      tokens("access-A", nowSeconds() + 3600),
     );
     const lock = `${credentialsPath}.lock`;
     const model: Array<Headers> = [];
     const token: Array<Schema.Json> = [];
     let answerB = () => {};
-    const rejectedB = new Promise<void>((resolve) => (answerB = resolve));
+    const rejectedB = new Promise<void>((resolve) => {
+      answerB = resolve;
+    });
     const fetch = fakeFetch(async (request) => {
       if (new URL(request.url).pathname === "/v1/oauth/token") {
         token.push(Schema.decodeUnknownSync(Schema.Json)(await request.json()));
-        return Response.json({ access_token: "access-2", expires_in: 3_600 });
+        return Response.json({ access_token: "access-2", expires_in: 3600 });
       }
       model.push(request.headers);
       const authorization = request.headers.get("authorization");
       if (authorization === "Bearer access-A") {
         // Another process, still holding the lock, has put B in A's place.
         await writeFile(lock, "");
-        const b = tokens("access-B", nowSeconds() + 3_600, { refresh_token: "refresh-B" });
+        const b = tokens("access-B", nowSeconds() + 3600, { refresh_token: "refresh-B" });
         await writeFile(credentialsPath, JSON.stringify(b));
       }
-      if (authorization === "Bearer access-B") answerB();
+      if (authorization === "Bearer access-B") {
+        answerB();
+      }
       return authorization === "Bearer access-2"
         ? Response.json(message([{ type: "text", text: "ok" }]))
         : unauthorized();
@@ -1147,7 +1168,7 @@ describe("anthropic with the Claude Console profile", () => {
   it("joins a refresh in flight for another rejected token, then refreshes its own when that answers with it", async () => {
     const { name, credentialsPath } = await writeProfile(
       userOAuth(),
-      tokens("access-B", nowSeconds() + 3_600, { refresh_token: "refresh-B" }),
+      tokens("access-B", nowSeconds() + 3600, { refresh_token: "refresh-B" }),
     );
     // Another process holds the lock, having put B in the place of A.
     const lock = `${credentialsPath}.lock`;
@@ -1160,7 +1181,7 @@ describe("anthropic with the Claude Console profile", () => {
         }
         return HttpClientResponse.fromWeb(
           request,
-          Response.json({ access_token: "access-2", expires_in: 3_600 }),
+          Response.json({ access_token: "access-2", expires_in: 3600 }),
         );
       }),
     );
@@ -1219,7 +1240,7 @@ describe("anthropic with the Claude Console profile", () => {
       attempts.push(request.url);
       throw new Error("no request may be sent");
     });
-    const fresh = tokens("access-1", nowSeconds() + 3_600);
+    const fresh = tokens("access-1", nowSeconds() + 3600);
     const rule =
       "must be an https URL (http only to this machine) with no user name, password, query or fragment.";
     const inProfile = (name: string) =>
@@ -1240,7 +1261,9 @@ describe("anthropic with the Claude Console profile", () => {
         base.option === undefined ? {} : { baseUrl: base.option },
       );
       expect(error).toMatchObject({ _tag: "UnusableProfileError", message: expected(name) });
-      for (const shown of renderings(error)) expect(shown).not.toContain("SENTINEL");
+      for (const shown of renderings(error)) {
+        expect(shown).not.toContain("SENTINEL");
+      }
     };
     await refused({ profile: "http://test.invalid" }, inProfile);
     await refused({ option: "http://test.invalid" }, inOption);
@@ -1264,7 +1287,7 @@ describe("anthropic with the Claude Console profile", () => {
         const { origin, pathname } = new URL(request.url);
         sent.push(`${origin}${pathname} ${request.headers.get("authorization")}`);
         return pathname === "/v1/oauth/token"
-          ? Response.json({ access_token: "access-2", expires_in: 3_600 })
+          ? Response.json({ access_token: "access-2", expires_in: 3600 })
           : Response.json(message([{ type: "text", text: "ok" }]));
       },
       [testOrigin, "https://api.anthropic.com"],
@@ -1278,7 +1301,7 @@ describe("anthropic with the Claude Console profile", () => {
 
   it("treats a token as static when the profile records no client id", async () => {
     const noClient = userOAuth({ authentication: { type: "user_oauth" } });
-    const fresh = await writeProfile(noClient, tokens("access-1", nowSeconds() + 3_600));
+    const fresh = await writeProfile(noClient, tokens("access-1", nowSeconds() + 3600));
     const { model, token, fetch } = upstream();
     await generate(fresh.name, fetch);
     expect(authorizations(model)).toEqual(["Bearer access-1"]);
@@ -1316,7 +1339,9 @@ describe("anthropic with the Claude Console profile", () => {
       `The Anthropic sign-in of profile "${name}" expired or was revoked (token refresh failed: HTTP 400; invalid_grant). Sign in again: run \`ant auth login --profile=${name}\`.`,
     );
     expect(error).toMatchObject({ reason: { _tag: "AuthenticationError" } });
-    for (const shown of renderings(error)) expect(shown).not.toContain("SENTINEL");
+    for (const shown of renderings(error)) {
+      expect(shown).not.toContain("SENTINEL");
+    }
     expect(model).toEqual([]);
   });
 
@@ -1339,7 +1364,9 @@ describe("anthropic with the Claude Console profile", () => {
       );
       expect(error.message).not.toContain("Sign in again");
       expect(error).toMatchObject({ reason: { _tag: "InternalProviderError", isRetryable: true } });
-      for (const shown of renderings(error)) expect(shown).not.toContain("SENTINEL");
+      for (const shown of renderings(error)) {
+        expect(shown).not.toContain("SENTINEL");
+      }
       expect(model).toEqual([]);
     },
   );
@@ -1354,7 +1381,7 @@ describe("anthropic with the Claude Console profile", () => {
       () =>
         Response.json({
           access_token: "SENTINEL-ACCESS",
-          expires_in: 3_600,
+          expires_in: 3600,
           token_type: "SENTINEL-ACCESS",
         }),
     ],
@@ -1381,7 +1408,9 @@ describe("anthropic with the Claude Console profile", () => {
       );
       expect(error.message).not.toContain("Sign in again");
       expect(error).toMatchObject({ reason: { _tag: "UnknownError" } });
-      for (const shown of renderings(error)) expect(shown).not.toContain("SENTINEL");
+      for (const shown of renderings(error)) {
+        expect(shown).not.toContain("SENTINEL");
+      }
       expect(model).toEqual([]);
     },
   );
@@ -1399,7 +1428,7 @@ describe("anthropic with the Claude Console profile", () => {
       _tag: "UnusableProfileError",
       message: `The Anthropic profile "${federation.name}" at ${configPath(federation.name)} uses authentication type "oidc_federation"; Mitome reads only the Claude Console sign-in ("user_oauth") that \`ant auth login\` writes. Select another profile with the \`profile\` option of \`anthropic()\`, or ${remove(federation.name)}.`,
     });
-    const malformed = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() + 3_600));
+    const malformed = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() + 3600));
     await writeFile(configPath(malformed.name), "{");
     expect(await provisioning(malformed.name, fetch)).toMatchObject({
       message: `The Anthropic profile "${malformed.name}" at ${configPath(malformed.name)} is not a valid profile. Repair that file, or ${remove(malformed.name)}, or ${another}.`,
@@ -1407,7 +1436,7 @@ describe("anthropic with the Claude Console profile", () => {
     if (posix) {
       const shared = await writeProfile(
         userOAuth(),
-        tokens("access-1", nowSeconds() + 3_600),
+        tokens("access-1", nowSeconds() + 3600),
         0o644,
       );
       expect(await provisioning(shared.name, fetch)).toMatchObject({
@@ -1416,14 +1445,14 @@ describe("anthropic with the Claude Console profile", () => {
     }
     // Permissions do not stop root, and Windows has none to change.
     if (posix && process.getuid?.() !== 0) {
-      const locked = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() + 3_600));
+      const locked = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() + 3600));
       await chmod(configPath(locked.name), 0o000);
       expect(await provisioning(locked.name, fetch)).toMatchObject({
         message: `Could not read the Anthropic profile "${locked.name}" at ${configPath(locked.name)} (EACCES): give your user read permission on it.`,
       });
       const unreadable = await writeProfile(
         userOAuth(),
-        tokens("access-1", nowSeconds() + 3_600),
+        tokens("access-1", nowSeconds() + 3600),
         0o000,
       );
       expect(await provisioning(unreadable.name, fetch)).toMatchObject({
@@ -1555,8 +1584,13 @@ describe.skipIf(process.platform === "win32")("anthropic authenticate", () => {
       let pid: number | undefined;
       for (let attempt = 0; attempt < 500 && pid === undefined; attempt++) {
         const text = await readFile(join(bin, "ant.pid"), "utf8").catch(() => "");
-        if (text.endsWith("\n")) pid = Number(text);
-        else await new Promise((resolve) => setTimeout(resolve, 10));
+        if (text.endsWith("\n")) {
+          pid = Number(text);
+        } else {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+          });
+        }
       }
       expect(pid).toBeDefined();
       await Effect.runPromise(Fiber.interrupt(fiber));

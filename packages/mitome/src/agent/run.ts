@@ -1,14 +1,19 @@
-import { Context, Effect, Exit, Fiber, Scope, type Types } from "effect";
-import { Prompt, type Tool, Toolkit } from "effect/ai";
+import { Context, Effect, Exit, Fiber, Scope } from "effect";
+import type { Types } from "effect";
+import { Prompt, Toolkit } from "effect/ai";
+import type { Tool } from "effect/ai";
 import { Approver } from "../session/approver.js";
 import type { SessionFencedError, SessionSaveError } from "../session/errors.js";
 import { sessionOwned } from "../session/internal.js";
-import { type Session as KernelSession, make } from "../session/session.js";
-import { localTools, loop, step, type StepOptions } from "../session/step.js";
+import { make } from "../session/session.js";
+import type { Session as KernelSession } from "../session/session.js";
+import { localTools, loop, step } from "../session/step.js";
+import type { StepOptions } from "../session/step.js";
 import { Turn } from "../session/turn.js";
 import type { AnyAgent } from "./agent.js";
 import { CommandFailedError, CommandNotFoundError, TranscriptSelectionError } from "./errors.js";
-import { type AnyCommand, checkClashes, checkParts, isSetup } from "./internal.js";
+import { checkClashes, checkParts, isSetup } from "./internal.js";
+import type { AnyCommand } from "./internal.js";
 import type { AnyExtension } from "./extension.js";
 import type { SessionOptions } from "./session.js";
 import { Transcripts } from "./transcripts.js";
@@ -38,9 +43,13 @@ const selectTranscript = Effect.fnUntraced(function* (
   if (latest === undefined && open === undefined) {
     return transcripts === undefined ? undefined : yield* transcripts.create(selection.create);
   }
-  if (transcripts === undefined) return yield* new TranscriptSelectionError({ reason: "no-store" });
+  if (transcripts === undefined) {
+    return yield* new TranscriptSelectionError({ reason: "no-store" });
+  }
   const found = yield* open === undefined ? transcripts.latest(latest) : transcripts.open(open);
-  if (found === undefined) return yield* new TranscriptSelectionError({ reason: "not-found" });
+  if (found === undefined) {
+    return yield* new TranscriptSelectionError({ reason: "not-found" });
+  }
   return found;
 });
 
@@ -66,6 +75,7 @@ const prepare = Effect.fnUntraced(function* (use: ReadonlyArray<AnyExtension>) {
           Toolkit.merge(...toolkits),
           // Each map was checked against its own Toolkit, so no Extension binds another's Tool. No
           // prototype, so a Tool named `__proto__` keeps an own handler.
+          // oxlint-disable-next-line typescript/no-unsafe-argument -- no type relates the merged handler maps to the merged Toolkit
           Object.assign(Object.create(null), ...added.map(({ handlers }) => handlers)),
         );
   return { added, tools };
@@ -76,6 +86,7 @@ const allocate = Effect.fnUntraced(function* (
   selection: SessionOptions,
   scope: Scope.Scope,
 ) {
+  // oxlint-disable-next-line typescript/no-unsafe-assignment -- `AnyAgent` erases its Extensions to `any`, and `Agent.make` checked each
   const use: ReadonlyArray<AnyExtension> = agent.use ?? [];
   // What the setups acquire. Forked before anything else joins `scope`, so it is released last:
   // after the Session has drained its Turns and Commands, even of a finalizer added to it late.
@@ -117,12 +128,18 @@ const allocate = Effect.fnUntraced(function* (
           ],
     ),
   };
-  if (tools !== undefined) options.tools = tools;
+  if (tools !== undefined) {
+    options.tools = tools;
+  }
   const instructions = [agent, ...added].flatMap(({ instructions }) =>
     instructions === undefined ? [] : [instructions],
   );
-  if (instructions.length > 0) options.instructions = instructions.join("\n\n");
-  if (agent.policy !== undefined) options.policy = agent.policy;
+  if (instructions.length > 0) {
+    options.instructions = instructions.join("\n\n");
+  }
+  if (agent.policy !== undefined) {
+    options.policy = agent.policy;
+  }
   const commands = new Map<string, AnyCommand>();
   const listed = use.flatMap(({ name: extension }, index) =>
     (added[index]?.commands ?? []).map((command) => {
@@ -173,7 +190,9 @@ const allocate = Effect.fnUntraced(function* (
       owned(
         Effect.gen(function* () {
           const command = commands.get(name);
-          if (command === undefined) return yield* new CommandNotFoundError({ command: name });
+          if (command === undefined) {
+            return yield* new CommandNotFoundError({ command: name });
+          }
           // In a Scope of its own, so what it acquires is released when it ends.
           return yield* Effect.scopedWith((own) =>
             Effect.setContext(

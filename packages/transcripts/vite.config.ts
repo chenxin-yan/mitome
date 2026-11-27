@@ -10,6 +10,7 @@ export default defineConfig({
       ...pack.exports,
       // A lone entry would be published as the package's root; each adapter is a subpath, so that
       // another can sit beside this one.
+      // oxlint-disable-next-line typescript/no-unsafe-assignment -- the pack options type the generated exports as `any`
       customExports: (exports) => ({ "./jsonl": exports["."] }),
     },
   },

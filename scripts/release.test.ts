@@ -131,7 +131,7 @@ test("a retry selects only missing versions, and rejects registry errors or wron
   const cohort = packages.slice(0, 2);
   const published = cohort[0]!;
   const missing = cohort[1]!;
-  const requested: string[] = [];
+  const requested: Array<string> = [];
   const pending = await unpublishedPackages(cohort, async (url) => {
     requested.push(url);
     return url.includes(`/${encodeURIComponent(published.name)}/`)
@@ -208,12 +208,12 @@ test("tarballs must match the cohort, contain platform binaries and native notic
     pack(platform.version, "1.0.0", { os: ["linux"], cpu: ["x64"], libc: [] });
     expect(() => checkArchives([platform], archives)).toThrow("does not restrict its libc");
     pack("9.9.9", "1.0.0");
-    expect(() => checkArchives([platform], archives)).toThrow();
+    expect(() => checkArchives([platform], archives)).toThrow(assert.AssertionError);
     pack(platform.version, "catalog:");
     expect(() => checkArchives([platform], archives)).toThrow("retains workspace protocols");
     pack(platform.version, "1.0.0");
     writeFileSync(join(archives, "unexpected.tgz"), "unexpected");
-    expect(() => checkArchives([platform], archives)).toThrow();
+    expect(() => checkArchives([platform], archives)).toThrow(assert.AssertionError);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -284,14 +284,21 @@ test("the uploader's Node entry point works without installing dependencies", ()
       "commit.gpgsign=false",
       "core.hooksPath=/dev/null",
     ].flatMap((setting) => ["-c", setting]);
-    execFileSync("git", ["init", "-q"], { cwd: directory });
+    // Under a hook or `git rebase --exec` git exports GIT_DIR and GIT_WORK_TREE. Inherited, they
+    // would aim this fixture's `git init` and commit at the repository that runs the tests.
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
+    );
+    execFileSync("git", ["init", "-q"], { cwd: directory, env });
     execFileSync("git", [...settings, "commit", "-q", "--allow-empty", "-m", "fixture"], {
       cwd: directory,
+      env,
     });
     expect(
       execFileSync("node", ["scripts/release.ts", "version"], {
         cwd: directory,
         encoding: "utf8",
+        env,
       }).trim(),
     ).toBe(packages[0]!.version);
   } finally {

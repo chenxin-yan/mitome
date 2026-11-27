@@ -1,16 +1,17 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Effect, Layer, Predicate, Schema, Stream } from "effect";
-import { LanguageModel, Prompt } from "effect/ai";
+import type { LanguageModel } from "effect/ai";
+import { Prompt } from "effect/ai";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import {
   CredentialStore,
   CredentialUnavailableError,
-  type CredentialError,
 } from "../../src/openai-codex/credential-store.js";
+import type { CredentialError } from "../../src/openai-codex/credential-store.js";
 import { token } from "../../src/openai-codex/oauth-token.js";
 import { requestFor } from "../../src/openai-codex/request.js";
 import { streamText } from "../../src/openai-codex/transport.js";
-import { type OAuthCredential } from "../../src/openai-codex/types.js";
+import type { OAuthCredential } from "../../src/openai-codex/types.js";
 import { CredentialStoreError } from "../../src/shared/credential-store.js";
 import { sse } from "../support.js";
 
@@ -536,7 +537,9 @@ describe("Codex transport", () => {
       credential(),
       () => {
         requests += 1;
-        if (requests > 1) return completed();
+        if (requests > 1) {
+          return completed();
+        }
         return new Response(
           new ReadableStream(
             {
@@ -571,7 +574,7 @@ describe("Codex transport", () => {
             ? Response.json({
                 access_token: claimlessAccess,
                 refresh_token: "refreshed-secret",
-                expires_in: 3_600,
+                expires_in: 3600,
               })
             : new Response("", { status: 401 }),
         (_current, _rejected, client) =>

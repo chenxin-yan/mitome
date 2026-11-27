@@ -1,4 +1,4 @@
-import { type OAuthConfig } from "../shared/oauth.js";
+import type { OAuthConfig } from "../shared/oauth.js";
 
 export const provider = "openai-codex";
 

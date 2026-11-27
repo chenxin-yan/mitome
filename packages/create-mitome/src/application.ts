@@ -5,8 +5,8 @@ import {
   gitignoreSource,
   pinnedDependencies,
   pinnedDevDependencies,
-  type ProviderChoice,
 } from "./template.js";
+import type { ProviderChoice } from "./template.js";
 
 export interface ApplicationOptions {
   /** The package name, usually the directory's name. */
@@ -21,7 +21,7 @@ export type FileMap = ReadonlyMap<string, string>;
 export const packageName = (directory: string): string => {
   const name = directory
     .toLowerCase()
-    .replace(/[^a-z0-9._~-]+/g, "-")
+    .replaceAll(/[^a-z0-9._~-]+/g, "-")
     .replace(/^[._]+/, "");
   // npm rejects these although their characters are allowed.
   return name === "" || name.startsWith("-") || name === "node_modules" || name === "favicon.ico"
@@ -176,10 +176,16 @@ export const applicationPlan = (options: ApplicationOptions): FileMap =>
     ["README.md", readmeSource(options)],
   ]);
 
+/** The code of a Node file-system error, such as `ENOENT`. */
+const errorCode = (cause: unknown) =>
+  cause instanceof Error && "code" in cause ? cause.code : undefined;
+
 const existing = (path: string) =>
-  lstat(path).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined;
-    throw error;
+  lstat(path).catch((cause: unknown) => {
+    if (errorCode(cause) === "ENOENT") {
+      return undefined;
+    }
+    throw cause;
   });
 
 export const ensureEmpty = async (directory: string, files: Iterable<string>): Promise<void> => {
@@ -188,11 +194,15 @@ export const ensureEmpty = async (directory: string, files: Iterable<string>): P
   for (const parent of new Set(paths.map(dirname))) {
     const path = join(directory, parent);
     const stats = parent === "." ? undefined : await existing(path);
-    if (stats !== undefined && !stats.isDirectory()) throw new Error(`${path} is not a directory`);
+    if (stats !== undefined && !stats.isDirectory()) {
+      throw new Error(`${path} is not a directory`);
+    }
   }
   for (const file of paths) {
     const path = join(directory, file);
-    if ((await existing(path)) !== undefined) throw new Error(`${path} already exists`);
+    if ((await existing(path)) !== undefined) {
+      throw new Error(`${path} already exists`);
+    }
   }
 };
 
@@ -208,12 +218,14 @@ export const writeScaffold = async (directory: string, plan: FileMap): Promise<v
       if (firstCreated !== undefined) {
         for (let parent = dirname(path); ; parent = dirname(parent)) {
           createdDirectories.add(parent);
-          if (parent === firstCreated || parent === dirname(parent)) break;
+          if (parent === firstCreated || parent === dirname(parent)) {
+            break;
+          }
         }
       }
       // Exclusive creation is the guarantee; the preflight above is only the friendly diagnostic.
-      const handle = await open(path, "wx").catch((error: NodeJS.ErrnoException) => {
-        throw error.code === "EEXIST" ? new Error(`${path} already exists`) : error;
+      const handle = await open(path, "wx").catch((cause: unknown) => {
+        throw errorCode(cause) === "EEXIST" ? new Error(`${path} already exists`) : cause;
       });
       // Recorded before the write, so a write that fails after the open (EFBIG) is undone too.
       createdFiles.push(path);
@@ -225,7 +237,9 @@ export const writeScaffold = async (directory: string, plan: FileMap): Promise<v
     }),
   );
   const failed = writes.find((write) => write.status === "rejected");
-  if (failed === undefined) return;
+  if (failed === undefined) {
+    return;
+  }
   // Undo only what this call made, so fixing the cause and running again finds nothing in the way.
   // Deepest directories first, so each is empty when it is removed.
   await Promise.allSettled(createdFiles.map((path) => unlink(path)));

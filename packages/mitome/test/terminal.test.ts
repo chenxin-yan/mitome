@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
-import { type Options, TerminalOptions, terminal } from "../src/terminal.js";
+import { TerminalOptions, terminal } from "../src/terminal.js";
+import type * as TerminalModule from "../src/terminal.js";
+import type { Options } from "../src/terminal.js";
 
 /** The options a Layer of `terminal` provides, as the terminal reads them. */
 const provided = (options: Options) =>
@@ -48,7 +50,7 @@ describe("terminal", () => {
     // A query makes the module loader load the same file again as another module.
     const copy = "../src/terminal.ts?copy";
     // SAFETY: the same file, loaded a second time, as the CLI binary and a Configuration load it.
-    const other = (await import(copy)) as typeof import("../src/terminal.js");
+    const other = (await import(copy)) as typeof TerminalModule;
     expect(other.terminal.submit).not.toBe(terminal.submit);
     const layer = terminal({ keys: { enter: other.terminal.submit } });
     const options = Effect.runSync(

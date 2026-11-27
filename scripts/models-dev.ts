@@ -21,10 +21,14 @@ export interface OpenAiCatalogModel {
 // hand-maintained list in @mitome/providers/openai-codex (ADR-0028).
 export const toolCapableOpenAiModels = <Payload>(payload: Payload): Array<OpenAiCatalogModel> => {
   const envelope = Schema.decodeUnknownResult(ModelsDevEnvelope)(payload);
-  if (Result.isFailure(envelope)) return [];
+  if (Result.isFailure(envelope)) {
+    return [];
+  }
   return Object.values(envelope.success.openai.models).flatMap((model) => {
     const decoded = Schema.decodeUnknownResult(ModelsDevModel)(model);
-    if (Result.isFailure(decoded) || !decoded.success.tool_call) return [];
+    if (Result.isFailure(decoded) || !decoded.success.tool_call) {
+      return [];
+    }
     return [
       {
         id: decoded.success.id,

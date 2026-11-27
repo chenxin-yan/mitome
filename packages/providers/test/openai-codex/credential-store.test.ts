@@ -11,7 +11,7 @@ import {
   loadCredential,
   writeCredential,
 } from "../../src/openai-codex/credential-store.js";
-import { type OAuthCredential } from "../../src/openai-codex/types.js";
+import type { OAuthCredential } from "../../src/openai-codex/types.js";
 import { platformLayer } from "../../src/shared/platform.js";
 
 const directories: Array<string> = [];
@@ -55,7 +55,7 @@ const tokenEndpoint = () => {
         Response.json({
           access_token: jwt("rotated-account"),
           refresh_token: `rotated-refresh-${exchanged.length}`,
-          expires_in: 3_600,
+          expires_in: 3600,
         }),
       );
     }),
@@ -147,11 +147,13 @@ describe("Codex Credential freshness", () => {
     Effect.gen(function* () {
       const stateDirectory = yield* directory(credential("expired-access", 1));
       let answered = () => {};
-      const exchanged = new Promise<void>((resolve) => (answered = resolve));
+      const exchanged = new Promise<void>((resolve) => {
+        answered = resolve;
+      });
       const body = JSON.stringify({
         access_token: jwt("rotated-account"),
         refresh_token: "rotated-refresh",
-        expires_in: 3_600,
+        expires_in: 3600,
       });
       const client = HttpClient.make((request) =>
         Effect.sync(() => {

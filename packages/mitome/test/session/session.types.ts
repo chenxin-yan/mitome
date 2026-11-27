@@ -2,15 +2,16 @@
 // service's duplicate context/error diagnostics are skipped here.
 // oxlint-disable-next-line jsdoc/check-tag-names
 /** @effect-diagnostics missingEffectContext:skip-file missingEffectError:skip-file */
-import { Context, Data, Effect, type Scope, type Types } from "effect";
+import { Context, Data, Effect } from "effect";
+import type { Scope, Types } from "effect";
 import { Session } from "../../src/kernel.js";
-import {
-  type SessionBusyError,
-  type SessionFencedError,
-  type SessionReleasedError,
-  type SessionSaveError,
-  type TranscriptError,
-  Turn,
+import { Turn } from "../../src/index.js";
+import type {
+  SessionBusyError,
+  SessionFencedError,
+  SessionReleasedError,
+  SessionSaveError,
+  TranscriptError,
 } from "../../src/index.js";
 
 const exact = <X, Y>(equal: Types.Equals<X, Y>) => equal;
@@ -28,7 +29,9 @@ const application = (input: { readonly limit: number }) =>
     yield* turn.stage();
     yield* Effect.acquireRelease(Effect.succeed("Turn resource"), () => Effect.void);
     const other = yield* Other;
-    if (other.n > input.limit) return yield* new AppError();
+    if (other.n > input.limit) {
+      return yield* new AppError();
+    }
     const result: Result = { answer: 42, invoke: String };
     return result;
   });

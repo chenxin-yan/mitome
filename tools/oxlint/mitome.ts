@@ -1,4 +1,5 @@
-import { definePlugin, defineRule, type ESTree, type SourceCode } from "vite-plus/lint/plugins";
+import { definePlugin, defineRule } from "vite-plus/lint/plugins";
+import type { ESTree, SourceCode } from "vite-plus/lint/plugins";
 import { resolveVariable } from "./anti-slop/shared/scope.ts";
 
 /** Whether `specifier` of an import from `source` names Effect's `Schema` module, or its `Unknown`. */
@@ -34,9 +35,13 @@ function resolvesToImport(
 /** Whether `node` is `typeof <schema>.Unknown.Type` or `typeof <unknown>.Type` on Effect's own. */
 function isSchemaUnknownType(sourceCode: SourceCode, node: ESTree.TSTypeQuery): boolean {
   const name = node.exprName;
-  if (name.type !== "TSQualifiedName" || name.right.name !== "Type") return false;
+  if (name.type !== "TSQualifiedName" || name.right.name !== "Type") {
+    return false;
+  }
   const query = name.left;
-  if (query.type === "Identifier") return resolvesToImport(sourceCode, query, "Unknown");
+  if (query.type === "Identifier") {
+    return resolvesToImport(sourceCode, query, "Unknown");
+  }
   return (
     query.type === "TSQualifiedName" &&
     query.right.name === "Unknown" &&
@@ -57,7 +62,9 @@ export default definePlugin({
       create(context) {
         return {
           ExportAllDeclaration(node) {
-            if (node.exported !== null) return;
+            if (node.exported !== null) {
+              return;
+            }
             context.report({ node, messageId: "exportStar" });
           },
         };

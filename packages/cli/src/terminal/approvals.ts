@@ -1,9 +1,5 @@
-import {
-  type ApprovalDecision,
-  type ApprovalRequest,
-  Approver,
-  type ApproverService,
-} from "@mitome/core";
+import { Approver } from "@mitome/core";
+import type { ApprovalDecision, ApprovalRequest, ApproverService } from "@mitome/core";
 import { Deferred, Effect } from "effect";
 
 /** A Tool Call waiting for the person's answer, as the Model sent it. */
@@ -57,7 +53,9 @@ export const makeApprovals: Effect.Effect<Approvals> = Effect.sync(() => {
               params: call.params,
               decide: (decision) =>
                 Effect.sync(() => {
-                  if (!waiting.delete(request)) return "stale";
+                  if (!waiting.delete(request)) {
+                    return "stale";
+                  }
                   Deferred.doneUnsafe(decided, Effect.succeed(decision));
                   return "accepted";
                 }),
@@ -66,7 +64,9 @@ export const makeApprovals: Effect.Effect<Approvals> = Effect.sync(() => {
               // Checked in the same synchronous step that publishes, so a Turn that ends while
               // this ask is starting cannot miss the request and leave it answerable.
               Effect.sync(() => {
-                if (revoked) return false;
+                if (revoked) {
+                  return false;
+                }
                 waiting.add(request);
                 asking.set(request, decided);
                 return true;
@@ -86,7 +86,9 @@ export const makeApprovals: Effect.Effect<Approvals> = Effect.sync(() => {
             Effect.suspend(() => {
               revoked = true;
               const withdrawn = [...asking];
-              for (const [request] of withdrawn) waiting.delete(request);
+              for (const [request] of withdrawn) {
+                waiting.delete(request);
+              }
               return Effect.forEach(withdrawn, ([, decided]) => Deferred.interrupt(decided), {
                 discard: true,
               });

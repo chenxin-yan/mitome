@@ -11,17 +11,20 @@ import { record } from "./record.ts";
 export const authenticate: AuthCapability["authenticate"] = (options) =>
   Effect.suspend(() => {
     const reject = process.env.MITOME_FIXTURE_AUTH_REJECT;
-    // A capability from another package may fail with any Error.
-    // @effect-diagnostics-next-line globalErrorInEffectFailure:off
-    if (reject === "plain") return Effect.fail(new Error("fixture rejection"));
+    if (reject === "plain") {
+      // A capability from another package may fail with any Error.
+      // @effect-diagnostics-next-line globalErrorInEffectFailure:off
+      return Effect.fail(new Error("fixture rejection"));
+    }
     if (reject === "zero") {
       return Effect.fail(
         Object.assign(new Error("fixture rejection"), { [Runtime.errorExitCode]: 0 }),
       );
     }
     const file = process.env.MITOME_FIXTURE_LOG;
-    if (file !== undefined)
+    if (file !== undefined) {
       appendFileSync(file, `auth:${options.operation}:${options.stateDirectory}\n`);
+    }
     if (process.env.MITOME_FIXTURE_AUTH_HOLD !== undefined) {
       return Effect.onInterrupt(Effect.never, () => Effect.sync(() => record("auth:interrupted")));
     }
@@ -29,7 +32,9 @@ export const authenticate: AuthCapability["authenticate"] = (options) =>
     if (options.operation === "login") {
       mkdirSync(options.stateDirectory, { recursive: true });
       writeFileSync(marker, "");
-    } else rmSync(marker);
+    } else {
+      rmSync(marker);
+    }
     options.output(`${options.operation} done\n`);
     return Effect.void;
   });

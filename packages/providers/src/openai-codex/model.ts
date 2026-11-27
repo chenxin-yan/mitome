@@ -1,5 +1,6 @@
 import { Effect, Layer, Option, Schema, Stream } from "effect";
-import { AiError, LanguageModel, Response } from "effect/ai";
+import type { AiError, Response } from "effect/ai";
+import { LanguageModel } from "effect/ai";
 import { FetchHttpClient, HttpClient } from "effect/http";
 import {
   stateDirectory as processStateDirectory,
@@ -12,7 +13,7 @@ import { credentialError } from "./request.js";
 import { rejectingModelRedirects } from "../shared/model-http-client.js";
 import { platformLayer } from "../shared/platform.js";
 import { streamText } from "./transport.js";
-import { type CodexOptions } from "./types.js";
+import type { CodexOptions } from "./types.js";
 
 const RefusalMetadata = Schema.Struct({ openai: Schema.Struct({ refusal: Schema.String }) });
 const refusalOf = (metadata: Response.TextEndPartEncoded["metadata"]) =>
@@ -82,7 +83,9 @@ const completeParts = (
     }
   }
   // Text whose item never closed before the terminal event is still part of the response.
-  for (const text of texts.values()) output.push({ type: "text", text });
+  for (const text of texts.values()) {
+    output.push({ type: "text", text });
+  }
   return output;
 };
 

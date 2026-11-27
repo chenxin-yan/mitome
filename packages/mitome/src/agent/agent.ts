@@ -1,17 +1,12 @@
-import { type Effect, Predicate, Result } from "effect";
+import { Array as Arr, Predicate, Result } from "effect";
+import type { Effect } from "effect";
 import type { loop, step, ToolCallRequest, ToolDecision } from "../session/step.js";
-import { type ExecutionLimits, readLimits } from "../session/turn.js";
+import { readLimits } from "../session/turn.js";
+import type { ExecutionLimits } from "../session/turn.js";
 import type { TextMappingError } from "./errors.js";
 import type { AnyExtension } from "./extension.js";
-import {
-  AgentTypeId,
-  type AgentTools,
-  brand,
-  checkClashes,
-  isExtension,
-  isSetup,
-  snapshot,
-} from "./internal.js";
+import { AgentTypeId, brand, checkClashes, isExtension, isSetup, snapshot } from "./internal.js";
+import type { AgentTools } from "./internal.js";
 
 /** How a text Host turns text into the Agent's input and its result back into text. */
 export interface TextMapping<
@@ -133,10 +128,23 @@ export interface Agent<
 }
 
 /** Any Agent; `any` because its program's input is contravariant. */
+// oxlint-disable-next-line typescript/no-explicit-any -- no other type admits every Agent, its input being contravariant
 export type AnyAgent = Agent<any, any, any, any, ReadonlyArray<any>, any, any, any, any, any>;
 
-const fields: ReadonlyArray<keyof AgentOptions<any, any, any, any, any, any, any, any, any, any>> =
-  ["instructions", "use", "policy", "limits", "program", "text"];
+const fields: ReadonlyArray<
+  keyof AgentOptions<
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    [],
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+    unknown
+  >
+> = ["instructions", "use", "policy", "limits", "program", "text"];
 
 /** Whether given limits are a record, which is copied before its bounds are checked. */
 const isRecord = (limits: ExecutionLimits | undefined): limits is ExecutionLimits =>
@@ -202,17 +210,25 @@ export function make<
 ): Agent<Input, A, E, R, Use, RPolicy, EParse, RParse, ERender, RRender> & {
   readonly program: Program<Input, A, E, R, Use, RPolicy>;
 } & TextRequired<Input, A, TextMapping<Input, A, EParse, RParse, ERender, RRender>>;
-export function make(options: AgentOptions<any, any, any, any, any, any, any, any, any, any>) {
+export function make(
+  // oxlint-disable-next-line typescript/no-explicit-any -- the implementation signature, which every overload's options must satisfy
+  options: AgentOptions<any, any, any, any, ReadonlyArray<AnyExtension>, any, any, any, any, any>,
+) {
   const agent = snapshot("Agent", options, fields);
-  if (agent.use !== undefined && !Array.isArray(agent.use)) {
+  // Effect's guard keeps the element type, where the global one narrows to `any[]`.
+  if (agent.use !== undefined && !Arr.isArray<typeof agent.use>(agent.use)) {
     throw new TypeError("Agent use must be an array of Extensions");
   }
   // `use` and `limits` are copied first, so what is checked is what is kept.
-  if (agent.use !== undefined) agent.use = Object.freeze([...agent.use]);
+  if (agent.use !== undefined) {
+    agent.use = Object.freeze([...agent.use]);
+  }
   const read = isRecord(agent.limits)
     ? readLimits(agent.limits)
     : Result.fail("must be non-negative integers");
-  if (Result.isSuccess(read)) agent.limits = Object.freeze(read.success);
+  if (Result.isSuccess(read)) {
+    agent.limits = Object.freeze(read.success);
+  }
   const { instructions, use = [], policy, limits, program, text } = agent;
   if (instructions !== undefined && !Predicate.isString(instructions)) {
     throw new TypeError("Agent instructions must be a string");

@@ -1,8 +1,9 @@
 import { Match, Predicate, Result, Schema } from "effect";
-import { AiError, LanguageModel, Prompt, Tool } from "effect/ai";
+import type { LanguageModel } from "effect/ai";
+import { AiError, Prompt, Tool } from "effect/ai";
 import { HttpClientError } from "effect/http";
 import { isRedirectedTokenFailure, isTemporaryTokenFailure } from "../shared/oauth.js";
-import { type CredentialError } from "./credential-store.js";
+import type { CredentialError } from "./credential-store.js";
 
 const makeError = (reason: AiError.AiErrorReason) =>
   AiError.make({ module: "OpenAI Codex", method: "streamText", reason });
@@ -34,7 +35,9 @@ export const httpError = (error: HttpClientError.HttpClientError) => {
 };
 
 export const credentialError = (error: CredentialError) => {
-  if (HttpClientError.isHttpClientError(error)) return httpError(error);
+  if (HttpClientError.isHttpClientError(error)) {
+    return httpError(error);
+  }
   return Match.value(error).pipe(
     Match.tagsExhaustive({
       CredentialUnavailableError: (error) => authenticationError("MissingKey", error.message),
@@ -84,8 +87,12 @@ export const hasRefusal = (prompt: Prompt.Prompt) =>
 export const toolChoiceFor = (
   choice: LanguageModel.ProviderOptions["toolChoice"],
 ): "auto" | "none" | undefined => {
-  if (choice === "auto" || choice === "none") return choice;
-  if (Predicate.isObject(choice) && "oneOf" in choice && choice.mode !== "required") return "auto";
+  if (choice === "auto" || choice === "none") {
+    return choice;
+  }
+  if (Predicate.isObject(choice) && "oneOf" in choice && choice.mode !== "required") {
+    return "auto";
+  }
   return undefined;
 };
 
@@ -110,7 +117,9 @@ export const unsupportedInput = (options: LanguageModel.ProviderOptions): string
         }
       }
     }
-    if (message.role !== "user") continue;
+    if (message.role !== "user") {
+      continue;
+    }
     const part = message.content.find((part) => part.type !== "text");
     if (part !== undefined) {
       return `Codex cannot send a user Message part of type ${JSON.stringify(part.type)}`;
@@ -127,7 +136,9 @@ export const requestFor = (
 ) => {
   const input: Array<Schema.Json> = [];
   for (const message of options.prompt.content) {
-    if (message.role === "system") continue;
+    if (message.role === "system") {
+      continue;
+    }
     if (message.role === "tool") {
       for (const part of message.content) {
         if (part.type === "tool-result") {
@@ -148,11 +159,15 @@ export const requestFor = (
       // Adjacent text parts coalesce into one message; any other item keeps its place between them.
       let text = "";
       const flushText = () => {
-        if (text !== "") input.push({ role: "assistant", content: text });
+        if (text !== "") {
+          input.push({ role: "assistant", content: text });
+        }
         text = "";
       };
       for (const part of message.content) {
-        if (part.type === "text") text += part.text;
+        if (part.type === "text") {
+          text += part.text;
+        }
         if (part.type === "reasoning") {
           const decoded = Schema.decodeUnknownResult(ReasoningOptions)(part.options.openai);
           if (Result.isSuccess(decoded)) {
@@ -200,11 +215,14 @@ export const requestFor = (
     tool_choice: toolChoice,
     parallel_tool_calls: true,
   };
-  if (options.tools.length === 0) return request;
+  if (options.tools.length === 0) {
+    return request;
+  }
   return {
     ...request,
     tools: options.tools.map((tool) => ({
       type: "function",
+      // oxlint-disable-next-line typescript/no-unsafe-assignment -- Effect types `Tool.Any`'s name as `any`; it is the Tool's name
       name: tool.name,
       description: Tool.getDescription(tool),
       parameters: Tool.getJsonSchema(tool),

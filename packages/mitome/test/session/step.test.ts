@@ -12,35 +12,39 @@ import {
   SchemaGetter,
   Stream,
 } from "effect";
-import { AiError, LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/ai";
+import type { Response } from "effect/ai";
+import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import type {
+  StepProtocolError,
+  ApprovalRequest,
+  ApproverService,
+  CompleteStep,
+  ExecutionLimits,
+  StepResult,
+  ToolCallRequest,
+} from "../../src/index.js";
 import {
-  type ApprovalRequest,
   Approver,
-  type ApproverService,
   ExecutionLimitError,
   IncompleteStepError,
   ModelRequestAccounting,
   Provider,
-  StepProtocolError,
   ToolRegistrationError,
   Turn,
   withModelRequestAccounting,
-  type CompleteStep,
-  type ExecutionLimits,
-  type StepResult,
-  type ToolCallRequest,
 } from "../../src/index.js";
-import { localTools, loop, Session, step, type StepOptions } from "../../src/kernel.js";
+import { localTools, loop, Session, step } from "../../src/kernel.js";
+import type { StepOptions } from "../../src/kernel.js";
 import {
   call,
   finish,
   remoteCall,
   remoteResult,
-  type Script,
   scriptedLanguageModel,
   scriptedModel,
   text,
 } from "../support/step.js";
+import type { Script } from "../support/step.js";
 
 class Approvals extends Context.Service<Approvals, { readonly allowed: ReadonlySet<string> }>()(
   "test/Approvals",
@@ -79,7 +83,9 @@ const foreignAccounting = Layer.effect(
 function assertComplete<Tools extends Record<string, Tool.Any>>(
   result: StepResult<Tools>,
 ): asserts result is CompleteStep<Tools> {
-  if (!Predicate.isTagged(result, "Complete")) throw new Error("expected a complete Step");
+  if (!Predicate.isTagged(result, "Complete")) {
+    throw new Error("expected a complete Step");
+  }
 }
 
 const handlers = (log: Array<string>, hold?: Deferred.Deferred<void>) =>
@@ -87,9 +93,15 @@ const handlers = (log: Array<string>, hold?: Deferred.Deferred<void>) =>
     write: ({ key }) =>
       Effect.gen(function* () {
         log.push(`write:${key}:start`);
-        if (key === "quota") return yield* new Quota();
-        if (key === "defect") return yield* Effect.die(new Error("boom"));
-        if (hold !== undefined) yield* Deferred.await(hold);
+        if (key === "quota") {
+          return yield* new Quota();
+        }
+        if (key === "defect") {
+          return yield* Effect.die(new Error("boom"));
+        }
+        if (hold !== undefined) {
+          yield* Deferred.await(hold);
+        }
         log.push(`write:${key}:end`);
         return `wrote ${key}`;
       }).pipe(Effect.ensuring(Effect.sync(() => void log.push(`write:${key}:cleanup`)))),
@@ -1285,7 +1297,9 @@ describe("controlled Step", () => {
       // Native handling reads the failure mode after the gate failed; that read dies here.
       Object.defineProperty(Fragile, "failureMode", {
         get: () => {
-          if (denying) throw new Error("after the denial");
+          if (denying) {
+            throw new Error("after the denial");
+          }
           return "error";
         },
       });
@@ -1383,7 +1397,9 @@ describe("controlled Step", () => {
           turnOf(program, scriptedModel([[call("a", "write"), call("b", "read")]], log)),
         );
         // Bounded, so a handler that never starts fails at the assertion, not the runner timeout.
-        for (let i = 0; i < 1000 && !log.includes("write:a:start"); i++) yield* Effect.yieldNow;
+        for (let i = 0; i < 1000 && !log.includes("write:a:start"); i++) {
+          yield* Effect.yieldNow;
+        }
         expect(log).toEqual(["generate:0", "write:a:start"]);
         yield* Fiber.interrupt(fiber);
         // The held handler was interrupted and its cleanup ran before the Turn returned.
@@ -1505,7 +1521,9 @@ describe("controlled Step", () => {
         Exit.fail(new ExecutionLimitError({ limit: "generations", bound: 65 })),
       );
       const plain = Effect.gen(function* () {
-        for (let i = 0; i < 66; i++) yield* step();
+        for (let i = 0; i < 66; i++) {
+          yield* step();
+        }
         return yield* turnUsage;
       });
       const answers = () => Array.from({ length: 66 }, () => [text("ok")]);

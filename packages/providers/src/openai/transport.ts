@@ -1,6 +1,6 @@
 import { OpenAiClient } from "@effect/ai-openai";
 import { Layer, Predicate, Result, Schema } from "effect";
-import { LanguageModel } from "effect/ai";
+import type { LanguageModel } from "effect/ai";
 import { Socket } from "effect/socket";
 
 const NodeProcess = Schema.Struct({ versions: Schema.Struct({ node: Schema.String }) });

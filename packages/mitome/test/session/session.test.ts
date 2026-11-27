@@ -175,13 +175,16 @@ describe("Session.make", () => {
     Effect.gen(function* () {
       const session = yield* Session.make({ transcript: "none" });
       const defect = new Error("own cleanup");
+      const failure = new ApplicationFailure();
       for (const failBody of [false, true]) {
         const exit = yield* Effect.exit(
           session.run(
             Effect.gen(function* () {
               yield* Effect.addFinalizer(() => Effect.die(defect));
               yield* program();
-              if (failBody) return yield* new ApplicationFailure();
+              if (failBody) {
+                return yield* failure;
+              }
               return 42;
             }),
           ),
@@ -192,9 +195,7 @@ describe("Session.make", () => {
           expect(reasons.some((r) => Cause.isDieReason(r) && r.defect === defect)).toBe(true);
           // A Cause that contains a defect keeps no typed failure: the body's failure is a defect too.
           expect(reasons.some(Cause.isFailReason)).toBe(false);
-          expect(
-            reasons.some((r) => Cause.isDieReason(r) && r.defect instanceof ApplicationFailure),
-          ).toBe(failBody);
+          expect(reasons.some((r) => Cause.isDieReason(r) && r.defect === failure)).toBe(failBody);
         }
       }
 

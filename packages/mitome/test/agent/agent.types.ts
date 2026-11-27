@@ -2,25 +2,23 @@
 // service's duplicate context/error diagnostics are skipped here.
 // oxlint-disable-next-line jsdoc/check-tag-names
 /** @effect-diagnostics missingEffectContext:skip-file missingEffectError:skip-file missingLayerContext:skip-file */
-import { Context, Effect, Schema, type Scope, type Types } from "effect";
-import { type AiError, LanguageModel, Tool, Toolkit } from "effect/ai";
-import {
-  Agent,
-  Command,
-  type CommandFailedError,
-  type CommandNotFoundError,
-  Extension,
+import { Context, Effect, Schema } from "effect";
+import type { Scope, Types } from "effect";
+import { LanguageModel, Tool, Toolkit } from "effect/ai";
+import type { AiError } from "effect/ai";
+import type {
   ModelRequestAccounting,
-  Session,
-  type SessionBusyError,
-  type SessionFencedError,
-  type SessionReleasedError,
-  type SessionSaveError,
-  type ToolRegistrationError,
-  type TranscriptError,
-  type TranscriptSelectionError,
-  Turn,
+  CommandFailedError,
+  CommandNotFoundError,
+  SessionBusyError,
+  SessionFencedError,
+  SessionReleasedError,
+  SessionSaveError,
+  ToolRegistrationError,
+  TranscriptError,
+  TranscriptSelectionError,
 } from "../../src/index.js";
+import { Agent, Command, Extension, Session, Turn } from "../../src/index.js";
 
 const exact = <X, Y>(equal: Types.Equals<X, Y>) => equal;
 
@@ -52,7 +50,9 @@ const notes = Extension.make(
   "notes",
   Effect.gen(function* () {
     const disk = yield* Disk;
-    if (disk.path === "") return yield* new StoreError();
+    if (disk.path === "") {
+      return yield* new StoreError();
+    }
     yield* Effect.addFinalizer(() => Effect.void);
     const added: Array<string> = [];
     return {
@@ -94,9 +94,12 @@ const turnPolicy = (call: Extension.ToolCall) =>
   );
 const steady = Extension.make("steady", { policy: turnPolicy });
 const steadySetup = Extension.make("steady", Effect.succeed({ policy: turnPolicy }));
-declare const steadyRecord: Exclude<(typeof steady)["parts"], Effect.Effect<any, any, any>>;
+declare const steadyRecord: Exclude<
+  (typeof steady)["parts"],
+  Effect.Effect<unknown, unknown, unknown>
+>;
 declare const steadySetupRecord: Effect.Success<
-  Extract<(typeof steadySetup)["parts"], Effect.Effect<any, any, any>>
+  Extract<(typeof steadySetup)["parts"], Effect.Effect<unknown, unknown, unknown>>
 >;
 export const policyContracts = [
   exact<typeof steady, Extension.Extension<{}, never, never>>(true),

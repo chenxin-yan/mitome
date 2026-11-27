@@ -237,12 +237,14 @@ describe("Codex OAuth", () => {
     await reading.promise;
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(stoppedReading).toBe(true);
-    await expect(fetch(`http://localhost:${port}/auth/callback`)).rejects.toThrow();
+    await expect(fetch(`http://localhost:${port}/auth/callback`)).rejects.toThrow(TypeError);
   });
 
   test("hands the whole OAuth URL to the native Windows launcher", async () => {
     const platform = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
-    const launch = vi.fn((_command: string, _args: ReadonlyArray<string>) => Effect.void);
+    const launch = vi.fn<(command: string, args: ReadonlyArray<string>) => Effect.Effect<void>>(
+      () => Effect.void,
+    );
     try {
       const url = "https://auth.openai.com/oauth/authorize?client_id=x&state=y";
       await Effect.runPromise(
@@ -275,7 +277,9 @@ describe("Codex OAuth", () => {
         return started;
       });
       // Long enough for the launcher's exit to have been handled.
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300);
+      });
       await writeFile(go, "");
       await vi.waitFor(async () => expect(await readFile(alive, "utf8")).toBe("yes\n"));
       expect(pid).toBeGreaterThan(0);
@@ -330,7 +334,9 @@ describe("Codex OAuth", () => {
               `http://localhost:${port}/auth/callback?error=access_denied&state=${state}`,
             );
             // Stay pending past the point where Node reports an unobserved rejection.
-            await new Promise((resolve) => setTimeout(resolve, 50));
+            await new Promise((resolve) => {
+              setTimeout(resolve, 50);
+            });
           },
           input: Effect.never,
           output: () => {},
@@ -352,8 +358,9 @@ describe("Codex OAuth", () => {
       occupied.listen(0, "localhost", resolve);
     });
     const address = occupied.address();
-    if (address === null || Schema.is(Schema.String)(address))
+    if (address === null || Schema.is(Schema.String)(address)) {
       throw new Error("Expected TCP address");
+    }
     const occupiedPort = address.port;
     let state = "";
     const output: Array<string> = [];
@@ -406,9 +413,9 @@ describe("Codex OAuth", () => {
         }),
       ).rejects.toThrow("OAuth callback did not include a code");
     } finally {
-      await new Promise<void>((resolve, reject) =>
-        occupied.close((error) => (error === undefined ? resolve() : reject(error))),
-      );
+      await new Promise<void>((resolve, reject) => {
+        occupied.close((error) => (error === undefined ? resolve() : reject(error)));
+      });
       void server.stop(true);
     }
   });

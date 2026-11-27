@@ -1,4 +1,5 @@
-import { Context, type Effect, Exit, Result, Schema, Struct, type Types } from "effect";
+import { Context, Exit, Result, Schema, Struct } from "effect";
+import type { Effect, Types } from "effect";
 import type { Prompt } from "effect/ai";
 import type { SessionFencedError, SessionReleasedError, SessionSaveError } from "./errors.js";
 import type { Session } from "./session.js";
@@ -68,7 +69,9 @@ export const readLimits = (given: ExecutionLimits): Result.Result<ExecutionLimit
   const limits: Types.Mutable<ExecutionLimits> = {};
   for (const bound of Struct.keys(ExecutionLimitsSchema.fields)) {
     const value = decoded.value[bound];
-    if (value !== undefined) limits[bound] = value;
+    if (value !== undefined) {
+      limits[bound] = value;
+    }
   }
   return Result.succeed(limits);
 };

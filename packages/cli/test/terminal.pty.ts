@@ -20,7 +20,7 @@ afterAll(() => rm(directory, { recursive: true, force: true }));
 beforeEach(() => writeFile(log, ""));
 
 // termios c_lflag bits restored when the terminal leaves raw mode (Linux and macOS values agree).
-const ICANON = process.platform === "darwin" ? 0x100 : 0x2;
+const ICANON = process.platform === "darwin" ? 0x1_00 : 0x2;
 const ECHO = 0x8;
 const enterAlternate = "\u001b[?1049h";
 const leaveAlternate = "\u001b[?1049l";
@@ -47,7 +47,9 @@ const open = (args: ReadonlyArray<string>, env: Readonly<Record<string, string>>
   const killer = setTimeout(() => child.kill("SIGKILL"), 15_000);
   const until = async (check: () => boolean | Promise<boolean>, what: string) => {
     for (let attempt = 0; attempt < 500; attempt++) {
-      if (await check()) return;
+      if (await check()) {
+        return;
+      }
       await Bun.sleep(20);
     }
     throw new Error(
@@ -203,7 +205,7 @@ describe.skipIf(process.platform === "win32")("compiled bare mitome", { timeout:
       close(tui);
       const { code, restored, output } = await tui.exited();
       expect(code).toBe(1);
-      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(Date.now() - started).toBeLessThan(5000);
       expect(restored).toBe(true);
       expect(restoredScreen(output)).toBe(true);
       // The diagnostic comes after restoration and does not claim cleanup finished.

@@ -20,8 +20,8 @@ import { promisify } from "node:util";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { afterAll, describe, expect, it } from "@effect/vitest";
+import type { Cause } from "effect";
 import {
-  Cause,
   Effect,
   Exit,
   FileSystem,
@@ -38,24 +38,24 @@ import {
   gitignoreSource,
   knownModelIds,
   pinnedDependencies,
-  type ProviderId,
   providerChoices,
 } from "create-mitome/template";
+import type { ProviderId } from "create-mitome/template";
 import { Mitome } from "@mitome/core";
 import { TerminalOptions } from "@mitome/core/terminal";
 import cliPackage from "../package.json" with { type: "json" };
 import { runCli } from "../src/index.ts";
-import { Installer, type InstallerService } from "../src/init.ts";
+import { Installer } from "../src/init.ts";
+import type { InstallerService } from "../src/init.ts";
 import { terminalKeys } from "../src/terminal/keys.ts";
 import {
   configurationPlan,
-  type FileMap,
   installCommand,
-  type Shell,
   shellQuote,
   signIn,
   writeConfiguration,
 } from "../src/template.ts";
+import type { FileMap, Shell } from "../src/template.ts";
 
 const packageDirectory = join(import.meta.dirname, "..");
 const catalogEffect = /^ {2}effect: ["']?([^"'\s]+)["']?$/m.exec(
@@ -112,7 +112,9 @@ const racing = (plan: FileMap, intrude: () => void): FileMap =>
   new (class extends Map<string, string> {
     override *[Symbol.iterator](): Generator<[string, string], undefined> {
       for (const entry of plan) {
-        if (entry[0] === "index.ts") intrude();
+        if (entry[0] === "index.ts") {
+          intrude();
+        }
         yield entry;
       }
     }
@@ -168,8 +170,11 @@ const init = (
         () => Effect.exit(runCli(["init", ...args])),
         () =>
           Effect.sync(() => {
-            if (previous === undefined) delete process.env.MITOME_HOME;
-            else process.env.MITOME_HOME = previous;
+            if (previous === undefined) {
+              delete process.env.MITOME_HOME;
+            } else {
+              process.env.MITOME_HOME = previous;
+            }
           }),
       );
       return {
@@ -220,7 +225,9 @@ describe("mitome init", () => {
           expect(Exit.isSuccess(result.exit)).toBe(true);
           const plan = configurationPlan({ provider: choice, model });
           expect(yield* files(home)).toEqual([...plan.keys()].sort());
-          for (const [file, expected] of plan) expect(yield* contents(home, file)).toBe(expected);
+          for (const [file, expected] of plan) {
+            expect(yield* contents(home, file)).toBe(expected);
+          }
           expect(result.logs).toBe(
             [
               `Wrote the default Configuration to ${home}. Its dependencies are not installed (--no-install); install them by running this in ${home}:`,
@@ -247,7 +254,9 @@ describe("mitome init", () => {
       expect(Exit.isSuccess(result.exit)).toBe(true);
       const { mode } = yield* Effect.promise(() => stat(home));
       // Windows has no POSIX mode bits.
-      if (process.platform !== "win32") expect(mode & 0o777).toBe(0o700);
+      if (process.platform !== "win32") {
+        expect(mode & 0o777).toBe(0o700);
+      }
     }),
   );
 
@@ -263,7 +272,9 @@ describe("mitome init", () => {
       });
       expect(Exit.isSuccess(result.exit)).toBe(true);
       const { mode } = yield* Effect.promise(() => stat(home));
-      if (process.platform !== "win32") expect(mode & 0o777).toBe(0o750);
+      if (process.platform !== "win32") {
+        expect(mode & 0o777).toBe(0o750);
+      }
     }),
   );
 
@@ -583,7 +594,9 @@ describe("writeConfiguration", () => {
     const home = join(parent, "mitome");
     const interruption = new AbortController();
     const interrupted = racing(plan, () => interruption.abort());
-    await expect(runWriteConfiguration(home, interrupted, interruption.signal)).rejects.toThrow();
+    await expect(runWriteConfiguration(home, interrupted, interruption.signal)).rejects.toThrow(
+      "All fibers interrupted without error",
+    );
     expect(existsSync(parent)).toBe(false);
   });
 
@@ -635,7 +648,7 @@ describe("writeConfiguration", () => {
     ).pipe(Layer.provideMerge(BunServices.layer));
     await expect(
       Effect.runPromise(
-        writeConfiguration("Z:\\mitome", plan).pipe(
+        writeConfiguration(String.raw`Z:\mitome`, plan).pipe(
           Effect.provide(Layer.merge(missingDrive, BunPath.layerWin32)),
           // Without an end to the walk up, this never returns.
           Effect.timeout("2 seconds"),
@@ -711,10 +724,10 @@ describe("Configuration plans", () => {
   it("writes commands for the user's shell", () => {
     expect(shellQuote("/usr/local/bin/mitome", "posix")).toBe("/usr/local/bin/mitome");
     expect(shellQuote("/opt/my tools/it's/mitome", "posix")).toBe(
-      "'/opt/my tools/it'\\''s/mitome'",
+      String.raw`'/opt/my tools/it'\''s/mitome'`,
     );
-    expect(shellQuote("C:\\Program Files\\it's\\mitome.exe", "powershell")).toBe(
-      "'C:\\Program Files\\it''s\\mitome.exe'",
+    expect(shellQuote(String.raw`C:\Program Files\it's\mitome.exe`, "powershell")).toBe(
+      String.raw`'C:\Program Files\it''s\mitome.exe'`,
     );
     // PowerShell also ends a single-quoted string at a typographic single quote.
     expect(shellQuote("C:\\Users\\O\u2018\u2019\u201a\u201bBrien\\mitome.exe", "powershell")).toBe(
@@ -723,8 +736,8 @@ describe("Configuration plans", () => {
     expect(installCommand("'/opt/my tools/mitome'", "posix")).toBe(
       "BUN_BE_BUN=1 '/opt/my tools/mitome' install",
     );
-    expect(installCommand("'C:\\mitome.exe'", "powershell")).toBe(
-      "$env:BUN_BE_BUN = \"1\"; & 'C:\\mitome.exe' install; Remove-Item Env:BUN_BE_BUN",
+    expect(installCommand(String.raw`'C:\mitome.exe'`, "powershell")).toBe(
+      String.raw`$env:BUN_BE_BUN = "1"; & 'C:\mitome.exe' install; Remove-Item Env:BUN_BE_BUN`,
     );
     expect(signIn(providerOf("openai"), "posix")).toBe('export OPENAI_API_KEY="your key"');
     expect(signIn(providerOf("anthropic"), "powershell")).toBe(

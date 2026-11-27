@@ -14,13 +14,13 @@ import {
 } from "effect";
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
 import {
-  type ApprovalDecision,
   Approver,
   reportModelRequest,
   SessionReleasedError,
   Turn,
   withModelRequestAccounting,
 } from "../../src/index.js";
+import type { ApprovalDecision } from "../../src/index.js";
 import { localTools, loop, Session, step } from "../../src/kernel.js";
 import { call, finish, scriptedModel, text } from "../support/step.js";
 import { recordingTranscript } from "../support/transcript.js";
@@ -188,7 +188,7 @@ describe("Tool result projection and codecs", () => {
     // Native value is a number; its encoded (wire) form is a string.
     success: Schema.String.pipe(
       Schema.decodeTo(Schema.Finite, {
-        decode: SchemaGetter.transform((value: string) => Number(value)),
+        decode: SchemaGetter.transform(Number),
         encode: SchemaGetter.transform((value: number) => `n=${value}`),
       }),
     ),
@@ -254,7 +254,9 @@ describe("Tool result projection and codecs", () => {
           );
         }),
       );
-      if (!Predicate.isTagged(outcome, "Complete")) throw new Error("expected a complete Step");
+      if (!Predicate.isTagged(outcome, "Complete")) {
+        throw new Error("expected a complete Step");
+      }
       // Returned results: native values, and the encodings of each schema's JSON codec.
       expect(outcome.results.map((part) => [part.id, part.result, part.encodedResult])).toEqual([
         ["v", undefined, null],

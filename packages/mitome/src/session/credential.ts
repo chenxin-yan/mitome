@@ -1,4 +1,5 @@
-import { type Effect, Schema } from "effect";
+import { Schema } from "effect";
+import type { Effect } from "effect";
 
 /** An environment variable name a Provider reads its API key from. */
 export const EnvironmentVariableName = Schema.String.check(

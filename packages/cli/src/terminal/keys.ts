@@ -1,6 +1,7 @@
 /** The terminal's keys and its own Commands. */
 
-import { type Binding, type Control, type Options, terminal } from "@mitome/core/terminal";
+import { terminal } from "@mitome/core/terminal";
+import type { Binding, Control, Options } from "@mitome/core/terminal";
 import type { KeyEvent } from "@opentui/core";
 import { Effect, Predicate } from "effect";
 import { userError } from "../errors.js";
@@ -36,9 +37,13 @@ export const starterProvide = (indent: string): string =>
  * digit, when it reports one: OpenTUI's own key-binding lookup falls back to it in the same cases.
  */
 const baseLayoutName = (name: string, baseCode: number | undefined): string | undefined => {
-  if (baseCode === undefined || baseCode <= 32 || baseCode === 127) return undefined;
+  if (baseCode === undefined || baseCode <= 32 || baseCode === 127) {
+    return undefined;
+  }
   const digitCode = baseCode >= 48 && baseCode <= 57;
-  if (!/^\P{ASCII}$/u.test(name) && !digitCode) return undefined;
+  if (!/^\P{ASCII}$/u.test(name) && !digitCode) {
+    return undefined;
+  }
   const base = String.fromCodePoint(baseCode).toLowerCase();
   return /^[a-z0-9]$/.test(base) ? base : undefined;
 };
@@ -49,7 +54,9 @@ const baseLayoutName = (name: string, baseCode: number | undefined): string | un
  * key no binding names.
  */
 export const keysOf = (key: KeyEvent): ReadonlyArray<string> => {
-  if (key.super === true || key.hyper === true) return [];
+  if (key.super === true || key.hyper === true) {
+    return [];
+  }
   // Without the enhanced keyboard protocol Ctrl+J arrives as a line feed, with it as Ctrl and J.
   const linefeed = key.name === "linefeed";
   const name = linefeed
@@ -75,8 +82,12 @@ const digit = /^[0-9]$/;
 const refusal = (key: string): string | undefined => {
   const parts = key.split("+");
   const name = parts.at(-1) ?? "";
-  if (key === "ctrl+c") return "it always closes the terminal";
-  if (key === "tab") return "it always moves between an Approval and the input";
+  if (key === "ctrl+c") {
+    return "it always closes the terminal";
+  }
+  if (key === "tab") {
+    return "it always moves between an Approval and the input";
+  }
   if (
     (letter.test(name) || digit.test(name) || name === "space") &&
     !parts.includes("ctrl") &&

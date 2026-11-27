@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Effect, Stream } from "effect";
-import { type Response } from "effect/ai";
+import type { Response } from "effect/ai";
 import { decodeStream } from "../../src/openai-codex/sse.js";
 import { sse } from "../support.js";
 

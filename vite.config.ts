@@ -1,10 +1,11 @@
 import { fileURLToPath } from "node:url";
+import cloudflare from "@cloudflare/oxlint-config/vite-plus";
 import { defineConfig } from "vite-plus";
 
 const local = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 // A later override replaces an earlier one's options for the same rule, so each repeats this.
 const rootOmitsSubpaths = {
-  regex: "(^|/)(kernel|terminal)(\\.[jt]s)?$",
+  regex: String.raw`(^|/)(kernel|terminal)(\.[jt]s)?$`,
   message: "The root entry never imports a subpath such as kernel or terminal (ADR-0061).",
 };
 const docsOutput = [
@@ -80,6 +81,7 @@ export default defineConfig({
     ignorePatterns: ["tools/oxlint/anti-slop/", ...docsOutput],
   },
   lint: {
+    extends: [cloudflare],
     plugins: ["typescript", "unicorn", "oxc", "eslint", "promise", "import", "jsdoc"],
     jsPlugins: [
       { name: "anti-slop", specifier: local("./tools/oxlint/anti-slop/index.ts") },
@@ -91,10 +93,39 @@ export default defineConfig({
       correctness: "error",
     },
     rules: {
-      "typescript/no-misused-promises": "error",
-      "typescript/no-unnecessary-type-assertion": "error",
-      "typescript/return-await": "error",
-      "typescript/switch-exhaustiveness-check": "error",
+      // @effect/vitest's test functions are test blocks too.
+      "vitest/no-standalone-expect": [
+        "error",
+        {
+          additionalTestBlockFunctions: [
+            "it.effect",
+            "it.live",
+            "it.effect.skipIf",
+            "it.live.skipIf",
+          ],
+        },
+      ],
+      // A promise's catch callback takes `unknown`, which anti-slop/no-unknown-parameters allows
+      // only under the name `cause`.
+      "unicorn/catch-error-name": ["error", { ignore: ["^cause$"] }],
+      // Effect writes the empty Tool record as `{}` (`Toolkit.empty: Toolkit<{}>`), and so do the
+      // public `Tools` defaults; empty interfaces stay refused.
+      "typescript/no-empty-object-type": ["error", { allowObjectTypes: "always" }],
+      // Effect's modules are namespaces, imported whole by design (`import * as NodePath from
+      // "@effect/platform-node-shared/NodePath"`), and tests read an entry's whole export list.
+      "import/no-namespace": "off",
+      // Every assertion here is a documented boundary assertion, which
+      // anti-slop/require-safety-comment-for-type-assertion requires to carry a SAFETY: comment.
+      "typescript/no-unsafe-type-assertion": "off",
+      // Conditional expectations here are deliberate: platform-only checks and per-case table rows.
+      "vitest/no-conditional-expect": "off",
+      // Vitest's expect takes a message as its second argument.
+      "vitest/valid-expect": ["error", { maxArgs: 2 }],
+      // The Codex stream tests assert through their own helper.
+      "vitest/expect-expect": [
+        "error",
+        { assertFunctionNames: ["expect", "expectNothingDispatched"] },
+      ],
       "typescript/no-unnecessary-condition": [
         "error",
         {
@@ -102,23 +133,10 @@ export default defineConfig({
         },
       ],
       "typescript/restrict-plus-operands": "error",
-      "oxc/no-accumulating-spread": "error",
-      "anti-slop/no-array-filter-map": "error",
-      "anti-slop/no-chained-type-assertions": "error",
-      "anti-slop/no-conditional-empty-object-spread": "error",
-      "anti-slop/no-known-value-widening": "error",
       "anti-slop/no-module-mocking": "error",
-      "anti-slop/no-object-parameters": "error",
-      "anti-slop/no-reduce-accumulator-copy": "error",
-      "anti-slop/no-reflect-apply": "error",
-      "anti-slop/no-reflect-get": "error",
       "anti-slop/no-runtime-typeof": "error",
       "anti-slop/no-shape-in-symbol-names": "error",
       "anti-slop/no-unknown-parameters": "error",
-      "anti-slop/no-unknown-returns": "error",
-      "anti-slop/no-unknown-type-aliases": "error",
-      "anti-slop/no-unsafe-dictionary-type": "error",
-      "anti-slop/no-widen-then-assert": "error",
       "anti-slop/require-safety-comment-for-type-assertion": "error",
       "anti-slop-effect/no-manual-effect-error-tag": "error",
       "anti-slop-effect/no-manual-tag-comparison": "error",
@@ -201,20 +219,61 @@ export default defineConfig({
         },
       },
       {
+        // Programs that print to a person by design: the scaffold launcher, the CLI's launcher and
+        // release build, and the repository scripts.
+        files: ["packages/create-mitome/src/index.ts", "packages/cli/scripts/**", "scripts/**"],
+        rules: {
+          "no-console": "off",
+        },
+      },
+      {
+        // It runs with plain Node and no dependencies installed, so it parses JSON without
+        // Effect's Schema, and its annotations state what it reads.
+        files: ["scripts/release.ts"],
+        rules: {
+          "typescript/no-unsafe-assignment": "off",
+        },
+      },
+      {
         files: ["**/test/**", "**/*.test.*"],
         rules: {
           "anti-slop-effect/no-manual-tagged-construction": "off",
+          // A test's helpers stay beside the tests that use them.
+          "unicorn/consistent-function-scoping": "off",
+        },
+      },
+      {
+        // React code lives only in the docs app; elsewhere a callback named `use` is not a hook.
+        files: ["packages/**", "scripts/**", "dev/**"],
+        rules: {
+          "react/rules-of-hooks": "off",
         },
       },
       {
         files: ["apps/docs/**"],
         plugins: ["react"],
+        rules: {
+          // TanStack Router's notFound() and redirect() are thrown by design and are not Errors.
+          "typescript/only-throw-error": [
+            "error",
+            {
+              allow: [
+                {
+                  from: "package",
+                  package: "@tanstack/router-core",
+                  name: ["NotFoundError", "Redirect"],
+                },
+              ],
+            },
+          ],
+        },
         env: {
           browser: true,
         },
       },
     ],
     env: {
+      ...cloudflare.env,
       builtin: true,
     },
     options: {
@@ -222,7 +281,7 @@ export default defineConfig({
       typeCheck: true,
     },
     ignorePatterns: [
-      "**/node_modules/",
+      ...cloudflare.ignorePatterns,
       "**/dist/",
       ".agents/",
       ".pi/**",

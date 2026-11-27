@@ -11,6 +11,8 @@ describe("@mitome/core/kernel", () => {
     expect(Object.keys(Kernel).sort()).toEqual(["Session", "localTools", "loop", "step"]);
     // The root has a `Session` of its own from the Agent layer; it is never the kernel's.
     const root = new Map<string, unknown>(Object.entries(Root));
-    for (const [name, value] of Object.entries(Kernel)) expect(root.get(name)).not.toBe(value);
+    for (const [name, value] of Object.entries(Kernel)) {
+      expect(root.get(name)).not.toBe(value);
+    }
   });
 });

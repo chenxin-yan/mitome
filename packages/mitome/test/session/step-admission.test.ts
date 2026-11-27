@@ -61,7 +61,9 @@ describe("controlled Step admission", () => {
               yield* Deferred.await(entered);
               const second = yield* Effect.forkChild(step({ tools }));
               // The second Step is queued: it has not built a Prompt or sent a request.
-              for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+              for (let i = 0; i < 20; i++) {
+                yield* Effect.yieldNow;
+              }
               const whileHeld = [...log];
               yield* Deferred.succeed(gate, undefined);
               yield* Fiber.join(first);
@@ -162,7 +164,9 @@ describe("controlled Step admission", () => {
         // A Step of the same Turn, started from inside the running Step's callback.
         const nested = Effect.gen(function* () {
           log.push("nested");
-          if (captured === undefined) return yield* Effect.die(new Error("no Turn"));
+          if (captured === undefined) {
+            return yield* Effect.die(new Error("no Turn"));
+          }
           return yield* step().pipe(
             Effect.provide(scriptedModel([[text("nested")]], nestedLog)),
             Effect.provideService(Turn, captured),
@@ -177,7 +181,9 @@ describe("controlled Step admission", () => {
                 Effect.gen(function* () {
                   yield* reportModelRequest;
                   log.push("generate");
-                  if (via === "model") yield* nested;
+                  if (via === "model") {
+                    yield* nested;
+                  }
                   return log.filter((entry) => entry === "generate").length === 1
                     ? [call("c1", "soft")]
                     : [text("never")];
@@ -296,8 +302,9 @@ describe("controlled Step admission", () => {
           return { result, innerHistory: yield* inner.history };
         }),
       );
-      if (!Predicate.isTagged(outcome.result, "Complete"))
+      if (!Predicate.isTagged(outcome.result, "Complete")) {
         throw new Error("expected a complete Step");
+      }
       expect(outcome.result.results.map((part) => part.result)).toEqual(["inner-x"]);
       expect(outcome.innerHistory.map((message) => message.role)).toEqual(["assistant"]);
       expect(log).toEqual(["generate:0", "generate:0"]);

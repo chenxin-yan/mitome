@@ -13,7 +13,8 @@ import {
   Scope,
   Stream,
 } from "effect";
-import { LanguageModel, Prompt, type Response, Tool, Toolkit } from "effect/ai";
+import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import type { Response } from "effect/ai";
 import {
   Agent,
   Approver,
@@ -94,7 +95,9 @@ const logging = <R = never>(
 const record = <Tools extends Record<string, Tool.Any>, E, R>(
   extension: Extension.Extension<Tools, E, R>,
 ) => {
-  if (Effect.isEffect(extension.parts)) throw new Error("not a record");
+  if (Effect.isEffect(extension.parts)) {
+    throw new Error("not a record");
+  }
   return extension.parts;
 };
 
@@ -329,7 +332,7 @@ describe("Agent.make", () => {
     const use = [notes];
     // Iterating yields an unchecked copy, while indexing yields the Extension.
     Object.defineProperty(use, Symbol.iterator, {
-      value: function* () {
+      *value() {
         yield { ...notes };
       },
     });
@@ -383,7 +386,7 @@ describe("Agent.make", () => {
     const kit = Toolkit.make(keyed("save"));
     // SAFETY: deliberately mistyped; a Toolkit, assembled as Effect assembles one, holding the
     // Tool "save" under the key "store".
-    const renamed = Object.assign(function () {}, kit, {
+    const renamed = Object.assign(() => {}, kit, {
       tools: { store: kit.tools.save },
     }) as never;
     const files = Extension.make("files", {
@@ -438,7 +441,9 @@ describe("Session.make(agent)", () => {
         Agent.make({
           program: (_: string, { step }) =>
             Effect.gen(function* () {
-              for (let i = 0; i < count; i++) yield* step;
+              for (let i = 0; i < count; i++) {
+                yield* step;
+              }
               return "";
             }),
         });

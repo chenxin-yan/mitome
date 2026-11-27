@@ -20,12 +20,14 @@ const isJson = Schema.is(Schema.Json);
  */
 export const isPlainData = (value: unknown): value is Schema.Json => isJson(value);
 
-// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- the fields of a record not yet checked, which can hold anything
+// oxlint-disable-next-line quality/no-unsafe-dictionary-type -- the fields of a record not yet checked, which can hold anything
 type Fields = Record<string, unknown>;
 
 /** Whether `Schema.Json` reads `value` field by field: a record whose prototype has no prototype. */
 const isRecord = (value: unknown): value is Fields => {
-  if (!Predicate.isObject(value)) return false;
+  if (!Predicate.isObject(value)) {
+    return false;
+  }
   const prototype: unknown = Object.getPrototypeOf(value);
   return prototype === null || Object.getPrototypeOf(prototype) === null;
 };
@@ -47,9 +49,13 @@ const notPlainData = (
       ancestors.delete(field);
       continue;
     }
-    if (field === null || Predicate.isString(field) || Predicate.isBoolean(field)) continue;
+    if (field === null || Predicate.isString(field) || Predicate.isBoolean(field)) {
+      continue;
+    }
     if (Predicate.isNumber(field)) {
-      if (Number.isFinite(field)) continue;
+      if (Number.isFinite(field)) {
+        continue;
+      }
       return { path, found: String(field) };
     }
     if (!Predicate.isObjectOrArray(field)) {
@@ -62,20 +68,27 @@ const notPlainData = (
             : "undefined";
       return { path, found };
     }
-    if (ancestors.has(field)) return { path, found: "a cycle" };
+    if (ancestors.has(field)) {
+      return { path, found: "a cycle" };
+    }
     const fields = Array.isArray(field)
       ? Array.from(field, (item, index) => [`${path}[${index}]`, item] as const)
       : isRecord(field)
         ? Object.entries(field).map(([key, item]) => [at(path, key), item] as const)
         : undefined;
     if (fields === undefined) {
-      const constructor: unknown = Object.getPrototypeOf(field)?.constructor;
+      const prototype: unknown = Object.getPrototypeOf(field);
+      const constructor = Predicate.hasProperty(prototype, "constructor")
+        ? prototype.constructor
+        : undefined;
       const name = Predicate.isFunction(constructor) ? constructor.name : "";
       return { path, found: name === "" ? "an object of another kind" : `a ${name}` };
     }
     ancestors.add(field);
     pending.push([undefined, field]);
-    for (const entry of fields.toReversed()) pending.push(entry);
+    for (const entry of fields.toReversed()) {
+      pending.push(entry);
+    }
   }
   return undefined;
 };
@@ -91,10 +104,16 @@ const withoutAbsent = (encoded: Prompt.MessageEncoded) => {
   const pending: Array<() => void> = [];
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- copies a field of an encoded Message before it is checked
   const copy = (value: unknown) => {
-    if (Object.is(value, -0)) return 0;
-    if (!Array.isArray(value) && !isRecord(value)) return value;
+    if (Object.is(value, -0)) {
+      return 0;
+    }
+    if (!Array.isArray(value) && !isRecord(value)) {
+      return value;
+    }
     const known = copies.get(value);
-    if (known !== undefined) return known;
+    if (known !== undefined) {
+      return known;
+    }
     if (Array.isArray(value)) {
       const target: Array<unknown> = [];
       target.length = value.length;
@@ -102,7 +121,9 @@ const withoutAbsent = (encoded: Prompt.MessageEncoded) => {
       // Read by index, as `Schema.Json` reads it: an array need not have the array methods.
       pending.push(() => {
         for (let index = 0; index < value.length; index += 1) {
-          if (index in value) target[index] = copy(value[index]);
+          if (index in value) {
+            target[index] = copy(value[index]);
+          }
         }
       });
       return target;
@@ -126,7 +147,9 @@ const withoutAbsent = (encoded: Prompt.MessageEncoded) => {
   };
   const root = copy(encoded);
   // A work list rather than recursion, so nesting as deep as `Schema.Json` accepts is copied too.
-  for (let next = pending.pop(); next !== undefined; next = pending.pop()) next();
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    next();
+  }
   return root;
 };
 

@@ -2,17 +2,10 @@
 // service's duplicate context/error diagnostics are skipped here.
 // oxlint-disable-next-line jsdoc/check-tag-names
 /** @effect-diagnostics missingEffectContext:skip-file missingEffectError:skip-file */
-import {
-  Context,
-  Effect,
-  Layer,
-  Predicate,
-  type Scope,
-  Schema,
-  SchemaGetter,
-  type Types,
-} from "effect";
-import { type AiError, LanguageModel, type Response, Tool, Toolkit } from "effect/ai";
+import { Context, Effect, Layer, Predicate, Schema, SchemaGetter } from "effect";
+import type { Scope, Types } from "effect";
+import type { LanguageModel, AiError, Response } from "effect/ai";
+import { Tool, Toolkit } from "effect/ai";
 import * as Core from "../../src/index.js";
 import * as Kernel from "../../src/kernel.js";
 import { isProvider } from "../../src/session/internal.js";
@@ -64,13 +57,17 @@ type Tools = Toolkit.Tools<typeof Kit>;
 // A serviceful, fallible builder whose handlers need the Tool's declared dependency.
 const builder = Effect.gen(function* () {
   const input = yield* BuildInput;
-  if (!input.ready) return yield* new BuildError();
+  if (!input.ready) {
+    return yield* new BuildError();
+  }
   return Kit.of({
     write: ({ n }) =>
       Effect.gen(function* () {
         const db = yield* Db;
         yield* db.write(n);
-        if (n < 0) return yield* new Quota();
+        if (n < 0) {
+          return yield* new Quota();
+        }
         return n;
       }),
     soft: ({ k }) => Effect.succeed(k),
@@ -493,7 +490,7 @@ const badParams = Kernel.step({
   ],
 });
 // @ts-expect-error An incomplete Step carries no local results.
-const noResults = incomplete.results;
+const noResults = incomplete.results; // oxlint-disable-line typescript/no-unsafe-member-access, typescript/no-unsafe-assignment -- the property this negative control shows is absent
 // @ts-expect-error The provisioning error is not erased when the binding is provided.
 const noProvisionError: Effect.Effect<
   Core.StepResult<{}>,

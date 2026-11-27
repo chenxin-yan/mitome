@@ -1,15 +1,14 @@
 import { Effect } from "effect";
-import { type CredentialStoreError, modifyCredential } from "../shared/credential-store.js";
-import {
-  authorize,
-  type OAuthAuthorizationError,
-  type OAuthTokenFailure,
-} from "../shared/oauth.js";
+import { modifyCredential } from "../shared/credential-store.js";
+import type { CredentialStoreError } from "../shared/credential-store.js";
+import { authorize } from "../shared/oauth.js";
+import type { OAuthAuthorizationError, OAuthTokenFailure } from "../shared/oauth.js";
 import { oauth, provider } from "./constants.js";
 import { platformLayer } from "../shared/platform.js";
 import { writeCredential } from "./credential-store.js";
-import { accountCredential, type OAuthCredentialError } from "./oauth-token.js";
-import { type LoginOptions, type LogoutOptions } from "./types.js";
+import { accountCredential } from "./oauth-token.js";
+import type { OAuthCredentialError } from "./oauth-token.js";
+import type { LoginOptions, LogoutOptions } from "./types.js";
 
 /**
  * Runs Codex PKCE login and stores the resulting Credential. It also fails with any `Error` the

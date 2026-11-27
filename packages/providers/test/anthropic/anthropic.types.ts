@@ -1,12 +1,12 @@
 import type { Config, Types } from "effect";
 import type { Provider } from "@mitome/core";
-import {
-  type AnthropicOptions,
-  type KnownModelId,
-  type MissingCredentialError,
-  type UnusableProfileError,
+import type {
   anthropic,
   knownModelIds,
+  AnthropicOptions,
+  KnownModelId,
+  MissingCredentialError,
+  UnusableProfileError,
 } from "../../src/anthropic/index.js";
 
 type Assert<T extends true> = T;

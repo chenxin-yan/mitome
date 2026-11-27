@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
-import { createServer, type IncomingHttpHeaders } from "node:http";
-import { type AddressInfo } from "node:net";
+import { createServer } from "node:http";
+import type { IncomingHttpHeaders } from "node:http";
+import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
+import { buffer } from "node:stream/consumers";
 import { ConfigProvider, Effect, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 
@@ -48,9 +50,7 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
   const server = createServer((incoming, outgoing) => {
     void (async () => {
       try {
-        const chunks: Array<Uint8Array> = [];
-        for await (const chunk of incoming) chunks.push(chunk);
-        const body = Buffer.concat(chunks);
+        const body = await buffer(incoming);
         const init =
           body.length === 0
             ? { method: incoming.method ?? "GET", headers: headers(incoming.headers) }
@@ -58,7 +58,11 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
         const request = new Request(`http://${incoming.headers.host}${incoming.url}`, init);
         const response = await fetch(request);
         outgoing.writeHead(response.status, Object.fromEntries(response.headers));
-        if (response.body !== null) for await (const chunk of response.body) outgoing.write(chunk);
+        if (response.body !== null) {
+          for await (const chunk of response.body) {
+            outgoing.write(chunk);
+          }
+        }
         outgoing.end();
       } catch {
         outgoing.writeHead(500).end();
@@ -73,10 +77,12 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
     // SAFETY: a successfully listening TCP server returns AddressInfo rather than null or a pipe name.
     port: (server.address() as AddressInfo).port,
     stop: (closeActiveConnections = false) => {
-      if (closeActiveConnections) server.closeAllConnections();
-      return new Promise((resolve, reject) =>
-        server.close((error) => (error === undefined ? resolve() : reject(error))),
-      );
+      if (closeActiveConnections) {
+        server.closeAllConnections();
+      }
+      return new Promise((resolve, reject) => {
+        server.close((error) => (error === undefined ? resolve() : reject(error)));
+      });
     },
   };
 };

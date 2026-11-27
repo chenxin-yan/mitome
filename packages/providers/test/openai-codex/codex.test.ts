@@ -1,14 +1,8 @@
 import { afterAll, describe, expect, test } from "vite-plus/test";
 import { setTimeout } from "node:timers/promises";
 import { Effect, Layer, Schema, Stream } from "effect";
-import {
-  AiError,
-  LanguageModel,
-  Prompt,
-  type Response as AiResponse,
-  Tool,
-  Toolkit,
-} from "effect/ai";
+import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import type { Response as AiResponse } from "effect/ai";
 import { FetchHttpClient } from "effect/http";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -51,7 +45,7 @@ const tokenResponse = (accountId: string, refresh: string) =>
   Response.json({
     access_token: jwt(accountId),
     refresh_token: refresh,
-    expires_in: 3_600,
+    expires_in: 3600,
   });
 
 const directory = async (value = credential()) => {
@@ -92,17 +86,21 @@ const raceRotation = async (
       refreshes.push(refresh);
       // Only a failure bound: the other child waits for the lock as soon as it reads.
       const other = waiting[child === "0" ? 1 : 0].promise;
-      if ((await Promise.race([other.then(() => true), setTimeout(5_000, false)])) === false) {
+      if ((await Promise.race([other.then(() => true), setTimeout(5000, false)])) === false) {
         return new Response("the other process never waited for the lock", { status: 500 });
       }
-      if (refresh !== stored.refresh) return new Response("stale refresh", { status: 400 });
+      if (refresh !== stored.refresh) {
+        return new Response("stale refresh", { status: 400 });
+      }
       return tokenResponse("race-account", "race-refresh");
     },
   });
   const server = await serve({
     fetch(request) {
       const authorization = request.headers.get("authorization");
-      if (!accepts(authorization)) return new Response("", { status: 401 });
+      if (!accepts(authorization)) {
+        return new Response("", { status: 401 });
+      }
       expect(authorization).toBe(`Bearer ${jwt("race-account")}`);
       return new Response(
         sse({ type: "response.output_item.added", output_index: 0, item: { type: "message" } }) +
@@ -145,7 +143,10 @@ await Effect.runPromise(Effect.gen(function* () {
     const children = [child(0), child(1)];
     const exits = await Promise.all(children.map((process) => process.exited));
     if (exits.some((code) => code !== 0)) {
-      for (const failed of children) console.error(await new Response(failed.stderr).text());
+      for (const failed of children) {
+        // oxlint-disable-next-line no-console -- shows why a child process failed
+        console.error(await new Response(failed.stderr).text());
+      }
     }
     const auth = JSON.parse(await readFile(join(stateDirectory, "auth.json"), "utf8"));
     return { exits, refreshes, auth };
@@ -225,7 +226,9 @@ describe("Codex SSE", () => {
           Stream.runForEach((part) =>
             Effect.sync(() => {
               parts.push(part);
-              if (part.type === "text-delta") firstOutput();
+              if (part.type === "text-delta") {
+                firstOutput();
+              }
             }),
           ),
           Effect.provide(
@@ -414,7 +417,9 @@ describe("Codex SSE", () => {
       );
 
       expect(AiError.isAiError(error)).toBe(true);
-      if (!AiError.isAiError(error)) throw new Error("Expected an AiError");
+      if (!AiError.isAiError(error)) {
+        throw new Error("Expected an AiError");
+      }
       expect(error.message).toContain(
         "Authenticate again through your application; with the Mitome CLI, run `mitome auth login --provider openai-codex`.",
       );
@@ -462,7 +467,9 @@ describe("Codex SSE", () => {
       );
 
       expect(AiError.isAiError(error)).toBe(true);
-      if (!AiError.isAiError(error)) throw new Error("Expected an AiError");
+      if (!AiError.isAiError(error)) {
+        throw new Error("Expected an AiError");
+      }
       expect(error.reason).toMatchObject({ _tag: tag, isRetryable: true });
       expect(error.message).not.toContain("Authenticate again");
       expect(requests).toBe(1);
@@ -578,6 +585,7 @@ describe("Codex SSE", () => {
   );
 });
 
+// oxlint-disable-next-line vitest/expect-expect -- passes when the Model is provisioned without failing
 test("reads Credentials from the state directory by default", async () => {
   const keys = ["MITOME_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"] as const;
   const previous = keys.map((key) => process.env[key]);
@@ -595,8 +603,11 @@ test("reads Credentials from the state directory by default", async () => {
   } finally {
     keys.forEach((key, index) => {
       const value = previous[index];
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     });
   }
 });

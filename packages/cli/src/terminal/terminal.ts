@@ -1,16 +1,17 @@
 /** The terminal Host for one acquired Configuration and its current Session, on OpenTUI. */
 
-import { type ApprovalDecision, Command, type Session } from "@mitome/core";
-import { type Binding, type Control, terminal } from "@mitome/core/terminal";
+import { Command } from "@mitome/core";
+import type { ApprovalDecision, Session } from "@mitome/core";
+import { terminal } from "@mitome/core/terminal";
+import type { Binding, Control } from "@mitome/core/terminal";
 import {
   BoxRenderable,
-  type CliRenderer,
   createCliRenderer,
-  type KeyEvent,
   ScrollBoxRenderable,
   TextareaRenderable,
   TextRenderable,
 } from "@opentui/core";
+import type { CliRenderer, KeyEvent } from "@opentui/core";
 import {
   Cause,
   Deferred,
@@ -21,8 +22,8 @@ import {
   Formatter,
   Match,
   Predicate,
-  type Scope,
 } from "effect";
+import type { Scope } from "effect";
 import type { Prompt } from "effect/ai";
 import type { ApprovalChannel, PendingApproval } from "./approvals.js";
 import { isControl, keysOf } from "./keys.js";
@@ -70,7 +71,7 @@ const refreshMillis = 100;
 
 /** Keeps newlines and tabs; every other control character is shown escaped, never sent raw. */
 const printable = (text: string) =>
-  text.replace(
+  text.replaceAll(
     // oxlint-disable-next-line no-control-regex
     /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g,
     (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
@@ -113,7 +114,9 @@ const outcome = (exit: Exit.Exit<unknown, unknown>, snapshot: Session.TurnSnapsh
     Match.when("running", () => "still settling"),
     Match.exhaustive,
   );
-  if (Exit.isSuccess(exit)) return `Turn ${snapshot.id} succeeded; ${conversation}.`;
+  if (Exit.isSuccess(exit)) {
+    return `Turn ${snapshot.id} succeeded; ${conversation}.`;
+  }
   return Cause.hasInterruptsOnly(exit.cause)
     ? `Turn ${snapshot.id} interrupted; ${conversation}.`
     : `Turn ${snapshot.id} failed: ${reasons(exit.cause)}; ${conversation}.`;
@@ -259,13 +262,17 @@ const view = Effect.fnUntraced(function* <Input, A>(
     padding: 1,
     gap: 1,
   });
-  for (const child of [scroll, approval, listing, editorBox, footer]) root.add(child);
+  for (const child of [scroll, approval, listing, editorBox, footer]) {
+    root.add(child);
+  }
   renderer.root.add(root);
   editor.focus();
 
   // Settling work may outlive the view; destroyed renderables must not be touched.
   const draw = () => {
-    if (renderer.isDestroyed) return;
+    if (renderer.isDestroyed) {
+      return;
+    }
     transcript.content = entries
       .map(({ input, lines }) => [`› ${printable(input)}`, ...lines].join("\n"))
       .join("\n\n");
@@ -291,7 +298,9 @@ const view = Effect.fnUntraced(function* <Input, A>(
     // footer and an Approval leave, so the input that narrows it stays on the screen.
     const columns = Math.max(1, renderer.width - 2);
     let room = renderer.height - 2 - 3 - editorRows - (approval.visible ? approvalRows + 1 : 0);
-    for (const line of footerLines) room -= Math.max(1, Math.ceil(line.length / columns));
+    for (const line of footerLines) {
+      room -= Math.max(1, Math.ceil(line.length / columns));
+    }
     const typed = /^\/(\S*)/.exec(editor.plainText)?.[1];
     const matching =
       typed === undefined
@@ -309,13 +318,17 @@ const view = Effect.fnUntraced(function* <Input, A>(
   };
 
   const showApproval = (next: PendingApproval | undefined) => {
-    if (next === shown || renderer.isDestroyed) return;
+    if (next === shown || renderer.isDestroyed) {
+      return;
+    }
     shown = next;
     // Hiding the view blurs it, so whether it had focus is read first.
     const focused = approval.focused;
     approval.visible = next !== undefined;
     // Also when another request replaces it: `y` or `n` decides only a request the person focused.
-    if (focused) editor.focus();
+    if (focused) {
+      editor.focus();
+    }
     if (next !== undefined) {
       approvalText.content = [
         `Turn ${printable(next.turnId)}`,
@@ -340,7 +353,9 @@ const view = Effect.fnUntraced(function* <Input, A>(
             ? "deny"
             : undefined;
     const request = shown;
-    if (decision === undefined || request === undefined) return;
+    if (decision === undefined || request === undefined) {
+      return;
+    }
     key.preventDefault();
     runFork(
       Effect.flatMap(
@@ -355,9 +370,14 @@ const view = Effect.fnUntraced(function* <Input, A>(
                   ? `Approved ${call}.`
                   : `Denied ${call}; the program decides how the Turn continues.`;
             const entry = current();
-            if (entry === undefined) notice = line;
-            else entry.lines.push(line);
-            if (shown === request) showApproval(undefined);
+            if (entry === undefined) {
+              notice = line;
+            } else {
+              entry.lines.push(line);
+            }
+            if (shown === request) {
+              showApproval(undefined);
+            }
             draw();
           }),
       ),
@@ -420,7 +440,9 @@ const view = Effect.fnUntraced(function* <Input, A>(
     function* (text: string, entry: Entry) {
       const named = Command.parse(text);
       const input = named === undefined ? text : yield* runCommand(named.name, named.input, entry);
-      if (input === undefined) return;
+      if (input === undefined) {
+        return;
+      }
       const parsed = yield* staged("parsing", () => application.parseInput(input));
       if (Exit.isFailure(parsed)) {
         entry.lines.push(
@@ -446,7 +468,9 @@ const view = Effect.fnUntraced(function* <Input, A>(
       } else {
         entry.lines.push(outcome(ran, snapshot));
       }
-      if (Exit.isFailure(ran)) return;
+      if (Exit.isFailure(ran)) {
+        return;
+      }
       const rendered = yield* staged("rendering", () => application.renderResult(ran.value));
       if (Exit.isFailure(rendered)) {
         entry.lines.push(
@@ -463,10 +487,14 @@ const view = Effect.fnUntraced(function* <Input, A>(
     Effect.ensuring(
       Effect.gen(function* () {
         const history = yield* Effect.exit(application.history);
-        if (Exit.isSuccess(history)) committed = history.value.length;
+        if (Exit.isSuccess(history)) {
+          committed = history.value.length;
+        }
         phase = "idle";
         interrupting = false;
-        if (!renderer.isDestroyed && !approval.focused) editor.focus();
+        if (!renderer.isDestroyed && !approval.focused) {
+          editor.focus();
+        }
         draw();
       }),
     ),
@@ -474,7 +502,9 @@ const view = Effect.fnUntraced(function* <Input, A>(
 
   /** Submits `text` unless another submission runs; says whether it was taken. */
   const submitText = (text: string) => {
-    if (text === "") return false;
+    if (text === "") {
+      return false;
+    }
     if (phase !== "idle") {
       notice = "A submission is still running; your draft is kept.";
       draw();
@@ -495,27 +525,40 @@ const view = Effect.fnUntraced(function* <Input, A>(
 
   const submit = () => {
     // `/quit` destroys the editor with the renderer.
-    if (submitText(editor.plainText) && !renderer.isDestroyed) editor.clear();
+    if (submitText(editor.plainText) && !renderer.isDestroyed) {
+      editor.clear();
+    }
   };
 
   const onKey = (key: KeyEvent) => {
     // Only a plain Tab; a Tab with a modifier may be bound.
     if (key.name === "tab" && !key.shift && !key.ctrl && !key.meta && shown !== undefined) {
       key.preventDefault();
-      if (approval.focused) editor.focus();
-      else approval.focus();
+      if (approval.focused) {
+        editor.focus();
+      } else {
+        approval.focus();
+      }
       return draw();
     }
     const binding = keysOf(key)
       .map((name) => application.keys.get(name))
       .find(Predicate.isNotUndefined);
-    if (binding === undefined) return;
+    if (binding === undefined) {
+      return;
+    }
     key.preventDefault();
     // Text is typed into an empty input and sent; the person's draft stays as it is.
-    if (Predicate.isString(binding)) return void submitText(binding);
-    if (isControl(binding, terminal.submit)) return submit();
+    if (Predicate.isString(binding)) {
+      return void submitText(binding);
+    }
+    if (isControl(binding, terminal.submit)) {
+      return submit();
+    }
     if (isControl(binding, terminal.newline)) {
-      if (editor.focused) editor.newLine();
+      if (editor.focused) {
+        editor.newLine();
+      }
       return;
     }
     if (isControl(binding, terminal.interrupt) && stage !== undefined && !interrupting) {

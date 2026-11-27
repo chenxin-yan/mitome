@@ -2,7 +2,8 @@
 // service's duplicate context/error diagnostics are skipped here.
 // oxlint-disable-next-line jsdoc/check-tag-names
 /** @effect-diagnostics missingEffectContext:skip-file missingEffectError:skip-file missingLayerContext:skip-file */
-import { Context, Effect, Layer, type Scope, Schema, type Types } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
+import type { Scope, Types } from "effect";
 import { LanguageModel } from "effect/ai";
 import * as Core from "../../src/index.js";
 
@@ -48,7 +49,9 @@ const notes = Core.Extension.make(
   "notes",
   Effect.gen(function* () {
     const { now } = yield* Clock;
-    if (now < 0) return yield* new NotesError();
+    if (now < 0) {
+      return yield* new NotesError();
+    }
     return { instructions: `Notes from ${now}.` };
   }),
 );
@@ -60,7 +63,9 @@ const program = (input: { readonly topic: string }) =>
     const db = yield* Db;
     yield* LanguageModel.LanguageModel;
     yield* Effect.addFinalizer(() => Effect.void);
-    if (input.topic === "") return yield* new AppError();
+    if (input.topic === "") {
+      return yield* new AppError();
+    }
     return { id: turn.id, label: db.label, length: input.topic.length };
   });
 type Program = typeof program;

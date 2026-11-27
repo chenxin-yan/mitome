@@ -4,12 +4,8 @@
 // oxlint-disable-next-line eslint/no-restricted-imports
 import { rmdir } from "node:fs/promises";
 import { Effect, FileSystem, Path, Predicate } from "effect";
-import {
-  exampleAgentSource,
-  gitignoreSource,
-  pinnedDependencies,
-  type ProviderChoice,
-} from "create-mitome/template";
+import { exampleAgentSource, gitignoreSource, pinnedDependencies } from "create-mitome/template";
+import type { ProviderChoice } from "create-mitome/template";
 import { runtimeError } from "./errors.js";
 import { starterProvide, terminalImport } from "./terminal/keys.js";
 
@@ -25,10 +21,10 @@ export type Shell = "posix" | "powershell";
 export const shellQuote = (path: string, shell: Shell): string =>
   shell === "powershell"
     ? // PowerShell also takes the typographic single quotes as quote delimiters.
-      `'${path.replace(/['\u2018-\u201b]/g, "$&$&")}'`
+      `'${path.replaceAll(/['\u2018-\u201b]/g, "$&$&")}'`
     : /^[\w@%+=:,./-]+$/.test(path)
       ? path
-      : `'${path.replaceAll("'", "'\\''")}'`;
+      : `'${path.replaceAll("'", String.raw`'\''`)}'`;
 
 /** How `provider` gets its credential, as a command to run before `mitome`: its API key if it takes one. */
 export const signIn = (provider: ProviderChoice, shell: Shell): string =>
@@ -200,7 +196,9 @@ export const writeConfiguration = Effect.fnUntraced(function* (directory: string
   ) {
     missing.unshift(at);
     // A root that does not exist, such as a missing drive, is its own parent; making it says why.
-    if (path.dirname(at) === at) break;
+    if (path.dirname(at) === at) {
+      break;
+    }
   }
   const made: Array<string> = [];
   const written: Array<string> = [];
@@ -250,7 +248,9 @@ export const writeConfiguration = Effect.fnUntraced(function* (directory: string
               () => false,
             ),
           );
-          if (!removed) break;
+          if (!removed) {
+            break;
+          }
         }
       }),
     ),

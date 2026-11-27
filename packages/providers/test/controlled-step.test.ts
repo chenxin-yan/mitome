@@ -1,6 +1,7 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { type AddressInfo } from "node:net";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "@effect/vitest";
@@ -17,10 +18,12 @@ import {
   Schema,
   SchemaGetter,
 } from "effect";
-import { type LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import { Prompt, Tool, Toolkit } from "effect/ai";
+import type { LanguageModel } from "effect/ai";
 import { FetchHttpClient } from "effect/http";
 import { WebSocketServer } from "ws";
-import { type ExecutionUsage, type ModelRequestAccounting, Provider, Turn } from "@mitome/core";
+import { Provider, Turn } from "@mitome/core";
+import type { ExecutionUsage, ModelRequestAccounting } from "@mitome/core";
 import { localTools, loop, Session, step } from "@mitome/core/kernel";
 import { anthropic } from "../src/anthropic/index.js";
 import { writeCredential } from "../src/openai-codex/credential-store.js";
@@ -68,7 +71,9 @@ type Reply =
 
 /** Applies a transport fault reply; returns false for ordinary replies. */
 const transportFault = (reply: Reply, response: ServerResponse, partialBody: string) => {
-  if (reply === "hang") return true;
+  if (reply === "hang") {
+    return true;
+  }
   if (reply === "dropped") {
     response.socket?.destroy();
     return true;
@@ -90,11 +95,17 @@ interface Probe {
 const work = (probe: Probe, name: string, value: string, fails: boolean) =>
   Effect.gen(function* () {
     probe.active += 1;
-    if (probe.active > 1) probe.overlap = true;
+    if (probe.active > 1) {
+      probe.overlap = true;
+    }
     probe.log.push(`${name}:start`);
     // Give a concurrent dispatcher every chance to overlap the next handler.
-    for (let i = 0; i < 5; i++) yield* Effect.yieldNow;
-    if (fails) return yield* new Quota();
+    for (let i = 0; i < 5; i++) {
+      yield* Effect.yieldNow;
+    }
+    if (fails) {
+      return yield* new Quota();
+    }
     probe.log.push(`${name}:end`);
     return `${name}:${value}`;
   }).pipe(Effect.ensuring(Effect.sync(() => void (probe.active -= 1))));
@@ -171,7 +182,9 @@ const runTurn = (
 
 const body = async (request: IncomingMessage): Promise<Record<string, Json>> => {
   const chunks: Array<Buffer> = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  for await (const chunk of request) {
+    chunks.push(Buffer.from(chunk));
+  }
   const text = Buffer.concat(chunks).toString();
   // Token refreshes are form-encoded; only JSON Model request bodies are inspected.
   return request.headers["content-type"]?.includes("json") === true && text !== ""
@@ -270,7 +283,9 @@ const openAiResponse = (
 });
 let responseCount = 0;
 const openAiReply = (reply: Reply, response: ServerResponse) => {
-  if (transportFault(reply, response, '{"id":"resp-partial","object":"response",')) return;
+  if (transportFault(reply, response, '{"id":"resp-partial","object":"response",')) {
+    return;
+  }
   responseCount += 1;
   const id = `resp-${responseCount}`;
   if (reply === "calls") {
@@ -358,8 +373,12 @@ const compatibleReply = (reply: Reply, response: ServerResponse) => {
 
 // Codex SSE (its generateText collects the complete stream).
 const codexReply = (reply: Reply, response: ServerResponse) => {
-  if (reply === "retryable") return void response.writeHead(503).end("busy");
-  if (reply === "unauthorized") return void response.writeHead(401).end("");
+  if (reply === "retryable") {
+    return void response.writeHead(503).end("busy");
+  }
+  if (reply === "unauthorized") {
+    return void response.writeHead(401).end("");
+  }
   const call = (index: number, name: string, value: string) =>
     sse({
       type: "response.output_item.added",
@@ -387,7 +406,9 @@ const codexReply = (reply: Reply, response: ServerResponse) => {
     output_index: 1,
     item: { type: "function_call", call_id: "call-1", name: "second" },
   });
-  if (transportFault(reply, response, call(0, "first", "a") + started)) return;
+  if (transportFault(reply, response, call(0, "first", "a") + started)) {
+    return;
+  }
   const both = call(0, "first", "a") + call(1, "second", "b") + sse({ type: "response.completed" });
   const events = Match.value(reply).pipe(
     Match.when("unterminated", () => call(0, "first", "a") + call(1, "second", "b")),
@@ -419,12 +440,16 @@ const codexDirectory = async (expires = Date.now() + 3_600_000) => {
   return stateDirectory;
 };
 const tokenEndpoint = (fails: boolean) => (path: string, response: ServerResponse) => {
-  if (path !== "/oauth/token") return void response.writeHead(404).end();
-  if (fails) return json(response, 400, { error: "invalid_grant" });
+  if (path !== "/oauth/token") {
+    return void response.writeHead(404).end();
+  }
+  if (fails) {
+    return json(response, 400, { error: "invalid_grant" });
+  }
   json(response, 200, {
     access_token: jwt("synthetic-account"),
     refresh_token: "rotated-refresh",
-    expires_in: 3_600,
+    expires_in: 3600,
   });
 };
 
@@ -648,8 +673,11 @@ describe("controlled Step through anthropic", () => {
       });
     } finally {
       for (const [name, value] of Object.entries(previous)) {
-        if (value === undefined) delete process.env[name];
-        else process.env[name] = value;
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
       }
       await server.stop();
     }
@@ -737,8 +765,10 @@ describe("controlled Step through anthropic", () => {
       : anthropicReply(reply, response);
 
   const refreshed = (path: string, response: ServerResponse) => {
-    if (path !== "/v1/oauth/token") return void response.writeHead(404).end();
-    json(response, 200, { access_token: "refreshed-access", expires_in: 3_600 });
+    if (path !== "/v1/oauth/token") {
+      return void response.writeHead(404).end();
+    }
+    json(response, 200, { access_token: "refreshed-access", expires_in: 3600 });
   };
 
   it("signs in through the Claude Console profile, not counting the token refresh", async () => {
@@ -948,10 +978,18 @@ describe.each(bindings)("Void Tool results through $name", (binding) => {
   const JsonArray = Schema.Array(Schema.Json);
   const JsonRecord = Schema.Record(Schema.String, Schema.Json);
   const toolOutputs = (value: Json): Array<Json | undefined> => {
-    if (Schema.is(FunctionOutput)(value)) return [value.output];
-    if (Schema.is(ToolMessage)(value)) return [value.content];
-    if (Schema.is(JsonArray)(value)) return value.flatMap(toolOutputs);
-    if (Schema.is(JsonRecord)(value)) return Object.values(value).flatMap(toolOutputs);
+    if (Schema.is(FunctionOutput)(value)) {
+      return [value.output];
+    }
+    if (Schema.is(ToolMessage)(value)) {
+      return [value.content];
+    }
+    if (Schema.is(JsonArray)(value)) {
+      return value.flatMap(toolOutputs);
+    }
+    if (Schema.is(JsonRecord)(value)) {
+      return Object.values(value).flatMap(toolOutputs);
+    }
     return [];
   };
 
@@ -991,7 +1029,9 @@ describe.each(bindings)("Void Tool results through $name", (binding) => {
           }),
         ),
       );
-      if (!Predicate.isTagged(outcome, "Complete")) throw new Error("expected a complete Step");
+      if (!Predicate.isTagged(outcome, "Complete")) {
+        throw new Error("expected a complete Step");
+      }
       expect(outcome.results.map((part) => [part.result, part.encodedResult])).toEqual([
         [undefined, null],
         [undefined, null],
@@ -1064,7 +1104,9 @@ describe.each(bindings.filter((binding) => binding.name === "openai-codex"))(
             }),
           ),
         );
-        if (!Predicate.isTagged(outcome, "Complete")) throw new Error("expected a complete Step");
+        if (!Predicate.isTagged(outcome, "Complete")) {
+          throw new Error("expected a complete Step");
+        }
         expect(log).toEqual(["first", "second"]);
         // Codex normalizes parameters without the application codec, so it never runs the encoder;
         // the Step still requires its service (native R).
@@ -1926,13 +1968,20 @@ describe("Codex Tool call groups and Tool choice", () => {
     | { readonly reasoning: string | undefined };
   /** The text parts of a complete Step's native response, with any refusal explanation. */
   const textParts = (outcome: Outcome, tag: "Complete" | "Incomplete" = "Complete") => {
-    if (!Exit.isSuccess(outcome.exit)) throw new Error(`expected a ${tag} Step`);
+    if (!Exit.isSuccess(outcome.exit)) {
+      throw new Error(`expected a ${tag} Step`);
+    }
     const { _tag, response } = Schema.decodeUnknownSync(ResponseText)(outcome.exit.value);
-    if (_tag !== tag) throw new Error(`expected a ${tag} Step, got ${_tag}`);
+    if (_tag !== tag) {
+      throw new Error(`expected a ${tag} Step, got ${_tag}`);
+    }
     return response.content.flatMap((part): Array<ShownPart> => {
-      if (part.type === "text")
+      if (part.type === "text") {
         return [{ text: part.text, refusal: part.metadata?.openai?.refusal }];
-      if (part.type === "reasoning") return [{ reasoning: part.text }];
+      }
+      if (part.type === "reasoning") {
+        return [{ reasoning: part.text }];
+      }
       return [];
     });
   };
@@ -4113,7 +4162,9 @@ describe("bounded retry and fallback for local-function-only requests", () => {
                 }).pipe(Effect.provide(model)),
               ),
             );
-            while (server.requests.length < 2) yield* Effect.sleep(5);
+            while (server.requests.length < 2) {
+              yield* Effect.sleep(5);
+            }
             yield* Fiber.interrupt(fiber);
             const exit = yield* Fiber.await(fiber);
             const usage = turn === undefined ? undefined : yield* turn.usage;
@@ -4216,7 +4267,9 @@ describe.each(bindings)("Model redirects through $name", (binding) => {
       destination.push(request.url ?? "");
       response.writeHead(200, { "content-type": "application/json" }).end("{}");
     });
-    await new Promise<void>((resolve) => target.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) => {
+      target.listen(0, "127.0.0.1", resolve);
+    });
     // SAFETY: a successfully listening TCP server returns AddressInfo.
     const targetUrl = `http://127.0.0.1:${(target.address() as AddressInfo).port}`;
     const requests: Upstream["requests"] = [];
@@ -4240,7 +4293,9 @@ describe.each(bindings)("Model redirects through $name", (binding) => {
         response.writeHead(status, { location: `${targetUrl}${path}` }).end();
       });
     });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
     // SAFETY: a successfully listening TCP server returns AddressInfo.
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const upstreamLike: Upstream = {
@@ -4251,8 +4306,12 @@ describe.each(bindings)("Model redirects through $name", (binding) => {
       stop: async () => {
         server.closeAllConnections();
         target.closeAllConnections();
-        await new Promise<void>((resolve) => server.close(() => resolve()));
-        await new Promise<void>((resolve) => target.close(() => resolve()));
+        await new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        });
+        await new Promise<void>((resolve) => {
+          target.close(() => resolve());
+        });
       },
     };
     return { upstream: upstreamLike, destination, headers };
@@ -4356,7 +4415,9 @@ describe("credential redirects", () => {
       destination.push(request.url ?? "");
       tokenEndpoint(false)("/oauth/token", response);
     });
-    await new Promise<void>((resolve) => target.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) => {
+      target.listen(0, "127.0.0.1", resolve);
+    });
     // SAFETY: a successfully listening TCP server returns AddressInfo.
     const targetUrl = `http://127.0.0.1:${(target.address() as AddressInfo).port}`;
     const server = await upstream(
@@ -4369,7 +4430,7 @@ describe("credential redirects", () => {
       const model = Provider.model(
         codex({
           // An expired Credential forces a refresh before the Model request.
-          stateDirectory: await codexDirectory(Date.now() - 1_000),
+          stateDirectory: await codexDirectory(Date.now() - 1000),
           baseUrl: server.url,
           tokenUrl: `${server.url}/oauth/token`,
         }),
@@ -4389,7 +4450,9 @@ describe("credential redirects", () => {
       expect(server.requests).toEqual([]);
     } finally {
       target.closeAllConnections();
-      await new Promise<void>((resolve) => target.close(() => resolve()));
+      await new Promise<void>((resolve) => {
+        target.close(() => resolve());
+      });
       await server.stop();
     }
   });
@@ -4524,7 +4587,7 @@ describe("physical request qualification", () => {
     try {
       const model = Provider.model(
         codex({
-          stateDirectory: await codexDirectory(Date.now() - 1_000),
+          stateDirectory: await codexDirectory(Date.now() - 1000),
           baseUrl: server.url,
           tokenUrl: `${server.url}/oauth/token`,
         }),

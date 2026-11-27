@@ -185,7 +185,9 @@ const decode = <S extends Schema.ConstraintDecoder<unknown>>(
   onFailure: () => AiError.AiError,
 ) => {
   const result = Schema.decodeResult(schema)(input);
-  if (Result.isFailure(result)) throw onFailure();
+  if (Result.isFailure(result)) {
+    throw onFailure();
+  }
   return result.success;
 };
 
@@ -230,8 +232,9 @@ const locate = (
     const open = state.items.filter(
       (item) => !item.done && (kind === undefined || item.kind === kind),
     );
-    if (open.length > 1)
+    if (open.length > 1) {
       throw invalidOutput("Codex sent an output event that names no single item");
+    }
     return { item: open[0], index, ids };
   }
   const found = [
@@ -239,19 +242,27 @@ const locate = (
     ...ids.map((id) => state.byItemId.get(id)),
   ].filter(Predicate.isNotUndefined);
   const item = found[0];
-  if (item === undefined) return { item, index, ids };
-  if (found.some((other) => other !== item)) throw contradiction();
+  if (item === undefined) {
+    return { item, index, ids };
+  }
+  if (found.some((other) => other !== item)) {
+    throw contradiction();
+  }
   if (index !== undefined && state.byIndex.get(index) !== item) {
     // An item started without an output index adopts the first one an event supplies.
     const indexed = [...state.byIndex.values()].includes(item);
-    if (indexed || state.byIndex.has(index)) throw contradiction();
+    if (indexed || state.byIndex.has(index)) {
+      throw contradiction();
+    }
     state.byIndex.set(index, item);
   }
   for (const id of ids) {
     if (item.itemId === undefined) {
       item.itemId = id;
       state.byItemId.set(id, item);
-    } else if (item.itemId !== id) throw contradiction();
+    } else if (item.itemId !== id) {
+      throw contradiction();
+    }
   }
   return { item, index, ids };
 };
@@ -265,7 +276,9 @@ const register = (
 ): Item => {
   const itemId = ids[0];
   // Only called for locators that name no item yet (see `locate`).
-  if (ids.some((id) => id !== itemId)) throw contradiction();
+  if (ids.some((id) => id !== itemId)) {
+    throw contradiction();
+  }
   // `call_id` is the correlation a Tool result answers, so it names one call only.
   if (call !== undefined && state.items.some((item) => item.callId === call.callId)) {
     throw invalidOutput("Codex reused a Tool call id");
@@ -292,8 +305,12 @@ const register = (
     encryptedContent: undefined,
   };
   state.items.push(item);
-  if (index !== undefined) state.byIndex.set(index, item);
-  if (itemId !== undefined) state.byItemId.set(itemId, item);
+  if (index !== undefined) {
+    state.byIndex.set(index, item);
+  }
+  if (itemId !== undefined) {
+    state.byItemId.set(itemId, item);
+  }
   return item;
 };
 
@@ -313,10 +330,13 @@ const isRemoteToolItem = (itemType: string) =>
 type OutputItemKind = { readonly kind: Item["kind"]; readonly id: string | undefined };
 const outputItemKind = (item: JsonInput): OutputItemKind => {
   const result = Schema.decodeUnknownResult(OutputItem)(item);
-  if (Result.isFailure(result)) throw invalidOutput("Codex sent a malformed output item");
+  if (Result.isFailure(result)) {
+    throw invalidOutput("Codex sent a malformed output item");
+  }
   const { type, id } = result.success;
-  if (type === "message" || type === "reasoning" || type === "function_call")
+  if (type === "message" || type === "reasoning" || type === "function_call") {
     return { kind: type, id };
+  }
   throw invalidOutput(
     isRemoteToolItem(type)
       ? `Codex returned an unrequested Provider Tool item (${type})`
@@ -338,13 +358,20 @@ type ContentPart = { readonly text: string } | { readonly refusal: string };
  * an empty text part whose `metadata.openai.refusal` keeps the explanation, never as ordinary text;
  * any other content type cannot be represented and fails the response rather than vanishing.
  */
+const malformedMessage = () => invalidOutput("Codex sent a malformed message");
+
+const incompleteReasoning = () => invalidOutput("Codex sent incomplete reasoning");
+
 const messageContent = (item: JsonInput): ReadonlyArray<ContentPart> | undefined => {
-  const malformed = () => invalidOutput("Codex sent a malformed message");
-  const decoded = decode(MessageContent, item, malformed);
+  const decoded = decode(MessageContent, item, malformedMessage);
   return decoded.content?.map((part): ContentPart => {
-    const { type } = decode(ContentType, part, malformed);
-    if (type === "output_text") return { text: decode(OutputText, part, malformed).text };
-    if (type === "refusal") return { refusal: decode(Refusal, part, malformed).refusal };
+    const { type } = decode(ContentType, part, malformedMessage);
+    if (type === "output_text") {
+      return { text: decode(OutputText, part, malformedMessage).text };
+    }
+    if (type === "refusal") {
+      return { refusal: decode(Refusal, part, malformedMessage).refusal };
+    }
     throw invalidOutput(`Codex returned message content this request cannot represent (${type})`);
   });
 };
@@ -354,11 +381,15 @@ const comparable = (content: ReadonlyArray<ContentPart>) => {
   const out: Array<ContentPart> = [];
   for (const part of content) {
     const last = out.at(-1);
-    if (!("text" in part)) out.push(part);
-    else if (part.text === "") continue;
-    else if (last !== undefined && "text" in last)
+    if (!("text" in part)) {
+      out.push(part);
+    } else if (part.text === "") {
+      continue;
+    } else if (last !== undefined && "text" in last) {
       out[out.length - 1] = { text: last.text + part.text };
-    else out.push(part);
+    } else {
+      out.push(part);
+    }
   }
   return out;
 };
@@ -452,8 +483,12 @@ const decodeOutputItemDone = (
             arguments: wholeCall.arguments,
           },
     );
-  if (item.kind !== kind) throw contradiction();
-  if (item.done) throw invalidOutput("Codex finished an output item twice");
+  if (item.kind !== kind) {
+    throw contradiction();
+  }
+  if (item.done) {
+    throw invalidOutput("Codex finished an output item twice");
+  }
   item.done = true;
   // An item that is itself not completed keeps its data, but a complete terminal then rejects
   // the response, and an unfinished call is never dispatchable.
@@ -485,7 +520,9 @@ const decodeOutputItemDone = (
     // Declared summary and reasoning-text parts must be in what the finished item supplies, with
     // their streamed values (a start's snapshot does not constrain it, as before it seeded parts).
     for (const [index, slot] of item.summaries) {
-      if (!slot.declared) continue;
+      if (!slot.declared) {
+        continue;
+      }
       const part = reasoning.summary[index];
       if (part === undefined || (slot.known && !slot.seeded && part.text !== current(slot))) {
         throw contradiction();
@@ -493,7 +530,9 @@ const decodeOutputItemDone = (
     }
     for (const [index, slot] of item.reasoningTexts) {
       const part = reasoning.content?.[index];
-      if (part === undefined || (slot.known && part.text !== current(slot))) throw contradiction();
+      if (part === undefined || (slot.known && part.text !== current(slot))) {
+        throw contradiction();
+      }
     }
     item.summary = reasoning.summary.map(({ text }) => text).join("\n");
     item.reasoningContent = reasoning.content?.map((part) => part.text);
@@ -560,7 +599,9 @@ const finished = (
   item: Item,
   parts: () => Array<Response.StreamPartEncoded>,
 ): Array<Response.StreamPartEncoded> => {
-  if (!item.unfinished && state.deferred.length === 0) return parts();
+  if (!item.unfinished && state.deferred.length === 0) {
+    return parts();
+  }
   state.deferred.push({ item, parts: item.unfinished ? undefined : parts() });
   return [];
 };
@@ -581,13 +622,24 @@ const slotOf = (
   if (index === undefined) {
     const declared = [...slots.values()].filter((slot) => slot.declared);
     const same = declared.filter((slot) => slot.type === type);
-    if (same.length === 1) return same[0];
-    if (declared.length === 0) return undefined;
+    if (same.length === 1) {
+      return same[0];
+    }
+    if (declared.length === 0) {
+      return undefined;
+    }
     throw invalidOutput("Codex sent a content event that names no single content part");
   }
+  return slotAt(slots, index, type);
+};
+
+/** The part at an explicit index, as `slotOf` names it. */
+const slotAt = (slots: Map<number, Slot>, index: number, type: Slot["type"]): Slot => {
   const existing = slots.get(index);
   if (existing !== undefined && (existing.declared || existing.type === type)) {
-    if (existing.type !== type) throw contradiction();
+    if (existing.type !== type) {
+      throw contradiction();
+    }
     existing.declared = true;
     return existing;
   }
@@ -610,9 +662,13 @@ const slotOf = (
  * declared one keeps its declaration without a value.
  */
 const replaceSeeds = (slots: Map<number, Slot>, slot: Slot, index: number | undefined) => {
-  if (index !== undefined || !slot.seeded) return;
+  if (index !== undefined || !slot.seeded) {
+    return;
+  }
   for (const [at, part] of slots) {
-    if (!part.seeded) continue;
+    if (!part.seeded) {
+      continue;
+    }
     if (!part.declared) {
       slots.delete(at);
       continue;
@@ -625,7 +681,9 @@ const replaceSeeds = (slots: Map<number, Slot>, slot: Slot, index: number | unde
 
 /** Appends a delta to a part that is not yet finalized (a seeded value is its prefix). */
 const appendSlot = (slot: Slot, delta: string) => {
-  if (slot.final !== undefined) throw contradiction();
+  if (slot.final !== undefined) {
+    throw contradiction();
+  }
   slot.value += delta;
   slot.known = true;
   slot.seeded = false;
@@ -633,8 +691,12 @@ const appendSlot = (slot: Slot, delta: string) => {
 
 /** Adds a part event's own starting value: it replaces a seeded value, else extends the part. */
 const addPart = (slot: Slot, value: string) => {
-  if (value === "") return;
-  if (!slot.seeded) return appendSlot(slot, value);
+  if (value === "") {
+    return;
+  }
+  if (!slot.seeded) {
+    return appendSlot(slot, value);
+  }
   slot.value = value;
   slot.seeded = false;
 };
@@ -678,10 +740,14 @@ const mergeSnapshot = (slots: Map<number, Slot>, parts: ReadonlyArray<ContentPar
     const slot = slots.get(index);
     return slot !== undefined && (slot.type !== type || (slot.known && current(slot) !== value));
   });
-  if (conflicts) return false;
+  if (conflicts) {
+    return false;
+  }
   for (const [index, [type, value]] of typed.entries()) {
     const slot = slots.get(index);
-    if (slot?.known === true) continue;
+    if (slot?.known === true) {
+      continue;
+    }
     // A declared part's snapshot value keeps its declaration.
     const declared = slot?.declared ?? false;
     slots.set(index, {
@@ -703,20 +769,22 @@ const mergeSnapshot = (slots: Map<number, Slot>, parts: ReadonlyArray<ContentPar
  * parts in index order. That content replaces the message's parts, each final (a streamed text
  * part stays started), except a part of an unfinished item that has no value yet.
  */
+const slotPart = (slot: Slot): ContentPart =>
+  slot.type === "text" ? { text: current(slot) } : { refusal: current(slot) };
+
 const finishMessage = (item: Item, supplied: ReadonlyArray<ContentPart> | undefined) => {
-  const indices = [...item.slots.keys()].sort((a, b) => a - b);
-  const toPart = (slot: Slot): ContentPart =>
-    slot.type === "text" ? { text: current(slot) } : { refusal: current(slot) };
+  const slots = [...item.slots].sort(([a], [b]) => a - b);
   const entries: Array<readonly [number, ContentPart]> =
     supplied === undefined
-      ? indices.map((index) => [index, toPart(item.slots.get(index)!)] as const)
+      ? slots.map(([index, slot]) => [index, slotPart(slot)] as const)
       : supplied.map((part, index) => [index, part] as const);
   if (supplied !== undefined) {
-    for (const index of indices) {
-      const slot = item.slots.get(index)!;
+    for (const [index, slot] of slots) {
       // A declared part must be supplied with its type and streamed value (a start's snapshot does
       // not constrain the finished content, as before it seeded parts).
-      if (!slot.declared) continue;
+      if (!slot.declared) {
+        continue;
+      }
       const part = supplied[index];
       const value = part === undefined ? undefined : "text" in part ? part.text : part.refusal;
       if (
@@ -744,7 +812,9 @@ const finishMessage = (item: Item, supplied: ReadonlyArray<ContentPart> | undefi
     ] as const;
   });
   item.slots.clear();
-  for (const [index, slot] of finalSlots) item.slots.set(index, slot);
+  for (const [index, slot] of finalSlots) {
+    item.slots.set(index, slot);
+  }
 };
 
 /**
@@ -753,15 +823,20 @@ const finishMessage = (item: Item, supplied: ReadonlyArray<ContentPart> | undefi
  * explanation). An open item's empty streamed text is not shown; a finished item's is.
  */
 const messageParts = (item: Item) =>
-  [...item.slots.keys()]
-    .sort((a, b) => a - b)
-    .flatMap((index): Array<Response.StreamPartEncoded> => {
-      const slot = item.slots.get(index)!;
+  [...item.slots]
+    .sort(([a], [b]) => a - b)
+    .flatMap(([index, slot]): Array<Response.StreamPartEncoded> => {
       const id = `${item.partId}~${index}`;
       const value = current(slot);
-      if (slot.type === "refusal") return slot.known ? refusalPart(id, value) : [];
-      if (slot.started) return [Response.makePart("text-end", { id })];
-      if (!slot.known || (value === "" && !slot.seeded && !item.done)) return [];
+      if (slot.type === "refusal") {
+        return slot.known ? refusalPart(id, value) : [];
+      }
+      if (slot.started) {
+        return [Response.makePart("text-end", { id })];
+      }
+      if (!slot.known || (value === "" && !slot.seeded && !item.done)) {
+        return [];
+      }
       return [
         Response.makePart("text-start", { id }),
         ...(value === "" ? [] : [Response.makePart("text-delta", { id, delta: value })]),
@@ -796,7 +871,9 @@ const extendContent = (
  */
 const streamedTextFit = (item: Item, content: ReadonlyArray<ContentPart>) => {
   const texts = content.flatMap((part) => ("text" in part ? [part.text] : []));
-  if (texts.join("") !== item.text) return "contradicts";
+  if (texts.join("") !== item.text) {
+    return "contradicts";
+  }
   const first = content.findIndex((part) => "text" in part);
   const last = content.findLastIndex((part) => "text" in part);
   return first !== -1 && content.slice(first, last + 1).some((part) => "refusal" in part)
@@ -878,7 +955,9 @@ const openMessage = (
   message = "Codex sent text without a message item",
 ): Item => {
   const { item } = locate(state, event, undefined, "message");
-  if (item === undefined || item.kind !== "message" || item.done) throw invalidOutput(message);
+  if (item === undefined || item.kind !== "message" || item.done) {
+    throw invalidOutput(message);
+  }
   return item;
 };
 
@@ -980,11 +1059,14 @@ const listedContradicts = (item: Item, listed: JsonInput, onMalformed: () => AiE
     (content !== undefined &&
       item.reasoningContent !== undefined &&
       !Equal.equals(content, item.reasoningContent)) ||
-    (reasoning.encrypted_content != null &&
-      item.encryptedContent != null &&
+    (Predicate.isNotNullish(reasoning.encrypted_content) &&
+      Predicate.isNotNullish(item.encryptedContent) &&
       reasoning.encrypted_content !== item.encryptedContent)
   );
 };
+
+const terminalContradiction = () =>
+  invalidOutput("Codex completed a response whose output contradicts its stream");
 
 /**
  * A complete terminal response's non-empty `output` is the response's whole item list (Responses
@@ -995,13 +1077,13 @@ const listedContradicts = (item: Item, listed: JsonInput, onMalformed: () => AiE
  * dispatched. An absent or empty `output`, as the Codex CLI's own fixtures send, is not checked.
  */
 const reconcileTerminalOutput = (state: StreamState, output: ReadonlyArray<Json>) => {
-  const terminalContradiction = () =>
-    invalidOutput("Codex completed a response whose output contradicts its stream");
   const matched = new Set<Item>();
   const listedIds = new Set<string>();
   for (const listed of output) {
     const { kind } = outputItemKind(listed);
-    if (isUnfinished(itemStatus(listed))) throw terminalContradiction();
+    if (isUnfinished(itemStatus(listed))) {
+      throw terminalContradiction();
+    }
     let item: Item | undefined;
     if (kind === "function_call") {
       const call = decode(ListedCall, listed, terminalContradiction);
@@ -1016,10 +1098,16 @@ const reconcileTerminalOutput = (state: StreamState, output: ReadonlyArray<Json>
     } else {
       const { id } = decode(ListedItem, listed, terminalContradiction);
       item = state.byItemId.get(id);
-      if (item === undefined || item.kind !== kind) throw terminalContradiction();
-      if (listedContradicts(item, listed, terminalContradiction)) throw terminalContradiction();
+      if (item === undefined || item.kind !== kind) {
+        throw terminalContradiction();
+      }
+      if (listedContradicts(item, listed, terminalContradiction)) {
+        throw terminalContradiction();
+      }
     }
-    if (matched.has(item)) throw terminalContradiction();
+    if (matched.has(item)) {
+      throw terminalContradiction();
+    }
     matched.add(item);
     // A listed item id, even one the stream never gave this item, names this item only. With
     // every streamed item listed exactly once, a repeated id is the only way two items share one.
@@ -1033,14 +1121,18 @@ const reconcileTerminalOutput = (state: StreamState, output: ReadonlyArray<Json>
       listedIds.add(listedId);
     }
   }
-  if (matched.size !== state.items.length) throw terminalContradiction();
+  if (matched.size !== state.items.length) {
+    throw terminalContradiction();
+  }
 };
 
 /** A message's supplied content as stream parts, in content order (as its done event emits it). */
 const contentParts = (partId: string, content: ReadonlyArray<ContentPart>) =>
   content.flatMap((part, index): Array<Response.StreamPartEncoded> => {
     const id = `${partId}~${index}`;
-    if ("refusal" in part) return refusalPart(id, part.refusal);
+    if ("refusal" in part) {
+      return refusalPart(id, part.refusal);
+    }
     return [
       Response.makePart("text-start", { id }),
       ...(part.text === "" ? [] : [Response.makePart("text-delta", { id, delta: part.text })]),
@@ -1061,8 +1153,12 @@ const reasoningParts = (
   const id = `${itemId ?? partId}:0`;
   // The same native metadata a finished reasoning item carries (item id, encrypted content).
   const openai: ReasoningMetadata = {};
-  if (itemId !== undefined) openai.itemId = itemId;
-  if (encryptedContent != null) openai.encryptedContent = encryptedContent;
+  if (itemId !== undefined) {
+    openai.itemId = itemId;
+  }
+  if (Predicate.isNotNullish(encryptedContent)) {
+    openai.encryptedContent = encryptedContent;
+  }
   const metadata = { openai };
   return [
     Response.makePart("reasoning-start", { id, metadata }),
@@ -1100,8 +1196,6 @@ const retainIncomplete = (
   state: StreamState,
   output: ReadonlyArray<Json>,
 ): Array<Response.StreamPartEncoded> => {
-  const contradiction = () =>
-    invalidOutput("Codex completed a response whose output contradicts its stream");
   type Listed = {
     readonly kind: Item["kind"];
     readonly id: string | undefined;
@@ -1121,11 +1215,15 @@ const retainIncomplete = (
         ? decode(IncompleteCall, raw, () => invalidOutput("Codex sent an incomplete Tool call"))
         : undefined;
     if (id !== undefined) {
-      if (ids.has(id)) throw contradiction();
+      if (ids.has(id)) {
+        throw terminalContradiction();
+      }
       ids.add(id);
     }
     if (call?.call_id !== undefined) {
-      if (callIds.has(call.call_id)) throw contradiction();
+      if (callIds.has(call.call_id)) {
+        throw terminalContradiction();
+      }
       callIds.add(call.call_id);
     }
     listed.push({
@@ -1147,17 +1245,27 @@ const retainIncomplete = (
       entry.call?.call_id === undefined
         ? undefined
         : state.items.find((item) => item.callId === entry.call?.call_id);
-    if (byId !== undefined && byCall !== undefined && byId !== byCall) throw contradiction();
+    if (byId !== undefined && byCall !== undefined && byId !== byCall) {
+      throw terminalContradiction();
+    }
     const item = byId ?? byCall;
-    if (item === undefined) return undefined;
-    if (item.kind !== entry.kind) throw contradiction();
-    if (identityContradicts(item, { id: entry.id, ...entry.call })) throw contradiction();
+    if (item === undefined) {
+      return undefined;
+    }
+    if (item.kind !== entry.kind) {
+      throw terminalContradiction();
+    }
+    if (identityContradicts(item, { id: entry.id, ...entry.call })) {
+      throw terminalContradiction();
+    }
     return item;
   };
   const matched = new Map<Item, Listed>();
   for (const entry of listed) {
     const item = streamedOf(entry);
-    if (item === undefined) continue;
+    if (item === undefined) {
+      continue;
+    }
     if (item.done && !item.unfinished) {
       if (
         item.kind === "function_call"
@@ -1166,17 +1274,19 @@ const retainIncomplete = (
               !Equal.equals(parseArguments(entry.call.arguments, item.name ?? ""), item.params))
           : listedContradicts(item, entry.raw, contradiction)
       ) {
-        throw contradiction();
+        throw terminalContradiction();
       }
     }
     matched.set(item, entry);
   }
   const listedParts = (entry: Listed, partId: string): Array<Response.StreamPartEncoded> => {
-    if (entry.content !== undefined) return contentParts(partId, entry.content);
+    if (entry.content !== undefined) {
+      return contentParts(partId, entry.content);
+    }
     if (entry.reasoning !== undefined) {
       const summary = entry.reasoning.summary ?? [];
       const encrypted = entry.reasoning.encrypted_content;
-      return summary.length > 0 || encrypted != null
+      return summary.length > 0 || Predicate.isNotNullish(encrypted)
         ? reasoningParts(entry.id, partId, summary.map(({ text }) => text).join("\n"), encrypted)
         : [];
     }
@@ -1210,25 +1320,31 @@ const retainIncomplete = (
         const fits = merged !== undefined && streamedTextFit(item, merged) === "fits";
         return closeStreamedText(item, fits ? merged : own);
       }
-      if (listedContent !== undefined) mergeSnapshot(item.slots, listedContent);
+      if (listedContent !== undefined) {
+        mergeSnapshot(item.slots, listedContent);
+      }
       return messageParts(item);
     }
     if (item.kind === "reasoning") {
       const listing = entry?.reasoning;
       const encrypted = listing?.encrypted_content;
       const sameEncrypted =
-        encrypted == null || item.encryptedContent == null || encrypted === item.encryptedContent;
+        Predicate.isNullish(encrypted) ||
+        Predicate.isNullish(item.encryptedContent) ||
+        encrypted === item.encryptedContent;
       // Its summary and encrypted content are merged together, or not at all.
       if (
         listing !== undefined &&
         sameEncrypted &&
         mergeSnapshot(item.summaries, listing.summary ?? [])
       ) {
-        if (encrypted != null) item.encryptedContent = encrypted;
+        if (Predicate.isNotNullish(encrypted)) {
+          item.encryptedContent = encrypted;
+        }
       }
       const shown =
         item.done ||
-        item.encryptedContent != null ||
+        Predicate.isNotNullish(item.encryptedContent) ||
         [...item.summaries.values()].some((slot) => slot.known);
       return shown ? reasoningPartsOf(item) : [];
     }
@@ -1258,9 +1374,15 @@ const retainIncomplete = (
   // Items finished since the first unfinished one, in done order (the completed ones' final parts
   // as their done events produced them), then the open items, in item order.
   const parts = state.deferred.flatMap(({ item, parts: final }) => final ?? retained(item));
-  for (const item of state.items) if (!item.done) parts.push(...retained(item));
+  for (const item of state.items) {
+    if (!item.done) {
+      parts.push(...retained(item));
+    }
+  }
   for (const [position, entry] of listed.entries()) {
-    if (streamedOf(entry) === undefined) parts.push(...listedParts(entry, `#terminal${position}`));
+    if (streamedOf(entry) === undefined) {
+      parts.push(...listedParts(entry, `#terminal${position}`));
+    }
   }
   return parts;
 };
@@ -1268,13 +1390,17 @@ const retainIncomplete = (
 // Terminal events carry completion status and usage; without a finish part the
 // Session's finishReason/usage metadata would be silently absent for Codex.
 const inputUsage = (total: number | undefined, cached: number | undefined) => {
-  if (total === undefined) return cached === undefined ? {} : { cacheRead: cached };
+  if (total === undefined) {
+    return cached === undefined ? {} : { cacheRead: cached };
+  }
   const base = { total, uncached: total - (cached ?? 0) };
   return cached === undefined ? base : { ...base, cacheRead: cached };
 };
 
 const outputUsage = (total: number | undefined, reasoning: number | undefined) => {
-  if (total === undefined) return reasoning === undefined ? {} : { reasoning };
+  if (total === undefined) {
+    return reasoning === undefined ? {} : { reasoning };
+  }
   return reasoning === undefined ? { total } : { total, reasoning };
 };
 
@@ -1290,7 +1416,9 @@ const finishPart = (
   // with it. Whether the backend ever sends a non-success status here is unestablished; if it does,
   // the response fails closed with a native error (or stays incomplete) instead of completing.
   const status = decoded.response?.status;
-  if (state.terminal) throw invalidOutput("Codex sent a second terminal response event");
+  if (state.terminal) {
+    throw invalidOutput("Codex sent a second terminal response event");
+  }
   state.terminal = true;
   // `response.incomplete` cannot hide an explicit failed, cancelled or other status either.
   if (
@@ -1325,7 +1453,9 @@ const finishPart = (
     throw invalidOutput("Codex completed a response with unfinished output");
   }
   const output = decoded.response?.output ?? [];
-  if (!incomplete && output.length > 0) reconcileTerminalOutput(state, output);
+  if (!incomplete && output.length > 0) {
+    reconcileTerminalOutput(state, output);
+  }
   const retained = incomplete ? retainIncomplete(state, output) : [];
   const reason = decoded.response?.incomplete_details?.reason;
   const usage = decoded.response?.usage;
@@ -1375,7 +1505,9 @@ const OutputEventType = Schema.Literals([
 const isOutputEventType = Schema.is(OutputEventType);
 
 const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPartEncoded> => {
-  if (data === "[DONE]") return [];
+  if (data === "[DONE]") {
+    return [];
+  }
   const event = decode(Event, data, () => invalidOutput("Codex sent malformed SSE JSON"));
   // A non-string type is an unknown event: skipped below, like every malformed item.
   const rawType = event.type;
@@ -1392,7 +1524,9 @@ const decodeEvent = (state: StreamState, data: string): Array<Response.StreamPar
     return finishPart(state, event, type === "response.incomplete");
   }
   // Events that carry output cannot change a response after its terminal event validated it.
-  if (!isOutputEventType(type)) return [];
+  if (!isOutputEventType(type)) {
+    return [];
+  }
   if (state.terminal) {
     throw invalidOutput("Codex changed its output after the terminal response event");
   }
@@ -1417,7 +1551,12 @@ const decodeOutputEvent = (
       const slot = messageTextSlot(item, event);
       if (slot !== undefined) {
         replaceSeeds(item.slots, slot, partIndex(event).content_index);
-        const index = [...item.slots].find(([, candidate]) => candidate === slot)![0];
+        // `slot` is one of the message's parts, so it is found.
+        const located = [...item.slots].find(([, candidate]) => candidate === slot);
+        if (located === undefined) {
+          throw contradiction();
+        }
+        const [index] = located;
         const id = `${item.partId}~${index}`;
         // A seeded start or `content_part.added` value is the part's prefix; it is emitted once, first.
         const start = slot.started
@@ -1434,7 +1573,9 @@ const decodeOutputEvent = (
       }
       // Locator-less text is the message's one separate text part; it does not extend a start's
       // seeded parts, which are not kept beside it (as before they were seeded).
-      if (!item.sawDelta) item.slots.clear();
+      if (!item.sawDelta) {
+        item.slots.clear();
+      }
       const start = item.sawDelta ? [] : [Response.makePart("text-start", { id: item.partId })];
       item.text += decoded.delta;
       item.sawDelta = true;
@@ -1491,23 +1632,28 @@ const decodeOutputEvent = (
       const index = partIndex(event);
       const summary = !type.startsWith("response.reasoning_text");
       const slots = summary ? item.summaries : item.reasoningTexts;
-      const malformed = () => invalidOutput("Codex sent incomplete reasoning");
       const locator = summary ? index.summary_index : index.content_index;
       // A locator-less event (the Codex CLI's summary delta) names the only declared part, else the
       // first part. Like locator-less message text, text it supplies does not extend a start's
       // summary; an empty part start supplies none, so it only declares the part.
-      const slot = slotOf(slots, locator, "text") ?? slotOf(slots, 0, "text")!;
+      const slot = slotOf(slots, locator, "text") ?? slotAt(slots, 0, "text");
       const emptyStart =
         type === "response.reasoning_summary_part.added" &&
-        decode(SummaryPartPayload, event, malformed).part.text === "";
-      if (!emptyStart) replaceSeeds(slots, slot, locator);
-      if (type.endsWith(".delta")) appendSlot(slot, decode(Delta, event, malformed).delta);
-      else if (type.endsWith("_text.done"))
-        finishSlot(slot, decode(OutputText, event, malformed).text);
-      else {
-        const { text } = decode(SummaryPartPayload, event, malformed).part;
-        if (type.endsWith(".done")) finishSlot(slot, text);
-        else addPart(slot, text);
+        decode(SummaryPartPayload, event, incompleteReasoning).part.text === "";
+      if (!emptyStart) {
+        replaceSeeds(slots, slot, locator);
+      }
+      if (type.endsWith(".delta")) {
+        appendSlot(slot, decode(Delta, event, incompleteReasoning).delta);
+      } else if (type.endsWith("_text.done")) {
+        finishSlot(slot, decode(OutputText, event, incompleteReasoning).text);
+      } else {
+        const { text } = decode(SummaryPartPayload, event, incompleteReasoning).part;
+        if (type.endsWith(".done")) {
+          finishSlot(slot, text);
+        } else {
+          addPart(slot, text);
+        }
       }
       return [];
     }
@@ -1520,9 +1666,12 @@ const decodeOutputEvent = (
       const index = partIndex(event).content_index;
       if (part.type === "reasoning_text") {
         const item = openReasoning(state, event);
-        const slot = slotOf(item.reasoningTexts, index ?? 0, "text")!;
-        if (type === "response.content_part.done") finishSlot(slot, part.text ?? "");
-        else addPart(slot, part.text ?? "");
+        const slot = slotAt(item.reasoningTexts, index ?? 0, "text");
+        if (type === "response.content_part.done") {
+          finishSlot(slot, part.text ?? "");
+        } else {
+          addPart(slot, part.text ?? "");
+        }
         return [];
       }
       const item = openMessage(state, event, "Codex sent message content without a message item");
@@ -1535,10 +1684,15 @@ const decodeOutputEvent = (
         throw invalidOutput("Codex sent a content event that names no single content part");
       }
       const value = part.type === "output_text" ? part.text : part.refusal;
-      if (value === undefined) throw invalidOutput("Codex sent a malformed message");
-      const slot = slotOf(item.slots, index, part.type === "output_text" ? "text" : "refusal")!;
-      if (type === "response.content_part.done") finishSlot(slot, value);
-      else addPart(slot, value);
+      if (value === undefined) {
+        throw invalidOutput("Codex sent a malformed message");
+      }
+      const slot = slotAt(item.slots, index, part.type === "output_text" ? "text" : "refusal");
+      if (type === "response.content_part.done") {
+        finishSlot(slot, value);
+      } else {
+        addPart(slot, value);
+      }
       return [];
     }
     case "response.function_call_arguments.delta": {
@@ -1546,7 +1700,9 @@ const decodeOutputEvent = (
         invalidOutput("Codex sent arguments without a Tool call"),
       );
       const call = argumentsCall(state, event, "Codex sent arguments without a Tool call");
-      if (call.finalArguments !== undefined) throw contradiction();
+      if (call.finalArguments !== undefined) {
+        throw contradiction();
+      }
       call.arguments += decoded.delta;
       return [
         Response.makePart("tool-params-delta", { id: call.callId ?? "", delta: decoded.delta }),
@@ -1560,12 +1716,16 @@ const decodeOutputEvent = (
       const arguments_ = decoded.arguments;
       // A repeated final-arguments event must repeat them, not replace them.
       if (call.finalArguments !== undefined) {
-        if (arguments_ !== call.finalArguments) throw contradiction();
+        if (arguments_ !== call.finalArguments) {
+          throw contradiction();
+        }
         return [];
       }
       // The first final arguments complete the streamed ones: they extend them, or are the same
       // complete JSON value; anything else contradicts what was streamed.
-      if (!completesArguments(call.arguments, arguments_)) throw contradiction();
+      if (!completesArguments(call.arguments, arguments_)) {
+        throw contradiction();
+      }
       call.finalArguments = arguments_;
       const delta = arguments_.startsWith(call.arguments)
         ? arguments_.slice(call.arguments.length)
@@ -1589,7 +1749,9 @@ export const decodeStream = <R>(
     const events: Array<string> = [];
     const state: StreamState = {
       parser: Sse.makeParser((event: Sse.AnyEvent) => {
-        if (Predicate.isTagged(event, "Event")) events.push(event.data);
+        if (Predicate.isTagged(event, "Event")) {
+          events.push(event.data);
+        }
       }),
       items: [],
       byIndex: new Map(),

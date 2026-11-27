@@ -4,12 +4,13 @@
  * @module @mitome/providers/openai-codex
  */
 
-import { type AuthCapability, Provider } from "@mitome/core";
+import { Provider } from "@mitome/core";
+import type { AuthCapability } from "@mitome/core";
 import { provider } from "./constants.js";
 import { login, logout } from "./login.js";
 import { codexLayer } from "./model.js";
 import { knownModelIds } from "./models.js";
-import { type CodexOptions } from "./types.js";
+import type { CodexOptions } from "./types.js";
 
 export { login, logout } from "./login.js";
 export { knownModelIds, type KnownModelId } from "./models.js";

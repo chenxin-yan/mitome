@@ -2,7 +2,8 @@ import { createServer } from "node:http";
 import * as NodeChildProcessSpawner from "@effect/platform-node-shared/NodeChildProcessSpawner";
 import * as NodeFileSystem from "@effect/platform-node-shared/NodeFileSystem";
 import * as NodePath from "@effect/platform-node-shared/NodePath";
-import { Effect, Layer, type Scope } from "effect";
+import { Effect, Layer } from "effect";
+import type { Scope } from "effect";
 
 /**
  * Effect's file system, path and child-process services, from Node's implementation, which Bun
@@ -28,8 +29,11 @@ export const serveLocalhost = (
       createServer((request, response) => {
         const [status, text] = respond(request.url ?? "/");
         // A 200 is written as `end` writes it, with its length rather than chunked.
-        if (status === 200) response.end(text);
-        else response.writeHead(status).end(text);
+        if (status === 200) {
+          response.end(text);
+        } else {
+          response.writeHead(status).end(text);
+        }
       }),
     ),
     (server) => Effect.sync(() => server.close()),

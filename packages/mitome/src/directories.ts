@@ -10,7 +10,9 @@ export const configDirectory = (
   env: Readonly<Record<string, string | undefined>> = process.env,
   platform: string = process.platform,
 ): string | undefined => {
-  if (env.MITOME_HOME) return env.MITOME_HOME;
+  if (env.MITOME_HOME) {
+    return env.MITOME_HOME;
+  }
   const root =
     env.XDG_CONFIG_HOME ||
     (platform === "win32" ? env.APPDATA : env.HOME && join(env.HOME, ".config"));
@@ -31,7 +33,9 @@ export const stateDirectory = (
   env: Readonly<Record<string, string | undefined>> = process.env,
   platform: string = process.platform,
 ): string | undefined => {
-  if (env.MITOME_HOME) return env.MITOME_HOME;
+  if (env.MITOME_HOME) {
+    return env.MITOME_HOME;
+  }
   const root =
     env.XDG_STATE_HOME ||
     (platform === "win32" ? env.LOCALAPPDATA : env.HOME && join(env.HOME, ".local", "state"));

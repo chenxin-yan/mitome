@@ -10,7 +10,8 @@ import {
 } from "./errors.js";
 import { sessionOwnedWork, turnControls } from "./internal.js";
 import { conversationMessage } from "./plain.js";
-import { type ExecutionLimits, readLimits, Turn } from "./turn.js";
+import { readLimits, Turn } from "./turn.js";
+import type { ExecutionLimits } from "./turn.js";
 
 /** The Messages committed together, under the Entry the conversation continued from. */
 export interface Entry {
@@ -149,6 +150,12 @@ interface TurnRecord {
   readonly entries: Array<string>;
 }
 
+const conflict = () => Effect.fail(new SessionSaveError({ outcome: "conflict" }));
+
+/** A controlled Step or commit of a Turn that has already ended. */
+const turnEnded = () =>
+  Effect.die(new Error("Turn has ended; it authorizes no further controlled work"));
+
 /**
  * The kernel's own Transcript, holding a Session's History tree in its memory, and how release
  * drops that tree.
@@ -160,26 +167,31 @@ const memoryTranscript = () => {
     const found: Array<Entry> = [];
     for (let id = position; id !== undefined;) {
       const entry = entries.get(id);
-      if (entry === undefined) break;
+      if (entry === undefined) {
+        break;
+      }
       found.unshift(entry);
       id = entry.parent;
     }
     return found;
   };
-  const conflict = () => Effect.fail(new SessionSaveError({ outcome: "conflict" }));
   const transcript: Transcript = {
     id: crypto.randomUUID(),
     open: Effect.sync(() => ({ position: stored, branch: branch(stored) })),
     append: (entry, expected) =>
       Effect.suspend(() => {
-        if (expected !== stored) return conflict();
+        if (expected !== stored) {
+          return conflict();
+        }
         entries.set(entry.id, entry);
         stored = entry.id;
         return Effect.void;
       }),
     select: (position, expected) =>
       Effect.suspend((): Effect.Effect<Array<Entry>, SessionSaveError | TranscriptError> => {
-        if (expected !== stored) return conflict();
+        if (expected !== stored) {
+          return conflict();
+        }
         if (position !== undefined && !entries.has(position)) {
           return Effect.fail(new TranscriptError({ detail: `no Entry "${position}"` }));
         }
@@ -300,7 +312,9 @@ const allocate = Effect.fn("mitome/Session.make")(function* (
   const sessionOwned = <A, E>(effect: Effect.Effect<A, E>) =>
     Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
-        if (released) return yield* new SessionReleasedError();
+        if (released) {
+          return yield* new SessionReleasedError();
+        }
         const fiber = yield* Effect.forkIn(effect, executionScope);
         return yield* restore(Fiber.join(fiber)).pipe(Effect.ensuring(Fiber.interrupt(fiber)));
       }),
@@ -310,9 +324,15 @@ const allocate = Effect.fn("mitome/Session.make")(function* (
   const execute = <A, E, R>(program: Effect.Effect<A, E, R>) =>
     Effect.uninterruptibleMask((restoreCaller) =>
       Effect.gen(function* () {
-        if (released) return yield* new SessionReleasedError();
-        if (busy) return yield* new SessionBusyError();
-        if (fenced) return yield* new SessionFencedError();
+        if (released) {
+          return yield* new SessionReleasedError();
+        }
+        if (busy) {
+          return yield* new SessionBusyError();
+        }
+        if (fenced) {
+          return yield* new SessionFencedError();
+        }
         busy = true;
         const record: TurnRecord = {
           id: crypto.randomUUID(),
@@ -339,7 +359,9 @@ const allocate = Effect.fn("mitome/Session.make")(function* (
                         // Checking a batch can yield, and the Turn can end meanwhile: staging
                         // succeeds only if the batch joined a Turn that was still open.
                         Effect.suspend(() => {
-                          if (!open) return refused;
+                          if (!open) {
+                            return refused;
+                          }
                           staged.push(...kept);
                           return Effect.void;
                         }),
@@ -349,8 +371,6 @@ const allocate = Effect.fn("mitome/Session.make")(function* (
               },
               usage: whenLive(() => ({ ...used })),
             });
-            const closed = () =>
-              Effect.die(new Error("Turn has ended; it authorizes no further controlled work"));
             // Stores what is staged as one Entry under the position, then publishes it. Once
             // started it completes; Messages staged meanwhile stay staged for the next commit.
             // Nothing staged, no Entry: the History tree holds the conversation, and a Step's work
@@ -360,9 +380,15 @@ const allocate = Effect.fn("mitome/Session.make")(function* (
                 writes.withPermits(1)(
                   Effect.suspend((): Effect.Effect<void, SessionSaveError | SessionFencedError> => {
                     // Checked holding the write permit, so the Turn's end has seen every Step commit.
-                    if (!last && (!open || released)) return closed();
-                    if (staged.length === 0) return Effect.void;
-                    if (fenced) return Effect.fail(new SessionFencedError());
+                    if (!last && (!open || released)) {
+                      return turnEnded();
+                    }
+                    if (staged.length === 0) {
+                      return Effect.void;
+                    }
+                    if (fenced) {
+                      return Effect.fail(new SessionFencedError());
+                    }
                     const entry: Entry = {
                       id: crypto.randomUUID(),
                       parent: position,
@@ -395,7 +421,9 @@ const allocate = Effect.fn("mitome/Session.make")(function* (
               commit: commit(false),
               reserve: (limit) =>
                 Effect.suspend(() => {
-                  if (!open || released) return closed();
+                  if (!open || released) {
+                    return turnEnded();
+                  }
                   const bound = limits[limit];
                   if (bound !== undefined && used[limit] >= bound) {
                     return Effect.fail(new ExecutionLimitError({ limit, bound }));
@@ -437,7 +465,9 @@ const allocate = Effect.fn("mitome/Session.make")(function* (
             );
             // The Turn Scope has closed; observe any interruption that arrived during its cleanup.
             yield* restoreProgram(Effect.void);
-            if (released) return yield* new SessionReleasedError();
+            if (released) {
+              return yield* new SessionReleasedError();
+            }
             yield* commit(true);
             return result;
           }).pipe(
@@ -472,8 +502,12 @@ const allocate = Effect.fn("mitome/Session.make")(function* (
       sessionOwned(
         Effect.uninterruptible(
           Effect.gen(function* () {
-            if (busy) return yield* new SessionBusyError();
-            if (fenced) return yield* new SessionFencedError();
+            if (busy) {
+              return yield* new SessionBusyError();
+            }
+            if (fenced) {
+              return yield* new SessionFencedError();
+            }
             busy = true;
             const branch = yield* writes
               .withPermits(1)(fencing(() => transcript.select(target, position)))

@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "@effect/vitest";
+import { compilerOutput } from "../support/compiler.js";
 
 const packageDirectory = fileURLToPath(new URL("../..", import.meta.url));
 const tsc = join(
@@ -54,8 +55,8 @@ describe("declarations of a consumer of the built package", () => {
       await writeFile(join(directory, "tsconfig.json"), JSON.stringify(tsconfig));
       // tsc prints diagnostics on stdout, which the rejection's own message leaves out.
       await promisify(execFile)(process.execPath, [tsc, "-p", directory]).catch(
-        (error: { readonly stdout: string; readonly stderr: string }) => {
-          throw new Error(`tsc failed:\n${error.stdout}${error.stderr}`);
+        (cause: unknown) => {
+          throw new Error(`tsc failed:\n${compilerOutput(cause)}`);
         },
       );
       const declarations = await readFile(join(directory, "out", "consumer.d.ts"), "utf8");

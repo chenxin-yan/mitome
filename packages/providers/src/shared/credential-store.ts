@@ -70,7 +70,9 @@ const ensureDirectory = Effect.fnUntraced(function* (
     ),
   );
   // An existing directory keeps its mode: `MITOME_HOME` may name a project directory.
-  if (created) yield* attempt(fs.chmod(stateDirectory, 0o700));
+  if (created) {
+    yield* attempt(fs.chmod(stateDirectory, 0o700));
+  }
 });
 
 /**
@@ -137,7 +139,9 @@ const readAuth = Effect.fnUntraced(function* (
   const result = yield* Effect.result(attempt(fs.readFileString(path)));
   if (!Result.isSuccess(result)) {
     // Absent storage is the pre-login state, not a failure.
-    if (result.failure.code === "ENOENT") return {};
+    if (result.failure.code === "ENOENT") {
+      return {};
+    }
     return yield* result.failure;
   }
   // Every write reads first, so an unreadable file would otherwise block re-authentication
@@ -230,7 +234,9 @@ export const modifyCredential = Effect.fnUntraced(function* <A, E, R>(
       return yield* Effect.uninterruptible(
         Effect.gen(function* () {
           const [next, value] = yield* update(auth[providerKey]);
-          if (next === auth[providerKey]) return value;
+          if (next === auth[providerKey]) {
+            return value;
+          }
           if (next === undefined) {
             const { [providerKey]: _, ...remaining } = auth;
             yield* writeAuth(stateDirectory, remaining);

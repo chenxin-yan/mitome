@@ -24,16 +24,15 @@ import type { ModelRequestAccounting } from "../session/accounting.js";
 import type { Turn } from "../session/turn.js";
 import type { Agent, AnyAgent, TextMapping } from "./agent.js";
 import type { Result } from "./command.js";
-import {
-  type CommandFailedError,
-  type CommandNotFoundError,
-  MitomeClosedError,
-  ModelSelectionError,
-  TextMappingError,
-  type TranscriptSelectionError,
+import { MitomeClosedError, ModelSelectionError, TextMappingError } from "./errors.js";
+import type {
+  CommandFailedError,
+  CommandNotFoundError,
+  TranscriptSelectionError,
 } from "./errors.js";
 import type { Extension } from "./extension.js";
-import { type ExtensionError, isAgent } from "./internal.js";
+import { isAgent } from "./internal.js";
+import type { ExtensionError } from "./internal.js";
 import { agentSession } from "./run.js";
 import type { Session, SessionOptions } from "./session.js";
 import { Transcripts } from "./transcripts.js";
@@ -80,7 +79,8 @@ type ProvidedServices<Provide> = LayerServices<ProvidedLayer<Provide>>;
  */
 type Supplied<Keys, Provide> = "provide" extends Keys
   ? [Provided] extends [Provide]
-    ? any
+    ? // oxlint-disable-next-line typescript/no-explicit-any -- until `Provide` is inferred, anything counts as provided, as described above
+      any
     : ProvidedServices<Provide>
   : never;
 
@@ -275,42 +275,52 @@ export interface Configuration<
 
 type Candidate = { readonly provider: AnyProvider; readonly modelId: string };
 
+/** Fails a Model selection, saying why. */
+const selectionFailure = (detail: string) => Effect.fail(new ModelSelectionError({ detail }));
+
 /** The Model one acquisition provisions, if any. A catalog never supplies one. */
 const candidate = Effect.fnUntraced(function* (
   providers: ReadonlyArray<AnyProvider>,
   configured: string | undefined,
   selection: AcquireOptions,
 ): Effect.fn.Return<Candidate | undefined, ModelSelectionError> {
-  const fail = (detail: string) => Effect.fail(new ModelSelectionError({ detail }));
   const declared = providers.map(({ id }) => id).join(", ") || "none";
   const find = (id: string) => providers.find((provider) => provider.id === id);
   if (selection.provider !== undefined && find(selection.provider) === undefined) {
-    return yield* fail(`unknown Provider "${selection.provider}" (declared: ${declared})`);
+    return yield* selectionFailure(
+      `unknown Provider "${selection.provider}" (declared: ${declared})`,
+    );
   }
   if (selection.model !== undefined) {
     const parsed = parseQualifiedModelId(selection.model);
     if (parsed === undefined) {
-      return yield* fail(`"${selection.model}" is not a Qualified Model id (provider/model)`);
+      return yield* selectionFailure(
+        `"${selection.model}" is not a Qualified Model id (provider/model)`,
+      );
     }
     if (selection.provider !== undefined && parsed.providerId !== selection.provider) {
-      return yield* fail(
+      return yield* selectionFailure(
         `Model "${selection.model}" does not belong to Provider "${selection.provider}"`,
       );
     }
     const provider = find(parsed.providerId);
     if (provider === undefined) {
-      return yield* fail(`unknown Provider "${parsed.providerId}" (declared: ${declared})`);
+      return yield* selectionFailure(
+        `unknown Provider "${parsed.providerId}" (declared: ${declared})`,
+      );
     }
     return { provider, modelId: parsed.modelId };
   }
-  if (providers.length === 0) return undefined;
+  if (providers.length === 0) {
+    return undefined;
+  }
   const parsed = configured === undefined ? undefined : parseQualifiedModelId(configured);
   const provider = parsed && find(parsed.providerId);
   if (parsed === undefined || provider === undefined) {
-    return yield* fail("the Configuration sets no Model; select a Qualified Model id");
+    return yield* selectionFailure("the Configuration sets no Model; select a Qualified Model id");
   }
   if ((selection.provider ?? provider.id) !== provider.id) {
-    return yield* fail(
+    return yield* selectionFailure(
       `the Configuration sets no Model of Provider "${selection.provider}"; select a Qualified Model id`,
     );
   }
@@ -495,6 +505,7 @@ export const make = <
   E,
   R extends Supplied<Keys, Provide> | Turn | Scope.Scope | ModelServicesOf<Providers>,
   Use extends ReadonlyArray<
+    // oxlint-disable-next-line typescript/no-explicit-any -- any Extension's Tools, which its handlers make invariant
     Extension<any, unknown, Supplied<Keys, Provide> | ModelServicesOf<Providers>>
   >,
   RPolicy,
@@ -520,7 +531,9 @@ export const make = <
   // Each field read once, inherited ones included, and the Provider and Layer lists copied, so
   // validation, discovery, the result and acquisition all see the same values.
   const { agent, provide, providers: given, model } = options;
-  if (!isAgent(agent)) throw new TypeError("Mitome.make expects an Agent made by Agent.make");
+  if (!isAgent(agent)) {
+    throw new TypeError("Mitome.make expects an Agent made by Agent.make");
+  }
   const fields = {
     agent,
     ...(provide === undefined
@@ -535,9 +548,12 @@ export const make = <
   const ids = new Set<string>();
   const discovery = providers.map((provider) => {
     const metadata = getProviderMetadata(provider);
-    if (metadata === undefined)
+    if (metadata === undefined) {
       throw new TypeError("Provider was not created by this copy of the package");
-    if (ids.has(provider.id)) throw new TypeError(`Duplicate Provider id "${provider.id}"`);
+    }
+    if (ids.has(provider.id)) {
+      throw new TypeError(`Duplicate Provider id "${provider.id}"`);
+    }
     ids.add(provider.id);
     return {
       id: provider.id,

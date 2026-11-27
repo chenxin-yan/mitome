@@ -11,7 +11,8 @@ import {
   Schema,
   Stream,
 } from "effect";
-import { LanguageModel, Prompt, type Response, Tool, Toolkit } from "effect/ai";
+import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import type { Response } from "effect/ai";
 import {
   Agent,
   Approver,
@@ -21,8 +22,10 @@ import {
   Turn,
   withModelRequestAccounting,
 } from "@mitome/core";
-import { type LocalTools, localTools, loop, step } from "@mitome/core/kernel";
-import { makeApprovals, type PendingApproval } from "../../src/terminal/approvals.ts";
+import { localTools, loop, step } from "@mitome/core/kernel";
+import type { LocalTools } from "@mitome/core/kernel";
+import { makeApprovals } from "../../src/terminal/approvals.ts";
+import type { PendingApproval } from "../../src/terminal/approvals.ts";
 
 // Parameters that decode to something other than their wire form, so the JSON shown and the value
 // dispatched can be told apart.
@@ -55,7 +58,9 @@ const scriptedModel = (script: Script) =>
           Effect.gen(function* () {
             yield* reportModelRequest;
             const next = script.shift();
-            if (next === undefined) return yield* Effect.die(new Error("script exhausted"));
+            if (next === undefined) {
+              return yield* Effect.die(new Error("script exhausted"));
+            }
             return [...next];
           }),
         streamText: () => Stream.die(new Error("not streamed")),
@@ -120,7 +125,9 @@ const nextPending = (pending: Effect.Effect<ReadonlyArray<PendingApproval>>) =>
     // Bounded, so a Turn that never asks fails here rather than at the runner timeout.
     for (let poll = 0; poll < 200; poll++) {
       const [first] = yield* pending;
-      if (first !== undefined) return first;
+      if (first !== undefined) {
+        return first;
+      }
       yield* Effect.sleep(5);
     }
     return yield* Effect.die(new Error("No Approval request appeared"));
@@ -307,7 +314,9 @@ describe(
           executionMode: scheduler.executionMode,
           makeDispatcher: () => scheduler.makeDispatcher(),
           shouldYield: (fiber) => {
-            if (!yielding) return scheduler.shouldYield(fiber);
+            if (!yielding) {
+              return scheduler.shouldYield(fiber);
+            }
             yielding = false;
             return true;
           },
@@ -315,7 +324,9 @@ describe(
         const asking = yield* channel.provideApprover(
           Effect.gen(function* () {
             const approver = yield* Approver;
-            if (approver === undefined) return yield* Effect.die(new Error("no Approver"));
+            if (approver === undefined) {
+              return yield* Effect.die(new Error("no Approver"));
+            }
             const asking = yield* Effect.forkDetach(
               approver.decide(call).pipe(Effect.provideService(Scheduler.Scheduler, yieldOnRead)),
             );

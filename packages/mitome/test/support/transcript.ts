@@ -20,7 +20,9 @@ export const recordingTranscript = (
     const entries: Array<Session.Entry> = [];
     for (let id = position; id !== undefined;) {
       const entry = stored.entries.get(id);
-      if (entry === undefined) break;
+      if (entry === undefined) {
+        break;
+      }
       entries.unshift(entry);
       id = entry.parent;
     }
@@ -45,7 +47,9 @@ export const recordingTranscript = (
     select: (position, expected) =>
       Effect.suspend(
         (): Effect.Effect<Array<Session.Entry>, SessionSaveError | TranscriptError> => {
-          if (stored.position !== expected) return conflict;
+          if (stored.position !== expected) {
+            return conflict;
+          }
           if (position !== undefined && !stored.entries.has(position)) {
             return Effect.fail(new TranscriptError({ detail: `no Entry "${position}"` }));
           }

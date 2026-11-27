@@ -1,5 +1,7 @@
-import { Effect, Predicate, type Types } from "effect";
-import { Tool, type Toolkit } from "effect/ai";
+import { Array as Arr, Effect, Predicate } from "effect";
+import type { Types } from "effect";
+import { Tool } from "effect/ai";
+import type { Toolkit } from "effect/ai";
 import type { ToolDecision } from "../session/step.js";
 import type { Turn } from "../session/turn.js";
 import type { AnyAgent } from "./agent.js";
@@ -38,10 +40,16 @@ export const snapshot = <Options extends object>(
   known: ReadonlyArray<keyof Options & string>,
 ): Types.Mutable<Options> => {
   for (const key of Object.keys(options)) {
-    if (!known.some((name) => name === key)) throw new TypeError(`${kind} has no field "${key}"`);
+    if (!known.some((name) => name === key)) {
+      throw new TypeError(`${kind} has no field "${key}"`);
+    }
   }
   const fields: Partial<Options> = {};
-  for (const key of known) if (key in options) fields[key] = options[key];
+  for (const key of known) {
+    if (key in options) {
+      fields[key] = options[key];
+    }
+  }
   // SAFETY: every field `options` has under the names `kind` defines, and no other.
   return fields as Types.Mutable<Options>;
 };
@@ -96,7 +104,9 @@ export const isToolkit = (value: unknown): value is Toolkit.Any =>
 /** Whether `handlers` binds exactly the Tools of `toolkit`, as `localTools` requires. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- relates a Toolkit to an unchecked value; matching keys do not make it a handler map
 export const bindsExactly = (toolkit: Toolkit.Any, handlers: unknown) => {
-  if (!Predicate.isObject(handlers)) return false;
+  if (!Predicate.isObject(handlers)) {
+    return false;
+  }
   const names = Object.keys(toolkit.tools);
   return (
     Object.keys(handlers).length === names.length &&
@@ -137,12 +147,15 @@ export const checkParts = (name: string, given: AnyParts): AnyParts => {
   if (Predicate.isObject(parts.handlers) && !Effect.isEffect(parts.handlers)) {
     parts.handlers = Object.freeze({ ...parts.handlers });
   }
-  if (Array.isArray(parts.commands)) parts.commands = Object.freeze([...parts.commands]);
+  // Effect's guard keeps the element type, where the global one narrows to `any[]`.
+  if (Arr.isArray<typeof parts.commands>(parts.commands)) {
+    parts.commands = Object.freeze([...parts.commands]);
+  }
   const { tools, handlers, instructions, policy, commands } = parts;
   if ((tools === undefined) !== (handlers === undefined)) {
     throw new TypeError(`Extension "${name}" must give handlers exactly when it gives tools`);
   }
-  // oxlint-disable-next-line anti-slop/no-known-value-widening -- typed by the declaration but unchecked: a JavaScript caller can pass anything
+  // oxlint-disable-next-line quality/no-known-value-widening -- typed by the declaration but unchecked: a JavaScript caller can pass anything
   if (tools !== undefined && !isToolkit(tools)) {
     throw new TypeError(`Extension "${name}" tools must be a Toolkit`);
   }
@@ -191,7 +204,11 @@ export const checkClashes = (
   const commands = new Map<string, string>();
   for (const { name, parts } of extensions) {
     // By Tool name, which is what the Model calls, whatever key the Toolkit holds it under.
-    for (const tool of new Set(Object.values(parts?.tools?.tools ?? {}).map((t) => t.name))) {
+    const names = Object.values(parts?.tools?.tools ?? {}).map(
+      // oxlint-disable-next-line typescript/no-unsafe-return -- Effect types `Tool.Any`'s name as `any`; it is the Tool's name
+      (tool): string => tool.name,
+    );
+    for (const tool of new Set(names)) {
       const owner = tools.get(tool);
       if (owner !== undefined) {
         throw new TypeError(

@@ -1,4 +1,5 @@
-import { Context, type Effect, type Schema } from "effect";
+import { Context } from "effect";
+import type { Effect, Schema } from "effect";
 
 /** An answer to one pending Approval. */
 export type ApprovalDecision = "allow" | "deny";

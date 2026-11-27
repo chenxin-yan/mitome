@@ -197,7 +197,12 @@ describe("jsonlTranscripts", () => {
       // The wait reads real files between its sleeps, so the clock moves until it has given up.
       while (waiting.pollUnsafe() === undefined) {
         yield* TestClock.adjust("1 second");
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 5)));
+        yield* Effect.promise(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(resolve, 5);
+            }),
+        );
       }
       const refused = yield* Fiber.join(waiting);
       expect(refused).toMatchObject({ _tag: "SessionSaveError", outcome: "not-written" });
@@ -323,7 +328,7 @@ describe("jsonlTranscripts", () => {
     Effect.gen(function* () {
       const at = yield* directory;
       // Two-byte characters, so some fall across the boundary between two reads.
-      const scope = `/${"é".repeat(5_000)}`;
+      const scope = `/${"é".repeat(5000)}`;
       const writer = yield* session(at, { create: scope });
       yield* writer.run("kept");
       expect((yield* (yield* service(at)).latest(scope))?.id).toBe(writer.transcript);
@@ -379,8 +384,11 @@ describe("jsonlTranscripts", () => {
       const saved = { ...process.env };
       const restore = Effect.sync(() => {
         for (const name of ["MITOME_HOME", "XDG_STATE_HOME", "LOCALAPPDATA", "HOME"]) {
-          if (saved[name] === undefined) delete process.env[name];
-          else process.env[name] = saved[name];
+          if (saved[name] === undefined) {
+            delete process.env[name];
+          } else {
+            process.env[name] = saved[name];
+          }
         }
       });
       yield* Effect.gen(function* () {

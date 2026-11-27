@@ -8,8 +8,8 @@ describe("configDirectory", () => {
       configDirectory({ MITOME_HOME: "/repo/.dev-home", XDG_CONFIG_HOME: "/xdg" }, "linux"),
     ).toBe("/repo/.dev-home");
     expect(
-      configDirectory({ MITOME_HOME: "C:\\repo\\.dev-home", APPDATA: "/appdata" }, "win32"),
-    ).toBe("C:\\repo\\.dev-home");
+      configDirectory({ MITOME_HOME: String.raw`C:\repo\.dev-home`, APPDATA: "/appdata" }, "win32"),
+    ).toBe(String.raw`C:\repo\.dev-home`);
   });
 
   it("uses XDG_CONFIG_HOME before every platform fallback", () => {
@@ -52,8 +52,11 @@ describe("stateDirectory", () => {
       stateDirectory({ MITOME_HOME: "/repo/.dev-home", XDG_STATE_HOME: "/xdg" }, "linux"),
     ).toBe("/repo/.dev-home");
     expect(
-      stateDirectory({ MITOME_HOME: "C:\\repo\\.dev-home", LOCALAPPDATA: "/local" }, "win32"),
-    ).toBe("C:\\repo\\.dev-home");
+      stateDirectory(
+        { MITOME_HOME: String.raw`C:\repo\.dev-home`, LOCALAPPDATA: "/local" },
+        "win32",
+      ),
+    ).toBe(String.raw`C:\repo\.dev-home`);
   });
 
   it("uses XDG_STATE_HOME before every platform fallback", () => {

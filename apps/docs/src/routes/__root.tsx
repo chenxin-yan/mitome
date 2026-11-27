@@ -7,6 +7,7 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       {
+        // oxlint-disable-next-line unicorn/text-encoding-identifier-case -- HTML's meta charset is spelled utf-8
         charSet: "utf-8",
       },
       {
@@ -24,7 +25,7 @@ export const Route = createRootRoute({
 
 function RootComponent() {
   return (
-    <html suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>

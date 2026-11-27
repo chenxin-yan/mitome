@@ -6,7 +6,8 @@
 
 import { AnthropicClient, AnthropicLanguageModel } from "@effect/ai-anthropic";
 import { Effect, Layer } from "effect";
-import { type AuthCapability, Provider, withModelRequestAccounting } from "@mitome/core";
+import { Provider, withModelRequestAccounting } from "@mitome/core";
+import type { AuthCapability } from "@mitome/core";
 import { apiKeyClientLayer } from "../shared/api-key-client.js";
 import { platformLayer } from "../shared/platform.js";
 import { runAnt } from "./login.js";

@@ -1,4 +1,5 @@
-import { type Effect, type Layer, Predicate } from "effect";
+import { Predicate } from "effect";
+import type { Effect, Layer } from "effect";
 import type { LanguageModel, Prompt } from "effect/ai";
 import type { CredentialDescriptor } from "./credential.js";
 import type {
@@ -43,7 +44,9 @@ export const turnControls = new WeakMap<Turn["Service"], TurnControl>();
 /** The controlled-Step access of a Turn `Session.make` created. */
 export const turnControl = (turn: Turn["Service"]): TurnControl => {
   const control = turnControls.get(turn);
-  if (control === undefined) throw new Error("Turn was not created by Session.make");
+  if (control === undefined) {
+    throw new Error("Turn was not created by Session.make");
+  }
   return control;
 };
 
@@ -60,7 +63,9 @@ export const sessionOwnedWork = new WeakMap<Session<unknown>, SessionOwned>();
 /** How to run work a Session made by `Session.make` owns. */
 export const sessionOwned = (session: Session<unknown>): SessionOwned => {
   const owned = sessionOwnedWork.get(session);
-  if (owned === undefined) throw new Error("Session was not created by Session.make");
+  if (owned === undefined) {
+    throw new Error("Session was not created by Session.make");
+  }
   return owned;
 };
 
@@ -99,9 +104,13 @@ export const parseQualifiedModelId = (
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- parses whatever a Host passes as a Model id; returns its parts, not a narrowed type
   qualifiedModelId: unknown,
 ): { readonly providerId: string; readonly modelId: string } | undefined => {
-  if (!Predicate.isString(qualifiedModelId)) return undefined;
+  if (!Predicate.isString(qualifiedModelId)) {
+    return undefined;
+  }
   const separator = qualifiedModelId.indexOf("/");
-  if (separator <= 0 || separator === qualifiedModelId.length - 1) return undefined;
+  if (separator <= 0 || separator === qualifiedModelId.length - 1) {
+    return undefined;
+  }
   return {
     providerId: qualifiedModelId.slice(0, separator),
     modelId: qualifiedModelId.slice(separator + 1),

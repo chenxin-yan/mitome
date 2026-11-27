@@ -25,8 +25,11 @@ describe("API-key client", () => {
         await Effect.runPromise(Effect.scoped(Layer.build(layer)));
         expect(observed).toBe("late-key");
       } finally {
-        if (previous === undefined) delete process.env[key];
-        else process.env[key] = previous;
+        if (previous === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = previous;
+        }
       }
     }),
   );

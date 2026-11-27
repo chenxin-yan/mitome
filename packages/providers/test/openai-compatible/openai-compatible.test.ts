@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Schema, Stream } from "effect";
-import { LanguageModel, Prompt, type Response as AiResponse, Tool, Toolkit } from "effect/ai";
+import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import type { Response as AiResponse } from "effect/ai";
 import { Provider } from "@mitome/core";
 import { fakeFetch, runWithKey, sse } from "../support.js";
 import { openaiCompatible } from "../../src/openai-compatible/index.js";
@@ -92,7 +93,9 @@ describe("openaiCompatible", () => {
         Stream.runForEach((part) =>
           Effect.sync(() => {
             parts.push(part);
-            if (part.type === "text-delta") firstOutput();
+            if (part.type === "text-delta") {
+              firstOutput();
+            }
           }),
         ),
         Effect.provide(Provider.model(provider, "gpt-4o-mini")),

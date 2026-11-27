@@ -29,7 +29,7 @@ New library code goes in `@mitome/core`: in the root entry if it passes the thre
 
 ### Lint
 
-Satisfy a lint rule with better code, or with one `oxlint-disable-next-line <rule> -- <reason>` that names the boundary, never by writing the same thing another way (`typeof Schema.Unknown.Type` for `unknown`). A value from outside is decoded with an Effect Schema where it enters; where `unknown` is the honest type, write `unknown`.
+Satisfy a lint rule with better code, or with one `oxlint-disable-next-line <rule> -- <reason>` that names the boundary, never by writing the same thing another way (`typeof Schema.Unknown.Type` for `unknown`). A value from outside is decoded with an Effect Schema where it enters; where `unknown` is the honest type, write `unknown`. The rules are `@cloudflare/oxlint-config`, Oxlint's correctness category, the anti-slop rules that preset lacks and this repository's own (`docs/adr/0064-build-with-vite-plus-on-pnpm-and-keep-bun-for-the-cli.md`); a rule is turned off only in `vite.config.ts`, with its reason beside it.
 
 <!-- effect-solutions:start -->
 

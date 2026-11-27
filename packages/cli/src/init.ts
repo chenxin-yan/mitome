@@ -7,10 +7,10 @@ import {
   knownModelIds,
   modelChoices,
   pinnedDependencies,
-  type ProviderChoice,
   providerChoices,
   validateModelId,
 } from "create-mitome/template";
+import type { ProviderChoice } from "create-mitome/template";
 import { describe, runtimeError, userError } from "./errors.js";
 import {
   configurationPlan,
@@ -79,7 +79,9 @@ const installedVersion = Effect.fnUntraced(function* (directory: string, name: s
         Effect.orElseSucceed(() => undefined),
       );
     }
-    if (from === path.dirname(from)) return undefined;
+    if (from === path.dirname(from)) {
+      return undefined;
+    }
   }
 });
 

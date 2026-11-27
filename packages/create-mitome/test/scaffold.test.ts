@@ -17,19 +17,13 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { Effect, Fiber, Layer, Stream } from "effect";
-import { LanguageModel, type Prompt } from "effect/ai";
+import { Effect, Fiber, Layer, Schema, Stream } from "effect";
+import { LanguageModel } from "effect/ai";
+import type { Prompt } from "effect/ai";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 import packageJson from "../package.json" with { type: "json" };
-import {
-  type Agent,
-  Approver,
-  type ApprovalRequest,
-  type ApproverService,
-  Session,
-  stateDirectoryMessage,
-  withModelRequestAccounting,
-} from "@mitome/core";
+import { Approver, Session, stateDirectoryMessage, withModelRequestAccounting } from "@mitome/core";
+import type { Agent, ApprovalRequest, ApproverService } from "@mitome/core";
 import { applicationPlan, packageName, writeScaffold } from "../src/application.js";
 import {
   customModel,
@@ -37,10 +31,10 @@ import {
   modelChoices,
   pinnedDependencies,
   pinnedDevDependencies,
-  type ProviderId,
   providerChoices,
   validateModelId,
 } from "../src/template.js";
+import type { ProviderId } from "../src/template.js";
 
 const directories: Array<string> = [];
 const directory = async () => {
@@ -55,9 +49,11 @@ const provider = (id: ProviderId) => providerChoices.find((choice) => choice.id 
 const plan = (id: ProviderId, model: string) =>
   applicationPlan({ name: "my-app", provider: provider(id), model });
 // What the workspace installed for this package, read independently of the generator.
+const InstalledManifest = Schema.fromJsonString(Schema.Struct({ version: Schema.String }));
 const installed = async (name: string): Promise<string> =>
-  JSON.parse(await readFile(join(packageDirectory, "node_modules", name, "package.json"), "utf8"))
-    .version;
+  Schema.decodeUnknownSync(InstalledManifest)(
+    await readFile(join(packageDirectory, "node_modules", name, "package.json"), "utf8"),
+  ).version;
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true })));
@@ -175,7 +171,9 @@ describe("application plans", () => {
     const path = await directory();
     const elsewhere = await directory();
     const target = join(elsewhere, "src");
-    if (targetExists) await mkdir(target);
+    if (targetExists) {
+      await mkdir(target);
+    }
     await symlink(target, join(path, "src"), "dir");
 
     await expect(writeScaffold(path, plan("openai", "gpt-5.6"))).rejects.toThrow(
@@ -183,7 +181,9 @@ describe("application plans", () => {
     );
     expect(await readdir(path)).toEqual(["src"]);
     expect(await readdir(elsewhere)).toEqual(targetExists ? ["src"] : []);
-    if (targetExists) expect(await readdir(target)).toEqual([]);
+    if (targetExists) {
+      expect(await readdir(target)).toEqual([]);
+    }
   });
 
   // Root writes through the mode, and Windows has no directory write bit.
@@ -272,7 +272,9 @@ describe("generated application", () => {
     // Generated projects resolve @mitome/core, @mitome/providers, effect, and @types/node like an
     // installed consumer would; this package's devDependencies stand in for the install.
     await symlink(join(packageDirectory, "node_modules"), join(root, "node_modules"), "dir");
-    for (const [id, model] of variants) await writeScaffold(join(root, id), plan(id, model));
+    for (const [id, model] of variants) {
+      await writeScaffold(join(root, id), plan(id, model));
+    }
     return root;
   };
 
@@ -526,8 +528,9 @@ describe("generated Codex login step", { tags: ["dist"] }, () => {
           closeAtPrompt &&
           !child.stdin.writableEnded &&
           stdout.includes("Paste the redirect URL")
-        )
+        ) {
           child.stdin.end();
+        }
       });
       child.on("close", (code) => {
         clearTimeout(killer);
