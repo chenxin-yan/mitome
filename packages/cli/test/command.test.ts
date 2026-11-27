@@ -11,6 +11,7 @@ import { CliOutput } from "effect/cli";
 import cliPackage from "../package.json" with { type: "json" };
 
 import { runCli } from "../src/index.ts";
+import { liveInstallCommand } from "../src/template.ts";
 
 const fixture = fileURLToPath(new URL("fixtures/config", import.meta.url));
 const relativeFixture = fileURLToPath(new URL("fixtures/relative", import.meta.url));
@@ -82,7 +83,10 @@ describe("mitome command", () => {
     Effect.gen(function* () {
       const help = yield* cli(["--help"]);
       expect(Exit.isSuccess(help.exit)).toBe(true);
-      for (const name of ["run", "providers", "auth"]) expect(help.logs).toContain(name);
+      for (const name of ["init", "run", "providers", "auth"]) expect(help.logs).toContain(name);
+      expect(help.logs).toContain(
+        "Write the default Configuration into the config directory and install its dependencies",
+      );
       expect(help.logs).toContain("With no subcommand, open the terminal");
 
       const version = yield* cli(["--version"]);
@@ -150,7 +154,7 @@ describe("selecting the Configuration", () => {
         const result = yield* cli(args);
         expect(Exit.isFailure(result.exit)).toBe(true);
         expect(result.errors).toContain(`No Configuration at ${join(home, "index.ts")}`);
-        expect(result.errors).toContain("npm create mitome");
+        expect(result.errors).toContain("Create the default one with mitome init");
         expect(result.errors).toContain("--config <path>");
       }
       expect(yield* events).toEqual([]);
@@ -359,7 +363,7 @@ describe("mitome run", () => {
         const result = yield* cli(["run", "--config", linked, "hi"]);
         expect(Exit.isFailure(result.exit)).toBe(true);
         expect(result.errors).toContain(
-          `Could not load ${linked}: package "mitome-not-installed" is not installed. Run npm install in ${real}.`,
+          `Could not load ${linked}: package "mitome-not-installed" is not installed. Install the Configuration's dependencies by running this in ${real}: ${liveInstallCommand()}`,
         );
       }),
   );

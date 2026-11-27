@@ -2,6 +2,7 @@
 // Configuration: real raw mode, real keys and real signals. Run by `bun test`; POSIX only, so it is
 // skipped on Windows.
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -227,6 +228,35 @@ describe.skipIf(process.platform === "win32")("compiled bare mitome", () => {
       expect(after).toMatch(/Conversation (\S+) is kept; continue it with mitome .*--continue=\1/);
     });
   }
+
+  test("keeps the selected Configuration in the hint, quoted for the shell", async () => {
+    const spaced = join(directory, "my agent");
+    await mkdir(spaced, { recursive: true });
+    await writeFile(
+      join(spaced, "index.ts"),
+      `export { default } from ${JSON.stringify(join(history, "index.ts"))};\n`,
+    );
+    const tui = open(["--config", spaced]);
+    await tui.shows("Conversation");
+    tui.write("hello");
+    tui.write(altEnter);
+    await tui.shows("heard:");
+    tui.write("\u0003");
+    const { output } = await tui.exited();
+    const after = output.slice(output.lastIndexOf(leaveAlternate));
+    const [, id = "", hint = ""] =
+      /Conversation (\S+) is kept; continue it with (mitome [^\r\n]*)/.exec(after) ?? [];
+    // A shell reads the hint back as the words that select the same Configuration.
+    // The terminal's next escape sequence follows the hint on its line.
+    const command = hint.split("\u001b")[0];
+    const words = spawnSync("sh", ["-c", `printf '%s\\n' ${command}`], { encoding: "utf8" });
+    expect(words.stdout.split("\n").slice(0, -1)).toEqual([
+      "mitome",
+      "--config",
+      join(spaced, "index.ts"),
+      `--continue=${id}`,
+    ]);
+  });
 
   test("--continue with nothing to continue exits 1 without entering the terminal", async () => {
     const tui = open(["--config", history, "--continue"]);

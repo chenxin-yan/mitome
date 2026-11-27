@@ -26,6 +26,7 @@ import {
   type LoadedInstance,
 } from "./configuration.js";
 import { describe, runtimeError, userError } from "./errors.js";
+import { shell, shellQuote } from "./template.js";
 // makeApprovals allocates the terminal Host's own channel; it needs no service to provide.
 // oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports
 import { makeApprovals } from "./terminal/approvals.js";
@@ -288,7 +289,14 @@ export const runTerminalApplication = (options: ConfigurationOptions) =>
               conversation === undefined || position === undefined
                 ? Effect.void
                 : Console.error(
-                    `Conversation ${session.transcript} is kept; continue it with mitome --continue=${session.transcript}`,
+                    `Conversation ${session.transcript} is kept; continue it with ${[
+                      "mitome",
+                      // The same Configuration, which may be the only one that keeps it.
+                      ...(Option.isSome(options.config)
+                        ? ["--config", shellQuote(configuration.path, shell)]
+                        : []),
+                      shellQuote(`--continue=${session.transcript}`, shell),
+                    ].join(" ")}`,
                   ),
             ),
             Effect.ignore,

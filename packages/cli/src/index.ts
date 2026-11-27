@@ -2,8 +2,10 @@ import * as BunRuntime from "@effect/platform-bun/BunRuntime";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { Cause, Effect, Layer, Logger, Runtime } from "effect";
 import { Argument, CliOutput, Command, Flag } from "effect/cli";
+import { providerChoices } from "create-mitome/template";
 import cliPackage from "../package.json" with { type: "json" };
 import { describe } from "./errors.js";
+import { initConfiguration } from "./init.js";
 import {
   authenticate,
   authStatus,
@@ -62,6 +64,37 @@ const providers = Command.make("providers", { config }, ({ config }) => listProv
   Command.withDescription("List the Configuration's Providers and Model hints"),
 );
 
+const init = Command.make(
+  "init",
+  {
+    provider: Flag.ChoiceWithValue(
+      "provider",
+      providerChoices.map((choice) => [choice.id, choice] as const),
+    ).pipe(
+      Flag.withDescription(
+        "Provider the Configuration runs with; asked on a terminal when omitted",
+      ),
+      Flag.optional,
+    ),
+    model: Flag.String("model").pipe(
+      Flag.withDescription(
+        "That Provider's Model id, without the provider/ prefix; asked on a terminal when omitted",
+      ),
+      Flag.optional,
+    ),
+    noInstall: Flag.Boolean("no-install").pipe(
+      Flag.withoutNegation,
+      Flag.withDefault(false),
+      Flag.withDescription("Write the files without installing their dependencies"),
+    ),
+  },
+  initConfiguration,
+).pipe(
+  Command.withDescription(
+    "Write the default Configuration into the config directory and install its dependencies",
+  ),
+);
+
 const auth = Command.make("auth").pipe(
   Command.withDescription("Inspect or change the Configuration's Provider credentials"),
   Command.withSubcommands([
@@ -92,7 +125,7 @@ const command = Command.make(
   Command.withExamples([
     { command: "mitome", description: "With no subcommand, open the terminal" },
   ]),
-  Command.withSubcommands([run, providers, auth]),
+  Command.withSubcommands([init, run, providers, auth]),
 );
 
 export const runCli = Command.runWith(command, { version: cliPackage.version });
