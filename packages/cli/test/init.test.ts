@@ -646,7 +646,7 @@ describe("writeConfiguration", () => {
     ).pipe(Layer.provideMerge(BunServices.layer));
     await expect(
       Effect.runPromise(
-        writeConfiguration("Z:\\mitome", plan).pipe(
+        writeConfiguration(String.raw`Z:\mitome`, plan).pipe(
           Effect.provide(Layer.merge(missingDrive, BunPath.layerWin32)),
           // Without an end to the walk up, this never returns.
           Effect.timeout("2 seconds"),
@@ -722,10 +722,10 @@ describe("Configuration plans", () => {
   it("writes commands for the user's shell", () => {
     expect(shellQuote("/usr/local/bin/mitome", "posix")).toBe("/usr/local/bin/mitome");
     expect(shellQuote("/opt/my tools/it's/mitome", "posix")).toBe(
-      "'/opt/my tools/it'\\''s/mitome'",
+      String.raw`'/opt/my tools/it'\''s/mitome'`,
     );
-    expect(shellQuote("C:\\Program Files\\it's\\mitome.exe", "powershell")).toBe(
-      "'C:\\Program Files\\it''s\\mitome.exe'",
+    expect(shellQuote(String.raw`C:\Program Files\it's\mitome.exe`, "powershell")).toBe(
+      String.raw`'C:\Program Files\it''s\mitome.exe'`,
     );
     // PowerShell also ends a single-quoted string at a typographic single quote.
     expect(shellQuote("C:\\Users\\O\u2018\u2019\u201a\u201bBrien\\mitome.exe", "powershell")).toBe(
@@ -734,8 +734,8 @@ describe("Configuration plans", () => {
     expect(installCommand("'/opt/my tools/mitome'", "posix")).toBe(
       "BUN_BE_BUN=1 '/opt/my tools/mitome' install",
     );
-    expect(installCommand("'C:\\mitome.exe'", "powershell")).toBe(
-      "$env:BUN_BE_BUN = \"1\"; & 'C:\\mitome.exe' install; Remove-Item Env:BUN_BE_BUN",
+    expect(installCommand(String.raw`'C:\mitome.exe'`, "powershell")).toBe(
+      String.raw`$env:BUN_BE_BUN = "1"; & 'C:\mitome.exe' install; Remove-Item Env:BUN_BE_BUN`,
     );
     expect(signIn(providerOf("openai"), "posix")).toBe('export OPENAI_API_KEY="your key"');
     expect(signIn(providerOf("anthropic"), "powershell")).toBe(

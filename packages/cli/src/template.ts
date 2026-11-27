@@ -24,7 +24,7 @@ export const shellQuote = (path: string, shell: Shell): string =>
       `'${path.replace(/['\u2018-\u201b]/g, "$&$&")}'`
     : /^[\w@%+=:,./-]+$/.test(path)
       ? path
-      : `'${path.replaceAll("'", "'\\''")}'`;
+      : `'${path.replaceAll("'", String.raw`'\''`)}'`;
 
 /** How `provider` gets its credential, as a command to run before `mitome`: its API key if it takes one. */
 export const signIn = (provider: ProviderChoice, shell: Shell): string =>

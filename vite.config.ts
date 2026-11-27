@@ -5,7 +5,7 @@ import { defineConfig } from "vite-plus";
 const local = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 // A later override replaces an earlier one's options for the same rule, so each repeats this.
 const rootOmitsSubpaths = {
-  regex: "(^|/)(kernel|terminal)(\\.[jt]s)?$",
+  regex: String.raw`(^|/)(kernel|terminal)(\.[jt]s)?$`,
   message: "The root entry never imports a subpath such as kernel or terminal (ADR-0061).",
 };
 const docsOutput = [
@@ -151,7 +151,6 @@ export default defineConfig({
       "unicorn/consistent-function-scoping": "off",
       "unicorn/prefer-native-coercion-functions": "off",
       "unicorn/prefer-set-has": "off",
-      "unicorn/prefer-string-raw": "off",
       "unicorn/prefer-string-replace-all": "off",
       "unicorn/prefer-structured-clone": "off",
       "unicorn/text-encoding-identifier-case": "off",
