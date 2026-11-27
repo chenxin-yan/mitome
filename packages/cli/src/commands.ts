@@ -179,7 +179,11 @@ const openSession = Effect.fnUntraced(function* (
           ? cause
           : Predicate.hasProperty(cause, "reason") && cause.reason === "no-store"
             ? userError(
-                "This Configuration keeps no history, so there is no conversation to continue.",
+                [
+                  "This Configuration keeps no history, so there is no conversation to continue. To keep it, add @mitome/transcripts to the Configuration's dependencies and these two lines to its index.ts:",
+                  '  import { jsonlTranscripts } from "@mitome/transcripts/jsonl";',
+                  "  provide: jsonlTranscripts(),  // in Mitome.make({ ... })",
+                ].join("\n"),
               )
             : userError(
                 id === ""

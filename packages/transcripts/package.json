@@ -1,0 +1,49 @@
+{
+  "name": "@mitome/transcripts",
+  "version": "0.0.0",
+  "description": "Keeps Mitome conversations in files a Configuration chooses: jsonlTranscripts() keeps each in an append-only JSONL file.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chenxin-yan/mitome.git",
+    "directory": "packages/transcripts"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./jsonl": {
+      "@mitome/source": "./src/jsonl.ts",
+      "default": "./dist/jsonl.js"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      "./jsonl": "./dist/jsonl.js"
+    },
+    "access": "public"
+  },
+  "dependencies": {
+    "@effect/platform-node-shared": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@mitome/config": "workspace:*",
+    "@mitome/core": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "@mitome/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

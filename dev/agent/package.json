@@ -5,6 +5,7 @@
   "dependencies": {
     "@mitome/core": "workspace:*",
     "@mitome/providers": "workspace:*",
+    "@mitome/transcripts": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

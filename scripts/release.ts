@@ -75,6 +75,7 @@ export function releasePackages(directory = root): ReleasePackage[] {
   const directories = [
     "mitome",
     "providers",
+    "transcripts",
     ...platformDirectories.map((name) => `cli/npm/${name}`),
     "cli",
     "create-mitome",

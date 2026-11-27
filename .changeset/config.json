@@ -6,6 +6,7 @@
     [
       "@mitome/core",
       "@mitome/providers",
+      "@mitome/transcripts",
       "@mitome/cli",
       "@mitome/cli-darwin-arm64",
       "@mitome/cli-darwin-x64",

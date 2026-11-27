@@ -39,6 +39,7 @@ const realNode = () => {
   throw new Error("The launcher tests need Node on PATH");
 };
 const fixture = fileURLToPath(new URL("fixtures/config", import.meta.url));
+const transcriptsFixture = fileURLToPath(new URL("fixtures/transcripts", import.meta.url));
 const historyFixture = fileURLToPath(new URL("fixtures/history", import.meta.url));
 let directory = "";
 let log = "";
@@ -258,6 +259,18 @@ describe("compiled mitome", () => {
     expect(failed.stderr).toContain("shutdown did not finish within its 300ms grace");
     expect(Date.now() - started).toBeLessThan(5_000);
     expect(await events()).toEqual(["infra:acquire"]);
+  });
+
+  test("keeps a conversation in a file and continues it from the next run", async () => {
+    const first = await run(["run", "--config", transcriptsFixture, "one"]);
+    expect(first).toEqual({ stdout: "heard: one\n", stderr: "", code: 0 });
+    const second = await run(["run", "--config", transcriptsFixture, "--continue", "two"]);
+    expect(second.code).toBe(0);
+    expect(second.stdout).toBe("heard: one, two\n");
+    const id = /^Continued conversation (\S+) \(1 Entry\)\.$/m.exec(second.stderr)?.[1] ?? "";
+    const kept = join(directory, ".local", "state", "mitome", "transcripts", `${id}.jsonl`);
+    // The header, then one Entry for each run.
+    expect((await readFile(kept, "utf8")).split("\n")).toHaveLength(4);
   });
 
   test("labels conversations with the directory it started in, wherever the Configuration moves", async () => {

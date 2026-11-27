@@ -6,6 +6,7 @@
     "@mitome/cli": "workspace:*",
     "@mitome/core": "workspace:*",
     "@mitome/providers": "workspace:*",
+    "@mitome/transcripts": "workspace:*",
     "create-mitome": "workspace:*",
     "effect": "catalog:",
     "vite-plus": "catalog:"

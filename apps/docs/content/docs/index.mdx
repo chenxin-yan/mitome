@@ -31,13 +31,14 @@ It writes `src/agent.ts` and `src/main.ts`, which runs the Agent with `Session.m
 
 ## What is implemented
 
-Implemented today, in one process and in memory:
+Implemented today, in one process:
 
 - `@mitome/core`: describe an Agent as data with `Agent.make` and `Extension.make`, name it with its Providers and Model in a Configuration with `Mitome.make`, and run it with `Session.make(agent)`. See [Agents and Configurations](/docs/agents).
 - `@mitome/providers`: OpenAI, OpenAI-compatible, OpenAI Codex (ChatGPT) and Anthropic (API key or Claude Console sign-in) Providers.
 - `@mitome/cli`: `mitome init` writes the default Configuration; the `mitome` command opens a Configuration in the terminal, where Approvals are answered with `y` or `n`, and `mitome run` runs it once without an Approver, so with the default program an ask is denied. See [CLI](/docs/cli).
+- `@mitome/transcripts`: keeps a Configuration's conversations in files, so `mitome --continue` picks one up again. Without it history stays in memory. See [Keep history](/docs/agents#keep-history).
 - `create-mitome`: `npm create mitome` writes an application that embeds an Agent.
 
-Not yet: streaming output, saved history, `mitome serve` and Channels, and first-party Extensions such as coding Tools, Skills and MCP. The [MVP plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/mvp-plan.md) lists what comes next; the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) records the longer-term direction and its open contracts.
+Not yet: streaming output, continuing a Turn interrupted by a crash, `mitome serve` and Channels, and first-party Extensions such as coding Tools, Skills and MCP. The [MVP plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/mvp-plan.md) lists what comes next; the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) records the longer-term direction and its open contracts.
 
 See also [Design decisions](/docs/design-decisions), [Security](/docs/security), [Versioning](/docs/versioning) and [Contributing](/docs/contributing). Shared vocabulary lives in the repository's [CONTEXT.md](https://github.com/chenxin-yan/mitome/blob/main/CONTEXT.md).
