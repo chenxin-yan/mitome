@@ -1,5 +1,5 @@
 {
-  "name": "mitome",
+  "name": "mitome-monorepo",
   "private": true,
   "workspaces": {
     "packages": [
