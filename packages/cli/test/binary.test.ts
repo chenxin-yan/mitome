@@ -251,7 +251,7 @@ describe("compiled mitome", () => {
     expect(held.code).toBe(1);
     expect(held.stdout).toBe("> echo: hi\n");
     expect(held.stderr).toContain("shutdown did not finish within its 300ms grace");
-    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(Date.now() - started).toBeLessThan(5000);
     expect(await events()).not.toContain("infra:release");
   });
 
@@ -266,7 +266,7 @@ describe("compiled mitome", () => {
     expect(failed.code).toBe(1);
     expect(failed.stdout).toBe("");
     expect(failed.stderr).toContain("shutdown did not finish within its 300ms grace");
-    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(Date.now() - started).toBeLessThan(5000);
     expect(await events()).toEqual(["infra:acquire"]);
   });
 
@@ -421,7 +421,7 @@ describe("compiled mitome", () => {
     expect(code).toBe(1);
     expect(stderr).toContain("shutdown did not finish within its 300ms grace");
     expect(elapsed).toBeGreaterThanOrEqual(250);
-    expect(elapsed).toBeLessThan(5_000);
+    expect(elapsed).toBeLessThan(5000);
     expect(await events()).not.toContain("infra:release");
   });
 });

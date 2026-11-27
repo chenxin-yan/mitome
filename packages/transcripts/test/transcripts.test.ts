@@ -323,7 +323,7 @@ describe("jsonlTranscripts", () => {
     Effect.gen(function* () {
       const at = yield* directory;
       // Two-byte characters, so some fall across the boundary between two reads.
-      const scope = `/${"é".repeat(5_000)}`;
+      const scope = `/${"é".repeat(5000)}`;
       const writer = yield* session(at, { create: scope });
       yield* writer.run("kept");
       expect((yield* (yield* service(at)).latest(scope))?.id).toBe(writer.transcript);

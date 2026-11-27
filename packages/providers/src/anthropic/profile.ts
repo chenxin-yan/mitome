@@ -284,7 +284,7 @@ const readCredentials = Effect.fnUntraced(function* (
   };
 });
 
-const nowSeconds = Effect.map(Clock.currentTimeMillis, (millis) => Math.floor(millis / 1_000));
+const nowSeconds = Effect.map(Clock.currentTimeMillis, (millis) => Math.floor(millis / 1000));
 
 /** A token without an expiry never needs refreshing. */
 const isFresh = (credentials: StoredCredentials) =>

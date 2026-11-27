@@ -388,7 +388,7 @@ const frameWith = async (predicate: (frame: string) => boolean) => {
 };
 
 /** The terminal's Exit, or "running" if it has not ended within `millis`. */
-const settled = (terminal: Fiber.Fiber<void, unknown>, millis = 2_000) =>
+const settled = (terminal: Fiber.Fiber<void, unknown>, millis = 2000) =>
   Effect.runPromise(
     Fiber.await(terminal).pipe(
       Effect.timeoutOption(millis),

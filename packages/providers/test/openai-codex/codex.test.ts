@@ -45,7 +45,7 @@ const tokenResponse = (accountId: string, refresh: string) =>
   Response.json({
     access_token: jwt(accountId),
     refresh_token: refresh,
-    expires_in: 3_600,
+    expires_in: 3600,
   });
 
 const directory = async (value = credential()) => {
@@ -86,7 +86,7 @@ const raceRotation = async (
       refreshes.push(refresh);
       // Only a failure bound: the other child waits for the lock as soon as it reads.
       const other = waiting[child === "0" ? 1 : 0].promise;
-      if ((await Promise.race([other.then(() => true), setTimeout(5_000, false)])) === false) {
+      if ((await Promise.race([other.then(() => true), setTimeout(5000, false)])) === false) {
         return new Response("the other process never waited for the lock", { status: 500 });
       }
       if (refresh !== stored.refresh) {

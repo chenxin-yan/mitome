@@ -9,7 +9,7 @@ test("reads limit.context per tool-capable model and never guesses a missing one
           windowed: { id: "windowed", tool_call: true, limit: { context: 128_000, output: 1 } },
           unlimited: { id: "unlimited", tool_call: true },
           malformed: { id: "malformed", tool_call: true, limit: { context: "128k" } },
-          noTools: { id: "no-tools", tool_call: false, limit: { context: 8_192 } },
+          noTools: { id: "no-tools", tool_call: false, limit: { context: 8192 } },
         },
       },
     }),

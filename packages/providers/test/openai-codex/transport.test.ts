@@ -574,7 +574,7 @@ describe("Codex transport", () => {
             ? Response.json({
                 access_token: claimlessAccess,
                 refresh_token: "refreshed-secret",
-                expires_in: 3_600,
+                expires_in: 3600,
               })
             : new Response("", { status: 401 }),
         (_current, _rejected, client) =>

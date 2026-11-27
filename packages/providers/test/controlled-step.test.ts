@@ -449,7 +449,7 @@ const tokenEndpoint = (fails: boolean) => (path: string, response: ServerRespons
   json(response, 200, {
     access_token: jwt("synthetic-account"),
     refresh_token: "rotated-refresh",
-    expires_in: 3_600,
+    expires_in: 3600,
   });
 };
 
@@ -768,7 +768,7 @@ describe("controlled Step through anthropic", () => {
     if (path !== "/v1/oauth/token") {
       return void response.writeHead(404).end();
     }
-    json(response, 200, { access_token: "refreshed-access", expires_in: 3_600 });
+    json(response, 200, { access_token: "refreshed-access", expires_in: 3600 });
   };
 
   it("signs in through the Claude Console profile, not counting the token refresh", async () => {
@@ -4420,7 +4420,7 @@ describe("credential redirects", () => {
       const model = Provider.model(
         codex({
           // An expired Credential forces a refresh before the Model request.
-          stateDirectory: await codexDirectory(Date.now() - 1_000),
+          stateDirectory: await codexDirectory(Date.now() - 1000),
           baseUrl: server.url,
           tokenUrl: `${server.url}/oauth/token`,
         }),
@@ -4575,7 +4575,7 @@ describe("physical request qualification", () => {
     try {
       const model = Provider.model(
         codex({
-          stateDirectory: await codexDirectory(Date.now() - 1_000),
+          stateDirectory: await codexDirectory(Date.now() - 1000),
           baseUrl: server.url,
           tokenUrl: `${server.url}/oauth/token`,
         }),

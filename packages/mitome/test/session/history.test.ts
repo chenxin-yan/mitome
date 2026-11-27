@@ -407,7 +407,7 @@ describe("staging while a Turn ends", () => {
     Effect.gen(function* () {
       const outer = yield* Scope.make();
       const session = yield* Session.make({ transcript: "none" });
-      const batch = Array.from({ length: 3_000 }, (_, index) => message(`m${index}`));
+      const batch = Array.from({ length: 3000 }, (_, index) => message(`m${index}`));
       // Staged from a fiber that outlives the program: the Turn can end while the batch is checked.
       const staging = yield* session.run(
         Effect.gen(function* () {
@@ -417,9 +417,7 @@ describe("staging while a Turn ends", () => {
       );
       const exit = yield* Fiber.await(staging);
       const kept = (yield* session.history).length;
-      expect(Exit.isSuccess(exit) ? kept : "refused").toBe(
-        Exit.isSuccess(exit) ? 3_000 : "refused",
-      );
+      expect(Exit.isSuccess(exit) ? kept : "refused").toBe(Exit.isSuccess(exit) ? 3000 : "refused");
       if (Exit.isFailure(exit)) {
         expect(String(exit)).toContain("Turn is closed");
       }

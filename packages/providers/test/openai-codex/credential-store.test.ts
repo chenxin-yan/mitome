@@ -55,7 +55,7 @@ const tokenEndpoint = () => {
         Response.json({
           access_token: jwt("rotated-account"),
           refresh_token: `rotated-refresh-${exchanged.length}`,
-          expires_in: 3_600,
+          expires_in: 3600,
         }),
       );
     }),
@@ -151,7 +151,7 @@ describe("Codex Credential freshness", () => {
       const body = JSON.stringify({
         access_token: jwt("rotated-account"),
         refresh_token: "rotated-refresh",
-        expires_in: 3_600,
+        expires_in: 3600,
       });
       const client = HttpClient.make((request) =>
         Effect.sync(() => {

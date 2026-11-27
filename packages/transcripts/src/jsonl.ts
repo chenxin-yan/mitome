@@ -43,7 +43,7 @@ const Line = Schema.fromJsonString(Record);
 const conversationId = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/;
 const newline = 0x0a;
 /** How long an append waits for another writer's lock before it gives up, writing nothing. */
-const lockTimeout = 5_000;
+const lockTimeout = 5000;
 
 /** Nothing was stored, and why. */
 const notWritten = (cause: unknown) => new SessionSaveError({ outcome: "not-written", cause });
@@ -246,7 +246,7 @@ const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) =>
               ? Effect.fail(
                   notWritten(
                     new Error(
-                      `another writer held the lock ${lock} for ${lockTimeout / 1_000} seconds; if no other process is using this conversation, delete that file`,
+                      `another writer held the lock ${lock} for ${lockTimeout / 1000} seconds; if no other process is using this conversation, delete that file`,
                     ),
                   ),
                 )

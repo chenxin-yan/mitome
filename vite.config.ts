@@ -150,7 +150,6 @@ export default defineConfig({
       "typescript/use-unknown-in-catch-callback-variable": "off",
       "unicorn/catch-error-name": "off",
       "unicorn/consistent-function-scoping": "off",
-      "unicorn/numeric-separators-style": "off",
       "unicorn/prefer-native-coercion-functions": "off",
       "unicorn/prefer-set-has": "off",
       "unicorn/prefer-string-raw": "off",

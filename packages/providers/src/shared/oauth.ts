@@ -143,7 +143,7 @@ export const exchangeToken = Effect.fnUntraced(
     return {
       access: body.access_token,
       refresh: body.refresh_token,
-      expires: (yield* Clock.currentTimeMillis) + body.expires_in * 1_000,
+      expires: (yield* Clock.currentTimeMillis) + body.expires_in * 1000,
     };
   },
   // Keep refresh bounded while holding the storage lock, including a stalled response body.
