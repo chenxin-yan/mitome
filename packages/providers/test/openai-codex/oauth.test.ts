@@ -275,7 +275,9 @@ describe("Codex OAuth", () => {
         return started;
       });
       // Long enough for the launcher's exit to have been handled.
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300);
+      });
       await writeFile(go, "");
       await vi.waitFor(async () => expect(await readFile(alive, "utf8")).toBe("yes\n"));
       expect(pid).toBeGreaterThan(0);
@@ -330,7 +332,9 @@ describe("Codex OAuth", () => {
               `http://localhost:${port}/auth/callback?error=access_denied&state=${state}`,
             );
             // Stay pending past the point where Node reports an unobserved rejection.
-            await new Promise((resolve) => setTimeout(resolve, 50));
+            await new Promise((resolve) => {
+              setTimeout(resolve, 50);
+            });
           },
           input: Effect.never,
           output: () => {},
@@ -407,9 +411,9 @@ describe("Codex OAuth", () => {
         }),
       ).rejects.toThrow("OAuth callback did not include a code");
     } finally {
-      await new Promise<void>((resolve, reject) =>
-        occupied.close((error) => (error === undefined ? resolve() : reject(error))),
-      );
+      await new Promise<void>((resolve, reject) => {
+        occupied.close((error) => (error === undefined ? resolve() : reject(error)));
+      });
       void server.stop(true);
     }
   });

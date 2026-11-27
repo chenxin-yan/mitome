@@ -4267,7 +4267,9 @@ describe.each(bindings)("Model redirects through $name", (binding) => {
       destination.push(request.url ?? "");
       response.writeHead(200, { "content-type": "application/json" }).end("{}");
     });
-    await new Promise<void>((resolve) => target.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) => {
+      target.listen(0, "127.0.0.1", resolve);
+    });
     // SAFETY: a successfully listening TCP server returns AddressInfo.
     const targetUrl = `http://127.0.0.1:${(target.address() as AddressInfo).port}`;
     const requests: Upstream["requests"] = [];
@@ -4291,7 +4293,9 @@ describe.each(bindings)("Model redirects through $name", (binding) => {
         response.writeHead(status, { location: `${targetUrl}${path}` }).end();
       });
     });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
     // SAFETY: a successfully listening TCP server returns AddressInfo.
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const upstreamLike: Upstream = {
@@ -4302,8 +4306,12 @@ describe.each(bindings)("Model redirects through $name", (binding) => {
       stop: async () => {
         server.closeAllConnections();
         target.closeAllConnections();
-        await new Promise<void>((resolve) => server.close(() => resolve()));
-        await new Promise<void>((resolve) => target.close(() => resolve()));
+        await new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        });
+        await new Promise<void>((resolve) => {
+          target.close(() => resolve());
+        });
       },
     };
     return { upstream: upstreamLike, destination, headers };
@@ -4407,7 +4415,9 @@ describe("credential redirects", () => {
       destination.push(request.url ?? "");
       tokenEndpoint(false)("/oauth/token", response);
     });
-    await new Promise<void>((resolve) => target.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) => {
+      target.listen(0, "127.0.0.1", resolve);
+    });
     // SAFETY: a successfully listening TCP server returns AddressInfo.
     const targetUrl = `http://127.0.0.1:${(target.address() as AddressInfo).port}`;
     const server = await upstream(
@@ -4440,7 +4450,9 @@ describe("credential redirects", () => {
       expect(server.requests).toEqual([]);
     } finally {
       target.closeAllConnections();
-      await new Promise<void>((resolve) => target.close(() => resolve()));
+      await new Promise<void>((resolve) => {
+        target.close(() => resolve());
+      });
       await server.stop();
     }
   });

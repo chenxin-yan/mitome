@@ -83,9 +83,9 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
       if (closeActiveConnections) {
         server.closeAllConnections();
       }
-      return new Promise((resolve, reject) =>
-        server.close((error) => (error === undefined ? resolve() : reject(error))),
-      );
+      return new Promise((resolve, reject) => {
+        server.close((error) => (error === undefined ? resolve() : reject(error)));
+      });
     },
   };
 };

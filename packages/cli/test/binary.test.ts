@@ -78,7 +78,9 @@ const start = (
   const result = Promise.all([
     text(child.stdout),
     text(child.stderr),
-    new Promise<number | null>((resolve) => child.on("close", resolve)),
+    new Promise<number | null>((resolve) => {
+      child.on("close", resolve);
+    }),
   ]).then(([stdout, stderr, code]) => {
     clearTimeout(killer);
     return { stdout, stderr, code };
@@ -477,7 +479,9 @@ describe.skipIf(process.platform === "win32")("compiled mitome auth with Anthrop
     };
     try {
       child.kill("SIGTERM");
-      await new Promise((resolve) => child.once("exit", resolve));
+      await new Promise((resolve) => {
+        child.once("exit", resolve);
+      });
       for (let attempt = 0; attempt < 200 && alive(); attempt++) {
         await delay(10);
       }
@@ -535,7 +539,9 @@ describe("compiled mitome init", () => {
     });
     const [stdout, code] = await Promise.all([
       text(child.stdout),
-      new Promise<number | null>((resolve) => child.on("close", resolve)),
+      new Promise<number | null>((resolve) => {
+        child.on("close", resolve);
+      }),
     ]);
     expect(code).toBe(0);
     expect(stdout).toContain("bun install v");

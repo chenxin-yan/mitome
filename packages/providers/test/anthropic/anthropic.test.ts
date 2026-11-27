@@ -496,7 +496,9 @@ describe("anthropic with the Claude Console profile", () => {
   it("refreshes once for concurrent requests", async () => {
     const { name } = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() - 10));
     const { model, token, fetch } = upstream(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
       return Response.json({ access_token: "access-2", expires_in: 3600 });
     });
     await run(
@@ -514,7 +516,9 @@ describe("anthropic with the Claude Console profile", () => {
   it("shares one failed refresh among concurrent requests", async () => {
     const { name } = await writeProfile(userOAuth(), tokens("access-1", nowSeconds() - 10));
     const { model, token, fetch } = upstream(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
       return Response.json({ error: "temporarily_unavailable" }, { status: 429 });
     });
     const errors = await run(
@@ -543,7 +547,9 @@ describe("anthropic with the Claude Console profile", () => {
       tokens("access-1", nowSeconds() - 10),
     );
     let answered = () => {};
-    const exchanged = new Promise<void>((resolve) => (answered = resolve));
+    const exchanged = new Promise<void>((resolve) => {
+      answered = resolve;
+    });
     const { model, token, fetch } = upstream(() => {
       answered();
       // The endpoint has rotated the grant; its body arrives after the caller is interrupted.
@@ -619,7 +625,9 @@ describe("anthropic with the Claude Console profile", () => {
     );
     expect(await readFile(lock, "utf8")).toBe("");
     await rm(lock);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100);
+    });
     expect(token).toEqual([]);
     expect(model).toEqual([]);
   });
@@ -730,7 +738,9 @@ describe("anthropic with the Claude Console profile", () => {
     const viaLink = await writeProfile(at(link), undefined);
     const direct = await writeProfile(at(target), undefined);
     const { model, token, fetch } = upstream(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
       return Response.json({ access_token: "access-2", expires_in: 3600 });
     });
     // Two Sessions, so only the lock can keep them from refreshing twice.
@@ -1088,7 +1098,9 @@ describe("anthropic with the Claude Console profile", () => {
     const model: Array<Headers> = [];
     const token: Array<Schema.Json> = [];
     let answerB = () => {};
-    const rejectedB = new Promise<void>((resolve) => (answerB = resolve));
+    const rejectedB = new Promise<void>((resolve) => {
+      answerB = resolve;
+    });
     const fetch = fakeFetch(async (request) => {
       if (new URL(request.url).pathname === "/v1/oauth/token") {
         token.push(Schema.decodeUnknownSync(Schema.Json)(await request.json()));
@@ -1574,7 +1586,9 @@ describe.skipIf(process.platform === "win32")("anthropic authenticate", () => {
         if (text.endsWith("\n")) {
           pid = Number(text);
         } else {
-          await new Promise((resolve) => setTimeout(resolve, 10));
+          await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+          });
         }
       }
       expect(pid).toBeDefined();

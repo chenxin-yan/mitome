@@ -147,7 +147,9 @@ describe("Codex Credential freshness", () => {
     Effect.gen(function* () {
       const stateDirectory = yield* directory(credential("expired-access", 1));
       let answered = () => {};
-      const exchanged = new Promise<void>((resolve) => (answered = resolve));
+      const exchanged = new Promise<void>((resolve) => {
+        answered = resolve;
+      });
       const body = JSON.stringify({
         access_token: jwt("rotated-account"),
         refresh_token: "rotated-refresh",

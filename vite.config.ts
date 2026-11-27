@@ -130,7 +130,6 @@ export default defineConfig({
       // Turned off on adopting @cloudflare/oxlint-config; each is evaluated in a commit of its own.
       "import/no-namespace": "off",
       "jsx-a11y/html-has-lang": "off",
-      "no-promise-executor-return": "off",
       "typescript/no-empty-object-type": "off",
       "typescript/no-explicit-any": "off",
       "typescript/no-non-null-assertion": "off",

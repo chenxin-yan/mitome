@@ -197,7 +197,12 @@ describe("jsonlTranscripts", () => {
       // The wait reads real files between its sleeps, so the clock moves until it has given up.
       while (waiting.pollUnsafe() === undefined) {
         yield* TestClock.adjust("1 second");
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 5)));
+        yield* Effect.promise(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(resolve, 5);
+            }),
+        );
       }
       const refused = yield* Fiber.join(waiting);
       expect(refused).toMatchObject({ _tag: "SessionSaveError", outcome: "not-written" });
