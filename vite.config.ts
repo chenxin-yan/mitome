@@ -150,7 +150,6 @@ export default defineConfig({
       "unicorn/prefer-native-coercion-functions": "off",
       "unicorn/prefer-set-has": "off",
       "unicorn/prefer-structured-clone": "off",
-      "unicorn/text-encoding-identifier-case": "off",
       "vitest/expect-expect": "off",
       "vitest/no-conditional-expect": "off",
       "vitest/require-mock-type-parameters": "off",
