@@ -8,7 +8,10 @@ import type { ReleasePackage } from "./release.ts";
 const rootDirectory = resolve(import.meta.dir, "..");
 const packages = releasePackages();
 const publicPackages = packages.filter((pkg) => !pkg.name.startsWith("@mitome/cli-"));
-const cli = packages.find((pkg) => pkg.name === "@mitome/cli")!;
+const cli = packages.find((pkg) => pkg.name === "@mitome/cli");
+if (cli === undefined) {
+  throw new Error("@mitome/cli is not among the release packages");
+}
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "mitome-release-fixtures-"));
 const suppliedArchives = process.env.MITOME_RELEASE_ARTIFACTS;
 const archivesDirectory = suppliedArchives
@@ -28,7 +31,11 @@ const run = async (
     stderr: "inherit",
   });
   if (input !== undefined) {
-    const stdin = child.stdin!;
+    // Spawned with a piped stdin whenever there is input.
+    const { stdin } = child;
+    if (stdin === undefined) {
+      throw new Error(`${command.join(" ")} has no stdin to write to`);
+    }
     await stdin.write(input);
     await stdin.end();
   }

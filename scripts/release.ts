@@ -82,14 +82,20 @@ export function releasePackages(directory = root): Array<ReleasePackage> {
     "cli",
     "create-mitome",
   ];
-  const manifests = directories.map((name): PackageManifest =>
-    JSON.parse(readFileSync(join(directory, "packages", name, "package.json"), "utf8")),
-  );
+  const read = directories.map((name) => {
+    const manifest: PackageManifest = JSON.parse(
+      readFileSync(join(directory, "packages", name, "package.json"), "utf8"),
+    );
+    return { name, manifest };
+  });
+  const manifests = read.map(({ manifest }) => manifest);
   const config: { fixed: Array<Array<string>> } = JSON.parse(
     readFileSync(join(directory, ".changeset/config.json"), "utf8"),
   );
   assert.deepEqual(manifests.map((pkg) => pkg.name).sort(), config.fixed.flat().sort());
-  const version = manifests[0]!.version;
+  const [first] = manifests;
+  assert.ok(first, "There are no packages to release");
+  const version = first.version;
   // The release channel is stable/latest; prereleases need an explicit dist-tag policy.
   assert.match(version, /^\d+\.\d+\.\d+$/);
   const positions = new Map(manifests.map((pkg, index) => [pkg.name, index]));
@@ -108,8 +114,8 @@ export function releasePackages(directory = root): Array<ReleasePackage> {
       }
     }
   }
-  return manifests.map((pkg, index) => ({
-    directory: join(directory, "packages", directories[index]!),
+  return read.map(({ name, manifest: pkg }) => ({
+    directory: join(directory, "packages", name),
     name: pkg.name,
     version: pkg.version,
     archive: `${pkg.name.replace(/^@/, "").replace("/", "-")}-${pkg.version}.tgz`,
@@ -206,9 +212,12 @@ if (import.meta.main) {
   const packages = releasePackages();
   const source = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   switch (command) {
-    case "version":
-      console.log(packages[0]!.version);
+    case "version": {
+      const [first] = packages;
+      assert.ok(first, "There are no packages to release");
+      console.log(first.version);
       break;
+    }
     case "pack": {
       assert.ok(archiveDirectory, "Provide an artifact directory");
       const directory = resolve(archiveDirectory);

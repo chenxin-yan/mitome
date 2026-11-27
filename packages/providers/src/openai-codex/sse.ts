@@ -627,6 +627,11 @@ const slotOf = (
     }
     throw invalidOutput("Codex sent a content event that names no single content part");
   }
+  return slotAt(slots, index, type);
+};
+
+/** The part at an explicit index, as `slotOf` names it. */
+const slotAt = (slots: Map<number, Slot>, index: number, type: Slot["type"]): Slot => {
   const existing = slots.get(index);
   if (existing !== undefined && (existing.declared || existing.type === type)) {
     if (existing.type !== type) {
@@ -762,16 +767,15 @@ const mergeSnapshot = (slots: Map<number, Slot>, parts: ReadonlyArray<ContentPar
  * part stays started), except a part of an unfinished item that has no value yet.
  */
 const finishMessage = (item: Item, supplied: ReadonlyArray<ContentPart> | undefined) => {
-  const indices = [...item.slots.keys()].sort((a, b) => a - b);
+  const slots = [...item.slots].sort(([a], [b]) => a - b);
   const toPart = (slot: Slot): ContentPart =>
     slot.type === "text" ? { text: current(slot) } : { refusal: current(slot) };
   const entries: Array<readonly [number, ContentPart]> =
     supplied === undefined
-      ? indices.map((index) => [index, toPart(item.slots.get(index)!)] as const)
+      ? slots.map(([index, slot]) => [index, toPart(slot)] as const)
       : supplied.map((part, index) => [index, part] as const);
   if (supplied !== undefined) {
-    for (const index of indices) {
-      const slot = item.slots.get(index)!;
+    for (const [index, slot] of slots) {
       // A declared part must be supplied with its type and streamed value (a start's snapshot does
       // not constrain the finished content, as before it seeded parts).
       if (!slot.declared) {
@@ -815,10 +819,9 @@ const finishMessage = (item: Item, supplied: ReadonlyArray<ContentPart> | undefi
  * explanation). An open item's empty streamed text is not shown; a finished item's is.
  */
 const messageParts = (item: Item) =>
-  [...item.slots.keys()]
-    .sort((a, b) => a - b)
-    .flatMap((index): Array<Response.StreamPartEncoded> => {
-      const slot = item.slots.get(index)!;
+  [...item.slots]
+    .sort(([a], [b]) => a - b)
+    .flatMap(([index, slot]): Array<Response.StreamPartEncoded> => {
       const id = `${item.partId}~${index}`;
       const value = current(slot);
       if (slot.type === "refusal") {
@@ -1545,7 +1548,12 @@ const decodeOutputEvent = (
       const slot = messageTextSlot(item, event);
       if (slot !== undefined) {
         replaceSeeds(item.slots, slot, partIndex(event).content_index);
-        const index = [...item.slots].find(([, candidate]) => candidate === slot)![0];
+        // `slot` is one of the message's parts, so it is found.
+        const located = [...item.slots].find(([, candidate]) => candidate === slot);
+        if (located === undefined) {
+          throw contradiction();
+        }
+        const [index] = located;
         const id = `${item.partId}~${index}`;
         // A seeded start or `content_part.added` value is the part's prefix; it is emitted once, first.
         const start = slot.started
@@ -1626,7 +1634,7 @@ const decodeOutputEvent = (
       // A locator-less event (the Codex CLI's summary delta) names the only declared part, else the
       // first part. Like locator-less message text, text it supplies does not extend a start's
       // summary; an empty part start supplies none, so it only declares the part.
-      const slot = slotOf(slots, locator, "text") ?? slotOf(slots, 0, "text")!;
+      const slot = slotOf(slots, locator, "text") ?? slotAt(slots, 0, "text");
       const emptyStart =
         type === "response.reasoning_summary_part.added" &&
         decode(SummaryPartPayload, event, malformed).part.text === "";
@@ -1656,7 +1664,7 @@ const decodeOutputEvent = (
       const index = partIndex(event).content_index;
       if (part.type === "reasoning_text") {
         const item = openReasoning(state, event);
-        const slot = slotOf(item.reasoningTexts, index ?? 0, "text")!;
+        const slot = slotAt(item.reasoningTexts, index ?? 0, "text");
         if (type === "response.content_part.done") {
           finishSlot(slot, part.text ?? "");
         } else {
@@ -1677,7 +1685,7 @@ const decodeOutputEvent = (
       if (value === undefined) {
         throw invalidOutput("Codex sent a malformed message");
       }
-      const slot = slotOf(item.slots, index, part.type === "output_text" ? "text" : "refusal")!;
+      const slot = slotAt(item.slots, index, part.type === "output_text" ? "text" : "refusal");
       if (type === "response.content_part.done") {
         finishSlot(slot, value);
       } else {
