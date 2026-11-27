@@ -1,11 +1,5 @@
-import {
-  type AuthCapability,
-  type AuthenticateOptions,
-  type Mitome,
-  stateDirectory,
-  stateDirectoryMessage,
-  Transcripts,
-} from "@mitome/core";
+import { stateDirectory, stateDirectoryMessage, Transcripts } from "@mitome/core";
+import type { AuthCapability, AuthenticateOptions, Mitome } from "@mitome/core";
 import { TerminalOptions } from "@mitome/core/terminal";
 import {
   Cause,
@@ -22,11 +16,8 @@ import {
   Stream,
 } from "effect";
 import { CliError } from "effect/cli";
-import {
-  loadConfiguration,
-  type LoadedConfiguration,
-  type LoadedInstance,
-} from "./configuration.js";
+import { loadConfiguration } from "./configuration.js";
+import type { LoadedConfiguration, LoadedInstance } from "./configuration.js";
 import { describe, runtimeError, userError } from "./errors.js";
 import { shell, shellQuote } from "./template.js";
 // makeApprovals allocates the terminal Host's own channel; it needs no service to provide.

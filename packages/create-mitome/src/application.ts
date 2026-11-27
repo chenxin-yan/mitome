@@ -5,8 +5,8 @@ import {
   gitignoreSource,
   pinnedDependencies,
   pinnedDevDependencies,
-  type ProviderChoice,
 } from "./template.js";
+import type { ProviderChoice } from "./template.js";
 
 export interface ApplicationOptions {
   /** The package name, usually the directory's name. */

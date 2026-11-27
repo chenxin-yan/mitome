@@ -1,4 +1,5 @@
-import { Context, type Effect, Exit, Result, Schema, Struct, type Types } from "effect";
+import { Context, Exit, Result, Schema, Struct } from "effect";
+import type { Effect, Types } from "effect";
 import type { Prompt } from "effect/ai";
 import type { SessionFencedError, SessionReleasedError, SessionSaveError } from "./errors.js";
 import type { Session } from "./session.js";

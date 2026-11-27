@@ -10,7 +10,8 @@ import {
 } from "./errors.js";
 import { sessionOwnedWork, turnControls } from "./internal.js";
 import { conversationMessage } from "./plain.js";
-import { type ExecutionLimits, readLimits, Turn } from "./turn.js";
+import { readLimits, Turn } from "./turn.js";
+import type { ExecutionLimits } from "./turn.js";
 
 /** The Messages committed together, under the Entry the conversation continued from. */
 export interface Entry {

@@ -1,9 +1,5 @@
-import {
-  type ApprovalDecision,
-  type ApprovalRequest,
-  Approver,
-  type ApproverService,
-} from "@mitome/core";
+import { Approver } from "@mitome/core";
+import type { ApprovalDecision, ApprovalRequest, ApproverService } from "@mitome/core";
 import { Deferred, Effect } from "effect";
 
 /** A Tool Call waiting for the person's answer, as the Model sent it. */

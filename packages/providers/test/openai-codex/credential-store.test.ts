@@ -11,7 +11,7 @@ import {
   loadCredential,
   writeCredential,
 } from "../../src/openai-codex/credential-store.js";
-import { type OAuthCredential } from "../../src/openai-codex/types.js";
+import type { OAuthCredential } from "../../src/openai-codex/types.js";
 import { platformLayer } from "../../src/shared/platform.js";
 
 const directories: Array<string> = [];

@@ -20,7 +20,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 import cliPackage from "../package.json" with { type: "json" };
-import { installCommand, type Shell, shellQuote } from "../src/template.ts";
+import { installCommand, shellQuote } from "../src/template.ts";
+import type { Shell } from "../src/template.ts";
 
 const binary = fileURLToPath(new URL("../dist/local/mitome", import.meta.url));
 const launcher = fileURLToPath(new URL("../scripts/mitome.mjs", import.meta.url));

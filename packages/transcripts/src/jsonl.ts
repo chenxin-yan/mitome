@@ -6,15 +6,15 @@
  */
 import {
   isPlainData,
-  type Session,
   SessionSaveError,
   stateDirectory,
   stateDirectoryMessage,
   TranscriptError,
   Transcripts,
-  type TranscriptsService,
 } from "@mitome/core";
-import { Clock, Effect, FileSystem, Layer, Option, Path, type PlatformError, Schema } from "effect";
+import type { Session, TranscriptsService } from "@mitome/core";
+import { Clock, Effect, FileSystem, Layer, Option, Path, Schema } from "effect";
+import type { PlatformError } from "effect";
 import { Prompt } from "effect/ai";
 import { platformLayer } from "./platform.js";
 

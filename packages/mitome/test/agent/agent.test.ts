@@ -13,7 +13,8 @@ import {
   Scope,
   Stream,
 } from "effect";
-import { LanguageModel, Prompt, type Response, Tool, Toolkit } from "effect/ai";
+import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import type { Response } from "effect/ai";
 import {
   Agent,
   Approver,

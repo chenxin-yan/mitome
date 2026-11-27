@@ -20,8 +20,8 @@ import { promisify } from "node:util";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { afterAll, describe, expect, it } from "@effect/vitest";
+import type { Cause } from "effect";
 import {
-  Cause,
   Effect,
   Exit,
   FileSystem,
@@ -38,24 +38,24 @@ import {
   gitignoreSource,
   knownModelIds,
   pinnedDependencies,
-  type ProviderId,
   providerChoices,
 } from "create-mitome/template";
+import type { ProviderId } from "create-mitome/template";
 import { Mitome } from "@mitome/core";
 import { TerminalOptions } from "@mitome/core/terminal";
 import cliPackage from "../package.json" with { type: "json" };
 import { runCli } from "../src/index.ts";
-import { Installer, type InstallerService } from "../src/init.ts";
+import { Installer } from "../src/init.ts";
+import type { InstallerService } from "../src/init.ts";
 import { terminalKeys } from "../src/terminal/keys.ts";
 import {
   configurationPlan,
-  type FileMap,
   installCommand,
-  type Shell,
   shellQuote,
   signIn,
   writeConfiguration,
 } from "../src/template.ts";
+import type { FileMap, Shell } from "../src/template.ts";
 
 const packageDirectory = join(import.meta.dirname, "..");
 const catalogEffect = /^ {2}effect: ["']?([^"'\s]+)["']?$/m.exec(

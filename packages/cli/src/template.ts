@@ -4,12 +4,8 @@
 // oxlint-disable-next-line eslint/no-restricted-imports
 import { rmdir } from "node:fs/promises";
 import { Effect, FileSystem, Path, Predicate } from "effect";
-import {
-  exampleAgentSource,
-  gitignoreSource,
-  pinnedDependencies,
-  type ProviderChoice,
-} from "create-mitome/template";
+import { exampleAgentSource, gitignoreSource, pinnedDependencies } from "create-mitome/template";
+import type { ProviderChoice } from "create-mitome/template";
 import { runtimeError } from "./errors.js";
 import { starterProvide, terminalImport } from "./terminal/keys.js";
 

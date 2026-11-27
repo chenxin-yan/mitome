@@ -1,4 +1,5 @@
-import { type Effect, type Layer, Predicate } from "effect";
+import { Predicate } from "effect";
+import type { Effect, Layer } from "effect";
 import type { LanguageModel, Prompt } from "effect/ai";
 import type { CredentialDescriptor } from "./credential.js";
 import type {

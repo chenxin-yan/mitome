@@ -1,14 +1,8 @@
 import { afterAll, describe, expect, test } from "vite-plus/test";
 import { setTimeout } from "node:timers/promises";
 import { Effect, Layer, Schema, Stream } from "effect";
-import {
-  AiError,
-  LanguageModel,
-  Prompt,
-  type Response as AiResponse,
-  Tool,
-  Toolkit,
-} from "effect/ai";
+import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import type { Response as AiResponse } from "effect/ai";
 import { FetchHttpClient } from "effect/http";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";

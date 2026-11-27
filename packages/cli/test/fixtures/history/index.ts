@@ -8,12 +8,12 @@ import {
   Agent,
   Mitome,
   Provider,
-  type Session,
   SessionSaveError,
   TranscriptError,
   Transcripts,
   withModelRequestAccounting,
 } from "@mitome/core";
+import type { Session } from "@mitome/core";
 import { terminal } from "@mitome/core/terminal";
 
 /** One store's conversations by id, and the one most recently written under each scope. */

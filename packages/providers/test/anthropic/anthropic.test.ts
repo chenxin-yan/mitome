@@ -33,7 +33,8 @@ import {
   Scheduler,
   Stream,
 } from "effect";
-import { LanguageModel, type Response as AiResponse, Tool, Toolkit } from "effect/ai";
+import { LanguageModel, Tool, Toolkit } from "effect/ai";
+import type { Response as AiResponse } from "effect/ai";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { Provider } from "@mitome/core";
 import { fakeFetch as answerEveryOrigin, runWithKey } from "../support.js";

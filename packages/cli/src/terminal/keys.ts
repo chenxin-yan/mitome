@@ -1,6 +1,7 @@
 /** The terminal's keys and its own Commands. */
 
-import { type Binding, type Control, type Options, terminal } from "@mitome/core/terminal";
+import { terminal } from "@mitome/core/terminal";
+import type { Binding, Control, Options } from "@mitome/core/terminal";
 import type { KeyEvent } from "@opentui/core";
 import { Effect, Predicate } from "effect";
 import { userError } from "../errors.js";

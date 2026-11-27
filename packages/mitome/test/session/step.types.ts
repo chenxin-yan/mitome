@@ -2,17 +2,10 @@
 // service's duplicate context/error diagnostics are skipped here.
 // oxlint-disable-next-line jsdoc/check-tag-names
 /** @effect-diagnostics missingEffectContext:skip-file missingEffectError:skip-file */
-import {
-  Context,
-  Effect,
-  Layer,
-  Predicate,
-  type Scope,
-  Schema,
-  SchemaGetter,
-  type Types,
-} from "effect";
-import { type AiError, LanguageModel, type Response, Tool, Toolkit } from "effect/ai";
+import { Context, Effect, Layer, Predicate, Schema, SchemaGetter } from "effect";
+import type { Scope, Types } from "effect";
+import type { LanguageModel, AiError, Response } from "effect/ai";
+import { Tool, Toolkit } from "effect/ai";
 import * as Core from "../../src/index.js";
 import * as Kernel from "../../src/kernel.js";
 import { isProvider } from "../../src/session/internal.js";

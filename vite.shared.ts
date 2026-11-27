@@ -1,5 +1,6 @@
 import { transformAsync } from "@babel/core";
-import { defaultServerConditions, type UserConfig } from "vite-plus";
+import { defaultServerConditions } from "vite-plus";
+import type { UserConfig } from "vite-plus";
 
 // Settings the workspace packages' vite.config.ts files share. Vite Task cannot see the files a
 // `bun` command reads or writes (vite-task#777) and would replay stale output, so every task that

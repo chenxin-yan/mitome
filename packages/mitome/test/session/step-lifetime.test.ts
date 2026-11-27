@@ -14,13 +14,13 @@ import {
 } from "effect";
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
 import {
-  type ApprovalDecision,
   Approver,
   reportModelRequest,
   SessionReleasedError,
   Turn,
   withModelRequestAccounting,
 } from "../../src/index.js";
+import type { ApprovalDecision } from "../../src/index.js";
 import { localTools, loop, Session, step } from "../../src/kernel.js";
 import { call, finish, scriptedModel, text } from "../support/step.js";
 import { recordingTranscript } from "../support/transcript.js";

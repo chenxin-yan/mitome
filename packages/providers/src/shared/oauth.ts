@@ -1,6 +1,9 @@
-import { Cause, Clock, Deferred, Effect, Match, Option, Predicate, Schema } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/http";
-import { ChildProcess, type ChildProcessSpawner } from "effect/process";
+import type { Cause } from "effect";
+import { Clock, Deferred, Effect, Match, Option, Predicate, Schema } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import type { HttpClientError } from "effect/http";
+import { ChildProcess } from "effect/process";
+import type { ChildProcessSpawner } from "effect/process";
 import { serveLocalhost } from "./platform.js";
 
 /** The per-Provider half of an OAuth2 PKCE flow: who we are and where we talk. */

@@ -1,4 +1,5 @@
-import { Effect, type Scope } from "effect";
+import { Effect } from "effect";
+import type { Scope } from "effect";
 import type {
   SessionBusyError,
   SessionFencedError,
@@ -17,7 +18,8 @@ import type {
   TranscriptSelectionError,
 } from "./errors.js";
 import type { AnyExtension } from "./extension.js";
-import { type ExtensionError, type ExtensionRequirements, isAgent } from "./internal.js";
+import { isAgent } from "./internal.js";
+import type { ExtensionError, ExtensionRequirements } from "./internal.js";
 import { agentSession } from "./run.js";
 
 export type { Entry, Transcript, TurnSnapshot } from "../session/session.js";

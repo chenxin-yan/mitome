@@ -1,5 +1,6 @@
 import { Effect, Schedule, Stream } from "effect";
-import { AiError, LanguageModel } from "effect/ai";
+import type { LanguageModel } from "effect/ai";
+import { AiError } from "effect/ai";
 import { reportModelRequest } from "@mitome/core";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { CredentialStore } from "./credential-store.js";
@@ -13,7 +14,7 @@ import {
   unsupportedInput,
 } from "./request.js";
 import { decodeStream } from "./sse.js";
-import { type OAuthCredential } from "./types.js";
+import type { OAuthCredential } from "./types.js";
 
 const requestRetrySchedule = Schedule.exponential("100 millis").pipe(Schedule.upTo({ times: 2 }));
 

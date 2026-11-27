@@ -1,7 +1,8 @@
 import { Effect, Schema } from "effect";
-import { type HttpClient } from "effect/http";
-import { exchangeToken, type OAuthToken, type OAuthTokenFailure } from "../shared/oauth.js";
-import { type OAuthCredential } from "./types.js";
+import type { HttpClient } from "effect/http";
+import { exchangeToken } from "../shared/oauth.js";
+import type { OAuthToken, OAuthTokenFailure } from "../shared/oauth.js";
+import type { OAuthCredential } from "./types.js";
 
 const AccountClaim = Schema.Struct({ chatgpt_account_id: Schema.String });
 const Claims = Schema.fromJsonString(

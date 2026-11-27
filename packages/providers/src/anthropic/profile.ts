@@ -1,6 +1,5 @@
 import { AnthropicClient } from "@effect/ai-anthropic";
 import {
-  type Cause,
   Clock,
   Context,
   Deferred,
@@ -11,18 +10,16 @@ import {
   Match,
   Option,
   Path,
-  type PlatformError,
   Predicate,
   Schema,
 } from "effect";
+import type { Cause, PlatformError } from "effect";
 import { AiError } from "effect/ai";
-import { FetchHttpClient, HttpClient, type HttpClientError, HttpClientRequest } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import type { HttpClientError } from "effect/http";
 import { MissingCredentialError, reportingHttpClient } from "../shared/api-key-client.js";
-import {
-  type CredentialStoreError,
-  withLock,
-  writePrivateFile,
-} from "../shared/credential-store.js";
+import { withLock, writePrivateFile } from "../shared/credential-store.js";
+import type { CredentialStoreError } from "../shared/credential-store.js";
 import { isTemporaryTokenFailure, OAuthTokenError } from "../shared/oauth.js";
 import { platformLayer } from "../shared/platform.js";
 import { UnusableProfileError } from "./profile-error.js";

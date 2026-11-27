@@ -1,13 +1,13 @@
 import type { Provider } from "@mitome/core";
 import type { Effect, Types } from "effect";
 import type { AiError } from "effect/ai";
-import {
-  type CodexOptions,
-  type KnownModelId,
+import type {
   codex,
   knownModelIds,
   login,
   logout,
+  CodexOptions,
+  KnownModelId,
 } from "../../src/openai-codex/index.js";
 
 type Assert<T extends true> = T;

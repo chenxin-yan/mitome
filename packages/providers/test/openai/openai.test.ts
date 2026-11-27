@@ -1,9 +1,10 @@
 import { createServer } from "node:http";
-import { type AddressInfo } from "node:net";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "@effect/vitest";
 import { WebSocketServer } from "ws";
 import { Cause, Effect, Exit, Schema, Stream } from "effect";
-import { LanguageModel, Prompt, type Response as AiResponse, Tool, Toolkit } from "effect/ai";
+import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import type { Response as AiResponse } from "effect/ai";
 import { Provider } from "@mitome/core";
 import { fakeFetch, runWithKey, sse } from "../support.js";
 import { openai } from "../../src/openai/index.js";

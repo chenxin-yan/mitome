@@ -1,4 +1,5 @@
-import { Context, type Effect } from "effect";
+import { Context } from "effect";
+import type { Effect } from "effect";
 import type { TranscriptError } from "../session/errors.js";
 import type { Transcript } from "../session/session.js";
 

@@ -11,10 +11,13 @@ import {
   Turn,
   withModelRequestAccounting,
 } from "@mitome/core";
-import { type LocalTools, localTools, loop, step } from "@mitome/core/kernel";
-import { type Options, terminal } from "@mitome/core/terminal";
+import { localTools, loop, step } from "@mitome/core/kernel";
+import type { LocalTools } from "@mitome/core/kernel";
+import { terminal } from "@mitome/core/terminal";
+import type { Options } from "@mitome/core/terminal";
 import { BoxRenderable, TextareaRenderable, TextRenderable } from "@opentui/core";
-import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing";
+import { createTestRenderer } from "@opentui/core/testing";
+import type { TestRendererSetup } from "@opentui/core/testing";
 import {
   Cause,
   Context,
@@ -29,7 +32,8 @@ import {
   Scope,
   Stream,
 } from "effect";
-import { LanguageModel, Prompt, type Response, Tool, Toolkit } from "effect/ai";
+import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import type { Response } from "effect/ai";
 import { makeApprovals } from "../../src/terminal/approvals.ts";
 import { conversations } from "../../src/terminal/conversations.ts";
 import { runTerminal } from "../../src/terminal/terminal.ts";

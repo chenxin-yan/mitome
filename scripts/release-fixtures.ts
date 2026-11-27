@@ -2,7 +2,8 @@ import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { catalogVersions, knownModelIds } from "../packages/create-mitome/src/model-hints.ts";
-import { checkArchives, type ReleasePackage, releasePackages } from "./release.ts";
+import { checkArchives, releasePackages } from "./release.ts";
+import type { ReleasePackage } from "./release.ts";
 
 const rootDirectory = resolve(import.meta.dir, "..");
 const packages = releasePackages();

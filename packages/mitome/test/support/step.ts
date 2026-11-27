@@ -1,5 +1,6 @@
 import { Effect, Layer, Stream } from "effect";
-import { type AiError, LanguageModel, type Response } from "effect/ai";
+import { LanguageModel } from "effect/ai";
+import type { AiError, Response } from "effect/ai";
 import { reportModelRequest, withModelRequestAccounting } from "../../src/index.js";
 
 /** One scripted generation: encoded response parts, or a native failure. */

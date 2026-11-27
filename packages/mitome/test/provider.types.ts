@@ -1,11 +1,8 @@
-import { Effect, Layer, type Types } from "effect";
+import { Effect, Layer } from "effect";
+import type { Types } from "effect";
 import { LanguageModel } from "effect/ai";
-import {
-  type AuthCapability,
-  type AuthenticateOptions,
-  type CredentialDescriptor,
-  Provider,
-} from "../src/index.js";
+import { Provider } from "../src/index.js";
+import type { AuthCapability, AuthenticateOptions, CredentialDescriptor } from "../src/index.js";
 
 // SAFETY: this compile-only fixture never executes the LanguageModel service.
 const layer = Layer.succeed(LanguageModel.LanguageModel, {} as LanguageModel.LanguageModel);

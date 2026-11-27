@@ -12,35 +12,39 @@ import {
   SchemaGetter,
   Stream,
 } from "effect";
-import { AiError, LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/ai";
+import type { Response } from "effect/ai";
+import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import type {
+  StepProtocolError,
+  ApprovalRequest,
+  ApproverService,
+  CompleteStep,
+  ExecutionLimits,
+  StepResult,
+  ToolCallRequest,
+} from "../../src/index.js";
 import {
-  type ApprovalRequest,
   Approver,
-  type ApproverService,
   ExecutionLimitError,
   IncompleteStepError,
   ModelRequestAccounting,
   Provider,
-  StepProtocolError,
   ToolRegistrationError,
   Turn,
   withModelRequestAccounting,
-  type CompleteStep,
-  type ExecutionLimits,
-  type StepResult,
-  type ToolCallRequest,
 } from "../../src/index.js";
-import { localTools, loop, Session, step, type StepOptions } from "../../src/kernel.js";
+import { localTools, loop, Session, step } from "../../src/kernel.js";
+import type { StepOptions } from "../../src/kernel.js";
 import {
   call,
   finish,
   remoteCall,
   remoteResult,
-  type Script,
   scriptedLanguageModel,
   scriptedModel,
   text,
 } from "../support/step.js";
+import type { Script } from "../support/step.js";
 
 class Approvals extends Context.Service<Approvals, { readonly allowed: ReadonlySet<string> }>()(
   "test/Approvals",

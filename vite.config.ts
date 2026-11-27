@@ -127,7 +127,6 @@ export default defineConfig({
       // Turned off on adopting @cloudflare/oxlint-config; each is evaluated in a commit of its own.
       "@nkzw/no-instanceof": "off",
       eqeqeq: "off",
-      "import/consistent-type-specifier-style": "off",
       "import/no-namespace": "off",
       "jsx-a11y/html-has-lang": "off",
       "no-console": "off",
@@ -137,10 +136,8 @@ export default defineConfig({
       "prefer-arrow-callback": "off",
       "react/rules-of-hooks": "off",
       "typescript/array-type": "off",
-      "typescript/consistent-type-imports": "off",
       "typescript/no-empty-object-type": "off",
       "typescript/no-explicit-any": "off",
-      "typescript/no-import-type-side-effects": "off",
       "typescript/no-non-null-assertion": "off",
       "typescript/no-unsafe-argument": "off",
       "typescript/no-unsafe-assignment": "off",

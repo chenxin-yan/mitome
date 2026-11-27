@@ -1,16 +1,17 @@
 /** The terminal Host for one acquired Configuration and its current Session, on OpenTUI. */
 
-import { type ApprovalDecision, Command, type Session } from "@mitome/core";
-import { type Binding, type Control, terminal } from "@mitome/core/terminal";
+import { Command } from "@mitome/core";
+import type { ApprovalDecision, Session } from "@mitome/core";
+import { terminal } from "@mitome/core/terminal";
+import type { Binding, Control } from "@mitome/core/terminal";
 import {
   BoxRenderable,
-  type CliRenderer,
   createCliRenderer,
-  type KeyEvent,
   ScrollBoxRenderable,
   TextareaRenderable,
   TextRenderable,
 } from "@opentui/core";
+import type { CliRenderer, KeyEvent } from "@opentui/core";
 import {
   Cause,
   Deferred,
@@ -21,8 +22,8 @@ import {
   Formatter,
   Match,
   Predicate,
-  type Scope,
 } from "effect";
+import type { Scope } from "effect";
 import type { Prompt } from "effect/ai";
 import type { ApprovalChannel, PendingApproval } from "./approvals.js";
 import { isControl, keysOf } from "./keys.js";

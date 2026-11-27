@@ -1,10 +1,7 @@
 import { Context, Effect, FileSystem, Layer, Option, Path, Schema } from "effect";
 import { FetchHttpClient, HttpClient } from "effect/http";
-import {
-  type CredentialStoreError,
-  modifyCredential,
-  readCredential,
-} from "../shared/credential-store.js";
+import { modifyCredential, readCredential } from "../shared/credential-store.js";
+import type { CredentialStoreError } from "../shared/credential-store.js";
 import {
   isExpired,
   isRedirectedTokenFailure,
@@ -12,8 +9,10 @@ import {
   OAuthTokenError,
 } from "../shared/oauth.js";
 import { oauth, provider } from "./constants.js";
-import { token, type OAuthCredentialFailure } from "./oauth-token.js";
-import { OAuthCredentialSchema, type OAuthCredential } from "./types.js";
+import { token } from "./oauth-token.js";
+import type { OAuthCredentialFailure } from "./oauth-token.js";
+import { OAuthCredentialSchema } from "./types.js";
+import type { OAuthCredential } from "./types.js";
 
 /** Works for any application; only the CLI half names a command. */
 const remedy = `through your application; with the Mitome CLI, run \`mitome auth login --provider ${provider}\``;

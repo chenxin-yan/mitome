@@ -11,7 +11,8 @@ import {
   Schema,
   Stream,
 } from "effect";
-import { LanguageModel, Prompt, type Response, Tool, Toolkit } from "effect/ai";
+import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai";
+import type { Response } from "effect/ai";
 import {
   Agent,
   Approver,
@@ -21,8 +22,10 @@ import {
   Turn,
   withModelRequestAccounting,
 } from "@mitome/core";
-import { type LocalTools, localTools, loop, step } from "@mitome/core/kernel";
-import { makeApprovals, type PendingApproval } from "../../src/terminal/approvals.ts";
+import { localTools, loop, step } from "@mitome/core/kernel";
+import type { LocalTools } from "@mitome/core/kernel";
+import { makeApprovals } from "../../src/terminal/approvals.ts";
+import type { PendingApproval } from "../../src/terminal/approvals.ts";
 
 // Parameters that decode to something other than their wire form, so the JSON shown and the value
 // dispatched can be told apart.

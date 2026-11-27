@@ -1,5 +1,7 @@
-import { Data, type Effect, Predicate } from "effect";
-import { brand, CommandTypeId, type NoTurn, snapshot } from "./internal.js";
+import { Data, Predicate } from "effect";
+import type { Effect } from "effect";
+import { brand, CommandTypeId, snapshot } from "./internal.js";
+import type { NoTurn } from "./internal.js";
 
 /** What the Host does after a Command: show text to the person, or start a Turn with an input. */
 export type Result = Data.TaggedEnum<{

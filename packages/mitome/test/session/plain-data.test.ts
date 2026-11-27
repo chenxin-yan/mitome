@@ -1,8 +1,10 @@
 import { types } from "node:util";
 import { describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Predicate, Schema } from "effect";
-import { LanguageModel, Prompt, type Response, Tool, Toolkit } from "effect/ai";
-import { Approver, isPlainData, ModelRequestAccounting, Turn } from "../../src/index.js";
+import type { LanguageModel, Response } from "effect/ai";
+import { Prompt, Tool, Toolkit } from "effect/ai";
+import type { ModelRequestAccounting } from "../../src/index.js";
+import { Approver, isPlainData, Turn } from "../../src/index.js";
 import { localTools, Session, step } from "../../src/kernel.js";
 import { call, scriptedModel } from "../support/step.js";
 import { recordingTranscript } from "../support/transcript.js";

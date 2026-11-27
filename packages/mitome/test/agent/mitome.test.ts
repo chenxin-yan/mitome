@@ -25,8 +25,10 @@ import {
   TextMappingError,
   Turn,
 } from "../../src/index.js";
-import { localTools, loop, type LocalTools } from "../../src/kernel.js";
-import { call, finish, type Script, scriptedModel, text } from "../support/step.js";
+import { localTools, loop } from "../../src/kernel.js";
+import type { LocalTools } from "../../src/kernel.js";
+import { call, finish, scriptedModel, text } from "../support/step.js";
+import type { Script } from "../support/step.js";
 
 const Lookup = Tool.make("lookup", {
   parameters: Schema.Struct({ key: Schema.String }),

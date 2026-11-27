@@ -1,9 +1,7 @@
 import type { Config, Types } from "effect";
 import type { Provider } from "@mitome/core";
-import {
-  type MissingCredentialError,
-  openaiCompatible,
-} from "../../src/openai-compatible/index.js";
+import { openaiCompatible } from "../../src/openai-compatible/index.js";
+import type { MissingCredentialError } from "../../src/openai-compatible/index.js";
 
 type Assert<T extends true> = T;
 

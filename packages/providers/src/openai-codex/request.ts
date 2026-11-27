@@ -1,8 +1,9 @@
 import { Match, Predicate, Result, Schema } from "effect";
-import { AiError, LanguageModel, Prompt, Tool } from "effect/ai";
+import type { LanguageModel } from "effect/ai";
+import { AiError, Prompt, Tool } from "effect/ai";
 import { HttpClientError } from "effect/http";
 import { isRedirectedTokenFailure, isTemporaryTokenFailure } from "../shared/oauth.js";
-import { type CredentialError } from "./credential-store.js";
+import type { CredentialError } from "./credential-store.js";
 
 const makeError = (reason: AiError.AiErrorReason) =>
   AiError.make({ module: "OpenAI Codex", method: "streamText", reason });

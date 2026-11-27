@@ -1,5 +1,7 @@
-import { Effect, Stream } from "effect";
-import { LanguageModel, Prompt, Response, Tool, Toolkit } from "effect/ai";
+import type { Stream } from "effect";
+import { Effect } from "effect";
+import type { Prompt, Response, Tool, Toolkit } from "effect/ai";
+import { LanguageModel } from "effect/ai";
 
 interface TestModelOptions {
   readonly prompt: Prompt.Prompt;

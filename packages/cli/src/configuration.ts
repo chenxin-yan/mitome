@@ -5,16 +5,8 @@ import {
   CredentialDescriptorSchema,
   Mitome,
 } from "@mitome/core";
-import {
-  Effect,
-  FileSystem,
-  Option,
-  Path,
-  type PlatformError,
-  Predicate,
-  Schema,
-  type Scope,
-} from "effect";
+import { Effect, FileSystem, Option, Path, Predicate, Schema } from "effect";
+import type { PlatformError, Scope } from "effect";
 import { describe, runtimeError, userError } from "./errors.js";
 import { liveInstallCommand } from "./template.js";
 

@@ -1,17 +1,12 @@
-import { type Effect, Predicate, Result } from "effect";
+import { Predicate, Result } from "effect";
+import type { Effect } from "effect";
 import type { loop, step, ToolCallRequest, ToolDecision } from "../session/step.js";
-import { type ExecutionLimits, readLimits } from "../session/turn.js";
+import { readLimits } from "../session/turn.js";
+import type { ExecutionLimits } from "../session/turn.js";
 import type { TextMappingError } from "./errors.js";
 import type { AnyExtension } from "./extension.js";
-import {
-  AgentTypeId,
-  type AgentTools,
-  brand,
-  checkClashes,
-  isExtension,
-  isSetup,
-  snapshot,
-} from "./internal.js";
+import { AgentTypeId, brand, checkClashes, isExtension, isSetup, snapshot } from "./internal.js";
+import type { AgentTools } from "./internal.js";
 
 /** How a text Host turns text into the Agent's input and its result back into text. */
 export interface TextMapping<

@@ -1,4 +1,5 @@
-import { definePlugin, defineRule, type ESTree, type SourceCode } from "vite-plus/lint/plugins";
+import { definePlugin, defineRule } from "vite-plus/lint/plugins";
+import type { ESTree, SourceCode } from "vite-plus/lint/plugins";
 import { resolveVariable } from "./anti-slop/shared/scope.ts";
 
 /** Whether `specifier` of an import from `source` names Effect's `Schema` module, or its `Unknown`. */

@@ -1,16 +1,11 @@
-import { Effect, Predicate, type Scope } from "effect";
+import { Effect, Predicate } from "effect";
+import type { Scope } from "effect";
 import type { Tool, Toolkit } from "effect/ai";
 import type { ToolDecision } from "../session/step.js";
 import type { Turn } from "../session/turn.js";
 import type { Command } from "./command.js";
-import {
-  type AnyCommand,
-  type AnyParts,
-  brand,
-  checkParts,
-  ExtensionTypeId,
-  type NoTurn,
-} from "./internal.js";
+import { brand, checkParts, ExtensionTypeId } from "./internal.js";
+import type { AnyCommand, AnyParts, NoTurn } from "./internal.js";
 
 /**
  * Any Tool Call of the Agent, as an Extension policy sees it. The Tool may belong to another

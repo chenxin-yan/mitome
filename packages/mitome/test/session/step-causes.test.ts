@@ -1,7 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Cause, Context, Effect, Exit, Predicate, Schema, SchemaGetter, SchemaIssue } from "effect";
 import { Tool, Toolkit } from "effect/ai";
-import { type ApprovalDecision, Approver } from "../../src/index.js";
+import { Approver } from "../../src/index.js";
+import type { ApprovalDecision } from "../../src/index.js";
 import { localTools, Session, step } from "../../src/kernel.js";
 import { call, scriptedModel } from "../support/step.js";
 

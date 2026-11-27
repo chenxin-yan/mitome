@@ -18,18 +18,12 @@ import { PassThrough } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { Effect, Fiber, Layer, Stream } from "effect";
-import { LanguageModel, type Prompt } from "effect/ai";
+import { LanguageModel } from "effect/ai";
+import type { Prompt } from "effect/ai";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 import packageJson from "../package.json" with { type: "json" };
-import {
-  type Agent,
-  Approver,
-  type ApprovalRequest,
-  type ApproverService,
-  Session,
-  stateDirectoryMessage,
-  withModelRequestAccounting,
-} from "@mitome/core";
+import { Approver, Session, stateDirectoryMessage, withModelRequestAccounting } from "@mitome/core";
+import type { Agent, ApprovalRequest, ApproverService } from "@mitome/core";
 import { applicationPlan, packageName, writeScaffold } from "../src/application.js";
 import {
   customModel,
@@ -37,10 +31,10 @@ import {
   modelChoices,
   pinnedDependencies,
   pinnedDevDependencies,
-  type ProviderId,
   providerChoices,
   validateModelId,
 } from "../src/template.js";
+import type { ProviderId } from "../src/template.js";
 
 const directories: Array<string> = [];
 const directory = async () => {

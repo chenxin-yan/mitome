@@ -1,4 +1,5 @@
-import { Config, ConfigProvider, Effect, Layer, Option, Redacted, Schema } from "effect";
+import type { Redacted } from "effect";
+import { Config, ConfigProvider, Effect, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, HttpClient } from "effect/http";
 import { reportModelRequest } from "@mitome/core";
 import { rejectingModelRedirects } from "./model-http-client.js";

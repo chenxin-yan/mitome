@@ -24,16 +24,15 @@ import type { ModelRequestAccounting } from "../session/accounting.js";
 import type { Turn } from "../session/turn.js";
 import type { Agent, AnyAgent, TextMapping } from "./agent.js";
 import type { Result } from "./command.js";
-import {
-  type CommandFailedError,
-  type CommandNotFoundError,
-  MitomeClosedError,
-  ModelSelectionError,
-  TextMappingError,
-  type TranscriptSelectionError,
+import { MitomeClosedError, ModelSelectionError, TextMappingError } from "./errors.js";
+import type {
+  CommandFailedError,
+  CommandNotFoundError,
+  TranscriptSelectionError,
 } from "./errors.js";
 import type { Extension } from "./extension.js";
-import { type ExtensionError, isAgent } from "./internal.js";
+import { isAgent } from "./internal.js";
+import type { ExtensionError } from "./internal.js";
 import { agentSession } from "./run.js";
 import type { Session, SessionOptions } from "./session.js";
 import { Transcripts } from "./transcripts.js";

@@ -2,25 +2,23 @@
 // service's duplicate context/error diagnostics are skipped here.
 // oxlint-disable-next-line jsdoc/check-tag-names
 /** @effect-diagnostics missingEffectContext:skip-file missingEffectError:skip-file missingLayerContext:skip-file */
-import { Context, Effect, Schema, type Scope, type Types } from "effect";
-import { type AiError, LanguageModel, Tool, Toolkit } from "effect/ai";
-import {
-  Agent,
-  Command,
-  type CommandFailedError,
-  type CommandNotFoundError,
-  Extension,
+import { Context, Effect, Schema } from "effect";
+import type { Scope, Types } from "effect";
+import { LanguageModel, Tool, Toolkit } from "effect/ai";
+import type { AiError } from "effect/ai";
+import type {
   ModelRequestAccounting,
-  Session,
-  type SessionBusyError,
-  type SessionFencedError,
-  type SessionReleasedError,
-  type SessionSaveError,
-  type ToolRegistrationError,
-  type TranscriptError,
-  type TranscriptSelectionError,
-  Turn,
+  CommandFailedError,
+  CommandNotFoundError,
+  SessionBusyError,
+  SessionFencedError,
+  SessionReleasedError,
+  SessionSaveError,
+  ToolRegistrationError,
+  TranscriptError,
+  TranscriptSelectionError,
 } from "../../src/index.js";
+import { Agent, Command, Extension, Session, Turn } from "../../src/index.js";
 
 const exact = <X, Y>(equal: Types.Equals<X, Y>) => equal;
 

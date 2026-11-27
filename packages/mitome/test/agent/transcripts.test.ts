@@ -9,9 +9,9 @@ import {
   Session,
   TranscriptSelectionError,
   Transcripts,
-  type TranscriptsService,
   Turn,
 } from "../../src/index.js";
+import type { TranscriptsService } from "../../src/index.js";
 import { call, finish, scriptedModel, text } from "../support/step.js";
 import { recordingTranscript } from "../support/transcript.js";
 

@@ -1,11 +1,11 @@
 import type { Config, Types } from "effect";
 import type { Provider } from "@mitome/core";
-import {
-  type KnownModelId,
-  type MissingCredentialError,
-  type OpenAiOptions,
+import type {
   knownModelIds,
   openai,
+  KnownModelId,
+  MissingCredentialError,
+  OpenAiOptions,
 } from "../../src/openai/index.js";
 
 type Assert<T extends true> = T;

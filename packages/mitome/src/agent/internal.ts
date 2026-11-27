@@ -1,5 +1,7 @@
-import { Effect, Predicate, type Types } from "effect";
-import { Tool, type Toolkit } from "effect/ai";
+import { Effect, Predicate } from "effect";
+import type { Types } from "effect";
+import { Tool } from "effect/ai";
+import type { Toolkit } from "effect/ai";
 import type { ToolDecision } from "../session/step.js";
 import type { Turn } from "../session/turn.js";
 import type { AnyAgent } from "./agent.js";
