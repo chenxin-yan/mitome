@@ -114,6 +114,9 @@ export default defineConfig({
       // Effect's modules are namespaces, imported whole by design (`import * as NodePath from
       // "@effect/platform-node-shared/NodePath"`), and tests read an entry's whole export list.
       "import/no-namespace": "off",
+      // Every assertion here is a documented boundary assertion, which
+      // anti-slop/require-safety-comment-for-type-assertion requires to carry a SAFETY: comment.
+      "typescript/no-unsafe-type-assertion": "off",
       "typescript/no-unnecessary-condition": [
         "error",
         {
@@ -143,7 +146,6 @@ export default defineConfig({
       "typescript/no-unsafe-function-type": "off",
       "typescript/no-unsafe-member-access": "off",
       "typescript/no-unsafe-return": "off",
-      "typescript/no-unsafe-type-assertion": "off",
       "typescript/only-throw-error": "off",
       "unicorn/consistent-function-scoping": "off",
       "vitest/expect-expect": "off",
