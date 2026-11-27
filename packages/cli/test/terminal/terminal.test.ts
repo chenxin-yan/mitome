@@ -917,7 +917,7 @@ describe("runTerminal keys and Commands", () => {
     frame = await frameWith((frame) => !frame.includes("/todos"));
     expect(frame).toContain("/plan  Plan the work");
     await setup!.mockInput.typeText("x");
-    frame = await frameWith((frame) => !frame.includes("Plan the work"));
+    await frameWith((frame) => !frame.includes("Plan the work"));
     setup!.mockInput.pressBackspace();
     setup!.mockInput.pressBackspace();
     setup!.mockInput.pressBackspace();

@@ -134,7 +134,6 @@ export default defineConfig({
       "jsx-a11y/html-has-lang": "off",
       "no-console": "off",
       "no-promise-executor-return": "off",
-      "no-useless-assignment": "off",
       "react/rules-of-hooks": "off",
       "typescript/no-empty-object-type": "off",
       "typescript/no-explicit-any": "off",
