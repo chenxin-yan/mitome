@@ -406,10 +406,12 @@ const focused = () => setup!.renderer.currentFocusedRenderable?.id;
 /** The whole text of a renderable, including what its box scrolls out of the frame. */
 const textOf = (id: string) => {
   const found = setup!.renderer.root.findDescendantById(id);
+  // oxlint-disable-next-line @nkzw/no-instanceof -- OpenTUI tells its renderables apart only by class
   if (found instanceof TextareaRenderable) {
     return found.plainText;
   }
   const [text] = found?.getChildren() ?? [];
+  // oxlint-disable-next-line @nkzw/no-instanceof -- OpenTUI tells its renderables apart only by class
   return text instanceof TextRenderable ? text.plainText : "";
 };
 

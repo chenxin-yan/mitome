@@ -104,7 +104,7 @@ const writeResult = Effect.fnUntraced(function* (text: string) {
 
 const failingWith = (prefix: string) =>
   Effect.mapError((cause: unknown) =>
-    cause instanceof CliError.UserError ? cause : userError(`${prefix}${describe(cause)}`, cause),
+    Schema.is(CliError.UserError)(cause) ? cause : userError(`${prefix}${describe(cause)}`, cause),
   );
 
 /**
@@ -508,7 +508,7 @@ export const authenticate = Effect.fnUntraced(function* (
     ),
     Effect.flatMap(Schema.decodeUnknownEffect(AuthCapabilityModule)),
     Effect.mapError((cause) =>
-      cause instanceof CliError.UserError
+      Schema.is(CliError.UserError)(cause)
         ? cause
         : userError(`The ${provider.id} auth capability does not export authenticate`, cause),
     ),
