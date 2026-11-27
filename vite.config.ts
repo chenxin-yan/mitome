@@ -145,8 +145,6 @@ export default defineConfig({
       "anti-slop-effect/prefer-effect-match": "error",
       "mitome/no-schema-unknown-type": "error",
       "vite-plus/prefer-vite-plus-imports": "error",
-      // Turned off on adopting @cloudflare/oxlint-config; each is evaluated in a commit of its own.
-      "typescript/only-throw-error": "off",
     },
     // Overrides cannot hold settings.
     settings: {
