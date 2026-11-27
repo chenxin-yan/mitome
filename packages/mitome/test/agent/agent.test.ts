@@ -386,7 +386,7 @@ describe("Agent.make", () => {
     const kit = Toolkit.make(keyed("save"));
     // SAFETY: deliberately mistyped; a Toolkit, assembled as Effect assembles one, holding the
     // Tool "save" under the key "store".
-    const renamed = Object.assign(function () {}, kit, {
+    const renamed = Object.assign(() => {}, kit, {
       tools: { store: kit.tools.save },
     }) as never;
     const files = Extension.make("files", {
