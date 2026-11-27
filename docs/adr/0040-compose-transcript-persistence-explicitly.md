@@ -1,13 +1,9 @@
 ---
-status: compaction deferral reversed by ADR-0055
+status: amended by ADR-0055, ADR-0056 and ADR-0057
 ---
 
-# Compose Transcript persistence explicitly
+# Compose persistence explicitly
 
-Transcript persistence is an optional, named part of the Mitome Definition: `defineMitome({ agent, hosts, transcripts })`. A declared `TranscriptStore` is passed to every Host through `HostContext`; omitting it means no Transcript snapshots or event records are written. Built-in Hosts never discover or construct a store. This keeps persistence visible at the composition root, gives one-shot and interactive Hosts the same resume source, and preserves the explicit-composition rule established by ADR-0039.
+User composition owns persistence; a Host never infers, discovers, or creates an implicit store. Hosts sharing a composition use its shared persistence semantics and resume source rather than independent per-Host truth. Embedded applications may explicitly omit durability. [ADR-0056](0056-separate-history-compaction-and-execution-recovery.md) nevertheless requires durable recovery for the full replacement milestone, distinct from committed Transcripts.
 
-`fileTranscripts(dir?)` and `memoryTranscripts()` are the two first-party adapters. The zero-argument file adapter resolves `<configDirectory()>/transcripts` and fails when no config directory is available. `mitome init` and `create-mitome` scaffold `transcripts: fileTranscripts()` so new Definitions persist by default through one visible, removable line. An adapter belongs in Core only when it adds no dependency; an adapter requiring a database or other driver belongs in its own package.
-
-This amends ADR-0036 and issue #63's persist-by-default decision: Transcripts may still outlive Sessions, but persistence is no longer inferred by a Host from the environment. A generic composition-root `use` list is rejected because named fields preserve slot cardinality in the type system. Per-Host stores are rejected because all Hosts in one composition must share the same resume source.
-
-A Transcript `name` and store `rename()` operation are deferred until the review before first npm publication, because adding them later would break community adapters. Compaction is deferred until measured context pressure justifies an in-schema migration. A Promise-facing store-author helper is deferred until the first concrete request. Additional first-party adapters are deferred until needed and, because they require drivers, will live in their own packages rather than Core.
+[ADR-0057](0057-use-effect-native-functions-and-optional-host-composition.md) replaces the Promise store and Definition-field prescriptions with native composition; exact operations, backend and crash guarantees belong to #170. No store signature or default location is newly selected. Compaction is required, not deferred until measured pressure. Dependency-free adapters may share the library; adapters requiring drivers should not add those dependencies to every consumer.

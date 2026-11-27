@@ -12,6 +12,14 @@ Use the canonical `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-hu
 
 Use the single-context layout with root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
 
+### Packaging
+
+New library code goes in `@mitome/core`: in the root entry if it passes the three tests, otherwise as a subpath. A separate package is for an outside dependency most users do not need. Read `docs/adr/0061-ship-one-package-and-gate-what-enters-its-core.md` before adding a package, a subpath or a root export.
+
+### Lint
+
+Satisfy a lint rule with better code, or with one `oxlint-disable-next-line <rule> -- <reason>` that names the boundary, never by writing the same thing another way (`typeof Schema.Unknown.Type` for `unknown`). A value from outside is decoded with an Effect Schema where it enters; where `unknown` is the honest type, write `unknown`.
+
 <!-- effect-solutions:start -->
 
 ## Effect Best Practices

@@ -1,5 +1,5 @@
 # @mitome/core
 
-The Effect-native runtime and the authoring surface for Hosts and Providers. Applications should use `@mitome/sdk` instead; this package changes with the runtime and carries a weaker stability guarantee.
+The current Effect execution engine shared by the SDK and Hosts. Its existing Definition/Extension contracts are not the accepted function-first redesign.
 
-See [Hosts](https://mitome.sh/docs/hosts), [Provider authoring](https://mitome.sh/docs/provider-authoring), and the [API reference](https://mitome.sh/docs/reference/api/core).
+See the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md). Obsolete authoring/reference guides have been removed; replacement contracts and exports remain pending.

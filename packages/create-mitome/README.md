@@ -1,9 +1,5 @@
 # create-mitome
 
-Scaffold a standalone Mitome Agent project in a directory you own. It prompts for a Provider and Model and never overwrites existing files.
+The current standalone project scaffolder still generates the existing Definition/Extension API, not the accepted native redesign. Replacement templates require verified contracts and implementation.
 
-```sh
-npm create mitome my-agent
-```
-
-See [Installation](https://mitome.sh/docs/installation#two-ways-to-scaffold). The `create-mitome/template` export is internal plumbing shared with `mitome init` and carries no stability guarantee.
+Obsolete installation/quickstart guides have been removed; see the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md). The `create-mitome/template` export remains internal plumbing shared with `mitome init`.

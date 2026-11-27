@@ -1,20 +1,12 @@
 # Mitome
 
-Define an AI Agent once in TypeScript — its Provider, Model, Instructions, Tools, and Extensions — then run it embedded in your application or from your terminal. Sessions stream Turn events, Tool calls can require Approval, and completed Turns persist as resumable Transcripts.
+A TypeScript library and CLI/TUI for user-defined AI Agents.
 
-Embed in an application:
+**Redesign in progress.** The accepted direction is Effect-native, function-first authoring with optional Host composition. Current code still implements the Promise-facing SDK and Definition/Extension APIs; the new contracts are not implemented or ready to copy. Obsolete prerelease guides have been removed, not replaced with speculative API examples.
 
-```sh
-npm install @mitome/sdk @mitome/providers
-```
-
-Run from a terminal:
-
-```sh
-npm install -g @mitome/cli
-mitome init
-```
-
-Documentation: [mitome.sh](https://mitome.sh). Contributing: [mitome.sh/docs/contributing](https://mitome.sh/docs/contributing).
+- [Library plan](docs/plans/effect-native-library.md): accepted direction, open contracts, and full replacement gates.
+- [Architecture decision](docs/adr/0057-use-effect-native-functions-and-optional-host-composition.md).
+- [Delivery roadmap #174](https://github.com/chenxin-yan/mitome/issues/174).
+- [Documentation](https://mitome.sh/docs) and [contributing](https://mitome.sh/docs/contributing).
 
 MIT licensed; see [LICENSE](LICENSE).

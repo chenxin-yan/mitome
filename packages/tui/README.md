@@ -1,9 +1,5 @@
 # @mitome/tui
 
-The interactive terminal Host for Mitome, built on OpenTUI. Activate it by declaring `hosts: [tui()]` in the Mitome Definition; installing alone changes nothing.
+The current interactive terminal Host, built on OpenTUI. Package installation alone does not activate it.
 
-```sh
-mitome add @mitome/tui
-```
-
-Controls and behavior are under [TUI](https://mitome.sh/docs/tui).
+The accepted redesign keeps TUI as an initial Host alongside HTTP; its new native contract is not shipped. Obsolete composition guides have been removed; see the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md).

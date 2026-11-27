@@ -1,9 +1,5 @@
 # @mitome/sdk
 
-The Promise-first SDK for defining Agents and running Sessions; `@mitome/sdk/effect` is the Effect-native facade and `@mitome/sdk/extensions` ships the first-party Extensions.
+Current implementation: the Promise-facing Agent/Extension SDK, with an Effect facade at `@mitome/sdk/effect`. It is not the accepted function-first redesign.
 
-```sh
-npm install @mitome/sdk @mitome/providers
-```
-
-Start with the [SDK quickstart](https://mitome.sh/docs/quickstart-sdk); the [API reference](https://mitome.sh/docs/reference/api/sdk) lists every export.
+Obsolete prerelease guides/reference have been removed. See the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md); native contracts and examples are pending, not shipped.

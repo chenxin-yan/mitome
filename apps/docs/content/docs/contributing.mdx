@@ -4,13 +4,13 @@ description: Repository layout, toolchain, the gates a change must pass, generat
 icon: GitPullRequest
 ---
 
-Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxin-yan/mitome). Issues are the triage surface; open one before a large change.
+Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxin-yan/mitome). Issues are the triage surface; open one before a large change. The [canonical library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) records the accepted redesign and open proof gates; [#174](https://github.com/chenxin-yan/mitome/issues/174) remains its single delivery roadmap. Current code is still Promise-facing; design acceptance is not implementation readiness.
 
 ## Repository layout
 
 - `packages/core`, `packages/sdk`, `packages/providers`, `packages/tui`, `packages/cli`, `packages/create-mitome`: the published packages, one directory each, with tests under `test/`.
 - `apps/docs`: this site (fumadocs on TanStack Start); pages live in `apps/docs/content/docs`.
-- `docs/adr`: architecture decision records; `CONTEXT.md` at the root is the domain glossary every page and identifier follows.
+- `docs/adr`: architecture decision records; `CONTEXT.md` at the root is the domain glossary every page and identifier follows. `docs/plans/effect-native-library.md` is the canonical redesign plan; `docs/research` is supporting evidence.
 - `scripts`: a private workspace for repository tooling and release fixture tests.
 - `.changeset`: pending release notes.
 
@@ -53,7 +53,7 @@ Every user-visible change adds a changeset: run `bun changeset`, or write the ma
 
 ## Recording decisions
 
-An architecture decision that changes a public contract or a cross-cutting rule gets an ADR in `docs/adr`, numbered sequentially, in the style of its neighbours: the decision in prose, then consequences. A later decision that changes an earlier one adds `status: amended by ADR-NNNN` to the earlier file rather than rewriting it. Terms go in `CONTEXT.md`; use the term it defines and none of the ones it says to avoid.
+An architecture decision that changes a public contract or a cross-cutting rule gets an ADR in `docs/adr`, numbered sequentially, in the style of its neighbours: the decision in prose, then consequences. Mixed decisions retain meaningful guarantees with `status: amended by ADR-NNNN` and a successor link. For this prerelease redesign, fully obsolete decisions and Promise/Extension API guides are removed; Git history preserves them. Repair inbound links and navigation on deletion. New runnable examples and reference pages must accompany verified implementation, never proposed signatures. Terms go in the glossary-only `CONTEXT.md`; use the term it defines and none of the ones it says to avoid.
 
 ## Manual TUI check
 
