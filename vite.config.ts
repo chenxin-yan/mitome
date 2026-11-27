@@ -105,6 +105,9 @@ export default defineConfig({
           ],
         },
       ],
+      // A promise's catch callback takes `unknown`, which anti-slop/no-unknown-parameters allows
+      // only under the name `cause`.
+      "unicorn/catch-error-name": ["error", { ignore: ["^cause$"] }],
       "typescript/no-unnecessary-condition": [
         "error",
         {
@@ -145,7 +148,6 @@ export default defineConfig({
       "typescript/no-unsafe-type-assertion": "off",
       "typescript/only-throw-error": "off",
       "typescript/use-unknown-in-catch-callback-variable": "off",
-      "unicorn/catch-error-name": "off",
       "unicorn/consistent-function-scoping": "off",
       "vitest/expect-expect": "off",
       "vitest/no-conditional-expect": "off",
