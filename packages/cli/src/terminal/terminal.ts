@@ -71,7 +71,7 @@ const refreshMillis = 100;
 
 /** Keeps newlines and tabs; every other control character is shown escaped, never sent raw. */
 const printable = (text: string) =>
-  text.replace(
+  text.replaceAll(
     // oxlint-disable-next-line no-control-regex
     /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g,
     (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,

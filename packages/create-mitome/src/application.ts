@@ -21,7 +21,7 @@ export type FileMap = ReadonlyMap<string, string>;
 export const packageName = (directory: string): string => {
   const name = directory
     .toLowerCase()
-    .replace(/[^a-z0-9._~-]+/g, "-")
+    .replaceAll(/[^a-z0-9._~-]+/g, "-")
     .replace(/^[._]+/, "");
   // npm rejects these although their characters are allowed.
   return name === "" || name.startsWith("-") || name === "node_modules" || name === "favicon.ico"

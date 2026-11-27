@@ -21,7 +21,7 @@ export type Shell = "posix" | "powershell";
 export const shellQuote = (path: string, shell: Shell): string =>
   shell === "powershell"
     ? // PowerShell also takes the typographic single quotes as quote delimiters.
-      `'${path.replace(/['\u2018-\u201b]/g, "$&$&")}'`
+      `'${path.replaceAll(/['\u2018-\u201b]/g, "$&$&")}'`
     : /^[\w@%+=:,./-]+$/.test(path)
       ? path
       : `'${path.replaceAll("'", String.raw`'\''`)}'`;

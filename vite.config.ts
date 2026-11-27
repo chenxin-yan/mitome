@@ -151,7 +151,6 @@ export default defineConfig({
       "unicorn/consistent-function-scoping": "off",
       "unicorn/prefer-native-coercion-functions": "off",
       "unicorn/prefer-set-has": "off",
-      "unicorn/prefer-string-replace-all": "off",
       "unicorn/prefer-structured-clone": "off",
       "unicorn/text-encoding-identifier-case": "off",
       "vitest/expect-expect": "off",
