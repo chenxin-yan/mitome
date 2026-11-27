@@ -58,6 +58,9 @@ type PackageManifest = {
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
+  os?: string[];
+  cpu?: string[];
+  libc?: string[];
 };
 
 export type ReleasePackage = {
@@ -159,6 +162,16 @@ export function checkArchives(packages: ReadonlyArray<ReleasePackage>, directory
       }
     }
     if (pkg.name.startsWith("@mitome/cli-")) {
+      // The workspace manifests keep these under publishConfig, so that pnpm does not warn about
+      // every other platform's package on install; pnpm lifts them when it packs.
+      const [os, cpu, musl] = pkg.name.slice("@mitome/cli-".length).split("-");
+      assert.deepEqual(manifest.os, [os], `${pkg.name} does not restrict its os`);
+      assert.deepEqual(manifest.cpu, [cpu], `${pkg.name} does not restrict its cpu`);
+      assert.deepEqual(
+        manifest.libc,
+        os === "linux" ? [musl ?? "glibc"] : undefined,
+        `${pkg.name} does not restrict its libc`,
+      );
       const executable = pkg.name.includes("-win32-") ? "mitome.exe" : "mitome";
       const files = execFileSync("tar", ["-tzf", archive], { encoding: "utf8" }).split("\n");
       assert.ok(files.includes(`package/bin/${executable}`), `${pkg.name} is missing its binary`);
@@ -194,8 +207,8 @@ if (import.meta.main) {
           copyNotices(join(opentui, pkg.name.replace("@mitome/cli-", "core-")), pkg.directory);
         }
         run(
-          "bun",
-          ["pm", "pack", "--filename", join(directory, pkg.archive), "--ignore-scripts"],
+          "pnpm",
+          ["pack", "--out", join(directory, pkg.archive), "--ignore-scripts"],
           pkg.directory,
         );
       }

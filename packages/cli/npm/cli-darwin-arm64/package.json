@@ -14,13 +14,13 @@
     "FFMPEG-SOURCE.md",
     "third-party"
   ],
-  "os": [
-    "darwin"
-  ],
-  "cpu": [
-    "arm64"
-  ],
   "publishConfig": {
+    "os": [
+      "darwin"
+    ],
+    "cpu": [
+      "arm64"
+    ],
     "access": "public"
   }
 }

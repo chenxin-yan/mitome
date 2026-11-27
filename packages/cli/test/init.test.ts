@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import {
   chmod,
   lstat,
@@ -43,7 +43,6 @@ import {
 } from "create-mitome/template";
 import { Mitome } from "@mitome/core";
 import cliPackage from "../package.json" with { type: "json" };
-import rootPackage from "../../../package.json" with { type: "json" };
 import { runCli } from "../src/index.ts";
 import { Installer, type InstallerService } from "../src/init.ts";
 import {
@@ -57,6 +56,9 @@ import {
 } from "../src/template.ts";
 
 const packageDirectory = join(import.meta.dirname, "..");
+const catalogEffect = /^ {2}effect: ["']?([^"'\s]+)["']?$/m.exec(
+  readFileSync(join(packageDirectory, "../../pnpm-workspace.yaml"), "utf8"),
+)?.[1];
 const directory = await mkdtemp(join(tmpdir(), "mitome-init-"));
 afterAll(() => rm(directory, { recursive: true, force: true }));
 
@@ -666,7 +668,7 @@ describe("Configuration plans", () => {
       dependencies: {
         "@mitome/core": cliPackage.version,
         "@mitome/providers": cliPackage.version,
-        effect: rootPackage.workspaces.catalog.effect,
+        effect: catalogEffect,
       },
     });
     expect(plan.get(".gitignore")).toBe(gitignoreSource);

@@ -1,0 +1,39 @@
+packages:
+  - apps/*
+  - packages/*
+  - packages/cli/npm/*
+  - scripts
+
+catalog:
+  typescript: 7.0.2
+  "@types/bun": ^1.4.5
+  "@effect/ai-anthropic": 4.1.6
+  "@effect/ai-openai": 4.1.6
+  "@effect/ai-openai-compat": 4.1.6
+  "@effect/platform-bun": 4.1.6
+  "@effect/platform-node-shared": 4.1.6
+  "@effect/vitest": 4.1.6
+  effect: 4.1.6
+  vitest: 5.1.1
+  "@types/node": ^26.6.6
+
+# The docs build runs both through the platform packages their optionalDependencies install; their
+# install scripts only re-check those binaries.
+allowBuilds:
+  esbuild: false
+  workerd: false
+
+# The local CLI compile bundles OpenTUI's glibc and musl branches, so it needs both native packages.
+supportedArchitectures:
+  os: [current]
+  cpu: [current]
+  libc: [glibc, musl]
+
+minimumReleaseAgeExclude:
+  - "@effect/ai-anthropic@4.1.6"
+  - "@effect/ai-openai-compat@4.1.6"
+  - "@effect/ai-openai@4.1.6"
+  - "@effect/platform-bun@4.1.6"
+  - "@effect/platform-node-shared@4.1.6"
+  - "@effect/vitest@4.1.6"
+  - effect@4.1.6

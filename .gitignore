@@ -8,7 +8,7 @@ packages/create-mitome/src/model-hints.ts
 .DS_Store
 # Agent scratch artifacts
 .pi-subagents/
-# Dev config home used by `bun run dev:cli` (holds live credentials)
+# Dev config home used by `pnpm run dev:cli` (holds live credentials)
 .dev-home/
 .env
 .env.*

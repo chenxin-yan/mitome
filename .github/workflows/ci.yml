@@ -32,6 +32,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-turbo-
       - uses: jdx/mise-action@v4
-      - run: bun install --frozen-lockfile
-      - run: bunx turbo run lint //#fmt check:types //#check:types build
-      - run: bun run test
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run lint //#fmt check:types //#check:types build
+      - run: pnpm test

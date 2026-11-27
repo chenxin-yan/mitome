@@ -8,7 +8,7 @@
     "build": "vite build",
     "start": "vite preview",
     "preview": "vite preview",
-    "deploy": "bun run --cwd ../.. build:docs && wrangler deploy",
+    "deploy": "pnpm --workspace-root run build:docs && wrangler deploy",
     "cf-typegen": "wrangler types",
     "check:types": "tsc --noEmit",
     "lint": "oxlint .",
