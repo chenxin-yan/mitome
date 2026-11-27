@@ -32,6 +32,6 @@ export const answer = Effect.scoped(
 );
 ```
 
-`Mitome.make({ agent, providers, model })` names an Agent with the Providers and Model it runs with; that Configuration is what a Host loads. No Host ships yet.
+`Mitome.make({ agent, providers, model })` names an Agent with the Providers and Model it runs with; that Configuration is what a Host such as the `mitome` command (`@mitome/cli`) loads.
 
-See the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md). Hosts and durable storage are not implemented yet.
+See [Agents and Configurations](https://mitome.sh/docs/agents). Streaming and durable storage are not implemented yet.

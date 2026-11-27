@@ -1,18 +1,18 @@
 ---
 title: Security
-description: Trust, credential and authority boundaries that the redesign must preserve.
+description: Trust, credential and authority boundaries.
 icon: Lock
 ---
 
-Mitome runs user-authored code with the permissions of its process. The [redesign plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) is accepted direction, not an implemented security or durability guarantee.
+Mitome runs user-authored code with the permissions of its process. Where this page describes Channels or stored history, it states rules for designs the [library plan](https://github.com/chenxin-yan/mitome/blob/main/docs/plans/effect-native-library.md) has accepted but not implemented.
 
 ## Trust executable modules
 
-An explicitly selected composition module and its dependencies are executable code, not a sandboxed configuration file. Import only code you trust. Tool policy does not sandbox arbitrary Agent programs, infrastructure, or Hosts. Explicit module selection must not turn into implicit execution of project-local code.
+A Configuration and its dependencies are executable code, not a sandboxed settings file: the `mitome` command imports the default one in the config directory or the one selected with `--config`, and never searches the current directory. Load only code you trust. Tool policy does not sandbox Agent programs, layers or Hosts. Hiding the Approver and the stored conversations from Extensions keeps them from being reached through the services Extension code is given; it is not a sandbox against code that reads fiber internals. On POSIX, `mitome init` requests mode `0700` for a config directory it creates and leaves the mode of an existing empty one unchanged; on Windows, check the directory's access permissions.
 
-## Separate policy, consent and replay safety
+## Separate policy, Approval and replay safety
 
-The Agent author controls policy; Tools flag risk and reusable policy may tighten it. Hosts resolve permitted asks, never override a deny. Missing consent or a policy failure must not silently permit execution. Decode Tool input before policy, validate declared outcomes, and keep defects and secrets out of Model-visible results.
+The Agent author controls policy; Tools flag risk and Extension policies may only tighten it. The Host answers permitted asks and never overrides a deny; with nobody to answer, an ask is denied. A missing Approval or a policy failure never permits execution, and every denial tells the Model its reason. Tool input is decoded once, and policy and the handler receive that same value. Its arrays and plain objects are frozen before policy runs; other decoded values, such as Maps, Dates and class instances, can still change, so use plain data when the handler must receive exactly what policy saw. The Approver is shown, and an Approval is bound to, the JSON the Model sent, without fields the Tool does not declare. Validate declared outcomes, and keep defects and secrets out of Model-visible results; for a successful result, a Tool's `toModelOutput` can supply what the Model is sent.
 
 Approval authorizes an operation, not a retry after a crash. An unknown unsafe external outcome requires reconciliation; cancellation cannot undo an effect already completed. Passive progress events are not authoritative Approval or commit records.
 
@@ -22,6 +22,6 @@ For external Channels, including HTTP, authenticate and authorize before Route/h
 
 ## Protect Credentials and stored data
 
-Keep secrets out of source, Instructions, Tool outputs, thrown errors, logs, and bug reports. Do not commit `.env` or `auth.json`. Embedded applications supply credentials through their own environment or secret manager; CLI-only environment loading must not override explicit process values.
+Keep secrets out of source, Instructions, Tool outputs, thrown errors, logs, and bug reports. Do not commit `.env` or `auth.json`. A Configuration names the API-key variable, never the key. The compiled `mitome` command does not load a `.env` file automatically and stores no API key; by default a Provider reads the variable from the process environment, and a supplied Effect `ConfigProvider` can supply it instead. Embedded applications supply credentials through their own environment or secret manager.
 
-Retain private credential file permissions, atomic writes, refresh locking and per-Provider isolation from [ADR-0010](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0010-persist-provider-credentials-outside-the-environment.md) and [ADR-0031](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0031-share-oauth-and-credential-storage-across-provider-subpaths.md). Transcripts and execution/delivery records can contain user data, Tool inputs and results; storage retention/access policies require explicit ownership. The new backend and crash guarantees remain design work, not claims derived from today's Transcript files.
+Retain private credential file permissions, atomic writes, refresh locking and per-Provider isolation from [ADR-0010](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0010-persist-provider-credentials-outside-the-environment.md) and [ADR-0031](https://github.com/chenxin-yan/mitome/blob/main/docs/adr/0031-share-oauth-and-credential-storage-across-provider-subpaths.md). Transcripts and execution/delivery records can contain user data, Tool inputs and results; storage retention/access policies require explicit ownership. Saved history is not implemented; its storage and crash guarantees remain design work.

@@ -1,0 +1,248 @@
+---
+title: Agents and Configurations
+description: Describe an Agent with Agent.make and Extension.make, name it with its Providers and Model in a Configuration, embed it in an application and test it.
+icon: Boxes
+---
+
+An Agent is plain data: its Instructions, the Extensions it uses, how it decides Tool Calls and, optionally, its own program and text mapping. It names no Provider, Model or Host, so the same Agent runs in the terminal, from `mitome run`, embedded in an application and in a test. A Configuration names one Agent together with the Providers and the Model it runs with; it is what the [`mitome` command](/docs/cli) loads. An application uses the library directly and needs no Configuration.
+
+Two tools write a starting point: `mitome init` writes the default Configuration, and `npm create mitome` writes an application that embeds an Agent. Both write the same Agent.
+
+Mitome's APIs come from `@mitome/core`, Effect and its AI APIs from `effect` and `effect/ai`, and the Providers from their `@mitome/providers` subpaths (`/openai`, `/openai-compatible`, `/openai-codex` and `/anthropic`). Nothing is published to npm yet (see [Versioning](/docs/versioning)).
+
+## An Agent and an Extension
+
+`mitome init` writes this `agent.ts`, and `npm create mitome` writes the same file as `src/agent.ts`:
+
+```ts title="agent.ts"
+import { Random, Schema } from "effect";
+import { Tool, Toolkit } from "effect/ai";
+import { Agent, Extension } from "@mitome/core";
+
+const Roll = Tool.make("roll", {
+  description: "Roll a die with the given number of sides.",
+  parameters: Schema.Struct({ sides: Schema.Int.check(Schema.isGreaterThan(1)) }),
+  success: Schema.Int,
+  needsApproval: true,
+});
+const DiceToolkit = Toolkit.make(Roll);
+
+const dice = Extension.make("dice", {
+  tools: DiceToolkit,
+  handlers: DiceToolkit.of({ roll: ({ sides }) => Random.nextIntBetween(1, sides) }),
+  instructions: "Use roll when the user asks for a random number.",
+});
+
+export const agent = Agent.make({
+  instructions: "You are a helpful Agent.",
+  use: [dice],
+});
+```
+
+`Extension.make` takes a name, unique within an Agent, and what the Extension adds: a record of optional `tools` (an `effect/ai` Toolkit) with their `handlers`, `instructions`, a `policy` and `commands`, or an Effect that returns such a record. `Agent.make` takes optional `instructions`, `use` (Extensions, in order), `policy`, `limits`, `program` and `text`. Both check their fields and return frozen descriptions. `Session.make(agent)` runs the Extensions' Effects, merges the Instructions and registers the Tools when it allocates a fresh Session; `session.run(input)` runs the program. Override part of an Agent with ordinary code, for example `Agent.make({ ...agent, instructions: "Answer in French." })`.
+
+The parts merge in a fixed way:
+
+- **Instructions**: the Agent's own, then each Extension's in `use` order, separated by a blank line.
+- **Tools**: every Extension's Tools. `Agent.make` throws a `TypeError` when two Extensions share a name, whatever their form, or when two records define a Tool of the same name; a Tool name that a setup's record repeats is only known once the setup has run, so `Session.make` fails then.
+- **Policy**: the Agent's `policy` decides each Tool Call (`"allow"`, `"ask"` or `"deny"`) instead of the Tool's own `needsApproval` flag. Each Extension's `policy` sees every Tool Call of the Agent and can only tighten that decision: deny beats ask, ask beats allow. A policy that fails denies.
+- **Effects**: an Extension given as an Effect runs it once per Session, in `use` order, and what it acquires is released with the Session. What it keeps is its own and each Session's; an Extension provides no service to the program.
+- **Limits**: without `limits`, a Turn has no limit on Model generations or Tool dispatches, and a person stops it by interrupting. Set `limits` for an Agent that runs where nobody is watching: `generations` bounds the Model generations of each Turn and `dispatches` its local Tool dispatches, a bound left out is no limit, and any other key in `limits` is refused.
+
+## Tools and Approvals
+
+A Tool Call's parameters are decoded once with the Tool's schema, and policy and the handler receive that same value. Before policy runs, Mitome recursively freezes the arrays and plain objects reached through their own data properties. Other decoded values, such as Maps, Dates and class instances, can still change: use plain data when the handler must receive exactly what policy saw. The Approver is shown the parameters as the JSON the Model sent, without fields the Tool does not declare (the handler never receives them either), and the Approval is bound to that JSON. A response whose Tool Call parameters are not plain data is refused as malformed before any policy runs; see [the conversation holds plain data](#the-conversation-holds-plain-data). For a successful final result, a Tool's `toModelOutput` can supply what the Model is sent; the Step's results keep the handler's own result. Failed results and denials do not use that mapping.
+
+A Tool Call decided `"ask"` runs only when the Approver allows it. Whoever runs the Turn supplies the Approver: the terminal shows the Tool Call and waits for `y` or `n`. When none is supplied, as in `mitome run` with the default program or embedded code that provides none, the call is denied with the reason "Tool call needs approval and nobody is present to give it". Every denial is staged as a failed Tool result that carries its reason, such as "Tool call was denied by policy" or "Tool call was not approved", and the Turn continues with the next Step.
+
+Tool handlers, Extension policies and an Extension's Effect run with the Approver masked, and the Configuration's `provide` cannot supply it. `mitome run` provides none; the terminal provides one around each Turn. The Agent's own `program` is the author's code, not a handler: a trusted custom program can provide an Approver around its Steps.
+
+## The conversation holds plain data
+
+A value can take three forms on its way through a Turn:
+
+- **Live values** are what your code works with: the parameters a handler receives, the result it returns, and the Step results a program reads. They may be Dates, Maps or class instances.
+- **The conversation's plain data** is what history holds and the Model is sent: each Message as its schemas encode it. `session.history` and a store receive Messages, whose file parts can contain a `Uint8Array`, a `URL` or a base64 string; the rule applies to what Effect's `Prompt.Message` codec encodes a Message to, so a store encodes each Message before it checks or writes it. Plain data is JSON as Effect's `Schema.Json` defines it: `null`, booleans, finite numbers, strings, and arrays and plain objects of them, with no cycle, `Date`, `Map` or class instance. `isPlainData` from `@mitome/core` is that check. Before checking a Message, the kernel copies its encoded form without fields of `undefined` and with `-0` as `0`, which is what a store reads back; the conversation keeps that copy as a snapshot, so later reads of it never consult the original getter or `Proxy`, and later changes to the original reach nothing kept.
+- **Stored bytes** are a store's own: a store for conversations, when one is provided, writes that plain data in a format of its choosing and applies the same rule to what it is given.
+
+A Tool whose schema encodes a live value keeps both: here the handler returns a `Date`, the program's Step result keeps that `Date`, and the conversation holds its ISO string.
+
+```ts title="clock.ts"
+import { Effect, Schema } from "effect";
+import { Tool, Toolkit } from "effect/ai";
+import { Extension } from "@mitome/core";
+
+const Now = Tool.make("now", {
+  description: "The current date and time.",
+  success: Schema.Date,
+});
+const ClockToolkit = Toolkit.make(Now);
+
+export const clock = Extension.make("clock", {
+  tools: ClockToolkit,
+  handlers: ClockToolkit.of({ now: () => Effect.sync(() => new Date()) }),
+});
+```
+
+A live value never enters the conversation:
+
+- A Tool whose success schema encodes nothing, such as `Schema.Any`, and whose handler returns a live object fails the Turn with a defect that names the Tool and where the value is, for example `Tool "clock" returned a result whose encoded form is not plain data: its tool Message has a Date at content[0].result.now, not plain data; give it a schema that encodes it`. Give the Tool a schema that encodes the value.
+- A Model response that is not plain data, in a Tool Call's parameters or anywhere else the conversation would keep, fails its Step with a `StepProtocolError` before any policy, Approver or handler runs. A response decoded from JSON can still hold one: a number too large to represent decodes to `Infinity`.
+- A program that stages a Message whose encoded form is not plain data dies with a defect naming the Message's role and the path, such as `content[0].result.when is a Date`.
+
+## A program and a text mapping
+
+Without `program`, an Agent stages its input as a user Message, runs the Step loop and returns the final text. A `program` is an ordinary Effect function run as one Turn for one input. Its second argument holds `step` and `loop` with the Agent's merged Instructions, Tools and policies already applied, so a custom program still composes with `use`.
+
+`@mitome/core/kernel` is the layer under an Agent: one Session without an Agent (`Session.make({ transcript })`, with optional `limits`), `step`, `loop` and `localTools`. It is for tests of a Provider and for building another runtime; an Agent's program uses the `step` and `loop` it is given.
+
+Hosts that speak text (the terminal and `mitome run`) map text to the program's input and its result back to text through `text: { parse, render }`. It is required unless the program accepts any string and returns a string.
+
+```ts title="writer.ts"
+import { Effect, Schema } from "effect";
+import { Prompt } from "effect/ai";
+import { Agent, Turn } from "@mitome/core";
+
+export const writer = Agent.make({
+  instructions: "You write exactly as many words as asked.",
+  program: (words: number, { loop }) =>
+    Effect.gen(function* () {
+      const turn = yield* Turn;
+      const text = `Write ${words} words about the sea.`;
+      yield* turn.stage(Prompt.userMessage({ content: [Prompt.textPart({ text })] }));
+      const result = yield* loop;
+      return { words, text: result.response.text };
+    }),
+  text: {
+    parse: (text) => Schema.decodeUnknownEffect(Schema.NumberFromString)(text.trim()),
+    render: (result) => Effect.succeed(`${result.text}\n(${result.words} words asked)`),
+  },
+});
+```
+
+`Turn` is the running Turn. Messages staged on it are committed to the Session's history as one Entry each time a Step completes, together with the Step's response and Tool results, and those still staged when the program and its cleanup succeed are committed as a last Entry. A Turn that fails or is interrupted keeps the Entries it committed and drops only what was still staged, so one that stops before its first Step completes leaves nothing. Unless whoever makes the Session provides a store for conversations, the `Transcripts` service, which a Configuration can provide, a Session keeps its history in memory and it ends with the Session. With a store, `Session.make(agent)` keeps a new conversation there, which can be opened again by its id, unless `{ transcript }` selects another.
+
+## A Configuration
+
+`mitome init` asks for a Provider and one of its Models, or takes `--provider` and `--model`, and writes this `index.ts` next to `agent.ts` (here for `--provider openai --model gpt-5.6`):
+
+```ts title="index.ts"
+import { Mitome } from "@mitome/core";
+import { openai } from "@mitome/providers/openai";
+import { agent } from "./agent.js";
+
+export default Mitome.make({
+  agent,
+  providers: [openai()],
+  model: "openai/gpt-5.6",
+});
+```
+
+`Mitome.make({ agent, providers?, model?, provide? })` describes a Configuration. `provide` holds shared services, one Layer or a list of them, built once when the Configuration is acquired and released when it shuts down. `model`, the Default Model, is a Qualified Model id whose Provider must be one of `providers`; the Model id itself may be any id that Provider serves, not only the catalog's hints. When Providers are declared, set a Default Model or select a Qualified Model id when acquiring. The default program needs a Model, from a Provider or from `provide`; a custom program that uses none needs none. `Mitome.make` fails to compile when the program, the text mapping, an Extension or a Provider needs a service that nothing in the Configuration supplies.
+
+Keep secrets out of Configuration source. `openai()` and `anthropic()` name the variable that holds their API key, `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` (change it with `apiKeyEnv`). By default they read it from the process environment; a supplied Effect `ConfigProvider` can supply it instead. Absent or empty input fails provisioning the Model with the Provider's tagged `MissingCredentialError` before any request; an error of the configuration source stays a `ConfigError`. Codex logins are stored in Mitome's state directory by default; see [auth](/docs/cli#auth).
+
+Next to them, `mitome init` writes a `package.json`, a `tsconfig.json`, a `.gitignore` and a README. The `package.json` pins exact versions, never ranges: `@mitome/core` and `@mitome/providers` at the Mitome release that wrote it and `effect` at the version that release is built on.
+
+`mitome init` writes into the config directory (`~/.config/mitome` by default; see [which Configuration runs](/docs/cli#which-configuration-runs)), where bare `mitome` and `mitome run` find it. Keep the directory in Git to use the same Agent elsewhere; `mitome --config <directory>` runs a Configuration kept anywhere else.
+
+## Embed an Agent in an application
+
+`Session.make(agent)` allocates, in the caller's Scope, a fresh Session whose `run(input)` runs the Agent as one Turn. What the program needs stays a requirement of `run`, and what the Extensions need one of `Session.make`; for the default program that is the Model: provide `Provider.model(openai(), "gpt-5.6")` for a real one, or a scripted Model in a test. Whoever calls `run` decides who answers Approvals by providing an `Approver`, or none.
+
+The smallest such application runs one Turn with the OpenAI Provider and prints the result:
+
+```ts title="src/main.ts"
+import { Effect } from "effect";
+import { Provider, Session } from "@mitome/core";
+import { openai } from "@mitome/providers/openai";
+import { agent } from "./agent.ts";
+
+const program = Effect.scoped(
+  Effect.gen(function* () {
+    const session = yield* Session.make(agent);
+    return yield* session.run(process.argv.slice(2).join(" "));
+  }),
+).pipe(Effect.provide(Provider.model(openai(), "gpt-5.6")));
+
+Effect.runPromise(program).then(console.log, (error: unknown) => {
+  process.exitCode = 1;
+  console.error(error);
+});
+```
+
+It provides no Approver, so a Tool Call that needs Approval is denied and the Model is told.
+
+`npm create mitome my-app` writes such an application: `src/agent.ts` (the Agent above), a `src/main.ts` for the Provider and Model you choose, a `package.json` with `start` (`node src/main.ts`) and `check` (`tsc`) scripts, a `tsconfig.json`, a `.gitignore` and a README. Its `package.json` pins exact versions: `@mitome/core` and `@mitome/providers` at the Mitome release that wrote it, and `effect`, TypeScript and Node's types at the versions that release was built and tested with. When stdin and stderr are terminals, its `main.ts` provides an Approver that shows each Tool Call that needs Approval as the JSON the Model sent, without fields the Tool does not declare, and asks on stderr, so stdout carries only the result; see [the generator's source](https://github.com/chenxin-yan/mitome/blob/main/packages/create-mitome/src/application.ts) for the whole file. Run `npm create mitome my-app` with Node.js 24.2 or later, then `cd my-app`, follow the README's install and credential steps (for Codex, how to sign in) and run `npm start -- "roll a die"`. The generated application itself targets Node.js 24 or later.
+
+## Test an Agent
+
+A test runs the same Agent with a scripted Model and supplies the Approver around `run`. Save this as `src/scripted.ts` in that application and run `node src/scripted.ts`:
+
+```ts title="scripted.ts"
+import { Effect, Layer, Stream } from "effect";
+import { LanguageModel } from "effect/ai";
+import { Approver, Session, withModelRequestAccounting } from "@mitome/core";
+import { agent } from "./agent.ts";
+
+// A scripted Model: it asks for one roll, then answers with the Tool result it was sent.
+const scripted = withModelRequestAccounting(
+  "scripted",
+  Layer.effect(
+    LanguageModel.LanguageModel,
+    LanguageModel.make({
+      generateText: ({ prompt }) => {
+        const last = prompt.content.at(-1);
+        if (last?.role !== "tool") {
+          return Effect.succeed([
+            { type: "tool-call", id: "call-1", name: "roll", params: { sides: 6 } },
+            { type: "finish", reason: "tool-calls", usage: { inputTokens: {}, outputTokens: {} } },
+          ]);
+        }
+        const result = last.content.find((part) => part.type === "tool-result");
+        return Effect.succeed([
+          { type: "text", text: `Rolled: ${JSON.stringify(result?.result)}` },
+        ]);
+      },
+      streamText: () => Stream.die(new Error("not streamed")),
+    }),
+  ),
+);
+
+const reply = await Effect.runPromise(
+  Effect.scoped(
+    Effect.gen(function* () {
+      const session = yield* Session.make(agent);
+      return yield* session
+        .run("Roll a die.")
+        .pipe(Effect.provideService(Approver, { decide: () => Effect.succeed("allow") }));
+    }),
+  ).pipe(Effect.provide(scripted)),
+);
+console.log(reply);
+```
+
+Without the `Approver`, or with one that answers `"deny"`, the Model receives the denial as the Tool result instead.
+
+## Acquire a Configuration from code
+
+An application can also acquire a whole Configuration, as the `mitome` command does:
+
+```ts title="embed.ts"
+import { Effect } from "effect";
+import configuration from "./index.js";
+
+export const main = Effect.scoped(
+  Effect.gen(function* () {
+    const instance = yield* configuration.acquire();
+    const session = yield* instance.session();
+    return yield* session.run("Roll a die.");
+  }),
+);
+```
+
+`acquire` builds what the Configuration provides and provisions the selected Model, if any, once. `acquire({ model })` provisions another Qualified Model id instead and `acquire({ provider })` restricts the configured Model to one Provider; neither falls back to a different Model. Each `instance.session()` is a fresh Session that runs the Agent as `Session.make(agent)` does. `instance.provide(effect)` runs other work with the shared services, outside any Turn. Closing the Scope, or `instance.shutdown`, stops new work (`MitomeClosedError`), interrupts active Turns and provided work, waits for their cleanup and only then releases the Model and the provided services. `acquire({ onShutdown })` runs an Effect when shutdown begins, so an application can start its own deadline; the library itself never exits the process.
+
+## Not yet
+
+These are designed or planned, not implemented: streaming output and its events; Extensions that shape the Model Context or watch events; asking the person a question or notifying them from Extension code, and allowing a Tool for the rest of a Session; installing a Configuration's dependencies before it runs (a missing install names the command to run); keeping conversations beyond the process (no store for `Transcripts` ships yet), navigating a conversation's tree from the terminal, and continuing a Turn interrupted by a crash; slash commands in the terminal, queued Messages, `mitome serve`, Channels, schedules and Delegation; first-party Extensions (coding Tools, Skills, MCP, web); and signing in to Anthropic through the Console profile (the Anthropic Provider takes an API key).

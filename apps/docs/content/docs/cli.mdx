@@ -1,0 +1,88 @@
+---
+title: CLI
+description: Write the default Configuration, open it in the terminal, run it once, list its Providers and manage logins with the mitome command.
+icon: Terminal
+---
+
+The `mitome` command (package `@mitome/cli`) loads one [Configuration](/docs/agents#a-configuration): the default export of a module made with `Mitome.make`. `mitome init` writes the default one, bare `mitome` opens it in the terminal and `mitome run` runs it once. Nothing is published to npm yet, so `npm install -g @mitome/cli` does not work until a release; see [Contributing](/docs/contributing) for building the command from the repository.
+
+```text
+mitome init [--provider <id>] [--model <id>] [--no-install]
+mitome [--config <path>] [--provider <id>] [--model <provider/model>] [--grace <duration>] [--continue[=<id>]]
+mitome run [--config <path>] [--provider <id>] [--model <provider/model>] [--grace <duration>] [--continue[=<id>]] [<input>]
+mitome providers [--config <path>]
+mitome auth status [--config <path>] [--provider <id>]
+mitome auth login [--config <path>] [--provider <id>]
+mitome auth logout [--config <path>] [--provider <id>]
+mitome --help
+mitome --version
+```
+
+## Which Configuration runs
+
+Without `--config`, `mitome` loads `index.ts` in the config directory: `$MITOME_HOME` if set, else `$XDG_CONFIG_HOME/mitome`, else `~/.config/mitome` (`%APPDATA%\mitome` on Windows). An empty variable is ignored, and `MITOME_HOME` is used as given, so make it absolute. If no config root can be resolved, set one of these variables or pass `--config`; if the Configuration file is missing, the diagnostic suggests `mitome init` or `--config <path>`. `--config` selects a directory, meaning its `index.ts`, or a file, resolved against the current directory.
+
+The current directory is never searched. Loading imports the module and runs its code, so select only code you trust. Loading installs nothing: when a Configuration's packages are missing, the command names its directory and the install command to run there, the one `mitome init` prints.
+
+## init
+
+`mitome init` writes the default Configuration into the config directory, installs its dependencies there and prints what to do next. Afterwards bare `mitome` opens it and `mitome run` runs it once, without `--config`.
+
+- **Provider and Model.** `--provider` is `openai`, `openai-codex` or `anthropic`; `--model` is one of its Model ids, without the `provider/` prefix. With both flags no terminal is needed. Otherwise standard input and output must be terminals, and `init` asks only for what is missing: the Provider from a list, then one of its known Models or a custom Model id.
+- **Files.** `agent.ts` (an Agent whose `dice` Extension adds a `roll` Tool that needs Approval), `index.ts` (its Configuration for the chosen Provider and Model), `package.json`, `tsconfig.json`, `.gitignore` and `README.md`; see the generated `agent.ts`, `index.ts` and `package.json` in [Agents and Configurations](/docs/agents#a-configuration). On POSIX, `init` requests mode `0700` for a config directory it creates and leaves the mode of an existing empty one unchanged; on Windows, check the directory's access permissions.
+- **Refusal.** The config directory must be missing or empty. Otherwise `init` changes nothing and says so, before asking anything. It never overwrites a file, and if one cannot be written it removes what it wrote.
+- **Install.** The command installs the dependencies itself, acting as Bun's installer (`BUN_BE_BUN=1 mitome install` in the config directory), so no other package manager is needed. With `--no-install` it writes the files, prints that command and stops. When the install fails, reports success without installing anything, or leaves another version than the pinned one (reported as the version expected and the one found), the files stay and `init` prints the command to run in the config directory; an interrupted install prints the same. The printed command names the binary by its full path; on Windows it is written for PowerShell. Until Mitome is published to npm, the install fails because the packages it installs are not there.
+- **Next steps.** After a successful install, `init` prints how to get the Provider's credential (`export OPENAI_API_KEY="your key"`, `export ANTHROPIC_API_KEY="your key"`, their PowerShell form on Windows, or `mitome auth login --provider openai-codex`) and then `mitome`; with `--no-install` it prints the install command first, then those steps. After a failed or interrupted install it prints only the install command; the generated README gives the credential step.
+- **Exit status.** 0 when the files are written and installed, or written with `--no-install`; 1 on an invalid flag, a refusal, a prompt quit with Esc, Ctrl-C or Ctrl-D, a failure to write or a failed install; 130 when interrupted by a signal.
+
+## mitome
+
+Bare `mitome` opens the terminal. It needs a terminal on standard input and output and otherwise refuses, before loading anything, and points to `mitome run`. It acquires the Configuration once and keeps one Session until you close it.
+
+- **Submissions.** Each submission's text goes through the Agent's `text.parse`, runs as one Turn and is shown through `text.render`. While a submission runs you can edit the next draft, but Alt-Enter does not queue it: press it again once the terminal is ready. If parsing fails or is interrupted, no Turn starts; otherwise the terminal reports the Turn's outcome (succeeded, failed or interrupted) and renders a successful result.
+- **Approvals.** A Tool Call that needs Approval shows its Turn id, Tool-call id, Tool name and its parameters as the JSON the Model sent, without fields the Tool does not declare, indented, with control characters escaped. Press Tab to focus it, then `y` to allow or `n` to deny it; typing in the editor decides nothing. A decision made after the Turn ended changes nothing.
+
+| Key       | Effect                                                         |
+| --------- | -------------------------------------------------------------- |
+| Alt-Enter | Submit the editor's text (Enter inserts a newline)             |
+| Esc       | Interrupt the running submission                               |
+| Tab       | Move focus between the editor and a pending Approval           |
+| `y` / `n` | Allow or deny the focused Approval                             |
+| Ctrl-C    | Close the terminal and shut the Configuration down (exits 130) |
+
+Closing restores the terminal first and then shuts down as described under [Shutdown and grace](#shutdown-and-grace).
+
+## run
+
+`run` is one-shot. It acquires the Configuration, allocates one Session, runs one Turn and shuts down.
+
+- **Input.** The `input` argument wins; without it, standard input is read to its end as one input. In a terminal with no argument, `run` fails and asks for input as an argument or on standard input. The text goes through the Agent's `text.parse`.
+- **Output.** The result goes through `text.render`, and only that text is written to standard output, followed by a newline unless it is empty or already ends with one. Diagnostics, including the Configuration's Effect logs, go to standard error. A Configuration's own `console.log` or other direct writes to standard output are not redirected and land next to the result, so code meant for `run` should not write there.
+- **Approvals.** `run` does not prompt or provide an Approver. With the default program, a Tool Call that needs Approval is denied with the reason "Tool call needs approval and nobody is present to give it"; the Model is told and the Turn continues. A trusted custom Agent program can provide its own Approver around its Steps.
+- **Model.** `--model` takes a Qualified Model id and never falls back; `--provider` restricts the configured Model to one Provider. An unknown Provider or a malformed id fails before anything is acquired.
+- **Exit status.** 0 on success, 1 on a failure, 130 after an interrupt whose cleanup finished. A rendering failure after the Turn committed is reported as such; the Turn is not rerun.
+
+### Continue a conversation
+
+`mitome` and `mitome run` start a new conversation for the working directory. `--continue` continues the conversation most recently written in the working directory, and `--continue=<id>` the conversation with that id, from where it stopped; the id needs the `=`, so `mitome run --continue hello` continues that conversation with the input `hello`. `mitome run --continue` says on standard error which conversation it continued and how many Entries its Branch holds, from the first to where it continues; a conversation with other Branches holds more. Below the editor, the terminal shows that line when continuing, and otherwise the conversation's id when the Configuration keeps history. When it closes, it prints the command that continues the conversation if the conversation is kept and its position is at an Entry; a fresh one, or one whose position was moved back to before its first Entry, prints nothing. A Turn that failed or was interrupted keeps the Entries it committed. The terminal reports how many, unless the outcome of a commit is uncertain (another writer moved the stored position first, for example), when it says only that; `mitome run` reports only the failure.
+
+Only a Configuration whose `provide` supplies a store for conversations, the `Transcripts` service, has conversations to continue; Mitome ships no store yet. Otherwise `--continue` exits 1, saying that the Configuration keeps no history; with no conversation to continue in the directory, or none with that id, it exits 1 and says so.
+
+### Shutdown and grace
+
+On SIGINT, SIGTERM or SIGHUP (a closing terminal) the command starts a grace timer and then cancels: admission closes, the active Turn is interrupted and its cleanup is awaited before the Model and the Configuration's shared services are released. If cleanup finishes, the exit status is 130. The same timer also starts when the Configuration's shutdown begins or when the command's work exits and its cleanup starts. It does not bound cleanup already running before one of those events, such as the cleanup of a failed Session construction. If the grace expires first, the command says so on standard error and exits 1 without claiming cleanup finished.
+
+`--grace` takes a positive duration written as `<n>ms` or `<n>s` (default `5s`, at most `2147483647ms`). A blocked event loop cannot honour it; use an external supervisor for hard limits.
+
+## providers
+
+Lists each Provider of the Configuration with its Model hints and known context windows, followed by the Default Model if one is set, or prints `No Providers declared.` Nothing is acquired or authenticated. The hints are not a closed list: any Model id the Provider serves can be selected.
+
+## auth
+
+None of the `auth` commands acquire the Configuration or start a Session.
+
+- `auth status` reports offline facts for each Provider: that it needs no credential, whether its API key variable is present or missing (never its value), or that it has an auth capability whose status is unknown.
+- `auth login` and `auth logout` act on the Provider named by `--provider`, or on the only Provider that takes a credential. For an API key they say which variable to set or unset; Mitome does not store keys. For OpenAI Codex, login uses the network and may open a browser; logout removes the local Codex Credential.
+
+Logins are stored in `auth.json` in the state directory: `$MITOME_HOME` if set, else `$XDG_STATE_HOME/mitome`, else `~/.local/state/mitome` (`%LOCALAPPDATA%\mitome` on Windows). If no state root can be resolved, Codex `auth login` and `auth logout` fail and name the variables to set. `auth` uses this directory whatever `--config` selects, and `codex()` reads the same directory by default; if a Configuration passes `codex({ stateDirectory })`, log in with that directory as well (the Provider's `login` export takes it). `MITOME_HOME` puts the config and state directories in the same directory on purpose, so with it set, `auth.json` sits next to the default Configuration's `index.ts`; the `.gitignore` that `mitome init` writes ignores `/auth.json`, `/auth.lock` and the temporary `/.auth-*` files a login is written to before it replaces `auth.json`.
