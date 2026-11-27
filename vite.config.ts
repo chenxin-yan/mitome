@@ -119,6 +119,8 @@ export default defineConfig({
       "typescript/no-unsafe-type-assertion": "off",
       // Conditional expectations here are deliberate: platform-only checks and per-case table rows.
       "vitest/no-conditional-expect": "off",
+      // Vitest's expect takes a message as its second argument.
+      "vitest/valid-expect": ["error", { maxArgs: 2 }],
       "typescript/no-unnecessary-condition": [
         "error",
         {
@@ -151,7 +153,6 @@ export default defineConfig({
       "unicorn/consistent-function-scoping": "off",
       "vitest/expect-expect": "off",
       "vitest/require-mock-type-parameters": "off",
-      "vitest/valid-expect": "off",
     },
     // Overrides cannot hold settings.
     settings: {
