@@ -332,7 +332,7 @@ describe("Agent.make", () => {
     const use = [notes];
     // Iterating yields an unchecked copy, while indexing yields the Extension.
     Object.defineProperty(use, Symbol.iterator, {
-      value: function* () {
+      *value() {
         yield { ...notes };
       },
     });
