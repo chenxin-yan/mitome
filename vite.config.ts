@@ -117,6 +117,8 @@ export default defineConfig({
       // Every assertion here is a documented boundary assertion, which
       // anti-slop/require-safety-comment-for-type-assertion requires to carry a SAFETY: comment.
       "typescript/no-unsafe-type-assertion": "off",
+      // Conditional expectations here are deliberate: platform-only checks and per-case table rows.
+      "vitest/no-conditional-expect": "off",
       "typescript/no-unnecessary-condition": [
         "error",
         {
@@ -148,7 +150,6 @@ export default defineConfig({
       "typescript/only-throw-error": "off",
       "unicorn/consistent-function-scoping": "off",
       "vitest/expect-expect": "off",
-      "vitest/no-conditional-expect": "off",
       "vitest/require-mock-type-parameters": "off",
       "vitest/require-to-throw-message": "off",
       "vitest/valid-expect": "off",
