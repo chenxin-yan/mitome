@@ -75,6 +75,7 @@
       "name": "@mitome/providers",
       "version": "0.0.0",
       "dependencies": {
+        "@effect/ai-anthropic": "catalog:",
         "@effect/ai-openai": "catalog:",
         "@effect/ai-openai-compat": "catalog:",
         "@effect/platform-node-shared": "catalog:",
@@ -99,6 +100,7 @@
     },
   },
   "catalog": {
+    "@effect/ai-anthropic": "4.1.6",
     "@effect/ai-openai": "4.1.6",
     "@effect/ai-openai-compat": "4.1.6",
     "@effect/platform-bun": "4.1.6",
@@ -206,6 +208,8 @@
     "@colors/colors": ["@colors/colors@1.5.0", "", {}, "sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ=="],
 
     "@cspotcode/source-map-support": ["@cspotcode/source-map-support@0.8.1", "", { "dependencies": { "@jridgewell/trace-mapping": "0.3.9" } }, "sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw=="],
+
+    "@effect/ai-anthropic": ["@effect/ai-anthropic@4.1.6", "", { "peerDependencies": { "effect": "^4.1.6" } }, "sha512-hYccGaacJhol7C3d4jk/9QoBMgJEXBOHk8OmOonkFA9aA1/6sgWMM2oC0Zy8c4V4rhqrbsKnJap3lGxKC2n90A=="],
 
     "@effect/ai-openai": ["@effect/ai-openai@4.1.6", "", { "peerDependencies": { "effect": "^4.1.6" } }, "sha512-KpkHNXqwayQRjPD7G6QeUyg+VallG2vp1fdX0tIS+NosKetqWOHAtQDKAis653qh/sno3hL17vjTu4RBshQLiw=="],
 
