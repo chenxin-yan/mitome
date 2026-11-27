@@ -11,7 +11,7 @@ export const gitConfig = {
 
 const getDocsUrl = createGetUrl(docsRoute);
 
-export function getPageMarkdownUrl(page: { slugs: string[]; locale?: string | undefined }) {
+export function getPageMarkdownUrl(page: { slugs: Array<string>; locale?: string | undefined }) {
   const segments = [...page.slugs];
   if (segments.length === 0) {
     segments.push("index.md");
@@ -23,7 +23,7 @@ export function getPageMarkdownUrl(page: { slugs: string[]; locale?: string | un
 }
 
 /** @returns page slugs */
-export function decodeMarkdownUrl(segments: string[]) {
+export function decodeMarkdownUrl(segments: Array<string>) {
   if (segments.length === 0) {
     return [];
   }

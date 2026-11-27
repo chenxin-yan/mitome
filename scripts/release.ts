@@ -60,9 +60,9 @@ type PackageManifest = {
   peerDependencies?: Record<string, string>;
   /** Published entries; a packed manifest maps each to one file. */
   exports?: Record<string, string>;
-  os?: string[];
-  cpu?: string[];
-  libc?: string[];
+  os?: Array<string>;
+  cpu?: Array<string>;
+  libc?: Array<string>;
 };
 
 export type ReleasePackage = {
@@ -72,7 +72,7 @@ export type ReleasePackage = {
   archive: string;
 };
 
-export function releasePackages(directory = root): ReleasePackage[] {
+export function releasePackages(directory = root): Array<ReleasePackage> {
   const platformDirectories = readdirSync(join(directory, "packages/cli/npm")).sort();
   const directories = [
     "mitome",
@@ -85,7 +85,7 @@ export function releasePackages(directory = root): ReleasePackage[] {
   const manifests = directories.map((name): PackageManifest =>
     JSON.parse(readFileSync(join(directory, "packages", name, "package.json"), "utf8")),
   );
-  const config: { fixed: string[][] } = JSON.parse(
+  const config: { fixed: Array<Array<string>> } = JSON.parse(
     readFileSync(join(directory, ".changeset/config.json"), "utf8"),
   );
   assert.deepEqual(manifests.map((pkg) => pkg.name).sort(), config.fixed.flat().sort());
@@ -119,7 +119,7 @@ export function releasePackages(directory = root): ReleasePackage[] {
 export async function unpublishedPackages(
   packages: ReadonlyArray<ReleasePackage>,
   request: (url: string, options: RequestInit) => Promise<Response> = fetch,
-): Promise<ReleasePackage[]> {
+): Promise<Array<ReleasePackage>> {
   const missing = [];
   // Finish registry checks before the first upload, so an outage cannot start a partial release.
   for (const pkg of packages) {
@@ -139,7 +139,7 @@ export async function unpublishedPackages(
   return missing;
 }
 
-function run(command: string, args: string[], cwd = root): void {
+function run(command: string, args: Array<string>, cwd = root): void {
   execFileSync(command, args, { cwd, stdio: "inherit" });
 }
 

@@ -135,7 +135,6 @@ export default defineConfig({
       "object-shorthand": "off",
       "prefer-arrow-callback": "off",
       "react/rules-of-hooks": "off",
-      "typescript/array-type": "off",
       "typescript/no-empty-object-type": "off",
       "typescript/no-explicit-any": "off",
       "typescript/no-non-null-assertion": "off",

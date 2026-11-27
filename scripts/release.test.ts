@@ -131,7 +131,7 @@ test("a retry selects only missing versions, and rejects registry errors or wron
   const cohort = packages.slice(0, 2);
   const published = cohort[0]!;
   const missing = cohort[1]!;
-  const requested: string[] = [];
+  const requested: Array<string> = [];
   const pending = await unpublishedPackages(cohort, async (url) => {
     requested.push(url);
     return url.includes(`/${encodeURIComponent(published.name)}/`)
