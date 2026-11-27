@@ -585,6 +585,7 @@ describe("Codex SSE", () => {
   );
 });
 
+// oxlint-disable-next-line vitest/expect-expect -- passes when the Model is provisioned without failing
 test("reads Credentials from the state directory by default", async () => {
   const keys = ["MITOME_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"] as const;
   const previous = keys.map((key) => process.env[key]);

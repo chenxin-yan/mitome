@@ -121,6 +121,11 @@ export default defineConfig({
       "vitest/no-conditional-expect": "off",
       // Vitest's expect takes a message as its second argument.
       "vitest/valid-expect": ["error", { maxArgs: 2 }],
+      // The Codex stream tests assert through their own helper.
+      "vitest/expect-expect": [
+        "error",
+        { assertFunctionNames: ["expect", "expectNothingDispatched"] },
+      ],
       "typescript/no-unnecessary-condition": [
         "error",
         {
@@ -151,7 +156,6 @@ export default defineConfig({
       "typescript/no-unsafe-return": "off",
       "typescript/only-throw-error": "off",
       "unicorn/consistent-function-scoping": "off",
-      "vitest/expect-expect": "off",
     },
     // Overrides cannot hold settings.
     settings: {

@@ -663,6 +663,7 @@ describe("anthropic with the Claude Console profile", () => {
     expect(authorizations(model)).toEqual(["Bearer access-2"]);
   });
 
+  // oxlint-disable-next-line vitest/expect-expect -- passes when every later generation completes in time
   it("leaves later callers able to refresh wherever the caller starting a refresh is interrupted", async () => {
     const { name, credentialsPath } = await writeProfile(
       userOAuth(),
