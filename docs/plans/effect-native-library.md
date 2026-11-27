@@ -8,7 +8,7 @@ The consolidated [replacement specification #180](https://github.com/chenxin-yan
 
 ## Current implementation versus accepted direction
 
-At inspected HEAD `c343410`, `@mitome/sdk` is Promise-facing (`defineAgent`, `defineExtension`, `withSession`), `@mitome/sdk/effect` is a facade over the same Agent Definition/Extension contracts, and Hosts expose Promise operations. The execution engine already uses Effect; there must not be a second execution engine. Current HTTP execution is connection-owned and process-local; persisted Transcripts do not recover unfinished work. The accepted target below is **not shipped**. Removing obsolete prerelease guides and ADRs does not change those exports or establish durability.
+The Promise-facing SDK, Channels and the old CLI and terminal have been removed; the native packages arrive in the following pull requests.
 
 No proposed Session/generation/Host signature in earlier discussions is an export commitment. API examples and reference pages return only with verified contracts and implementation. Existing source/tests remain evidence for migration, not the target authoring specification. There is no Promise compatibility surface to preserve in the redesign.
 

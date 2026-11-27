@@ -15,32 +15,29 @@
     "lint:fix": "oxlint --fix ."
   },
   "dependencies": {
-    "@tanstack/react-router": "1.170.33",
-    "@tanstack/react-router-devtools": "1.167.1",
-    "@tanstack/react-start": "1.168.50",
-    "fumadocs-core": "16.15.10",
-    "fumadocs-mdx": "15.4.0",
-    "fumadocs-typescript": "5.4.0",
-    "fumadocs-ui": "16.15.10",
-    "lucide-react": "^1.43.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "vite": "^8.2.2"
+    "@tanstack/react-router": "1.170.46",
+    "@tanstack/react-start": "1.169.7",
+    "fumadocs-core": "16.19.6",
+    "fumadocs-mdx": "15.6.4",
+    "fumadocs-typescript": "5.6.2",
+    "fumadocs-ui": "16.19.6",
+    "lucide-react": "^1.77.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^8.3.8"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.53.1",
+    "@cloudflare/vite-plugin": "^1.70.1",
     "@mitome/config": "workspace:*",
-    "@mitome/providers": "workspace:*",
-    "@mitome/sdk": "workspace:*",
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.5",
     "@types/mdx": "^2.0.14",
     "@types/node": "catalog:",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
-    "@vitejs/plugin-react": "^6.1.0",
-    "tailwindcss": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "tailwindcss": "^4.3.5",
     "typescript": "catalog:",
-    "wrangler": "^4.125.0",
-    "zod": "^4.4.3"
+    "wrangler": "^4.166.0",
+    "zod": "^4.6.7"
   }
 }

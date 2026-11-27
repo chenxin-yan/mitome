@@ -18,6 +18,42 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "noUnusedLocals": true,
-    "plugins": [{ "name": "@effect/language-service" }]
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "@effect/ai-anthropic/AnthropicClient",
+          "@effect/ai-anthropic/AnthropicLanguageModel",
+          "@effect/ai-openai-compat/OpenAiClient",
+          "@effect/ai-openai-compat/OpenAiLanguageModel",
+          "@effect/ai-openai/OpenAiClient",
+          "@effect/ai-openai/OpenAiLanguageModel",
+          "@effect/platform-bun/BunRuntime",
+          "@effect/platform-bun/BunServices",
+          "@effect/vitest#beforeEach",
+          "@effect/vitest#it",
+          "effect/Stdio",
+          "effect/ai/AiError",
+          "effect/ai/LanguageModel",
+          "effect/ai/Prompt",
+          "effect/ai/Response",
+          "effect/ai/Tool",
+          "effect/ai/Toolkit",
+          "effect/cli/Argument",
+          "effect/cli/CliError",
+          "effect/cli/CliOutput",
+          "effect/cli/Command",
+          "effect/cli/Flag",
+          "effect/encoding/Sse",
+          "effect/http/FetchHttpClient",
+          "effect/http/HttpClient",
+          "effect/http/HttpClientError",
+          "effect/http/HttpClientRequest",
+          "effect/http/HttpClientResponse",
+          "effect/socket/Socket",
+          "effect/testing/TestConsole"
+        ]
+      }
+    ]
   }
 }

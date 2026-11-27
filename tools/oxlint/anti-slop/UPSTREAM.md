@@ -15,8 +15,6 @@ The generic and Effect entry points register every rule from the adopted revisio
 
 ## Intentional local deviations
 
-- `no-runtime-typeof` rejects every runtime `typeof`, including undefined existence probes and checks inside type guards. It has no `allowInTypeGuards` option.
-- `no-unknown-parameters` exempts only parameters named `cause`; type-predicate subjects remain rejected.
 - `no-manual-tagged-construction` is disabled only for test files because matcher expectation objects such as `toMatchObject({ _tag: "Failure" })` are assertions, not domain construction. Other Effect rules remain enabled in tests.
 - The dictionary helper explicitly falls back to `null` after safe-array analysis so it typechecks with this repository's `noUncheckedIndexedAccess` setting; runtime behavior is unchanged.
 

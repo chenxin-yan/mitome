@@ -15,13 +15,22 @@ type ParameterOwner =
   | ESTree.TSFunctionType
   | ESTree.TSMethodSignature;
 
+function isTypePredicateSubject(owner: ParameterOwner, parameterName: string): boolean {
+  const predicate = owner.returnType?.typeAnnotation;
+  return (
+    predicate?.type === "TSTypePredicate" &&
+    predicate.parameterName.type === "Identifier" &&
+    predicate.parameterName.name === parameterName
+  );
+}
+
 /** Disallow unknown inputs except explicitly named error-cause enrichment. */
 export const noUnknownParametersRule = defineRule({
   meta: {
     type: "problem",
     docs: {
       description:
-        "Disallow explicitly unknown function parameters except `cause`; decode unknown input at its I/O boundary instead.",
+        "Disallow explicitly unknown function parameters except `cause` and type-predicate subjects; decode unknown input at its I/O boundary instead.",
     },
     messages: {
       unknownParameter:
@@ -35,7 +44,7 @@ export const noUnknownParametersRule = defineRule({
         if (annotation === null || annotation === undefined) continue;
         if (!containsUnknownType(annotation.typeAnnotation)) continue;
         const name = functionParameterBindingName(parameter, context.sourceCode);
-        if (name === "cause") continue;
+        if (name === "cause" || isTypePredicateSubject(node, name)) continue;
         context.report({
           node: annotation.typeAnnotation,
           messageId: "unknownParameter",
