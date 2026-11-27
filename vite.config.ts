@@ -130,7 +130,6 @@ export default defineConfig({
       // Turned off on adopting @cloudflare/oxlint-config; each is evaluated in a commit of its own.
       "import/no-namespace": "off",
       "jsx-a11y/html-has-lang": "off",
-      "no-console": "off",
       "no-promise-executor-return": "off",
       "typescript/no-empty-object-type": "off",
       "typescript/no-explicit-any": "off",
@@ -220,6 +219,14 @@ export default defineConfig({
         ],
         rules: {
           "eslint/no-restricted-imports": "off",
+        },
+      },
+      {
+        // Programs that print to a person by design: the scaffold launcher, the CLI's launcher and
+        // release build, and the repository scripts.
+        files: ["packages/create-mitome/src/index.ts", "packages/cli/scripts/**", "scripts/**"],
+        rules: {
+          "no-console": "off",
         },
       },
       {

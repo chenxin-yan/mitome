@@ -144,6 +144,7 @@ await Effect.runPromise(Effect.gen(function* () {
     const exits = await Promise.all(children.map((process) => process.exited));
     if (exits.some((code) => code !== 0)) {
       for (const failed of children) {
+        // oxlint-disable-next-line no-console -- shows why a child process failed
         console.error(await new Response(failed.stderr).text());
       }
     }
