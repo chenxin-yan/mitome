@@ -242,7 +242,9 @@ describe("Codex OAuth", () => {
 
   test("hands the whole OAuth URL to the native Windows launcher", async () => {
     const platform = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
-    const launch = vi.fn((_command: string, _args: ReadonlyArray<string>) => Effect.void);
+    const launch = vi.fn<(command: string, args: ReadonlyArray<string>) => Effect.Effect<void>>(
+      () => Effect.void,
+    );
     try {
       const url = "https://auth.openai.com/oauth/authorize?client_id=x&state=y";
       await Effect.runPromise(

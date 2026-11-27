@@ -152,7 +152,6 @@ export default defineConfig({
       "typescript/only-throw-error": "off",
       "unicorn/consistent-function-scoping": "off",
       "vitest/expect-expect": "off",
-      "vitest/require-mock-type-parameters": "off",
     },
     // Overrides cannot hold settings.
     settings: {
