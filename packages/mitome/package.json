@@ -1,7 +1,7 @@
 {
   "name": "@mitome/core",
   "version": "0.0.0",
-  "description": "Effect-native Sessions, Turns, controlled Steps, the Provider contract and the Approver for Mitome agents.",
+  "description": "Effect-native Agents, Extensions and Configurations, and the Sessions, Turns, controlled Steps, Provider contract and Approver they run on.",
   "license": "MIT",
   "repository": {
     "type": "git",

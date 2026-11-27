@@ -51,6 +51,22 @@
       }
     },
     {
+      "files": ["packages/mitome/src/session/**"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)agent/",
+                "message": "session/ runs a conversation and never imports agent/ (ADR-0061)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["**/test/**", "**/*.test.*"],
       "rules": {
         "anti-slop-effect/no-manual-tagged-construction": "off"
