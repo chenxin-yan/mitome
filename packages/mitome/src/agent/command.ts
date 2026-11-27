@@ -56,7 +56,9 @@ export const make = <E = never, R = never>(
       `Command "${name}" description must be one non-empty line of at most 100 characters`,
     );
   }
-  if (!Predicate.isFunction(run)) throw new TypeError(`Command "${name}" run must be a function`);
+  if (!Predicate.isFunction(run)) {
+    throw new TypeError(`Command "${name}" run must be a function`);
+  }
   // SAFETY: the same fields, branded.
   return brand({ name, description, run }, CommandTypeId) as Command<E, R>;
 };

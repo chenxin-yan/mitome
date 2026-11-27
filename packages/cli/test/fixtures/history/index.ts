@@ -30,7 +30,9 @@ const transcript = (store: Store, id: string, scope: string): Session.Transcript
     const found: Array<Session.Entry> = [];
     for (let at = position; at !== undefined; at = entries.get(at)?.parent) {
       const entry = entries.get(at);
-      if (entry !== undefined) found.unshift(entry);
+      if (entry !== undefined) {
+        found.unshift(entry);
+      }
     }
     return found;
   };
@@ -40,7 +42,9 @@ const transcript = (store: Store, id: string, scope: string): Session.Transcript
     open: Effect.sync(() => ({ position: stored, branch: branch(stored) })),
     append: (entry, expected) =>
       Effect.suspend(() => {
-        if (expected !== stored) return conflict;
+        if (expected !== stored) {
+          return conflict;
+        }
         entries.set(entry.id, entry);
         stored = entry.id;
         store.latest.set(scope, id);
@@ -49,7 +53,9 @@ const transcript = (store: Store, id: string, scope: string): Session.Transcript
     select: (position, expected) =>
       Effect.suspend(
         (): Effect.Effect<Array<Session.Entry>, SessionSaveError | TranscriptError> => {
-          if (expected !== stored) return conflict;
+          if (expected !== stored) {
+            return conflict;
+          }
           if (position !== undefined && !entries.has(position)) {
             return Effect.fail(new TranscriptError({ detail: `no Entry "${position}"` }));
           }

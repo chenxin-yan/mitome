@@ -91,12 +91,16 @@ const credential = Effect.fnUntraced(function* (
   HttpClient.HttpClient | FileSystem.FileSystem | Path.Path
 > {
   const stored = yield* loadCredential(stateDirectory);
-  if (yield* usable(stored, rejected)) return stored;
+  if (yield* usable(stored, rejected)) {
+    return stored;
+  }
   return yield* modifyCredential(stateDirectory, provider, (locked) =>
     Effect.gen(function* () {
       // Interruptible until the exchange is sent: the endpoint may rotate the token from then on.
       const current = yield* Effect.interruptible(credentialFrom(locked));
-      if (yield* Effect.interruptible(usable(current, rejected))) return [locked, current];
+      if (yield* Effect.interruptible(usable(current, rejected))) {
+        return [locked, current];
+      }
       const next = yield* token(tokenUrl, {
         grant_type: "refresh_token",
         refresh_token: current.refresh,

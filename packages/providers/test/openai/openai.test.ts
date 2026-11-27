@@ -134,10 +134,14 @@ describe("openai", () => {
           async start(controller) {
             const enqueue = (value: string) => controller.enqueue(new TextEncoder().encode(value));
             // frames[0..2]: created, item added, first delta.
-            for (const frame of frames.slice(0, 3)) enqueue(frame);
+            for (const frame of frames.slice(0, 3)) {
+              enqueue(frame);
+            }
             firstChunk();
             await secondReleased;
-            for (const frame of frames.slice(3)) enqueue(frame);
+            for (const frame of frames.slice(3)) {
+              enqueue(frame);
+            }
             controller.close();
           },
         }),
@@ -157,7 +161,9 @@ describe("openai", () => {
         Stream.runForEach((part) =>
           Effect.sync(() => {
             parts.push(part);
-            if (part.type === "text-delta") firstOutput();
+            if (part.type === "text-delta") {
+              firstOutput();
+            }
           }),
         ),
         Effect.provide(Provider.model(provider, "gpt-5.6")),
@@ -283,12 +289,14 @@ describe("openai", () => {
               ['{"text":"hello"}'],
               functionCall,
             ),
-          ))
+          )) {
             socket.send(JSON.stringify(event));
+          }
           return;
         }
-        for (const event of streamEvents(...textStream("resp-done", "msg-done", ["done"])))
+        for (const event of streamEvents(...textStream("resp-done", "msg-done", ["done"]))) {
           socket.send(JSON.stringify(event));
+        }
       });
     });
     await new Promise<void>((resolve, reject) => {

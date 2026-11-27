@@ -269,7 +269,9 @@ describe("Session history as a tree of Steps", () => {
         { id: "b", parent: "a", messages: [message("chosen")] },
         { id: "c", parent: "a", messages: [message("sibling")] },
       ];
-      for (const entry of entries) stored.entries.set(entry.id, entry);
+      for (const entry of entries) {
+        stored.entries.set(entry.id, entry);
+      }
       stored.position = "b";
       const session = yield* Session.make({ transcript });
 
@@ -418,7 +420,9 @@ describe("staging while a Turn ends", () => {
       expect(Exit.isSuccess(exit) ? kept : "refused").toBe(
         Exit.isSuccess(exit) ? 3_000 : "refused",
       );
-      if (Exit.isFailure(exit)) expect(String(exit)).toContain("Turn is closed");
+      if (Exit.isFailure(exit)) {
+        expect(String(exit)).toContain("Turn is closed");
+      }
       yield* Scope.close(outer, Exit.void);
     }),
   );

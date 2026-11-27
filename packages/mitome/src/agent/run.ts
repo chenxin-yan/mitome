@@ -38,9 +38,13 @@ const selectTranscript = Effect.fnUntraced(function* (
   if (latest === undefined && open === undefined) {
     return transcripts === undefined ? undefined : yield* transcripts.create(selection.create);
   }
-  if (transcripts === undefined) return yield* new TranscriptSelectionError({ reason: "no-store" });
+  if (transcripts === undefined) {
+    return yield* new TranscriptSelectionError({ reason: "no-store" });
+  }
   const found = yield* open === undefined ? transcripts.latest(latest) : transcripts.open(open);
-  if (found === undefined) return yield* new TranscriptSelectionError({ reason: "not-found" });
+  if (found === undefined) {
+    return yield* new TranscriptSelectionError({ reason: "not-found" });
+  }
   return found;
 });
 
@@ -117,12 +121,18 @@ const allocate = Effect.fnUntraced(function* (
           ],
     ),
   };
-  if (tools !== undefined) options.tools = tools;
+  if (tools !== undefined) {
+    options.tools = tools;
+  }
   const instructions = [agent, ...added].flatMap(({ instructions }) =>
     instructions === undefined ? [] : [instructions],
   );
-  if (instructions.length > 0) options.instructions = instructions.join("\n\n");
-  if (agent.policy !== undefined) options.policy = agent.policy;
+  if (instructions.length > 0) {
+    options.instructions = instructions.join("\n\n");
+  }
+  if (agent.policy !== undefined) {
+    options.policy = agent.policy;
+  }
   const commands = new Map<string, AnyCommand>();
   const listed = use.flatMap(({ name: extension }, index) =>
     (added[index]?.commands ?? []).map((command) => {
@@ -173,7 +183,9 @@ const allocate = Effect.fnUntraced(function* (
       owned(
         Effect.gen(function* () {
           const command = commands.get(name);
-          if (command === undefined) return yield* new CommandNotFoundError({ command: name });
+          if (command === undefined) {
+            return yield* new CommandNotFoundError({ command: name });
+          }
           // In a Scope of its own, so what it acquires is released when it ends.
           return yield* Effect.scopedWith((own) =>
             Effect.setContext(

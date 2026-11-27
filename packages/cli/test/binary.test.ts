@@ -34,7 +34,9 @@ const realNode = () => {
       ["--print", "process.versions.bun ? '' : process.execPath"],
       { encoding: "utf8" },
     );
-    if (probe.status === 0 && probe.stdout.trim() !== "") return probe.stdout.trim();
+    if (probe.status === 0 && probe.stdout.trim() !== "") {
+      return probe.stdout.trim();
+    }
   }
   throw new Error("The launcher tests need Node on PATH");
 };
@@ -87,7 +89,9 @@ const run = (args: ReadonlyArray<string>, stdin?: string) => start(args, stdin).
 
 const until = async (event: string) => {
   for (let attempt = 0; attempt < 500; attempt++) {
-    if ((await events().catch((): Array<string> => [])).includes(event)) return;
+    if ((await events().catch((): Array<string> => [])).includes(event)) {
+      return;
+    }
     await delay(10);
   }
   throw new Error(`Timed out waiting for ${event}`);
@@ -130,7 +134,9 @@ describe("compiled mitome", () => {
     await writeFile(join(directory, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
     const config = join(directory, "xdg-config");
     const result = await start(["run", "hello"], "", { XDG_CONFIG_HOME: config }).result;
-    for (const file of ["index.ts", "preload.ts", "bunfig.toml"]) await rm(join(directory, file));
+    for (const file of ["index.ts", "preload.ts", "bunfig.toml"]) {
+      await rm(join(directory, file));
+    }
     expect(result.code).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain(`No Configuration at ${join(config, "mitome", "index.ts")}`);
@@ -198,7 +204,9 @@ describe("compiled mitome", () => {
       expect(result.code).toBe(1);
       expect(result.stderr).toContain(`Could not load ${join(configuration, "index.ts")}`);
       expect(result.stderr).toContain(message);
-      if (!message.includes("npm install")) expect(result.stderr).not.toContain("npm install");
+      if (!message.includes("npm install")) {
+        expect(result.stderr).not.toContain("npm install");
+      }
     }
     await rm(configuration, { recursive: true });
   });
@@ -379,8 +387,11 @@ describe("compiled mitome", () => {
         group,
       );
       await until("turn:wait");
-      if (group) process.kill(-child.pid!, signal);
-      else child.kill(signal);
+      if (group) {
+        process.kill(-child.pid!, signal);
+      } else {
+        child.kill(signal);
+      }
       // `close` waits for every holder of the inherited pipes, so the binary has exited too.
       const { code, stdout } = await result;
       await rm(installed, { recursive: true });
@@ -448,8 +459,11 @@ describe.skipIf(process.platform === "win32")("compiled mitome auth with Anthrop
     let pid: number | undefined;
     for (let attempt = 0; attempt < 500 && pid === undefined; attempt++) {
       const text = await readFile(pidFile, "utf8").catch(() => "");
-      if (text.endsWith("\n")) pid = Number(text);
-      else await delay(10);
+      if (text.endsWith("\n")) {
+        pid = Number(text);
+      } else {
+        await delay(10);
+      }
     }
     expect(pid).toBeDefined();
     const alive = () => {
@@ -463,10 +477,14 @@ describe.skipIf(process.platform === "win32")("compiled mitome auth with Anthrop
     try {
       child.kill("SIGTERM");
       await new Promise((resolve) => child.once("exit", resolve));
-      for (let attempt = 0; attempt < 200 && alive(); attempt++) await delay(10);
+      for (let attempt = 0; attempt < 200 && alive(); attempt++) {
+        await delay(10);
+      }
       expect(alive()).toBe(false);
     } finally {
-      if (alive()) process.kill(pid!, "SIGKILL");
+      if (alive()) {
+        process.kill(pid!, "SIGKILL");
+      }
       await result;
     }
   });

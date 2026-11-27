@@ -40,7 +40,9 @@ for (const [target, packageName] of Object.entries(targets)) {
     ],
     { cwd: packageDirectory, stdout: "inherit", stderr: "inherit" },
   );
-  if ((await child.exited) !== 0) throw new Error(`Build failed for ${target}`);
+  if ((await child.exited) !== 0) {
+    throw new Error(`Build failed for ${target}`);
+  }
 }
 
 console.log(`Built ${Object.keys(targets).length} platform package binaries.`);

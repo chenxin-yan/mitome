@@ -92,7 +92,9 @@ describe("openaiCompatible", () => {
         Stream.runForEach((part) =>
           Effect.sync(() => {
             parts.push(part);
-            if (part.type === "text-delta") firstOutput();
+            if (part.type === "text-delta") {
+              firstOutput();
+            }
           }),
         ),
         Effect.provide(Provider.model(provider, "gpt-4o-mini")),

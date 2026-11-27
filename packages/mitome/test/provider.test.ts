@@ -99,7 +99,9 @@ describe("Provider.make", () => {
             ),
         });
         const loaded: unknown = serviceful;
-        if (!Predicate.isObject(loaded) || !isProvider(loaded)) throw new Error("not a Provider");
+        if (!Predicate.isObject(loaded) || !isProvider(loaded)) {
+          throw new Error("not a Provider");
+        }
         // Catalog and authentication data work for the guarded Provider.
         expect(Provider.credentialDescriptor(loaded)).toBe("SERVICEFUL_KEY");
         // Running it needs the service it declared: its type keeps an unknown requirement, and

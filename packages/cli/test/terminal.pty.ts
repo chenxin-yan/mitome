@@ -47,7 +47,9 @@ const open = (args: ReadonlyArray<string>, env: Readonly<Record<string, string>>
   const killer = setTimeout(() => child.kill("SIGKILL"), 15_000);
   const until = async (check: () => boolean | Promise<boolean>, what: string) => {
     for (let attempt = 0; attempt < 500; attempt++) {
-      if (await check()) return;
+      if (await check()) {
+        return;
+      }
       await Bun.sleep(20);
     }
     throw new Error(

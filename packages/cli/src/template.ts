@@ -200,7 +200,9 @@ export const writeConfiguration = Effect.fnUntraced(function* (directory: string
   ) {
     missing.unshift(at);
     // A root that does not exist, such as a missing drive, is its own parent; making it says why.
-    if (path.dirname(at) === at) break;
+    if (path.dirname(at) === at) {
+      break;
+    }
   }
   const made: Array<string> = [];
   const written: Array<string> = [];
@@ -250,7 +252,9 @@ export const writeConfiguration = Effect.fnUntraced(function* (directory: string
               () => false,
             ),
           );
-          if (!removed) break;
+          if (!removed) {
+            break;
+          }
         }
       }),
     ),

@@ -137,9 +137,13 @@ const freezePlainData = <A>(value: A): void => {
   const pending: Array<unknown> = [value];
   while (pending.length > 0) {
     const next = pending.pop();
-    if (!Predicate.isObjectOrArray(next) || seen.has(next)) continue;
+    if (!Predicate.isObjectOrArray(next) || seen.has(next)) {
+      continue;
+    }
     const prototype: unknown = Object.getPrototypeOf(next);
-    if (!Array.isArray(next) && prototype !== Object.prototype && prototype !== null) continue;
+    if (!Array.isArray(next) && prototype !== Object.prototype && prototype !== null) {
+      continue;
+    }
     seen.add(next);
     Object.freeze(next);
     for (const key of Reflect.ownKeys(next)) {
@@ -310,7 +314,9 @@ const classify = Effect.fnUntraced(function* (
         `Response carries a result for Tool Call "${part.id}"`,
       );
     }
-    if (part.type !== "tool-call") continue;
+    if (part.type !== "tool-call") {
+      continue;
+    }
     if (ids.has(part.id)) {
       return yield* protocol("malformed-response", `Duplicate Tool Call id "${part.id}"`);
     }
@@ -335,9 +341,13 @@ const classify = Effect.fnUntraced(function* (
       }),
     );
     messages.push(kept);
-    if (kept.role !== "assistant") continue;
+    if (kept.role !== "assistant") {
+      continue;
+    }
     for (const part of kept.content) {
-      if (part.type === "tool-call" && isPlainData(part.params)) checked.set(part.id, part.params);
+      if (part.type === "tool-call" && isPlainData(part.params)) {
+        checked.set(part.id, part.params);
+      }
     }
   }
   const finish = finishes[0];
@@ -377,8 +387,12 @@ const toolDefault = <Tools extends Record<string, Tool.Any>>(
   prompt: Prompt.Prompt,
 ): Effect.Effect<ToolDecision, unknown> => {
   const needsApproval = tool.needsApproval;
-  if (needsApproval === undefined || needsApproval === false) return Effect.succeed("allow");
-  if (needsApproval === true) return Effect.succeed("ask");
+  if (needsApproval === undefined || needsApproval === false) {
+    return Effect.succeed("allow");
+  }
+  if (needsApproval === true) {
+    return Effect.succeed("ask");
+  }
   return Effect.suspend(() => {
     const flagged = needsApproval(request.params, {
       toolCallId: request.toolCallId,
@@ -436,7 +450,9 @@ const dispatch = Effect.fnUntraced(function* <Tools extends Record<string, Tool.
         return yield* denial("Tool call is not the one this Step dispatched");
       }
       const tool = tools[call.name];
-      if (tool === undefined) return yield* denial("Tool call is not the one this Step dispatched");
+      if (tool === undefined) {
+        return yield* denial("Tool call is not the one this Step dispatched");
+      }
       const { policy, restrictions = [] } = options;
       let decision = yield* orDeny(
         policy === undefined
@@ -482,7 +498,9 @@ const dispatch = Effect.fnUntraced(function* <Tools extends Record<string, Tool.
           ),
           "deny",
         );
-        if (answer !== "allow") return yield* denial("Tool call was not approved");
+        if (answer !== "allow") {
+          return yield* denial("Tool call was not approved");
+        }
       }
       yield* control.reserve("dispatches").pipe(
         Effect.catchTag("ExecutionLimitError", (error) => {
@@ -507,7 +525,9 @@ const dispatch = Effect.fnUntraced(function* <Tools extends Record<string, Tool.
           (): Stream.Success<typeof stream> | undefined => undefined,
           (latest, output) => (output.preliminary ? latest : output),
         );
-        if (final === undefined) return yield* Effect.die(new Error("Tool produced no result"));
+        if (final === undefined) {
+          return yield* Effect.die(new Error("Tool produced no result"));
+        }
         return Response.makePart("tool-result", {
           id: call.id,
           name: call.name,
@@ -525,7 +545,9 @@ const dispatch = Effect.fnUntraced(function* <Tools extends Record<string, Tool.
       }),
     ),
   );
-  if (refused !== undefined) return yield* refused;
+  if (refused !== undefined) {
+    return yield* refused;
+  }
   // The Model is told of every denial: an error-mode Tool gets the failed result a return-mode
   // Tool gets. The failure mode still governs the handler's own failures. Only a Cause that is
   // exactly the denial is converted; anything else, e.g. a later defect, propagates.
@@ -567,7 +589,9 @@ const dispatch = Effect.fnUntraced(function* <Tools extends Record<string, Tool.
         ),
       ),
     );
-    if (checked.role === "tool") kept.push(...checked.content);
+    if (checked.role === "tool") {
+      kept.push(...checked.content);
+    }
   }
   return { part, kept };
 });
@@ -734,6 +758,8 @@ export const loop = <Tools extends Record<string, Tool.Any> = {}, R = never>(
       if (Predicate.isTagged(result, "Incomplete")) {
         return yield* new IncompleteStepError({ reason: result.reason });
       }
-      if (result.results.length === 0) return result;
+      if (result.results.length === 0) {
+        return result;
+      }
     }
   });

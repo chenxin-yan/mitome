@@ -95,14 +95,18 @@ const raceRotation = async (
       if ((await Promise.race([other.then(() => true), setTimeout(5_000, false)])) === false) {
         return new Response("the other process never waited for the lock", { status: 500 });
       }
-      if (refresh !== stored.refresh) return new Response("stale refresh", { status: 400 });
+      if (refresh !== stored.refresh) {
+        return new Response("stale refresh", { status: 400 });
+      }
       return tokenResponse("race-account", "race-refresh");
     },
   });
   const server = await serve({
     fetch(request) {
       const authorization = request.headers.get("authorization");
-      if (!accepts(authorization)) return new Response("", { status: 401 });
+      if (!accepts(authorization)) {
+        return new Response("", { status: 401 });
+      }
       expect(authorization).toBe(`Bearer ${jwt("race-account")}`);
       return new Response(
         sse({ type: "response.output_item.added", output_index: 0, item: { type: "message" } }) +
@@ -145,7 +149,9 @@ await Effect.runPromise(Effect.gen(function* () {
     const children = [child(0), child(1)];
     const exits = await Promise.all(children.map((process) => process.exited));
     if (exits.some((code) => code !== 0)) {
-      for (const failed of children) console.error(await new Response(failed.stderr).text());
+      for (const failed of children) {
+        console.error(await new Response(failed.stderr).text());
+      }
     }
     const auth = JSON.parse(await readFile(join(stateDirectory, "auth.json"), "utf8"));
     return { exits, refreshes, auth };
@@ -225,7 +231,9 @@ describe("Codex SSE", () => {
           Stream.runForEach((part) =>
             Effect.sync(() => {
               parts.push(part);
-              if (part.type === "text-delta") firstOutput();
+              if (part.type === "text-delta") {
+                firstOutput();
+              }
             }),
           ),
           Effect.provide(
@@ -414,7 +422,9 @@ describe("Codex SSE", () => {
       );
 
       expect(AiError.isAiError(error)).toBe(true);
-      if (!AiError.isAiError(error)) throw new Error("Expected an AiError");
+      if (!AiError.isAiError(error)) {
+        throw new Error("Expected an AiError");
+      }
       expect(error.message).toContain(
         "Authenticate again through your application; with the Mitome CLI, run `mitome auth login --provider openai-codex`.",
       );
@@ -462,7 +472,9 @@ describe("Codex SSE", () => {
       );
 
       expect(AiError.isAiError(error)).toBe(true);
-      if (!AiError.isAiError(error)) throw new Error("Expected an AiError");
+      if (!AiError.isAiError(error)) {
+        throw new Error("Expected an AiError");
+      }
       expect(error.reason).toMatchObject({ _tag: tag, isRetryable: true });
       expect(error.message).not.toContain("Authenticate again");
       expect(requests).toBe(1);
@@ -595,8 +607,11 @@ test("reads Credentials from the state directory by default", async () => {
   } finally {
     keys.forEach((key, index) => {
       const value = previous[index];
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     });
   }
 });

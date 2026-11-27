@@ -181,7 +181,9 @@ describe("Session.make", () => {
             Effect.gen(function* () {
               yield* Effect.addFinalizer(() => Effect.die(defect));
               yield* program();
-              if (failBody) return yield* new ApplicationFailure();
+              if (failBody) {
+                return yield* new ApplicationFailure();
+              }
               return 42;
             }),
           ),

@@ -54,7 +54,9 @@ export const testConfig = {
 const annotatePureCalls = {
   name: "annotate-pure-calls",
   async renderChunk(code: string, chunk: { readonly fileName: string }) {
-    if (chunk.fileName.endsWith(".d.ts")) return null;
+    if (chunk.fileName.endsWith(".d.ts")) {
+      return null;
+    }
     const result = await transformAsync(code, {
       babelrc: false,
       configFile: false,

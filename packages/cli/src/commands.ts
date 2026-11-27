@@ -87,7 +87,9 @@ const graceDeadline = (grace: number) =>
 
 /** One positional argument wins; otherwise all of non-terminal stdin is one input. */
 const readInput = Effect.fnUntraced(function* (input: Option.Option<string>) {
-  if (Option.isSome(input)) return input.value;
+  if (Option.isSome(input)) {
+    return input.value;
+  }
   const stdio = yield* Stdio.Stdio;
   if (yield* stdio.stdinIsTerminal) {
     return yield* userError("Provide input as an argument or on standard input.");
@@ -346,14 +348,18 @@ const modelHint = (provider: Mitome.ProviderDiscovery, modelId: string) => {
 /** Lists declared Providers and their catalog hints; nothing is acquired or authenticated. */
 export const listProviders = Effect.fnUntraced(function* (config: Option.Option<string>) {
   const app = yield* loadConfiguration(config);
-  if (app.discovery.length === 0) return yield* Console.log("No Providers declared.");
+  if (app.discovery.length === 0) {
+    return yield* Console.log("No Providers declared.");
+  }
   const lines = app.discovery.flatMap((provider) => [
     provider.id,
     ...[...new Set([...provider.modelIds, ...Object.keys(provider.models)])].map((modelId) =>
       modelHint(provider, modelId),
     ),
   ]);
-  if (app.model !== undefined) lines.push(`default: ${app.model}`);
+  if (app.model !== undefined) {
+    lines.push(`default: ${app.model}`);
+  }
   lines.push("Catalogs are hints; any Provider-native Model id can be selected.");
   yield* Console.log(lines.join("\n"));
 });
@@ -374,8 +380,12 @@ const presence = (env: string) => `${env} ${process.env[env] ? "present" : "miss
 /** Offline credential facts: environment presence, and that an Auth capability exists. */
 const credentialStatus = (provider: Mitome.ProviderDiscovery): string => {
   const credential = provider.credential;
-  if (credential === undefined) return `${provider.id}: needs no credential`;
-  if (Predicate.isString(credential)) return `${provider.id}: ${presence(credential)}`;
+  if (credential === undefined) {
+    return `${provider.id}: needs no credential`;
+  }
+  if (Predicate.isString(credential)) {
+    return `${provider.id}: ${presence(credential)}`;
+  }
   if ("env" in credential) {
     return `${provider.id}: ${presence(credential.env)}; sign-in available; sign-in status unknown`;
   }
@@ -397,10 +407,14 @@ export const authStatus = Effect.fnUntraced(function* (
 
 /** The Provider to authenticate: the one named, or the only one declaring a credential. */
 const selectCredentialed = (app: LoadedConfiguration, providerId: Option.Option<string>) => {
-  if (Option.isSome(providerId)) return findProvider(app, providerId.value);
+  if (Option.isSome(providerId)) {
+    return findProvider(app, providerId.value);
+  }
   const credentialed = app.discovery.filter((provider) => provider.credential !== undefined);
   const [only] = credentialed;
-  if (only !== undefined && credentialed.length === 1) return Effect.succeed(only);
+  if (only !== undefined && credentialed.length === 1) {
+    return Effect.succeed(only);
+  }
   return Effect.fail(
     userError(
       credentialed.length === 0
@@ -423,7 +437,9 @@ const capabilityModule = Effect.fnUntraced(function* <E>(
   unloadable: (cause: unknown) => E,
 ) {
   const path = yield* Path.Path;
-  if (path.isAbsolute(specifier) || URL.canParse(specifier)) return specifier;
+  if (path.isAbsolute(specifier) || URL.canParse(specifier)) {
+    return specifier;
+  }
   if (/^\.\.?\//.test(specifier)) {
     const base = yield* path
       .toFileUrl(configuration.realPath)

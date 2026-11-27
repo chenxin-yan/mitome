@@ -29,8 +29,11 @@ process.env.MITOME_HOME = home;
 
 const originalApiKey = process.env.FIXTURE_API_KEY;
 afterAll(async () => {
-  if (originalApiKey === undefined) delete process.env.FIXTURE_API_KEY;
-  else process.env.FIXTURE_API_KEY = originalApiKey;
+  if (originalApiKey === undefined) {
+    delete process.env.FIXTURE_API_KEY;
+  } else {
+    process.env.FIXTURE_API_KEY = originalApiKey;
+  }
   await rm(directory, { recursive: true, force: true });
 });
 beforeEach(() => writeFile(log, ""));
@@ -92,7 +95,9 @@ describe("mitome command", () => {
     Effect.gen(function* () {
       const help = yield* cli(["--help"]);
       expect(Exit.isSuccess(help.exit)).toBe(true);
-      for (const name of ["init", "run", "providers", "auth"]) expect(help.logs).toContain(name);
+      for (const name of ["init", "run", "providers", "auth"]) {
+        expect(help.logs).toContain(name);
+      }
       expect(help.logs).toContain(
         "Write the default Configuration into the config directory and install its dependencies",
       );
@@ -679,7 +684,9 @@ describe("mitome providers and auth", () => {
           Effect.ensuring(Effect.sync(() => delete process.env.MITOME_FIXTURE_AUTH_HOLD)),
         ),
       );
-      while ((yield* events).length === 0) yield* Effect.sleep("10 millis");
+      while ((yield* events).length === 0) {
+        yield* Effect.sleep("10 millis");
+      }
       yield* Fiber.interrupt(login);
       expect(yield* events).toEqual([`auth:login:${home}`, "auth:interrupted"]);
     }),
@@ -715,8 +722,11 @@ describe("mitome providers and auth", () => {
         const restore = Effect.sync(() =>
           variables.forEach((name, index) => {
             const value = saved[index];
-            if (value === undefined) delete process.env[name];
-            else process.env[name] = value;
+            if (value === undefined) {
+              delete process.env[name];
+            } else {
+              process.env[name] = value;
+            }
           }),
         );
         const auth = (operation: string, config = anthropicFixture) =>
@@ -752,7 +762,9 @@ describe("mitome providers and auth", () => {
         );
         expect(Exit.isSuccess(login.exit)).toBe(true);
         expect(Exit.isSuccess(logout.exit)).toBe(true);
-        for (const result of work) expect(Exit.isSuccess(result.exit)).toBe(true);
+        for (const result of work) {
+          expect(Exit.isSuccess(result.exit)).toBe(true);
+        }
         expect(Exit.isFailure(failed.exit)).toBe(true);
         expect(failed.errors).toContain(
           "anthropic login failed: ant auth login --profile=mitome exited with status 3.",
@@ -781,8 +793,11 @@ describe("mitome providers and auth", () => {
         const restore = Effect.sync(() =>
           variables.forEach((name, index) => {
             const value = saved[index];
-            if (value === undefined) delete process.env[name];
-            else process.env[name] = value;
+            if (value === undefined) {
+              delete process.env[name];
+            } else {
+              process.env[name] = value;
+            }
           }),
         );
         delete process.env.MITOME_HOME;

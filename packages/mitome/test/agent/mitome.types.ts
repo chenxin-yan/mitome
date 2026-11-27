@@ -48,7 +48,9 @@ const notes = Core.Extension.make(
   "notes",
   Effect.gen(function* () {
     const { now } = yield* Clock;
-    if (now < 0) return yield* new NotesError();
+    if (now < 0) {
+      return yield* new NotesError();
+    }
     return { instructions: `Notes from ${now}.` };
   }),
 );
@@ -60,7 +62,9 @@ const program = (input: { readonly topic: string }) =>
     const db = yield* Db;
     yield* LanguageModel.LanguageModel;
     yield* Effect.addFinalizer(() => Effect.void);
-    if (input.topic === "") return yield* new AppError();
+    if (input.topic === "") {
+      return yield* new AppError();
+    }
     return { id: turn.id, label: db.label, length: input.topic.length };
   });
 type Program = typeof program;

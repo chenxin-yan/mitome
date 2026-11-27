@@ -20,12 +20,16 @@ const stopGrace = "2 seconds";
 export const runAnt = Effect.fnUntraced(function* (options: AuthenticateOptions) {
   const { operation } = options;
   const profile = options.profile ?? defaultProfile;
-  if (!isProfileName(profile)) return yield* new AntError({ message: invalidProfileName(profile) });
+  if (!isProfileName(profile)) {
+    return yield* new AntError({ message: invalidProfileName(profile) });
+  }
   // One argument: `ant` stops parsing flags when any argument is `__complete`
   // (`cmd/ant/main.go`), and a name starting with `-` could read as a flag of its own.
   const args = ["auth", operation, `--profile=${profile}`];
   if (operation === "login") {
-    if (options.openBrowser === false) args.push("--no-browser");
+    if (options.openBrowser === false) {
+      args.push("--no-browser");
+    }
     // `ant` activates a profile named on its command line (`cmd_auth.go`), and other Anthropic
     // tools that name none follow the active one.
     options.output(
@@ -84,7 +88,9 @@ export const runAnt = Effect.fnUntraced(function* (options: AuthenticateOptions)
       );
     }),
   );
-  if (code === 0) return;
+  if (code === 0) {
+    return;
+  }
   return yield* Object.assign(new AntError({ message: `${command} exited with status ${code}.` }), {
     [Runtime.errorExitCode]: code,
   });

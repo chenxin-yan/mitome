@@ -57,7 +57,9 @@ const UnresolvedImport = Schema.Struct({
  * package is installed depends on where it is looked for.
  */
 const missingPackage = (path: Path.Path, cause: unknown) => {
-  if (!Schema.is(UnresolvedImport)(cause)) return undefined;
+  if (!Schema.is(UnresolvedImport)(cause)) {
+    return undefined;
+  }
   const specifier = /Cannot find (?:package|module) '([^']+)'/.exec(cause.message)?.[1];
   const importer = /(?: imported from |\nRequire stack:\n- )(.+)/.exec(cause.message)?.[1];
   if (
@@ -65,8 +67,9 @@ const missingPackage = (path: Path.Path, cause: unknown) => {
     importer === undefined ||
     !path.isAbsolute(importer) ||
     /^(?:[./\\#]|[a-z][a-z\d+.-]*:)/i.test(specifier)
-  )
+  ) {
     return undefined;
+  }
   const [scope = specifier, name] = specifier.split("/");
   return { name: specifier.startsWith("@") ? `${scope}/${name}` : scope, importer };
 };
@@ -81,8 +84,9 @@ const installed = Effect.fnUntraced(function* (name: string, from: string) {
       yield* fs
         .exists(path.join(directory, name, "package.json"))
         .pipe(Effect.orElseSucceed(() => false))
-    )
+    ) {
       return true;
+    }
   }
   return false;
 });

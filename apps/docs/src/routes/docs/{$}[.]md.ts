@@ -8,7 +8,9 @@ export const Route = createFileRoute("/docs/{$}.md")({
       GET: async ({ params }) => {
         const slugs = decodeMarkdownUrl(params._splat?.split("/") ?? []);
         const page = source.getPage(slugs);
-        if (!page) throw notFound();
+        if (!page) {
+          throw notFound();
+        }
 
         return new Response(await docsLlms.page(page), {
           headers: {

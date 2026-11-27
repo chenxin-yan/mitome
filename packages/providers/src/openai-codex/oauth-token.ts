@@ -22,12 +22,16 @@ export type OAuthCredentialFailure = OAuthTokenFailure | OAuthCredentialError;
 
 export const accountId = (access: string): string => {
   const payload = access.split(".")[1];
-  if (payload === undefined) throw missingAccount();
+  if (payload === undefined) {
+    throw missingAccount();
+  }
   try {
     const claims = Schema.decodeSync(Claims)(Buffer.from(payload, "base64url").toString("utf8"));
     // A present nested object is authoritative, even when it lacks the account id.
     const { chatgpt_account_id } = claims["https://api.openai.com/auth"] ?? claims;
-    if (chatgpt_account_id === undefined || chatgpt_account_id === "") throw missingAccount();
+    if (chatgpt_account_id === undefined || chatgpt_account_id === "") {
+      throw missingAccount();
+    }
     return chatgpt_account_id;
   } catch {
     throw missingAccount();

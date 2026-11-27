@@ -82,7 +82,9 @@ const completeParts = (
     }
   }
   // Text whose item never closed before the terminal event is still part of the response.
-  for (const text of texts.values()) output.push({ type: "text", text });
+  for (const text of texts.values()) {
+    output.push({ type: "text", text });
+  }
   return output;
 };
 

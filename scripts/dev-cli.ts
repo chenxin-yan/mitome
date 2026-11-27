@@ -21,7 +21,9 @@ const hints = Bun.spawnSync([process.execPath, join(root, "scripts", "generate-m
   stdout: "ignore",
   stderr: "inherit",
 });
-if (hints.exitCode !== 0) process.exit(hints.exitCode);
+if (hints.exitCode !== 0) {
+  process.exit(hints.exitCode);
+}
 
 const child = Bun.spawn(
   [

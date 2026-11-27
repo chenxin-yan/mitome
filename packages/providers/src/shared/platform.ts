@@ -28,8 +28,11 @@ export const serveLocalhost = (
       createServer((request, response) => {
         const [status, text] = respond(request.url ?? "/");
         // A 200 is written as `end` writes it, with its length rather than chunked.
-        if (status === 200) response.end(text);
-        else response.writeHead(status).end(text);
+        if (status === 200) {
+          response.end(text);
+        } else {
+          response.writeHead(status).end(text);
+        }
       }),
     ),
     (server) => Effect.sync(() => server.close()),

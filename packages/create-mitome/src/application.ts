@@ -178,7 +178,9 @@ export const applicationPlan = (options: ApplicationOptions): FileMap =>
 
 const existing = (path: string) =>
   lstat(path).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined;
+    if (error.code === "ENOENT") {
+      return undefined;
+    }
     throw error;
   });
 
@@ -188,11 +190,15 @@ export const ensureEmpty = async (directory: string, files: Iterable<string>): P
   for (const parent of new Set(paths.map(dirname))) {
     const path = join(directory, parent);
     const stats = parent === "." ? undefined : await existing(path);
-    if (stats !== undefined && !stats.isDirectory()) throw new Error(`${path} is not a directory`);
+    if (stats !== undefined && !stats.isDirectory()) {
+      throw new Error(`${path} is not a directory`);
+    }
   }
   for (const file of paths) {
     const path = join(directory, file);
-    if ((await existing(path)) !== undefined) throw new Error(`${path} already exists`);
+    if ((await existing(path)) !== undefined) {
+      throw new Error(`${path} already exists`);
+    }
   }
 };
 
@@ -208,7 +214,9 @@ export const writeScaffold = async (directory: string, plan: FileMap): Promise<v
       if (firstCreated !== undefined) {
         for (let parent = dirname(path); ; parent = dirname(parent)) {
           createdDirectories.add(parent);
-          if (parent === firstCreated || parent === dirname(parent)) break;
+          if (parent === firstCreated || parent === dirname(parent)) {
+            break;
+          }
         }
       }
       // Exclusive creation is the guarantee; the preflight above is only the friendly diagnostic.
@@ -225,7 +233,9 @@ export const writeScaffold = async (directory: string, plan: FileMap): Promise<v
     }),
   );
   const failed = writes.find((write) => write.status === "rejected");
-  if (failed === undefined) return;
+  if (failed === undefined) {
+    return;
+  }
   // Undo only what this call made, so fixing the cause and running again finds nothing in the way.
   // Deepest directories first, so each is empty when it is removed.
   await Promise.allSettled(createdFiles.map((path) => unlink(path)));

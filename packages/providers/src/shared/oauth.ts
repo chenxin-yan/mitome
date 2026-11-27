@@ -73,7 +73,9 @@ const OAuthErrorResponse = Schema.Struct({
 const redactFormValues = (value: string, form: Record<string, string>): string => {
   let redacted = value;
   for (const submitted of Object.values(form)) {
-    if (submitted !== "") redacted = redacted.replaceAll(submitted, "[redacted]");
+    if (submitted !== "") {
+      redacted = redacted.replaceAll(submitted, "[redacted]");
+    }
   }
   return redacted.slice(0, 512);
 };
@@ -236,10 +238,16 @@ export const authorize = Effect.fnUntraced(function* (
   const listening = yield* serveLocalhost(port, (target) => {
     const url = URL.parse(target, redirectUri);
     // An unparseable request target is not a callback; it must not abort the login.
-    if (url === null) return [400, "Bad request."];
-    if (url.pathname !== config.callbackPath) return [404, "Not found"];
+    if (url === null) {
+      return [400, "Bad request."];
+    }
+    if (url.pathname !== config.callbackPath) {
+      return [404, "Not found"];
+    }
     // A stray or mismatched callback must not abort a login in progress.
-    if (url.searchParams.get("state") !== state) return [400, "Authentication failed."];
+    if (url.searchParams.get("state") !== state) {
+      return [400, "Authentication failed."];
+    }
     const code = authorizationCode(url, state);
     if (!Predicate.isString(code)) {
       // Same-state but no code (e.g. the user cancelled): this is our flow
@@ -259,8 +267,9 @@ export const authorize = Effect.fnUntraced(function* (
   );
   const openBrowser = options.openBrowser;
   // No browser opener (headless host): the printed URL and paste flow remain.
-  if (openBrowser === undefined) yield* launchDefaultBrowser(authorization.toString());
-  else if (openBrowser !== false) {
+  if (openBrowser === undefined) {
+    yield* launchDefaultBrowser(authorization.toString());
+  } else if (openBrowser !== false) {
     yield* Effect.ignore(Effect.tryPromise(async () => openBrowser(authorization.toString())));
   }
   const pasted = Effect.flatMap(options.input, (input) => {
@@ -268,7 +277,9 @@ export const authorize = Effect.fnUntraced(function* (
       return Effect.fail(new OAuthAuthorizationError({ message: "OAuth input closed." }));
     }
     const url = URL.parse(input);
-    if (url === null) return Effect.fail(new OAuthAuthorizationError({ message: "Invalid URL" }));
+    if (url === null) {
+      return Effect.fail(new OAuthAuthorizationError({ message: "Invalid URL" }));
+    }
     const code = authorizationCode(url, state);
     return Predicate.isString(code) ? Effect.succeed(code) : Effect.fail(code);
   });

@@ -50,10 +50,16 @@ export const scriptedLanguageModel = (script: Script, log: Array<string>, reques
       generateText: (options) =>
         Effect.gen(function* () {
           log.push(`generate:${options.prompt.content.length}`);
-          for (let i = 0; i < requests; i++) yield* reportModelRequest;
+          for (let i = 0; i < requests; i++) {
+            yield* reportModelRequest;
+          }
           const next = script.shift();
-          if (next === undefined) return yield* Effect.die(new Error("script exhausted"));
-          if (Effect.isEffect(next)) return yield* next;
+          if (next === undefined) {
+            return yield* Effect.die(new Error("script exhausted"));
+          }
+          if (Effect.isEffect(next)) {
+            return yield* next;
+          }
           return [...next];
         }),
       streamText: () => Stream.die(new Error("not streamed")),

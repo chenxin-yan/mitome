@@ -32,7 +32,9 @@ const serverLoader = createServerFn({
   .validator((slugs: string[]) => slugs)
   .handler(async ({ data: slugs }) => {
     const page = source.getPage(slugs);
-    if (!page) throw notFound();
+    if (!page) {
+      throw notFound();
+    }
 
     return {
       path: page.path,
@@ -43,7 +45,9 @@ const serverLoader = createServerFn({
 
 function Content({ path, markdownUrl }: { path: string; markdownUrl: string }) {
   const page = docs.getPage(path);
-  if (!page) throw new Error(`unknown page: ${path}`);
+  if (!page) {
+    throw new Error(`unknown page: ${path}`);
+  }
 
   const { toc } = use(page.load());
   const MDX = page.body;

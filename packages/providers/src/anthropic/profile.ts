@@ -57,14 +57,20 @@ const unusable = (message: string) => new UnusableProfileError({ message });
 /** The config directory Anthropic's SDK and `ant` use. */
 const configDirectory = (path: Path.Path): string | undefined => {
   const env = process.env;
-  if (env.ANTHROPIC_CONFIG_DIR) return env.ANTHROPIC_CONFIG_DIR;
+  if (env.ANTHROPIC_CONFIG_DIR) {
+    return env.ANTHROPIC_CONFIG_DIR;
+  }
   if (process.platform === "win32") {
-    if (env.APPDATA) return path.join(env.APPDATA, "Anthropic");
+    if (env.APPDATA) {
+      return path.join(env.APPDATA, "Anthropic");
+    }
     return env.USERPROFILE
       ? path.join(env.USERPROFILE, "AppData", "Roaming", "Anthropic")
       : undefined;
   }
-  if (env.XDG_CONFIG_HOME) return path.join(env.XDG_CONFIG_HOME, "anthropic");
+  if (env.XDG_CONFIG_HOME) {
+    return path.join(env.XDG_CONFIG_HOME, "anthropic");
+  }
   return env.HOME ? path.join(env.HOME, ".config", "anthropic") : undefined;
 };
 
@@ -175,7 +181,9 @@ const readConfig = Effect.fnUntraced(function* (
       ),
     ),
   );
-  if (text === undefined) return undefined;
+  if (text === undefined) {
+    return undefined;
+  }
   // `ant auth login` writes a config only where there is none, so signing in again cannot fix one.
   const config = yield* Schema.decodeEffect(ProfileConfig)(text).pipe(
     Effect.mapError(() =>
@@ -204,11 +212,17 @@ const readConfig = Effect.fnUntraced(function* (
 const readProfile = Effect.fnUntraced(function* (
   name: string,
 ): Effect.fn.Return<Profile | undefined, UnusableProfileError, FileSystem.FileSystem | Path.Path> {
-  if (!isProfileName(name)) return yield* unusable(invalidProfileName(name));
+  if (!isProfileName(name)) {
+    return yield* unusable(invalidProfileName(name));
+  }
   const directory = configDirectory(yield* Path.Path);
-  if (directory === undefined) return undefined;
+  if (directory === undefined) {
+    return undefined;
+  }
   const profile = yield* readConfig(name, directory);
-  if (profile === undefined || profile.type === "user_oauth") return profile;
+  if (profile === undefined || profile.type === "user_oauth") {
+    return profile;
+  }
   return yield* unusable(
     `The Anthropic profile "${name}" at ${profile.configPath} uses authentication type "${profile.type}"; Mitome reads only the Claude Console sign-in ("user_oauth") that \`ant auth login\` writes. Select another profile with the \`profile\` option of \`anthropic()\`, or remove that file and sign in again (${signInRemedy(name)}).`,
   );
@@ -247,7 +261,9 @@ const readCredentials = Effect.fnUntraced(function* (
       ),
     ),
   );
-  if (read === undefined) return undefined;
+  if (read === undefined) {
+    return undefined;
+  }
   // Tokens another user can read can be stolen; ones another user can write can be planted.
   if (process.platform !== "win32" && (read.mode & 0o066) !== 0) {
     return yield* unusable(
@@ -302,7 +318,9 @@ const refreshGrant = (profile: Profile, credentials: StoredCredentials, rejected
  * testing, naming no user, query or fragment, which the request URLs built on it would carry.
  */
 const tokenDestination = (value: string): URL | undefined => {
-  if (!URL.canParse(value)) return undefined;
+  if (!URL.canParse(value)) {
+    return undefined;
+  }
   const url = new URL(value);
   const secure =
     url.protocol === "https:" ||
@@ -357,7 +375,9 @@ const requestRefresh = Effect.fnUntraced(
     );
     const status = response.status;
     // Not an answer from the token endpoint, whatever its body says.
-    if (status >= 300 && status < 400) return yield* broken(`HTTP ${status}`, status);
+    if (status >= 300 && status < 400) {
+      return yield* broken(`HTTP ${status}`, status);
+    }
     if (status < 200 || status >= 300) {
       const failure = yield* response.json.pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(TokenErrorResponse)),
@@ -372,7 +392,9 @@ const requestRefresh = Effect.fnUntraced(
         message: `The Anthropic sign-in of profile "${profile.name}" could not be refreshed right now (${what}); try again later.`,
         status,
       });
-      if (isTemporaryTokenFailure(temporary)) return yield* temporary;
+      if (isTemporaryTokenFailure(temporary)) {
+        return yield* temporary;
+      }
       if (code === "invalid_grant") {
         return yield* unusable(
           `The Anthropic sign-in of profile "${profile.name}" expired or was revoked (token refresh failed: ${what}). Sign in again: ${signInRemedy(profile.name)}.`,
@@ -429,7 +451,9 @@ export const tokenSource = (profile: Profile, credentialsFile: string, tokenUrl:
   const readCurrent = Effect.gen(function* () {
     yield* sameConfig;
     const target = yield* credentialsTarget(profile);
-    if (target !== undefined && target !== credentialsFile) return yield* changed;
+    if (target !== undefined && target !== credentialsFile) {
+      return yield* changed;
+    }
     const stored =
       target === undefined ? undefined : yield* readCredentials(profile, credentialsFile);
     if (stored === undefined) {
@@ -450,7 +474,9 @@ export const tokenSource = (profile: Profile, credentialsFile: string, tokenUrl:
       `${credentialsFile}.lock`,
       Effect.gen(function* () {
         const current = yield* readCurrent;
-        if (yield* usable(current, rejected)) return current.accessToken;
+        if (yield* usable(current, rejected)) {
+          return current.accessToken;
+        }
         const grant = yield* refreshGrant(profile, current, rejected !== undefined);
         // Once the grant is sent the endpoint may rotate it, so its answer is written before the
         // caller's interruption is delivered.
@@ -462,8 +488,12 @@ export const tokenSource = (profile: Profile, credentialsFile: string, tokenUrl:
             // `ant` takes no lock: a sign-out or a new sign-in during the exchange stands, even
             // when it is why the grant was rejected.
             const latest = yield* readCurrent;
-            if (latest.refreshToken !== grant.refreshToken) return latest.accessToken;
-            if (tokens instanceof UnusableProfileError) return yield* tokens;
+            if (latest.refreshToken !== grant.refreshToken) {
+              return latest.accessToken;
+            }
+            if (tokens instanceof UnusableProfileError) {
+              return yield* tokens;
+            }
             yield* writePrivateFile(
               credentialsFile,
               `${credentialsFile}.${process.pid}.${crypto.randomUUID()}.tmp`,
@@ -624,7 +654,9 @@ export const profileClientLayer = (
         signIn: `sign in to the Claude Console: ${signInRemedy(name)}`,
       });
       const profile = yield* readProfile(name);
-      if (profile === undefined) return yield* missing;
+      if (profile === undefined) {
+        return yield* missing;
+      }
       // A setting that is given but unusable fails rather than falling back to another host. The
       // error names the setting, not its value, which may hold a secret.
       const destination = (value: string | undefined, setting: string) => {
@@ -653,8 +685,12 @@ export const profileClientLayer = (
         credentialsFile === undefined
           ? undefined
           : yield* readCredentials(profile, credentialsFile);
-      if (credentialsFile === undefined || stored === undefined) return yield* missing;
-      if (!(yield* isFresh(stored))) yield* refreshGrant(profile, stored, false);
+      if (credentialsFile === undefined || stored === undefined) {
+        return yield* missing;
+      }
+      if (!(yield* isFresh(stored))) {
+        yield* refreshGrant(profile, stored, false);
+      }
       const authenticated = Layer.effect(
         AnthropicClient.AnthropicClient,
         Effect.gen(function* () {

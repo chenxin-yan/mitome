@@ -24,7 +24,9 @@ const choose = async <A extends { readonly label: string }>(
     const answer = (await question("> ")).trim();
     const index = answer === "" ? 0 : Number(answer) - 1;
     const choice = choices[index];
-    if (choice !== undefined) return choice;
+    if (choice !== undefined) {
+      return choice;
+    }
     console.error(`Choose 1-${choices.length}.`);
   }
 };
@@ -35,7 +37,9 @@ const main = async (): Promise<void> => {
   const question = async (message: string): Promise<string> => {
     process.stdout.write(message);
     const answer = await lines.next();
-    if (answer.done) throw new Error("Input closed");
+    if (answer.done) {
+      throw new Error("Input closed");
+    }
     return answer.value;
   };
   try {
@@ -45,7 +49,9 @@ const main = async (): Promise<void> => {
     ).value;
     const model =
       selectedModel === customModel ? validateModelId(await question("Model ID: ")) : selectedModel;
-    if (model === undefined) throw new Error("Model ID is required");
+    if (model === undefined) {
+      throw new Error("Model ID is required");
+    }
     // npm create mitome <dir> forwards <dir> as the first CLI argument.
     const directory = resolve(process.argv[2] ?? ".");
     const name = basename(directory);

@@ -94,7 +94,9 @@ const logging = <R = never>(
 const record = <Tools extends Record<string, Tool.Any>, E, R>(
   extension: Extension.Extension<Tools, E, R>,
 ) => {
-  if (Effect.isEffect(extension.parts)) throw new Error("not a record");
+  if (Effect.isEffect(extension.parts)) {
+    throw new Error("not a record");
+  }
   return extension.parts;
 };
 
@@ -438,7 +440,9 @@ describe("Session.make(agent)", () => {
         Agent.make({
           program: (_: string, { step }) =>
             Effect.gen(function* () {
-              for (let i = 0; i < count; i++) yield* step;
+              for (let i = 0; i < count; i++) {
+                yield* step;
+              }
               return "";
             }),
         });

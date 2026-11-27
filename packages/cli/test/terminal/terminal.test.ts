@@ -185,7 +185,9 @@ let setup: TestRendererSetup | undefined;
 let scope: Scope.Closeable | undefined;
 afterEach(async () => {
   await setup?.dispose();
-  if (scope !== undefined) await Effect.runPromise(Scope.close(scope, Exit.void));
+  if (scope !== undefined) {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
   setup = undefined;
   scope = undefined;
 });
@@ -232,11 +234,17 @@ const start = async (
     program: (input: { readonly text: string }) =>
       Effect.gen(function* () {
         const turn = yield* Turn;
-        if (input.text === "fail") return yield* new Unrenderable();
+        if (input.text === "fail") {
+          return yield* new Unrenderable();
+        }
         // A failure value with no string form.
-        if (input.text === "fail-bare") return yield* Effect.fail(Object.create(null));
+        if (input.text === "fail-bare") {
+          return yield* Effect.fail(Object.create(null));
+        }
         // Succeeds without staging anything.
-        if (input.text.startsWith("silent")) return { reply: input.text, turn: turn.id };
+        if (input.text.startsWith("silent")) {
+          return { reply: input.text, turn: turn.id };
+        }
         if (input.text === "hold") {
           // Cleanup that keeps running after interruption until the test releases it.
           yield* Effect.addFinalizer(() => Deferred.await(release));
@@ -255,12 +263,16 @@ const start = async (
     text: {
       // `throw-parse` and `throw-render` throw instead of returning a failing Effect.
       parse: (text: string) => {
-        if (text === "throw-parse") throw new Error("parser threw");
+        if (text === "throw-parse") {
+          throw new Error("parser threw");
+        }
         return text === "unparseable" ? Effect.fail(new Unparseable()) : Effect.succeed({ text });
       },
       render: (result) => {
         renderedResults.push(result);
-        if (result.reply === "echo throw-render") throw new Error("renderer threw");
+        if (result.reply === "echo throw-render") {
+          throw new Error("renderer threw");
+        }
         return result.reply === "echo unrenderable" || result.reply === "silent unrenderable"
           ? Effect.fail(new Unrenderable())
           : Effect.succeed(`reply: ${result.reply}`);
@@ -284,7 +296,9 @@ const start = async (
   scope = owner;
   const instance = await Effect.runPromise(config.acquire().pipe(Scope.provide(owner)));
   const session = await Effect.runPromise(instance.session());
-  for (const text of earlier) await Effect.runPromise(session.run({ text }));
+  for (const text of earlier) {
+    await Effect.runPromise(session.run({ text }));
+  }
   // `/new` replaces it, as the CLI does.
   const sessions = conversations(
     { session, conversation },
@@ -361,7 +375,9 @@ const frameWith = async (predicate: (frame: string) => boolean) => {
   for (let attempt = 0; attempt < 300; attempt++) {
     await setup!.renderOnce();
     frame = setup!.captureCharFrame();
-    if (predicate(frame)) return frame;
+    if (predicate(frame)) {
+      return frame;
+    }
     await Bun.sleep(10);
   }
   throw new Error(`No frame matched; last frame:\n${frame}`);
@@ -386,7 +402,9 @@ const focused = () => setup!.renderer.currentFocusedRenderable?.id;
 /** The whole text of a renderable, including what its box scrolls out of the frame. */
 const textOf = (id: string) => {
   const found = setup!.renderer.root.findDescendantById(id);
-  if (found instanceof TextareaRenderable) return found.plainText;
+  if (found instanceof TextareaRenderable) {
+    return found.plainText;
+  }
   const [text] = found?.getChildren() ?? [];
   return text instanceof TextRenderable ? text.plainText : "";
 };
@@ -547,7 +565,9 @@ describe("runTerminal", () => {
     await frameWith((frame) => frame.includes("Running"));
     // The Step's Entry is committed while the program still runs.
     for (let attempt = 0; attempt < 300; attempt++) {
-      if ((await Effect.runPromise(session.history)).length === 2) break;
+      if ((await Effect.runPromise(session.history)).length === 2) {
+        break;
+      }
       await Bun.sleep(10);
     }
     setup!.mockInput.pressEscape();
@@ -688,9 +708,13 @@ describe("runTerminal keys and Commands", () => {
     test(`ctrl+j makes a new line ${kittyKeyboard ? "from the protocol's Ctrl+J" : "from a line feed"}`, async () => {
       await start(undefined, undefined, undefined, undefined, { kittyKeyboard });
       await setup!.mockInput.typeText("one");
-      if (kittyKeyboard) setup!.mockInput.pressKey("j", { ctrl: true });
+      if (kittyKeyboard) {
+        setup!.mockInput.pressKey("j", { ctrl: true });
+      }
       // Without the protocol a terminal sends Ctrl+J as a line feed.
-      else setup!.mockInput.pressKey("LINEFEED");
+      else {
+        setup!.mockInput.pressKey("LINEFEED");
+      }
       await setup!.mockInput.typeText("two");
       expect(textOf("message")).toBe("one\ntwo");
       // Enter is bound to send, so it never breaks a line.
@@ -841,7 +865,9 @@ describe("runTerminal keys and Commands", () => {
     await send("/new");
     await frameWith((frame) => frame.includes("Running a Command"));
     // The switch has happened; the previous Session is still releasing.
-    for (let attempt = 0; attempt < 300 && current() === session; attempt++) await Bun.sleep(10);
+    for (let attempt = 0; attempt < 300 && current() === session; attempt++) {
+      await Bun.sleep(10);
+    }
     expect(current()).not.toBe(session);
     setup!.mockInput.pressEscape();
     await Bun.sleep(50);

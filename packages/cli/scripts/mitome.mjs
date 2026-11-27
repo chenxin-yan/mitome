@@ -31,15 +31,24 @@ const child = spawn(binary, process.argv.slice(2), { stdio: "inherit" });
 const signals = ["SIGHUP", "SIGINT", "SIGTERM"];
 const forward = (signal) => {
   // On Windows the binary gets a console Ctrl+C or close itself; kill() cannot forward it gently.
-  if (signal !== "SIGTERM" && process.platform === "win32") return;
+  if (signal !== "SIGTERM" && process.platform === "win32") {
+    return;
+  }
   child.kill(signal);
 };
-for (const signal of signals) process.on(signal, forward);
+for (const signal of signals) {
+  process.on(signal, forward);
+}
 child.on("error", (error) => {
   throw error;
 });
 child.on("exit", (code, signal) => {
-  for (const name of signals) process.off(name, forward);
-  if (signal === null) process.exitCode = code ?? 1;
-  else process.kill(process.pid, signal);
+  for (const name of signals) {
+    process.off(name, forward);
+  }
+  if (signal === null) {
+    process.exitCode = code ?? 1;
+  } else {
+    process.kill(process.pid, signal);
+  }
 });

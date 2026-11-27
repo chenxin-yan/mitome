@@ -64,13 +64,17 @@ type Tools = Toolkit.Tools<typeof Kit>;
 // A serviceful, fallible builder whose handlers need the Tool's declared dependency.
 const builder = Effect.gen(function* () {
   const input = yield* BuildInput;
-  if (!input.ready) return yield* new BuildError();
+  if (!input.ready) {
+    return yield* new BuildError();
+  }
   return Kit.of({
     write: ({ n }) =>
       Effect.gen(function* () {
         const db = yield* Db;
         yield* db.write(n);
-        if (n < 0) return yield* new Quota();
+        if (n < 0) {
+          return yield* new Quota();
+        }
         return n;
       }),
     soft: ({ k }) => Effect.succeed(k),

@@ -126,7 +126,6 @@ export default defineConfig({
       "vite-plus/prefer-vite-plus-imports": "error",
       // Turned off on adopting @cloudflare/oxlint-config; each is evaluated in a commit of its own.
       "@nkzw/no-instanceof": "off",
-      curly: "off",
       eqeqeq: "off",
       "import/consistent-type-specifier-style": "off",
       "import/no-namespace": "off",

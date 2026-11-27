@@ -254,7 +254,9 @@ describe("Tool result projection and codecs", () => {
           );
         }),
       );
-      if (!Predicate.isTagged(outcome, "Complete")) throw new Error("expected a complete Step");
+      if (!Predicate.isTagged(outcome, "Complete")) {
+        throw new Error("expected a complete Step");
+      }
       // Returned results: native values, and the encodings of each schema's JSON codec.
       expect(outcome.results.map((part) => [part.id, part.result, part.encodedResult])).toEqual([
         ["v", undefined, null],

@@ -112,7 +112,9 @@ const racing = (plan: FileMap, intrude: () => void): FileMap =>
   new (class extends Map<string, string> {
     override *[Symbol.iterator](): Generator<[string, string], undefined> {
       for (const entry of plan) {
-        if (entry[0] === "index.ts") intrude();
+        if (entry[0] === "index.ts") {
+          intrude();
+        }
         yield entry;
       }
     }
@@ -168,8 +170,11 @@ const init = (
         () => Effect.exit(runCli(["init", ...args])),
         () =>
           Effect.sync(() => {
-            if (previous === undefined) delete process.env.MITOME_HOME;
-            else process.env.MITOME_HOME = previous;
+            if (previous === undefined) {
+              delete process.env.MITOME_HOME;
+            } else {
+              process.env.MITOME_HOME = previous;
+            }
           }),
       );
       return {
@@ -220,7 +225,9 @@ describe("mitome init", () => {
           expect(Exit.isSuccess(result.exit)).toBe(true);
           const plan = configurationPlan({ provider: choice, model });
           expect(yield* files(home)).toEqual([...plan.keys()].sort());
-          for (const [file, expected] of plan) expect(yield* contents(home, file)).toBe(expected);
+          for (const [file, expected] of plan) {
+            expect(yield* contents(home, file)).toBe(expected);
+          }
           expect(result.logs).toBe(
             [
               `Wrote the default Configuration to ${home}. Its dependencies are not installed (--no-install); install them by running this in ${home}:`,
@@ -247,7 +254,9 @@ describe("mitome init", () => {
       expect(Exit.isSuccess(result.exit)).toBe(true);
       const { mode } = yield* Effect.promise(() => stat(home));
       // Windows has no POSIX mode bits.
-      if (process.platform !== "win32") expect(mode & 0o777).toBe(0o700);
+      if (process.platform !== "win32") {
+        expect(mode & 0o777).toBe(0o700);
+      }
     }),
   );
 
@@ -263,7 +272,9 @@ describe("mitome init", () => {
       });
       expect(Exit.isSuccess(result.exit)).toBe(true);
       const { mode } = yield* Effect.promise(() => stat(home));
-      if (process.platform !== "win32") expect(mode & 0o777).toBe(0o750);
+      if (process.platform !== "win32") {
+        expect(mode & 0o777).toBe(0o750);
+      }
     }),
   );
 

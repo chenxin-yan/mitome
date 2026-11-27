@@ -63,7 +63,9 @@ const fakeFetch = (
 ) =>
   answerEveryOrigin((request) => {
     const origin = new URL(request.url).origin;
-    if (!origins.includes(origin)) throw new Error(`No test answers ${origin}`);
+    if (!origins.includes(origin)) {
+      throw new Error(`No test answers ${origin}`);
+    }
     return handle(request);
   });
 
@@ -258,8 +260,11 @@ describe("anthropic", () => {
       });
       expect(requests).toBe(0);
     } finally {
-      if (previous === undefined) delete process.env[key];
-      else process.env[key] = previous;
+      if (previous === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previous;
+      }
     }
   });
 });
@@ -478,7 +483,9 @@ describe("anthropic with the Claude Console profile", () => {
     });
     expect(rewritten.expires_at).toBeGreaterThanOrEqual(before + 3_600);
     // Windows has no POSIX modes, and Mitome checks them only elsewhere.
-    if (posix) expect((await stat(credentialsPath)).mode & 0o777).toBe(0o600);
+    if (posix) {
+      expect((await stat(credentialsPath)).mode & 0o777).toBe(0o600);
+    }
     // No temporary copy or lock is left beside it.
     expect(
       (await readdir(join(configDirectory, "credentials"))).filter((file) => file.startsWith(name)),
@@ -691,7 +698,9 @@ describe("anthropic with the Claude Console profile", () => {
               ),
             );
             yield* Deferred.await(checked);
-            for (let step = 0; step < steps; step++) yield* Effect.yieldNow;
+            for (let step = 0; step < steps; step++) {
+              yield* Effect.yieldNow;
+            }
             yield* Fiber.interrupt(first);
             yield* generate.pipe(Effect.timeout("2 seconds"));
           }
@@ -975,7 +984,9 @@ describe("anthropic with the Claude Console profile", () => {
         return tokenReply();
       }
       model.push(request.headers);
-      if (model.length > 1) return Response.json(message([{ type: "text", text: "ok" }]));
+      if (model.length > 1) {
+        return Response.json(message([{ type: "text", text: "ok" }]));
+      }
       await beforeRejecting();
       return unauthorized();
     });
@@ -1096,7 +1107,9 @@ describe("anthropic with the Claude Console profile", () => {
         const b = tokens("access-B", nowSeconds() + 3_600, { refresh_token: "refresh-B" });
         await writeFile(credentialsPath, JSON.stringify(b));
       }
-      if (authorization === "Bearer access-B") answerB();
+      if (authorization === "Bearer access-B") {
+        answerB();
+      }
       return authorization === "Bearer access-2"
         ? Response.json(message([{ type: "text", text: "ok" }]))
         : unauthorized();
@@ -1240,7 +1253,9 @@ describe("anthropic with the Claude Console profile", () => {
         base.option === undefined ? {} : { baseUrl: base.option },
       );
       expect(error).toMatchObject({ _tag: "UnusableProfileError", message: expected(name) });
-      for (const shown of renderings(error)) expect(shown).not.toContain("SENTINEL");
+      for (const shown of renderings(error)) {
+        expect(shown).not.toContain("SENTINEL");
+      }
     };
     await refused({ profile: "http://test.invalid" }, inProfile);
     await refused({ option: "http://test.invalid" }, inOption);
@@ -1316,7 +1331,9 @@ describe("anthropic with the Claude Console profile", () => {
       `The Anthropic sign-in of profile "${name}" expired or was revoked (token refresh failed: HTTP 400; invalid_grant). Sign in again: run \`ant auth login --profile=${name}\`.`,
     );
     expect(error).toMatchObject({ reason: { _tag: "AuthenticationError" } });
-    for (const shown of renderings(error)) expect(shown).not.toContain("SENTINEL");
+    for (const shown of renderings(error)) {
+      expect(shown).not.toContain("SENTINEL");
+    }
     expect(model).toEqual([]);
   });
 
@@ -1339,7 +1356,9 @@ describe("anthropic with the Claude Console profile", () => {
       );
       expect(error.message).not.toContain("Sign in again");
       expect(error).toMatchObject({ reason: { _tag: "InternalProviderError", isRetryable: true } });
-      for (const shown of renderings(error)) expect(shown).not.toContain("SENTINEL");
+      for (const shown of renderings(error)) {
+        expect(shown).not.toContain("SENTINEL");
+      }
       expect(model).toEqual([]);
     },
   );
@@ -1381,7 +1400,9 @@ describe("anthropic with the Claude Console profile", () => {
       );
       expect(error.message).not.toContain("Sign in again");
       expect(error).toMatchObject({ reason: { _tag: "UnknownError" } });
-      for (const shown of renderings(error)) expect(shown).not.toContain("SENTINEL");
+      for (const shown of renderings(error)) {
+        expect(shown).not.toContain("SENTINEL");
+      }
       expect(model).toEqual([]);
     },
   );
@@ -1555,8 +1576,11 @@ describe.skipIf(process.platform === "win32")("anthropic authenticate", () => {
       let pid: number | undefined;
       for (let attempt = 0; attempt < 500 && pid === undefined; attempt++) {
         const text = await readFile(join(bin, "ant.pid"), "utf8").catch(() => "");
-        if (text.endsWith("\n")) pid = Number(text);
-        else await new Promise((resolve) => setTimeout(resolve, 10));
+        if (text.endsWith("\n")) {
+          pid = Number(text);
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
       }
       expect(pid).toBeDefined();
       await Effect.runPromise(Fiber.interrupt(fiber));

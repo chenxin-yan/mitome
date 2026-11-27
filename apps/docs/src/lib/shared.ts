@@ -24,11 +24,15 @@ export function getPageMarkdownUrl(page: { slugs: string[]; locale?: string | un
 
 /** @returns page slugs */
 export function decodeMarkdownUrl(segments: string[]) {
-  if (segments.length === 0) return [];
+  if (segments.length === 0) {
+    return [];
+  }
 
   const out = segments.map((segment, index) =>
     index === segments.length - 1 ? segment.replace(/\.md$/, "") : segment,
   );
-  if (out.length === 1 && out[0] === "index") out.pop();
+  if (out.length === 1 && out[0] === "index") {
+    out.pop();
+  }
   return out;
 }

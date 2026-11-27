@@ -37,8 +37,12 @@ export const agent = Agent.make({
     Effect.gen(function* () {
       record(`program:${message}`);
       const turn = yield* Turn;
-      if (message === "log") yield* Effect.logInfo("fixture log line");
-      if (message === "fail") return yield* new Refused({ reason: "asked to fail" });
+      if (message === "log") {
+        yield* Effect.logInfo("fixture log line");
+      }
+      if (message === "fail") {
+        return yield* new Refused({ reason: "asked to fail" });
+      }
       if (message === "hold" || message === "wait") {
         yield* Effect.addFinalizer(() =>
           message === "hold" ? Effect.never : Effect.sync(() => record("turn:cleanup")),

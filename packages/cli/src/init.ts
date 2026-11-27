@@ -79,7 +79,9 @@ const installedVersion = Effect.fnUntraced(function* (directory: string, name: s
         Effect.orElseSucceed(() => undefined),
       );
     }
-    if (from === path.dirname(from)) return undefined;
+    if (from === path.dirname(from)) {
+      return undefined;
+    }
   }
 });
 

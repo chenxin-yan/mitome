@@ -64,7 +64,9 @@ const branch = (stored: Stored) => {
   const found: Array<Session.Entry> = [];
   for (let id = stored.position; id !== undefined; id = stored.entries.get(id)?.parent) {
     const entry = stored.entries.get(id);
-    if (entry !== undefined) found.unshift(entry);
+    if (entry !== undefined) {
+      found.unshift(entry);
+    }
   }
   return found;
 };
@@ -94,7 +96,9 @@ const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) =>
       Effect.catchReason("PlatformError", "NotFound", () => Effect.succeedNone),
       Effect.mapError((cause) => unreadable(location, cause)),
     );
-    if (Option.isNone(bytes)) return undefined;
+    if (Option.isNone(bytes)) {
+      return undefined;
+    }
     const length = bytes.value.lastIndexOf(newline) + 1;
     const text = yield* Effect.try({
       try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes.value.subarray(0, length)),
@@ -130,7 +134,9 @@ const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) =>
    */
   const read = Effect.fnUntraced(function* (id: string) {
     const found = yield* lines(id);
-    if (found === undefined) return undefined;
+    if (found === undefined) {
+      return undefined;
+    }
     const { location, length, torn } = found;
     const [first, ...rest] = found.lines;
     const entries = new Map<string, Session.Entry>();
@@ -175,7 +181,9 @@ const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) =>
           Effect.catchReason("PlatformError", "NotFound", () => Effect.succeedNone),
           Effect.mapError((cause) => unreadable(location, cause)),
         );
-        if (Option.isNone(handle)) return undefined;
+        if (Option.isNone(handle)) {
+          return undefined;
+        }
         // Each chunk is searched and decoded once, so a long line costs its length. Not fatal:
         // opening the conversation decodes every line strictly.
         const decoder = new TextDecoder();
@@ -184,7 +192,9 @@ const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) =>
           const chunk = yield* handle.value
             .readAlloc(4096)
             .pipe(Effect.mapError((cause) => unreadable(location, cause)));
-          if (Option.isNone(chunk)) return undefined;
+          if (Option.isNone(chunk)) {
+            return undefined;
+          }
           const end = chunk.value.indexOf(newline);
           if (end === -1) {
             line += decoder.decode(chunk.value, { stream: true });
@@ -287,13 +297,17 @@ const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) =>
               Effect.gen(function* () {
                 // An incomplete last line is overwritten, so the next line starts clean. Through
                 // the path, not the append-only handle, which Windows does not let set a file's end.
-                if (stored?.torn === true) yield* fs.truncate(location, stored.length);
+                if (stored?.torn === true) {
+                  yield* fs.truncate(location, stored.length);
+                }
                 const handle = yield* fs.open(location, {
                   flag: stored === undefined ? "wx" : "a",
                   mode: 0o600,
                 });
                 // The umask may have narrowed the mode a new file was created with.
-                if (stored?.header === undefined) yield* fs.chmod(location, 0o600);
+                if (stored?.header === undefined) {
+                  yield* fs.chmod(location, 0o600);
+                }
                 yield* Effect.andThen(handle.writeAll(bytes), handle.sync).pipe(
                   Effect.mapError((cause) => new SessionSaveError({ outcome: "unknown", cause })),
                 );
@@ -317,7 +331,9 @@ const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) =>
       ),
       append: (entry, expected) =>
         write(id, scope, (stored) => {
-          if (stored?.position !== expected) return Effect.fail(conflict);
+          if (stored?.position !== expected) {
+            return Effect.fail(conflict);
+          }
           // Refused before the file is touched: the store never acknowledges an Entry that `read`
           // would reject, with a repeated id or a parent it does not hold.
           if (stored?.entries.has(entry.id) === true) {
@@ -357,7 +373,9 @@ const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) =>
             { lines: Array<string>; result: Array<Session.Entry> },
             SessionSaveError | TranscriptError
           > => {
-            if (stored?.position !== expected) return Effect.fail(conflict);
+            if (stored?.position !== expected) {
+              return Effect.fail(conflict);
+            }
             if (position !== undefined && stored?.entries.has(position) !== true) {
               return Effect.fail(new TranscriptError({ detail: `no Entry "${position}"` }));
             }
@@ -384,7 +402,9 @@ const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) =>
       conversationId.test(id)
         ? Effect.gen(function* () {
             const found = yield* firstLine(id);
-            if (found === undefined) return undefined;
+            if (found === undefined) {
+              return undefined;
+            }
             return transcript(id, (yield* header(found.location, id, found.line)).scope);
           })
         : Effect.succeed(undefined),
@@ -413,7 +433,9 @@ const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) =>
           const found = yield* firstLine(id);
           const named =
             found === undefined ? Option.none() : Schema.decodeOption(Scoped)(found.line);
-          if (Option.isSome(named) && named.value.scope === scope) return transcript(id, scope);
+          if (Option.isSome(named) && named.value.scope === scope) {
+            return transcript(id, scope);
+          }
         }
         return undefined;
       }),

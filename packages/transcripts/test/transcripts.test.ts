@@ -379,8 +379,11 @@ describe("jsonlTranscripts", () => {
       const saved = { ...process.env };
       const restore = Effect.sync(() => {
         for (const name of ["MITOME_HOME", "XDG_STATE_HOME", "LOCALAPPDATA", "HOME"]) {
-          if (saved[name] === undefined) delete process.env[name];
-          else process.env[name] = saved[name];
+          if (saved[name] === undefined) {
+            delete process.env[name];
+          } else {
+            process.env[name] = saved[name];
+          }
         }
       });
       yield* Effect.gen(function* () {

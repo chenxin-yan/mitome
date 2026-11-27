@@ -352,8 +352,9 @@ describe("Codex OAuth", () => {
       occupied.listen(0, "localhost", resolve);
     });
     const address = occupied.address();
-    if (address === null || Schema.is(Schema.String)(address))
+    if (address === null || Schema.is(Schema.String)(address)) {
       throw new Error("Expected TCP address");
+    }
     const occupiedPort = address.port;
     let state = "";
     const output: Array<string> = [];

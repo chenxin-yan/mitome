@@ -49,9 +49,13 @@ const isBinding = (value: unknown): value is Binding =>
     controlIds.includes(value.id));
 
 const make = (options: Options): Layer.Layer<never> => {
-  if (!Predicate.isObject(options)) throw new TypeError("terminal options must be a record");
+  if (!Predicate.isObject(options)) {
+    throw new TypeError("terminal options must be a record");
+  }
   for (const field of Object.keys(options)) {
-    if (field !== "keys") throw new TypeError(`terminal has no field "${field}"`);
+    if (field !== "keys") {
+      throw new TypeError(`terminal has no field "${field}"`);
+    }
   }
   const { keys } = options;
   if (!Predicate.isObject(keys) || Array.isArray(keys)) {

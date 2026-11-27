@@ -175,7 +175,9 @@ describe("application plans", () => {
     const path = await directory();
     const elsewhere = await directory();
     const target = join(elsewhere, "src");
-    if (targetExists) await mkdir(target);
+    if (targetExists) {
+      await mkdir(target);
+    }
     await symlink(target, join(path, "src"), "dir");
 
     await expect(writeScaffold(path, plan("openai", "gpt-5.6"))).rejects.toThrow(
@@ -183,7 +185,9 @@ describe("application plans", () => {
     );
     expect(await readdir(path)).toEqual(["src"]);
     expect(await readdir(elsewhere)).toEqual(targetExists ? ["src"] : []);
-    if (targetExists) expect(await readdir(target)).toEqual([]);
+    if (targetExists) {
+      expect(await readdir(target)).toEqual([]);
+    }
   });
 
   // Root writes through the mode, and Windows has no directory write bit.
@@ -272,7 +276,9 @@ describe("generated application", () => {
     // Generated projects resolve @mitome/core, @mitome/providers, effect, and @types/node like an
     // installed consumer would; this package's devDependencies stand in for the install.
     await symlink(join(packageDirectory, "node_modules"), join(root, "node_modules"), "dir");
-    for (const [id, model] of variants) await writeScaffold(join(root, id), plan(id, model));
+    for (const [id, model] of variants) {
+      await writeScaffold(join(root, id), plan(id, model));
+    }
     return root;
   };
 
@@ -526,8 +532,9 @@ describe("generated Codex login step", { tags: ["dist"] }, () => {
           closeAtPrompt &&
           !child.stdin.writableEnded &&
           stdout.includes("Paste the redirect URL")
-        )
+        ) {
           child.stdin.end();
+        }
       });
       child.on("close", (code) => {
         clearTimeout(killer);

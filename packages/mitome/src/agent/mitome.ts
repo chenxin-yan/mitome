@@ -303,7 +303,9 @@ const candidate = Effect.fnUntraced(function* (
     }
     return { provider, modelId: parsed.modelId };
   }
-  if (providers.length === 0) return undefined;
+  if (providers.length === 0) {
+    return undefined;
+  }
   const parsed = configured === undefined ? undefined : parseQualifiedModelId(configured);
   const provider = parsed && find(parsed.providerId);
   if (parsed === undefined || provider === undefined) {
@@ -520,7 +522,9 @@ export const make = <
   // Each field read once, inherited ones included, and the Provider and Layer lists copied, so
   // validation, discovery, the result and acquisition all see the same values.
   const { agent, provide, providers: given, model } = options;
-  if (!isAgent(agent)) throw new TypeError("Mitome.make expects an Agent made by Agent.make");
+  if (!isAgent(agent)) {
+    throw new TypeError("Mitome.make expects an Agent made by Agent.make");
+  }
   const fields = {
     agent,
     ...(provide === undefined
@@ -535,9 +539,12 @@ export const make = <
   const ids = new Set<string>();
   const discovery = providers.map((provider) => {
     const metadata = getProviderMetadata(provider);
-    if (metadata === undefined)
+    if (metadata === undefined) {
       throw new TypeError("Provider was not created by this copy of the package");
-    if (ids.has(provider.id)) throw new TypeError(`Duplicate Provider id "${provider.id}"`);
+    }
+    if (ids.has(provider.id)) {
+      throw new TypeError(`Duplicate Provider id "${provider.id}"`);
+    }
     ids.add(provider.id);
     return {
       id: provider.id,

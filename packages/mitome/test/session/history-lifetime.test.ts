@@ -17,7 +17,9 @@ const user = (value: string) =>
 
 /** Lets every fiber that can run do so, without a clock. */
 const settle = Effect.gen(function* () {
-  for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+  for (let i = 0; i < 20; i++) {
+    yield* Effect.yieldNow;
+  }
 });
 
 describe("Session writes and the lifetime around them", () => {

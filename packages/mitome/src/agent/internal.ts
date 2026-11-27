@@ -38,10 +38,16 @@ export const snapshot = <Options extends object>(
   known: ReadonlyArray<keyof Options & string>,
 ): Types.Mutable<Options> => {
   for (const key of Object.keys(options)) {
-    if (!known.some((name) => name === key)) throw new TypeError(`${kind} has no field "${key}"`);
+    if (!known.some((name) => name === key)) {
+      throw new TypeError(`${kind} has no field "${key}"`);
+    }
   }
   const fields: Partial<Options> = {};
-  for (const key of known) if (key in options) fields[key] = options[key];
+  for (const key of known) {
+    if (key in options) {
+      fields[key] = options[key];
+    }
+  }
   // SAFETY: every field `options` has under the names `kind` defines, and no other.
   return fields as Types.Mutable<Options>;
 };
@@ -96,7 +102,9 @@ export const isToolkit = (value: unknown): value is Toolkit.Any =>
 /** Whether `handlers` binds exactly the Tools of `toolkit`, as `localTools` requires. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- relates a Toolkit to an unchecked value; matching keys do not make it a handler map
 export const bindsExactly = (toolkit: Toolkit.Any, handlers: unknown) => {
-  if (!Predicate.isObject(handlers)) return false;
+  if (!Predicate.isObject(handlers)) {
+    return false;
+  }
   const names = Object.keys(toolkit.tools);
   return (
     Object.keys(handlers).length === names.length &&
@@ -137,7 +145,9 @@ export const checkParts = (name: string, given: AnyParts): AnyParts => {
   if (Predicate.isObject(parts.handlers) && !Effect.isEffect(parts.handlers)) {
     parts.handlers = Object.freeze({ ...parts.handlers });
   }
-  if (Array.isArray(parts.commands)) parts.commands = Object.freeze([...parts.commands]);
+  if (Array.isArray(parts.commands)) {
+    parts.commands = Object.freeze([...parts.commands]);
+  }
   const { tools, handlers, instructions, policy, commands } = parts;
   if ((tools === undefined) !== (handlers === undefined)) {
     throw new TypeError(`Extension "${name}" must give handlers exactly when it gives tools`);

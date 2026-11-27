@@ -68,7 +68,9 @@ const readOnRequest = () => ({
 type Nested<Leaf> = Leaf | { readonly deeper: Nested<Leaf> };
 const deeplyNested = <Leaf>(leaf: Leaf) => {
   let nested: Nested<Leaf> = leaf;
-  for (let level = 0; level < 100_000; level += 1) nested = { deeper: nested };
+  for (let level = 0; level < 100_000; level += 1) {
+    nested = { deeper: nested };
+  }
   return nested;
 };
 
@@ -84,7 +86,9 @@ const levelOf = (nested: unknown, deeper: number) => {
 
 describe("isPlainData", () => {
   it("is Effect's Schema.Json, as a type guard", () => {
-    for (const [, value] of liveValues()) expect(isPlainData(value)).toBe(false);
+    for (const [, value] of liveValues()) {
+      expect(isPlainData(value)).toBe(false);
+    }
     const inherited = Object.setPrototypeOf({}, { toJSON: () => "x" });
     const holes: Array<number> = [];
     holes[1] = 1;
@@ -261,7 +265,9 @@ describe("a staged Message", () => {
         }),
       );
       const [kept] = yield* session.history;
-      if (kept === undefined) throw new Error("expected a kept Message");
+      if (kept === undefined) {
+        throw new Error("expected a kept Message");
+      }
       expect(kept).toEqual(yield* readBack(kept));
       expect(kept).toEqual(resultMessage({ kept: [1, { deep: "x" }] }));
       expect([...stored.entries.values()][0]?.messages).toEqual([kept]);
@@ -479,7 +485,9 @@ describe("a Tool result", () => {
       });
       const { exit, history } = yield* run(program, [call("c1", "clock")]);
       const result = yield* exit;
-      if (!Predicate.isTagged(result, "Complete")) throw new Error("expected a complete Step");
+      if (!Predicate.isTagged(result, "Complete")) {
+        throw new Error("expected a complete Step");
+      }
       expect(result.results[0]?.result).toBe(when);
       const tool = history.find((message) => message.role === "tool");
       const part = tool?.role === "tool" ? tool.content[0] : undefined;

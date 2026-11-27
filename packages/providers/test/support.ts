@@ -49,7 +49,9 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
     void (async () => {
       try {
         const chunks: Array<Uint8Array> = [];
-        for await (const chunk of incoming) chunks.push(chunk);
+        for await (const chunk of incoming) {
+          chunks.push(chunk);
+        }
         const body = Buffer.concat(chunks);
         const init =
           body.length === 0
@@ -58,7 +60,11 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
         const request = new Request(`http://${incoming.headers.host}${incoming.url}`, init);
         const response = await fetch(request);
         outgoing.writeHead(response.status, Object.fromEntries(response.headers));
-        if (response.body !== null) for await (const chunk of response.body) outgoing.write(chunk);
+        if (response.body !== null) {
+          for await (const chunk of response.body) {
+            outgoing.write(chunk);
+          }
+        }
         outgoing.end();
       } catch {
         outgoing.writeHead(500).end();
@@ -73,7 +79,9 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
     // SAFETY: a successfully listening TCP server returns AddressInfo rather than null or a pipe name.
     port: (server.address() as AddressInfo).port,
     stop: (closeActiveConnections = false) => {
-      if (closeActiveConnections) server.closeAllConnections();
+      if (closeActiveConnections) {
+        server.closeAllConnections();
+      }
       return new Promise((resolve, reject) =>
         server.close((error) => (error === undefined ? resolve() : reject(error))),
       );

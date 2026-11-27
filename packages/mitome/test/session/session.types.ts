@@ -28,7 +28,9 @@ const application = (input: { readonly limit: number }) =>
     yield* turn.stage();
     yield* Effect.acquireRelease(Effect.succeed("Turn resource"), () => Effect.void);
     const other = yield* Other;
-    if (other.n > input.limit) return yield* new AppError();
+    if (other.n > input.limit) {
+      return yield* new AppError();
+    }
     const result: Result = { answer: 42, invoke: String };
     return result;
   });

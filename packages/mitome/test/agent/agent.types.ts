@@ -52,7 +52,9 @@ const notes = Extension.make(
   "notes",
   Effect.gen(function* () {
     const disk = yield* Disk;
-    if (disk.path === "") return yield* new StoreError();
+    if (disk.path === "") {
+      return yield* new StoreError();
+    }
     yield* Effect.addFinalizer(() => Effect.void);
     const added: Array<string> = [];
     return {

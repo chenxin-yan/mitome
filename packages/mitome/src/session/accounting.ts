@@ -47,5 +47,7 @@ export const currentGeneration = Context.Reference<{ requests: number } | undefi
  */
 export const reportModelRequest: Effect.Effect<void> = Effect.gen(function* () {
   const generation = yield* currentGeneration;
-  if (generation !== undefined) generation.requests += 1;
+  if (generation !== undefined) {
+    generation.requests += 1;
+  }
 });

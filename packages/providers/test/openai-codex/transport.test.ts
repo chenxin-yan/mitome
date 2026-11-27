@@ -536,7 +536,9 @@ describe("Codex transport", () => {
       credential(),
       () => {
         requests += 1;
-        if (requests > 1) return completed();
+        if (requests > 1) {
+          return completed();
+        }
         return new Response(
           new ReadableStream(
             {

@@ -93,7 +93,9 @@ const scripted = (
           yield* Effect.addFinalizer(() =>
             Effect.sync(() => void log.push(`release:${id}/${modelId}`)),
           );
-          if (fail.has(modelId)) return yield* Effect.fail(`${modelId} unavailable`);
+          if (fail.has(modelId)) {
+            return yield* Effect.fail(`${modelId} unavailable`);
+          }
           return scriptedModel(script, log);
         }),
       ),
@@ -443,7 +445,9 @@ describe("Mitome.make Configuration", () => {
         const second = yield* Effect.forkChild(instance.shutdown);
         yield* Deferred.succeed(resume, undefined);
         while (second.pollUnsafe() === undefined || tasks.length > 0) {
-          for (const task of tasks.splice(0)) task();
+          for (const task of tasks.splice(0)) {
+            task();
+          }
           yield* Effect.yieldNow;
         }
         yield* Fiber.join(second);
@@ -487,11 +491,15 @@ describe("Mitome.make Configuration", () => {
         { startImmediately: true },
       );
       const admitting = Effect.map(Effect.exit(instance.provide(Effect.void)), Exit.isSuccess);
-      while (tasks.length > 0 && (yield* admitting)) tasks.shift()?.();
+      while (tasks.length > 0 && (yield* admitting)) {
+        tasks.shift()?.();
+      }
       expect(yield* admitting).toBe(false);
       yield* Effect.forkChild(Fiber.interrupt(first), { startImmediately: true });
       while (first.pollUnsafe() === undefined || tasks.length > 0) {
-        for (const task of tasks.splice(0)) task();
+        for (const task of tasks.splice(0)) {
+          task();
+        }
         yield* Effect.yieldNow;
       }
       // The shutdown that caller launched began without any later call.

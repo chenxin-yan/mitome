@@ -54,7 +54,9 @@ export const scripted = Provider.make("scripted", {
   modelIds: ["echo"],
   credential: "FIXTURE_API_KEY",
   provision: (modelId) => {
-    if (modelId === "defect") throw new ReferenceError("fixture provisioning defect");
+    if (modelId === "defect") {
+      throw new ReferenceError("fixture provisioning defect");
+    }
     return Layer.unwrap(
       Effect.gen(function* () {
         record(`provision:${modelId}`);

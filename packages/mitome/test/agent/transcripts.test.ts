@@ -370,7 +370,9 @@ describe("Mitome.Instance sessions with Transcripts", () => {
       const move = yield* Effect.forkChild(session.moveTo(undefined));
       yield* Deferred.await(entered);
       const shutdown = yield* Effect.forkChild(instance.shutdown, { startImmediately: true });
-      for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+      for (let i = 0; i < 20; i++) {
+        yield* Effect.yieldNow;
+      }
 
       expect(shutdown.pollUnsafe()).toBeUndefined();
       expect(log).toEqual([]);

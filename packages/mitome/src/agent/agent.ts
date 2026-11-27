@@ -208,11 +208,15 @@ export function make(options: AgentOptions<any, any, any, any, any, any, any, an
     throw new TypeError("Agent use must be an array of Extensions");
   }
   // `use` and `limits` are copied first, so what is checked is what is kept.
-  if (agent.use !== undefined) agent.use = Object.freeze([...agent.use]);
+  if (agent.use !== undefined) {
+    agent.use = Object.freeze([...agent.use]);
+  }
   const read = isRecord(agent.limits)
     ? readLimits(agent.limits)
     : Result.fail("must be non-negative integers");
-  if (Result.isSuccess(read)) agent.limits = Object.freeze(read.success);
+  if (Result.isSuccess(read)) {
+    agent.limits = Object.freeze(read.success);
+  }
   const { instructions, use = [], policy, limits, program, text } = agent;
   if (instructions !== undefined && !Predicate.isString(instructions)) {
     throw new TypeError("Agent instructions must be a string");

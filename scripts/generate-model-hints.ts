@@ -34,9 +34,13 @@ const fetchOpenAiModels = async (): Promise<Array<OpenAiCatalogModel>> => {
   const response = await fetch(catalogUrl, {
     signal: AbortSignal.timeout(10_000),
   });
-  if (!response.ok) throw new Error(`models.dev returned ${response.status}`);
+  if (!response.ok) {
+    throw new Error(`models.dev returned ${response.status}`);
+  }
   const models = toolCapableOpenAiModels(await response.json());
-  if (models.length === 0) throw new Error("models.dev returned no tool-capable OpenAI models");
+  if (models.length === 0) {
+    throw new Error("models.dev returned no tool-capable OpenAI models");
+  }
   // Descending sort keeps newest model generations first and diffs deterministic.
   return models.sort((left, right) => (left.id < right.id ? 1 : -1));
 };

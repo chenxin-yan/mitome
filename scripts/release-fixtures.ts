@@ -31,7 +31,9 @@ const run = async (
     await stdin.write(input);
     await stdin.end();
   }
-  if ((await child.exited) !== 0) throw new Error(`Command failed: ${command.join(" ")}`);
+  if ((await child.exited) !== 0) {
+    throw new Error(`Command failed: ${command.join(" ")}`);
+  }
 };
 
 const archiveFor = (pkg: ReleasePackage): string => join(archivesDirectory, pkg.archive);

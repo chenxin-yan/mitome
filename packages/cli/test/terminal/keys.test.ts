@@ -8,7 +8,9 @@ import { keysOf, terminalKeys } from "../../src/terminal/keys.ts";
 /** Every name a binding is looked up by for one key sequence, in order. */
 const names = (sequence: string, useKittyKeyboard = false) => {
   const key = parseKeypress(sequence, { useKittyKeyboard });
-  if (key === null) throw new Error(`OpenTUI parsed no key from ${JSON.stringify(sequence)}`);
+  if (key === null) {
+    throw new Error(`OpenTUI parsed no key from ${JSON.stringify(sequence)}`);
+  }
   return keysOf(new KeyEvent(key));
 };
 

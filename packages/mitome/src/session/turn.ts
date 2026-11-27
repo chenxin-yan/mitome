@@ -68,7 +68,9 @@ export const readLimits = (given: ExecutionLimits): Result.Result<ExecutionLimit
   const limits: Types.Mutable<ExecutionLimits> = {};
   for (const bound of Struct.keys(ExecutionLimitsSchema.fields)) {
     const value = decoded.value[bound];
-    if (value !== undefined) limits[bound] = value;
+    if (value !== undefined) {
+      limits[bound] = value;
+    }
   }
   return Result.succeed(limits);
 };
