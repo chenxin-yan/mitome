@@ -284,14 +284,21 @@ test("the uploader's Node entry point works without installing dependencies", ()
       "commit.gpgsign=false",
       "core.hooksPath=/dev/null",
     ].flatMap((setting) => ["-c", setting]);
-    execFileSync("git", ["init", "-q"], { cwd: directory });
+    // Under a hook or `git rebase --exec` git exports GIT_DIR and GIT_WORK_TREE. Inherited, they
+    // would aim this fixture's `git init` and commit at the repository that runs the tests.
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
+    );
+    execFileSync("git", ["init", "-q"], { cwd: directory, env });
     execFileSync("git", [...settings, "commit", "-q", "--allow-empty", "-m", "fixture"], {
       cwd: directory,
+      env,
     });
     expect(
       execFileSync("node", ["scripts/release.ts", "version"], {
         cwd: directory,
         encoding: "utf8",
+        env,
       }).trim(),
     ).toBe(packages[0]!.version);
   } finally {
