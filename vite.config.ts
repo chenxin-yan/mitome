@@ -108,6 +108,9 @@ export default defineConfig({
       // A promise's catch callback takes `unknown`, which anti-slop/no-unknown-parameters allows
       // only under the name `cause`.
       "unicorn/catch-error-name": ["error", { ignore: ["^cause$"] }],
+      // Effect writes the empty Tool record as `{}` (`Toolkit.empty: Toolkit<{}>`), and so do the
+      // public `Tools` defaults; empty interfaces stay refused.
+      "typescript/no-empty-object-type": ["error", { allowObjectTypes: "always" }],
       "typescript/no-unnecessary-condition": [
         "error",
         {
@@ -130,7 +133,6 @@ export default defineConfig({
       // Turned off on adopting @cloudflare/oxlint-config; each is evaluated in a commit of its own.
       "import/no-namespace": "off",
       "jsx-a11y/html-has-lang": "off",
-      "typescript/no-empty-object-type": "off",
       "typescript/no-explicit-any": "off",
       "typescript/no-non-null-assertion": "off",
       "typescript/no-unsafe-argument": "off",
