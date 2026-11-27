@@ -148,7 +148,6 @@ export default defineConfig({
       "unicorn/catch-error-name": "off",
       "unicorn/consistent-function-scoping": "off",
       "unicorn/prefer-native-coercion-functions": "off",
-      "unicorn/prefer-set-has": "off",
       "vitest/expect-expect": "off",
       "vitest/no-conditional-expect": "off",
       "vitest/require-mock-type-parameters": "off",

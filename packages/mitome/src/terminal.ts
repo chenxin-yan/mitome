@@ -36,7 +36,7 @@ const control = (id: Control["id"]): Control => Object.freeze({ id });
 const submit = control("mitome/terminal/submit");
 const newline = control("mitome/terminal/newline");
 const interrupt = control("mitome/terminal/interrupt");
-const controlIds: ReadonlyArray<string> = [submit.id, newline.id, interrupt.id];
+const controlIds: ReadonlySet<string> = new Set([submit.id, newline.id, interrupt.id]);
 
 const keyName =
   "(?:[a-z0-9]|enter|escape|tab|space|backspace|delete|up|down|left|right|home|end|pageup|pagedown|f(?:[1-9]|1[0-2]))";
@@ -44,9 +44,7 @@ const keyNotation = new RegExp(`^(?:ctrl\\+)?(?:alt\\+)?(?:shift\\+)?${keyName}$
 
 const isBinding = (value: unknown): value is Binding =>
   (Predicate.isString(value) && value.startsWith("/")) ||
-  (Predicate.hasProperty(value, "id") &&
-    Predicate.isString(value.id) &&
-    controlIds.includes(value.id));
+  (Predicate.hasProperty(value, "id") && Predicate.isString(value.id) && controlIds.has(value.id));
 
 const make = (options: Options): Layer.Layer<never> => {
   if (!Predicate.isObject(options)) {
