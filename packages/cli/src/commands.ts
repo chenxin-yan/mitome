@@ -16,7 +16,7 @@ import {
   Stream,
 } from "effect";
 import { CliError } from "effect/cli";
-import { loadConfiguration } from "./configuration.js";
+import { Callback, loadConfiguration } from "./configuration.js";
 import type { LoadedConfiguration, LoadedInstance } from "./configuration.js";
 import { describe, runtimeError, userError } from "./errors.js";
 import { shell, shellQuote } from "./template.js";
@@ -415,7 +415,7 @@ const selectCredentialed = (app: LoadedConfiguration, providerId: Option.Option<
   );
 };
 
-const AuthCapabilityModule = Schema.Struct({ authenticate: Schema.declare(Predicate.isFunction) });
+const AuthCapabilityModule = Schema.Struct({ authenticate: Callback });
 
 /**
  * An Auth capability module named by a Provider, resolved as an import written in the

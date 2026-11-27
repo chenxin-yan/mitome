@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
+import { buffer } from "node:stream/consumers";
 import { ConfigProvider, Effect, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 
@@ -49,11 +50,7 @@ export const serve = async ({ fetch }: ServerOptions): Promise<TestServer> => {
   const server = createServer((incoming, outgoing) => {
     void (async () => {
       try {
-        const chunks: Array<Uint8Array> = [];
-        for await (const chunk of incoming) {
-          chunks.push(chunk);
-        }
-        const body = Buffer.concat(chunks);
+        const body = await buffer(incoming);
         const init =
           body.length === 0
             ? { method: incoming.method ?? "GET", headers: headers(incoming.headers) }

@@ -490,7 +490,7 @@ const badParams = Kernel.step({
   ],
 });
 // @ts-expect-error An incomplete Step carries no local results.
-const noResults = incomplete.results;
+const noResults = incomplete.results; // oxlint-disable-line typescript/no-unsafe-member-access, typescript/no-unsafe-assignment -- the property this negative control shows is absent
 // @ts-expect-error The provisioning error is not erased when the binding is provided.
 const noProvisionError: Effect.Effect<
   Core.StepResult<{}>,

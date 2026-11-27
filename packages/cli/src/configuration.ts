@@ -10,7 +10,14 @@ import type { PlatformError, Scope } from "effect";
 import { describe, runtimeError, userError } from "./errors.js";
 import { liveInstallCommand } from "./template.js";
 
-const Callback = Schema.declare(Predicate.isFunction);
+/** A function another module exports: it may be called with anything, and may return anything. */
+// oxlint-disable-next-line quality/no-unknown-returns -- what foreign code returns is checked where it is called
+type ForeignFunction = (...args: ReadonlyArray<unknown>) => unknown;
+
+const isForeignFunction = (value: unknown): value is ForeignFunction => Predicate.isFunction(value);
+
+/** A function exported by a module the CLI loads at run time. */
+export const Callback = Schema.declare(isForeignFunction);
 
 const TextMapping = Schema.Struct({ parse: Callback, render: Callback });
 
@@ -114,7 +121,7 @@ export interface LoadedConfiguration {
  * nevertheless leaves unsupplied is a defect of that module, not something this check recovers.
  */
 const invoke =
-  <R>(what: string, operation: Function) =>
+  <R>(what: string, operation: ForeignFunction) =>
   (...args: ReadonlyArray<unknown>): Erased<R> => {
     const effect: unknown = operation(...args);
     if (!Effect.isEffect(effect)) {
@@ -237,9 +244,10 @@ export const loadConfiguration = Effect.fnUntraced(function* (config: Option.Opt
     // SAFETY: `acquire` succeeds with the producer's own Instance by the same contract.
     acquire: (options) => acquire(options) as ReturnType<LoadedConfiguration["acquire"]>,
     text: {
-      parse: invoke("text.parse", (text: string) => loaded.text.parse(text)),
-      // oxlint-disable-next-line anti-slop/no-unknown-parameters -- the loaded program's result, whose type the CLI never imports
-      render: invoke("text.render", (result: unknown) => loaded.text.render(result)),
+      parse: invoke("text.parse", (...args: ReadonlyArray<unknown>) => loaded.text.parse(...args)),
+      render: invoke("text.render", (...args: ReadonlyArray<unknown>) =>
+        loaded.text.render(...args),
+      ),
     },
   };
   return configuration;

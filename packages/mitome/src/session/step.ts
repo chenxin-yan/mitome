@@ -323,6 +323,7 @@ const classify = Effect.fnUntraced(function* (
       );
     }
     ids.add(part.id);
+    // oxlint-disable-next-line typescript/no-unsafe-argument -- Effect types a response's Tool Call name and parameters as `any`
     calls.push(part);
   }
   const messages: Array<Prompt.Message> = [];

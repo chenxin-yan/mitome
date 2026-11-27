@@ -1,11 +1,23 @@
 import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { Schema } from "effect";
 import { catalogVersions, knownModelIds } from "../packages/create-mitome/src/model-hints.ts";
 import { checkArchives, releasePackages } from "./release.ts";
 import type { ReleasePackage } from "./release.ts";
 
 const rootDirectory = resolve(import.meta.dir, "..");
+const Dependencies = Schema.optional(Schema.Record(Schema.String, Schema.String));
+/** The fields of a package manifest these fixtures check. */
+const Manifest = Schema.fromJsonString(
+  Schema.Struct({
+    version: Schema.optional(Schema.String),
+    dependencies: Dependencies,
+    devDependencies: Dependencies,
+    peerDependencies: Dependencies,
+  }),
+);
+const decodeManifest = Schema.decodeUnknownSync(Manifest);
 const packages = releasePackages();
 const publicPackages = packages.filter((pkg) => !pkg.name.startsWith("@mitome/cli-"));
 const cli = packages.find((pkg) => pkg.name === "@mitome/cli");
@@ -83,7 +95,9 @@ try {
   const effectVersion = catalog.effect;
   const nodeTypesVersion = catalogVersions["@types/node"];
   const installedEffectManifest = Bun.resolveSync("effect/package.json", rootDirectory);
-  const installedEffectVersion: string = (await Bun.file(installedEffectManifest).json()).version;
+  const installedEffectVersion = decodeManifest(
+    await Bun.file(installedEffectManifest).text(),
+  ).version;
   if (installedEffectVersion !== effectVersion) {
     throw new Error(`Installed Effect ${installedEffectVersion} is not catalog ${effectVersion}.`);
   }
@@ -129,8 +143,9 @@ try {
     }
   }
   for (const pkg of publicPackages) {
-    const manifest = await Bun.file(join(nodeModules, pkg.name, "package.json")).json();
-    if (/"(?:catalog|workspace):/.test(JSON.stringify(manifest))) {
+    const text = await Bun.file(join(nodeModules, pkg.name, "package.json")).text();
+    const manifest = decodeManifest(text);
+    if (/"(?:catalog|workspace):/.test(text)) {
       throw new Error(`${pkg.name} tarball retains a workspace-only dependency protocol.`);
     }
     if (["@mitome/core", "@mitome/providers", "@mitome/transcripts"].includes(pkg.name)) {
@@ -257,12 +272,14 @@ if (options?.keys.enter !== terminal.submit || options.keys["ctrl+d"] !== "/quit
   const createdDirectory = join(temporaryDirectory, "created-app");
   await mkdir(createdDirectory);
   await run(["node", join(nodeModules, ".bin", "create-mitome")], createdDirectory, "1\n1\n");
-  const createdPackage = await Bun.file(join(createdDirectory, "package.json")).json();
+  const createdPackage = decodeManifest(
+    await Bun.file(join(createdDirectory, "package.json")).text(),
+  );
   if (
-    Object.keys(createdPackage.dependencies).join(",") !==
+    Object.keys(createdPackage.dependencies ?? {}).join(",") !==
       "@mitome/core,@mitome/providers,effect" ||
-    createdPackage.dependencies.effect !== effectVersion ||
-    createdPackage.devDependencies.typescript !== catalogVersions.typescript ||
+    createdPackage.dependencies?.effect !== effectVersion ||
+    createdPackage.devDependencies?.typescript !== catalogVersions.typescript ||
     createdPackage.devDependencies["@types/node"] !== nodeTypesVersion
   ) {
     throw new Error("create-mitome generated unexpected dependency versions.");

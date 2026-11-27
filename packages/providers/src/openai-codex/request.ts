@@ -222,6 +222,7 @@ export const requestFor = (
     ...request,
     tools: options.tools.map((tool) => ({
       type: "function",
+      // oxlint-disable-next-line typescript/no-unsafe-assignment -- Effect types `Tool.Any`'s name as `any`; it is the Tool's name
       name: tool.name,
       description: Tool.getDescription(tool),
       parameters: Tool.getJsonSchema(tool),

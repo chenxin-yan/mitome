@@ -146,12 +146,6 @@ export default defineConfig({
       "mitome/no-schema-unknown-type": "error",
       "vite-plus/prefer-vite-plus-imports": "error",
       // Turned off on adopting @cloudflare/oxlint-config; each is evaluated in a commit of its own.
-      "typescript/no-unsafe-argument": "off",
-      "typescript/no-unsafe-assignment": "off",
-      "typescript/no-unsafe-call": "off",
-      "typescript/no-unsafe-function-type": "off",
-      "typescript/no-unsafe-member-access": "off",
-      "typescript/no-unsafe-return": "off",
       "typescript/only-throw-error": "off",
       "unicorn/consistent-function-scoping": "off",
     },
@@ -233,6 +227,14 @@ export default defineConfig({
         files: ["packages/create-mitome/src/index.ts", "packages/cli/scripts/**", "scripts/**"],
         rules: {
           "no-console": "off",
+        },
+      },
+      {
+        // It runs with plain Node and no dependencies installed, so it parses JSON without
+        // Effect's Schema, and its annotations state what it reads.
+        files: ["scripts/release.ts"],
+        rules: {
+          "typescript/no-unsafe-assignment": "off",
         },
       },
       {

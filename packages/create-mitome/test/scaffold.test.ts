@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { Effect, Fiber, Layer, Stream } from "effect";
+import { Effect, Fiber, Layer, Schema, Stream } from "effect";
 import { LanguageModel } from "effect/ai";
 import type { Prompt } from "effect/ai";
 import { afterEach, describe, expect, test } from "vite-plus/test";
@@ -49,9 +49,11 @@ const provider = (id: ProviderId) => providerChoices.find((choice) => choice.id 
 const plan = (id: ProviderId, model: string) =>
   applicationPlan({ name: "my-app", provider: provider(id), model });
 // What the workspace installed for this package, read independently of the generator.
+const InstalledManifest = Schema.fromJsonString(Schema.Struct({ version: Schema.String }));
 const installed = async (name: string): Promise<string> =>
-  JSON.parse(await readFile(join(packageDirectory, "node_modules", name, "package.json"), "utf8"))
-    .version;
+  Schema.decodeUnknownSync(InstalledManifest)(
+    await readFile(join(packageDirectory, "node_modules", name, "package.json"), "utf8"),
+  ).version;
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true })));

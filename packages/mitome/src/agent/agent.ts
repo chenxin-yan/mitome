@@ -1,4 +1,4 @@
-import { Predicate, Result } from "effect";
+import { Array as Arr, Predicate, Result } from "effect";
 import type { Effect } from "effect";
 import type { loop, step, ToolCallRequest, ToolDecision } from "../session/step.js";
 import { readLimits } from "../session/turn.js";
@@ -210,10 +210,13 @@ export function make<
 ): Agent<Input, A, E, R, Use, RPolicy, EParse, RParse, ERender, RRender> & {
   readonly program: Program<Input, A, E, R, Use, RPolicy>;
 } & TextRequired<Input, A, TextMapping<Input, A, EParse, RParse, ERender, RRender>>;
-// oxlint-disable-next-line typescript/no-explicit-any -- the implementation signature, which every overload's options must satisfy
-export function make(options: AgentOptions<any, any, any, any, any, any, any, any, any, any>) {
+export function make(
+  // oxlint-disable-next-line typescript/no-explicit-any -- the implementation signature, which every overload's options must satisfy
+  options: AgentOptions<any, any, any, any, ReadonlyArray<AnyExtension>, any, any, any, any, any>,
+) {
   const agent = snapshot("Agent", options, fields);
-  if (agent.use !== undefined && !Array.isArray(agent.use)) {
+  // Effect's guard keeps the element type, where the global one narrows to `any[]`.
+  if (agent.use !== undefined && !Arr.isArray<typeof agent.use>(agent.use)) {
     throw new TypeError("Agent use must be an array of Extensions");
   }
   // `use` and `limits` are copied first, so what is checked is what is kept.

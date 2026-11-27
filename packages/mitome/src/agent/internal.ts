@@ -1,4 +1,4 @@
-import { Effect, Predicate } from "effect";
+import { Array as Arr, Effect, Predicate } from "effect";
 import type { Types } from "effect";
 import { Tool } from "effect/ai";
 import type { Toolkit } from "effect/ai";
@@ -147,7 +147,8 @@ export const checkParts = (name: string, given: AnyParts): AnyParts => {
   if (Predicate.isObject(parts.handlers) && !Effect.isEffect(parts.handlers)) {
     parts.handlers = Object.freeze({ ...parts.handlers });
   }
-  if (Array.isArray(parts.commands)) {
+  // Effect's guard keeps the element type, where the global one narrows to `any[]`.
+  if (Arr.isArray<typeof parts.commands>(parts.commands)) {
     parts.commands = Object.freeze([...parts.commands]);
   }
   const { tools, handlers, instructions, policy, commands } = parts;
@@ -203,7 +204,11 @@ export const checkClashes = (
   const commands = new Map<string, string>();
   for (const { name, parts } of extensions) {
     // By Tool name, which is what the Model calls, whatever key the Toolkit holds it under.
-    for (const tool of new Set(Object.values(parts?.tools?.tools ?? {}).map((t) => t.name))) {
+    const names = Object.values(parts?.tools?.tools ?? {}).map(
+      // oxlint-disable-next-line typescript/no-unsafe-return -- Effect types `Tool.Any`'s name as `any`; it is the Tool's name
+      (tool): string => tool.name,
+    );
+    for (const tool of new Set(names)) {
       const owner = tools.get(tool);
       if (owner !== undefined) {
         throw new TypeError(

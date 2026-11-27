@@ -77,7 +77,10 @@ const notPlainData = (
         ? Object.entries(field).map(([key, item]) => [at(path, key), item] as const)
         : undefined;
     if (fields === undefined) {
-      const constructor: unknown = Object.getPrototypeOf(field)?.constructor;
+      const prototype: unknown = Object.getPrototypeOf(field);
+      const constructor = Predicate.hasProperty(prototype, "constructor")
+        ? prototype.constructor
+        : undefined;
       const name = Predicate.isFunction(constructor) ? constructor.name : "";
       return { path, found: name === "" ? "an object of another kind" : `a ${name}` };
     }

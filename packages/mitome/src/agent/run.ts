@@ -75,6 +75,7 @@ const prepare = Effect.fnUntraced(function* (use: ReadonlyArray<AnyExtension>) {
           Toolkit.merge(...toolkits),
           // Each map was checked against its own Toolkit, so no Extension binds another's Tool. No
           // prototype, so a Tool named `__proto__` keeps an own handler.
+          // oxlint-disable-next-line typescript/no-unsafe-argument -- no type relates the merged handler maps to the merged Toolkit
           Object.assign(Object.create(null), ...added.map(({ handlers }) => handlers)),
         );
   return { added, tools };
@@ -85,6 +86,7 @@ const allocate = Effect.fnUntraced(function* (
   selection: SessionOptions,
   scope: Scope.Scope,
 ) {
+  // oxlint-disable-next-line typescript/no-unsafe-assignment -- `AnyAgent` erases its Extensions to `any`, and `Agent.make` checked each
   const use: ReadonlyArray<AnyExtension> = agent.use ?? [];
   // What the setups acquire. Forked before anything else joins `scope`, so it is released last:
   // after the Session has drained its Turns and Commands, even of a finalizer added to it late.

@@ -97,7 +97,7 @@ export const remembering = Provider.make("scripted", {
 
 const transcripts = Layer.sync(Transcripts, () => {
   const name = process.env.MITOME_FIXTURE_HISTORY ?? "";
-  const store = stores.get(name) ?? { conversations: new Map(), latest: new Map() };
+  const store: Store = stores.get(name) ?? { conversations: new Map(), latest: new Map() };
   stores.set(name, store);
   return {
     // Recorded as the latest as soon as it is created, as a store may, which a CLI that opens
