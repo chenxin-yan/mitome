@@ -74,6 +74,7 @@ export function releasePackages(directory = root): ReleasePackage[] {
     "providers",
     ...platformDirectories.map((name) => `cli/npm/${name}`),
     "cli",
+    "create-mitome",
   ];
   const manifests = directories.map((name): PackageManifest =>
     JSON.parse(readFileSync(join(directory, "packages", name, "package.json"), "utf8")),

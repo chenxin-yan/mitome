@@ -7,7 +7,9 @@
         "$TURBO_ROOT$/scripts/models-dev.ts",
         "$TURBO_ROOT$/scripts/models-dev.snapshot.json",
         "$TURBO_ROOT$/packages/providers/src/openai-codex/models.ts",
-        "$TURBO_ROOT$/packages/create-mitome/package.json"
+        "$TURBO_ROOT$/packages/providers/src/anthropic/models.ts",
+        "$TURBO_ROOT$/packages/create-mitome/package.json",
+        "$TURBO_ROOT$/bun.lock"
       ],
       "outputs": [
         "packages/providers/src/openai/models.ts",
@@ -45,6 +47,7 @@
     },
     "//#fmt": {},
     "//#check:types": {
+      "dependsOn": ["//#hints:generate"],
       "outputs": []
     },
     "//#fmt:fix": {
