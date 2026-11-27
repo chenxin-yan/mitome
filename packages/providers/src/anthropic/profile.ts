@@ -427,6 +427,10 @@ const credentialsTarget = (profile: Profile) =>
     ),
   );
 
+/** Whether `stored` can be sent instead of refreshing: fresh, and not the token the API rejected. */
+const usable = (stored: StoredCredentials, rejected: string | undefined) =>
+  Effect.map(isFresh(stored), (fresh) => fresh && stored.accessToken !== rejected);
+
 /**
  * The access tokens of one provisioned profile. Each call reads the profile again, so a token
  * another process rotated is used, and fails closed if the profile now names another host,
@@ -461,10 +465,6 @@ export const tokenSource = (profile: Profile, credentialsFile: string, tokenUrl:
     yield* sameConfig;
     return stored;
   });
-
-  /** Whether `stored` can be sent instead of refreshing: fresh, and not the token the API rejected. */
-  const usable = (stored: StoredCredentials, rejected: string | undefined) =>
-    Effect.map(isFresh(stored), (fresh) => fresh && stored.accessToken !== rejected);
 
   const refreshUnderLock = (rejected: string | undefined) =>
     withLock(

@@ -74,15 +74,18 @@ const branch = (stored: Stored) => {
 const encodeLine = Schema.encodeEffect(Line);
 const decodeLine = Schema.decodeEffect(Line);
 
+const unreadable = (where: string, cause: PlatformError.PlatformError) =>
+  new TranscriptError({ detail: `${where} cannot be read: ${cause.message}` });
+
+const malformed = (location: string, line: number) =>
+  new TranscriptError({ detail: `${location}: line ${line} is malformed` });
+
 /**
  * The conversations under `directory`, one `<id>.jsonl` file each, reached through the platform
  * services `fs` and `path`.
  */
 const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) => {
   const file = (id: string) => path.join(directory, `${id}.jsonl`);
-
-  const unreadable = (where: string, cause: PlatformError.PlatformError) =>
-    new TranscriptError({ detail: `${where} cannot be read: ${cause.message}` });
 
   /**
    * The complete lines of a conversation's file; `undefined` when there is none. A line is
@@ -107,9 +110,6 @@ const store = (directory: string, fs: FileSystem.FileSystem, path: Path.Path) =>
     const torn = length < bytes.value.length;
     return { location, lines: text.split("\n").slice(0, -1), length, torn };
   });
-
-  const malformed = (location: string, line: number) =>
-    new TranscriptError({ detail: `${location}: line ${line} is malformed` });
 
   /** Decodes a header line; a version other than 1 fails, as does a header naming another id. */
   const header = Effect.fnUntraced(function* (location: string, id: string, line: string) {

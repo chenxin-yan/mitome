@@ -358,16 +358,19 @@ type ContentPart = { readonly text: string } | { readonly refusal: string };
  * an empty text part whose `metadata.openai.refusal` keeps the explanation, never as ordinary text;
  * any other content type cannot be represented and fails the response rather than vanishing.
  */
+const malformedMessage = () => invalidOutput("Codex sent a malformed message");
+
+const incompleteReasoning = () => invalidOutput("Codex sent incomplete reasoning");
+
 const messageContent = (item: JsonInput): ReadonlyArray<ContentPart> | undefined => {
-  const malformed = () => invalidOutput("Codex sent a malformed message");
-  const decoded = decode(MessageContent, item, malformed);
+  const decoded = decode(MessageContent, item, malformedMessage);
   return decoded.content?.map((part): ContentPart => {
-    const { type } = decode(ContentType, part, malformed);
+    const { type } = decode(ContentType, part, malformedMessage);
     if (type === "output_text") {
-      return { text: decode(OutputText, part, malformed).text };
+      return { text: decode(OutputText, part, malformedMessage).text };
     }
     if (type === "refusal") {
-      return { refusal: decode(Refusal, part, malformed).refusal };
+      return { refusal: decode(Refusal, part, malformedMessage).refusal };
     }
     throw invalidOutput(`Codex returned message content this request cannot represent (${type})`);
   });
@@ -766,13 +769,14 @@ const mergeSnapshot = (slots: Map<number, Slot>, parts: ReadonlyArray<ContentPar
  * parts in index order. That content replaces the message's parts, each final (a streamed text
  * part stays started), except a part of an unfinished item that has no value yet.
  */
+const slotPart = (slot: Slot): ContentPart =>
+  slot.type === "text" ? { text: current(slot) } : { refusal: current(slot) };
+
 const finishMessage = (item: Item, supplied: ReadonlyArray<ContentPart> | undefined) => {
   const slots = [...item.slots].sort(([a], [b]) => a - b);
-  const toPart = (slot: Slot): ContentPart =>
-    slot.type === "text" ? { text: current(slot) } : { refusal: current(slot) };
   const entries: Array<readonly [number, ContentPart]> =
     supplied === undefined
-      ? slots.map(([index, slot]) => [index, toPart(slot)] as const)
+      ? slots.map(([index, slot]) => [index, slotPart(slot)] as const)
       : supplied.map((part, index) => [index, part] as const);
   if (supplied !== undefined) {
     for (const [index, slot] of slots) {
@@ -1061,6 +1065,9 @@ const listedContradicts = (item: Item, listed: JsonInput, onMalformed: () => AiE
   );
 };
 
+const terminalContradiction = () =>
+  invalidOutput("Codex completed a response whose output contradicts its stream");
+
 /**
  * A complete terminal response's non-empty `output` is the response's whole item list (Responses
  * API), so it must list exactly the streamed items: each listed item was streamed to completion
@@ -1070,8 +1077,6 @@ const listedContradicts = (item: Item, listed: JsonInput, onMalformed: () => AiE
  * dispatched. An absent or empty `output`, as the Codex CLI's own fixtures send, is not checked.
  */
 const reconcileTerminalOutput = (state: StreamState, output: ReadonlyArray<Json>) => {
-  const terminalContradiction = () =>
-    invalidOutput("Codex completed a response whose output contradicts its stream");
   const matched = new Set<Item>();
   const listedIds = new Set<string>();
   for (const listed of output) {
@@ -1191,8 +1196,6 @@ const retainIncomplete = (
   state: StreamState,
   output: ReadonlyArray<Json>,
 ): Array<Response.StreamPartEncoded> => {
-  const contradiction = () =>
-    invalidOutput("Codex completed a response whose output contradicts its stream");
   type Listed = {
     readonly kind: Item["kind"];
     readonly id: string | undefined;
@@ -1213,13 +1216,13 @@ const retainIncomplete = (
         : undefined;
     if (id !== undefined) {
       if (ids.has(id)) {
-        throw contradiction();
+        throw terminalContradiction();
       }
       ids.add(id);
     }
     if (call?.call_id !== undefined) {
       if (callIds.has(call.call_id)) {
-        throw contradiction();
+        throw terminalContradiction();
       }
       callIds.add(call.call_id);
     }
@@ -1243,17 +1246,17 @@ const retainIncomplete = (
         ? undefined
         : state.items.find((item) => item.callId === entry.call?.call_id);
     if (byId !== undefined && byCall !== undefined && byId !== byCall) {
-      throw contradiction();
+      throw terminalContradiction();
     }
     const item = byId ?? byCall;
     if (item === undefined) {
       return undefined;
     }
     if (item.kind !== entry.kind) {
-      throw contradiction();
+      throw terminalContradiction();
     }
     if (identityContradicts(item, { id: entry.id, ...entry.call })) {
-      throw contradiction();
+      throw terminalContradiction();
     }
     return item;
   };
@@ -1271,7 +1274,7 @@ const retainIncomplete = (
               !Equal.equals(parseArguments(entry.call.arguments, item.name ?? ""), item.params))
           : listedContradicts(item, entry.raw, contradiction)
       ) {
-        throw contradiction();
+        throw terminalContradiction();
       }
     }
     matched.set(item, entry);
@@ -1629,7 +1632,6 @@ const decodeOutputEvent = (
       const index = partIndex(event);
       const summary = !type.startsWith("response.reasoning_text");
       const slots = summary ? item.summaries : item.reasoningTexts;
-      const malformed = () => invalidOutput("Codex sent incomplete reasoning");
       const locator = summary ? index.summary_index : index.content_index;
       // A locator-less event (the Codex CLI's summary delta) names the only declared part, else the
       // first part. Like locator-less message text, text it supplies does not extend a start's
@@ -1637,16 +1639,16 @@ const decodeOutputEvent = (
       const slot = slotOf(slots, locator, "text") ?? slotAt(slots, 0, "text");
       const emptyStart =
         type === "response.reasoning_summary_part.added" &&
-        decode(SummaryPartPayload, event, malformed).part.text === "";
+        decode(SummaryPartPayload, event, incompleteReasoning).part.text === "";
       if (!emptyStart) {
         replaceSeeds(slots, slot, locator);
       }
       if (type.endsWith(".delta")) {
-        appendSlot(slot, decode(Delta, event, malformed).delta);
+        appendSlot(slot, decode(Delta, event, incompleteReasoning).delta);
       } else if (type.endsWith("_text.done")) {
-        finishSlot(slot, decode(OutputText, event, malformed).text);
+        finishSlot(slot, decode(OutputText, event, incompleteReasoning).text);
       } else {
-        const { text } = decode(SummaryPartPayload, event, malformed).part;
+        const { text } = decode(SummaryPartPayload, event, incompleteReasoning).part;
         if (type.endsWith(".done")) {
           finishSlot(slot, text);
         } else {

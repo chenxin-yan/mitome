@@ -150,6 +150,12 @@ interface TurnRecord {
   readonly entries: Array<string>;
 }
 
+const conflict = () => Effect.fail(new SessionSaveError({ outcome: "conflict" }));
+
+/** A controlled Step or commit of a Turn that has already ended. */
+const turnEnded = () =>
+  Effect.die(new Error("Turn has ended; it authorizes no further controlled work"));
+
 /**
  * The kernel's own Transcript, holding a Session's History tree in its memory, and how release
  * drops that tree.
@@ -169,7 +175,6 @@ const memoryTranscript = () => {
     }
     return found;
   };
-  const conflict = () => Effect.fail(new SessionSaveError({ outcome: "conflict" }));
   const transcript: Transcript = {
     id: crypto.randomUUID(),
     open: Effect.sync(() => ({ position: stored, branch: branch(stored) })),
@@ -366,8 +371,6 @@ const allocate = Effect.fn("mitome/Session.make")(function* (
               },
               usage: whenLive(() => ({ ...used })),
             });
-            const closed = () =>
-              Effect.die(new Error("Turn has ended; it authorizes no further controlled work"));
             // Stores what is staged as one Entry under the position, then publishes it. Once
             // started it completes; Messages staged meanwhile stay staged for the next commit.
             // Nothing staged, no Entry: the History tree holds the conversation, and a Step's work
@@ -378,7 +381,7 @@ const allocate = Effect.fn("mitome/Session.make")(function* (
                   Effect.suspend((): Effect.Effect<void, SessionSaveError | SessionFencedError> => {
                     // Checked holding the write permit, so the Turn's end has seen every Step commit.
                     if (!last && (!open || released)) {
-                      return closed();
+                      return turnEnded();
                     }
                     if (staged.length === 0) {
                       return Effect.void;
@@ -419,7 +422,7 @@ const allocate = Effect.fn("mitome/Session.make")(function* (
               reserve: (limit) =>
                 Effect.suspend(() => {
                   if (!open || released) {
-                    return closed();
+                    return turnEnded();
                   }
                   const bound = limits[limit];
                   if (bound !== undefined && used[limit] >= bound) {

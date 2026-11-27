@@ -147,7 +147,6 @@ export default defineConfig({
       "vite-plus/prefer-vite-plus-imports": "error",
       // Turned off on adopting @cloudflare/oxlint-config; each is evaluated in a commit of its own.
       "typescript/only-throw-error": "off",
-      "unicorn/consistent-function-scoping": "off",
     },
     // Overrides cannot hold settings.
     settings: {
@@ -241,6 +240,8 @@ export default defineConfig({
         files: ["**/test/**", "**/*.test.*"],
         rules: {
           "anti-slop-effect/no-manual-tagged-construction": "off",
+          // A test's helpers stay beside the tests that use them.
+          "unicorn/consistent-function-scoping": "off",
         },
       },
       {
