@@ -18,6 +18,7 @@ const decodeMessage = Schema.decodeUnknownEffect(Prompt.Message);
 /** What any store reads back: the encoded form, through a format, decoded again. */
 const readBack = (message: Prompt.Message) =>
   Effect.flatMap(encodeMessage(message), (encoded) =>
+    // oxlint-disable-next-line unicorn/prefer-structured-clone -- the round trip through JSON is the store's format
     decodeMessage(JSON.parse(JSON.stringify(encoded))),
   );
 
