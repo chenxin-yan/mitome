@@ -8,6 +8,8 @@ The repository's toolchain is Vite+ (`vp`) on pnpm. One root `vite.config.ts` ho
 
 Bun stays where it is the product's runtime: the CLI and its terminal UI (OpenTUI needs Bun), the single binary from `bun build --compile`, the scripts that use Bun's APIs, and the source CLI. `mitome init` still installs a person's Configuration with the binary's built-in Bun installer. Tests that need the Bun runtime run vitest under Bun (`bun --bun vp test`); every other package's tests run vitest on Node, so the libraries' Node support of [ADR-0021](0021-keep-libraries-node-capable-with-a-bun-native-cli.md) is still what CI attests.
 
+The lint rules come from four places, and none is copied when a package can supply it. `@cloudflare/oxlint-config` is the base: the author of the anti-slop rules this repository used to vendor now recommends it, it carries twelve of them as `quality/*`, and it is maintained with Vite+. Oxlint's correctness category stays on beside it. What remains vendored under `tools/oxlint/anti-slop/` is only what that preset lacks: five general rules and five for Effect. The repository's own rules are one plugin, `tools/oxlint/mitome.ts`, and the import fences. A rule from the preset is turned off only in `vite.config.ts`, with the reason beside it; three are (`import/no-namespace`, `typescript/no-unsafe-type-assertion`, `vitest/no-conditional-expect`). Effect's checker keeps its own defaults.
+
 The research, with the measurements on a migrated copy of this repository, is in `docs/research/toolchain.md`; the development-loop study it builds on is `docs/research/dev-environment.md`.
 
 ## Considered options
