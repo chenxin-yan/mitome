@@ -1052,8 +1052,8 @@ const listedContradicts = (item: Item, listed: JsonInput, onMalformed: () => AiE
     (content !== undefined &&
       item.reasoningContent !== undefined &&
       !Equal.equals(content, item.reasoningContent)) ||
-    (reasoning.encrypted_content != null &&
-      item.encryptedContent != null &&
+    (Predicate.isNotNullish(reasoning.encrypted_content) &&
+      Predicate.isNotNullish(item.encryptedContent) &&
       reasoning.encrypted_content !== item.encryptedContent)
   );
 };
@@ -1148,7 +1148,7 @@ const reasoningParts = (
   if (itemId !== undefined) {
     openai.itemId = itemId;
   }
-  if (encryptedContent != null) {
+  if (Predicate.isNotNullish(encryptedContent)) {
     openai.encryptedContent = encryptedContent;
   }
   const metadata = { openai };
@@ -1280,7 +1280,7 @@ const retainIncomplete = (
     if (entry.reasoning !== undefined) {
       const summary = entry.reasoning.summary ?? [];
       const encrypted = entry.reasoning.encrypted_content;
-      return summary.length > 0 || encrypted != null
+      return summary.length > 0 || Predicate.isNotNullish(encrypted)
         ? reasoningParts(entry.id, partId, summary.map(({ text }) => text).join("\n"), encrypted)
         : [];
     }
@@ -1323,20 +1323,22 @@ const retainIncomplete = (
       const listing = entry?.reasoning;
       const encrypted = listing?.encrypted_content;
       const sameEncrypted =
-        encrypted == null || item.encryptedContent == null || encrypted === item.encryptedContent;
+        Predicate.isNullish(encrypted) ||
+        Predicate.isNullish(item.encryptedContent) ||
+        encrypted === item.encryptedContent;
       // Its summary and encrypted content are merged together, or not at all.
       if (
         listing !== undefined &&
         sameEncrypted &&
         mergeSnapshot(item.summaries, listing.summary ?? [])
       ) {
-        if (encrypted != null) {
+        if (Predicate.isNotNullish(encrypted)) {
           item.encryptedContent = encrypted;
         }
       }
       const shown =
         item.done ||
-        item.encryptedContent != null ||
+        Predicate.isNotNullish(item.encryptedContent) ||
         [...item.summaries.values()].some((slot) => slot.known);
       return shown ? reasoningPartsOf(item) : [];
     }
