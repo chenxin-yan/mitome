@@ -132,7 +132,6 @@ export default defineConfig({
       "jsx-a11y/html-has-lang": "off",
       "no-console": "off",
       "no-promise-executor-return": "off",
-      "react/rules-of-hooks": "off",
       "typescript/no-empty-object-type": "off",
       "typescript/no-explicit-any": "off",
       "typescript/no-non-null-assertion": "off",
@@ -228,6 +227,13 @@ export default defineConfig({
         files: ["**/test/**", "**/*.test.*"],
         rules: {
           "anti-slop-effect/no-manual-tagged-construction": "off",
+        },
+      },
+      {
+        // React code lives only in the docs app; elsewhere a callback named `use` is not a hook.
+        files: ["packages/**", "scripts/**", "dev/**"],
+        rules: {
+          "react/rules-of-hooks": "off",
         },
       },
       {
