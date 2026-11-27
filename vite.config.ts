@@ -111,6 +111,9 @@ export default defineConfig({
       // Effect writes the empty Tool record as `{}` (`Toolkit.empty: Toolkit<{}>`), and so do the
       // public `Tools` defaults; empty interfaces stay refused.
       "typescript/no-empty-object-type": ["error", { allowObjectTypes: "always" }],
+      // Effect's modules are namespaces, imported whole by design (`import * as NodePath from
+      // "@effect/platform-node-shared/NodePath"`), and tests read an entry's whole export list.
+      "import/no-namespace": "off",
       "typescript/no-unnecessary-condition": [
         "error",
         {
@@ -131,7 +134,6 @@ export default defineConfig({
       "mitome/no-schema-unknown-type": "error",
       "vite-plus/prefer-vite-plus-imports": "error",
       // Turned off on adopting @cloudflare/oxlint-config; each is evaluated in a commit of its own.
-      "import/no-namespace": "off",
       "jsx-a11y/html-has-lang": "off",
       "typescript/no-explicit-any": "off",
       "typescript/no-non-null-assertion": "off",
