@@ -7,7 +7,7 @@ Run the narrowest one that covers the change; `pnpm vp` is the workspace's Vite+
 - The tests of built output (tagged `dist`: declarations, binary, terminal, scaffold, release fixtures), after the builds they need: `pnpm run test:dist`.
 - One test file, from its package directory: `pnpm vp test run test/agent/agent.test.ts`; in `packages/cli`, `bun --bun vp test run <file>`.
 - Build, including the CLI binary at `packages/cli/dist/local/mitome`: `pnpm run build`.
-- The CLI from source, against the git-ignored `.dev-home`: `pnpm run dev:cli <arguments>`.
+- The CLI from source, with nothing built, against the development Configuration in `dev/agent` and with its state in the git-ignored `.dev-home`: `pnpm run dev:cli -- <arguments>`.
 
 ## Agent skills
 

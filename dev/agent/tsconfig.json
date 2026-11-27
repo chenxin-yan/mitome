@@ -1,0 +1,4 @@
+{
+  "extends": "@mitome/config/tsconfig.base.json",
+  "include": ["*.ts"]
+}
