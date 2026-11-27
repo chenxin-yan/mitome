@@ -35,7 +35,7 @@ Implemented today, in one process:
 
 - `@mitome/core`: describe an Agent as data with `Agent.make` and `Extension.make`, name it with its Providers and Model in a Configuration with `Mitome.make`, and run it with `Session.make(agent)`. See [Agents and Configurations](/docs/agents).
 - `@mitome/providers`: OpenAI, OpenAI-compatible, OpenAI Codex (ChatGPT) and Anthropic (API key or Claude Console sign-in) Providers.
-- `@mitome/cli`: `mitome init` writes the default Configuration; the `mitome` command opens a Configuration in the terminal, where Approvals are answered with `y` or `n`, and `mitome run` runs it once without an Approver, so with the default program an ask is denied. See [CLI](/docs/cli).
+- `@mitome/cli`: `mitome init` writes the default Configuration; the `mitome` command opens a Configuration in the terminal, where Approvals are answered with `y` or `n`, an Extension's Commands run as `/name` and the keys are the Configuration's own, and `mitome run` runs it once without an Approver, so with the default program an ask is denied. See [CLI](/docs/cli).
 - `@mitome/transcripts`: keeps a Configuration's conversations in files, so `mitome --continue` picks one up again. Without it history stays in memory. See [Keep history](/docs/agents#keep-history).
 - `create-mitome`: `npm create mitome` writes an application that embeds an Agent.
 

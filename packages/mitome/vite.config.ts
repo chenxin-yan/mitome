@@ -5,7 +5,7 @@ export default defineConfig({
   ...testConfig,
   pack: {
     ...pack,
-    entry: ["src/index.ts", "src/kernel.ts"],
+    entry: ["src/index.ts", "src/kernel.ts", "src/terminal.ts"],
     // Consumers may read the manifest as `@mitome/core/package.json`.
     exports: { ...pack.exports, packageJson: true },
   },

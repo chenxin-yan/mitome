@@ -1,0 +1,5 @@
+---
+"@mitome/core": minor
+---
+
+Add the `@mitome/core/terminal` subpath, the terminal's options as plain data. `terminal({ keys })` is a Layer for a Configuration's `provide` that provides them (`TerminalOptions`, keyed `"mitome/TerminalOptions"` so a CLI and a Configuration that load different copies of the package find each other's) and requires nothing. Each key is written in lowercase as its modifiers, in the order `ctrl`, `alt`, `shift`, then one key name (`a`-`z`, `0`-`9`, `enter`, `escape`, `tab`, `space`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `f1`-`f12`), joined by `+`, and is bound to a control, `terminal.submit`, `terminal.newline` or `terminal.interrupt`, or to text starting with `/` that the terminal types and sends. The controls are frozen values recognised by their `id`, never by identity. `terminal()` throws a `TypeError` for an unknown field, a key written otherwise, or any other value. There are no default keys. The root entry never imports the subpath, which a lint rule enforces.

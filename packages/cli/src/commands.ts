@@ -6,6 +6,7 @@ import {
   stateDirectoryMessage,
   Transcripts,
 } from "@mitome/core";
+import { TerminalOptions } from "@mitome/core/terminal";
 import {
   Cause,
   Console,
@@ -31,6 +32,8 @@ import { shell, shellQuote } from "./template.js";
 // makeApprovals allocates the terminal Host's own channel; it needs no service to provide.
 // oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports
 import { makeApprovals } from "./terminal/approvals.js";
+import { clashing, conversations } from "./terminal/conversations.js";
+import { terminalKeys } from "./terminal/keys.js";
 
 // TODO: split this file into one file per command when the next command is added. It is named
 // for a mechanism, and the rest of the codebase groups files by domain.
@@ -255,10 +258,13 @@ export const runApplication = (options: RunOptions) =>
   );
 
 /**
- * Interactive execution over one acquired Configuration and one retained Session, until the user
- * closes the terminal. It needs a terminal on stdin and stdout, checked before anything is loaded;
- * OpenTUI is imported only then. The terminal answers each Turn's Approvals. It is restored before
- * shutdown begins, and closing exits like SIGINT, with shutdown bounded by the grace.
+ * Interactive execution over one acquired Configuration and one retained Session at a time, until
+ * the user closes the terminal. It needs a terminal on stdin and stdout, checked before anything is
+ * loaded; OpenTUI is imported only then. It opens only with the keys the Configuration provides,
+ * checked first, and when no Extension names a Command the terminal names itself. `/new` closes
+ * the Session and opens another in a new conversation. The terminal answers each Turn's
+ * Approvals. It is restored before shutdown begins, and closing exits like SIGINT, with shutdown
+ * bounded by the grace.
  */
 export const runTerminalApplication = (options: ConfigurationOptions) =>
   withGrace(options.grace, (onShutdown) =>
@@ -273,34 +279,53 @@ export const runTerminalApplication = (options: ConfigurationOptions) =>
       const here = process.cwd();
       const configuration = yield* loadConfiguration(options.config);
       const instance = yield* acquire(configuration, options, onShutdown);
-      const { session, conversation } = yield* openSession(instance, options, here);
+      const keys = yield* instance.provide(TerminalOptions).pipe(
+        failingWith(""),
+        Effect.flatMap((terminal) => terminalKeys(terminal, configuration.path)),
+      );
+      const first = yield* openSession(instance, options, here);
+      const clash = clashing(first.session.commands);
+      if (clash !== undefined) {
+        return yield* userError(
+          `${clash}; the terminal does not open while the Agent uses that Extension.`,
+        );
+      }
+      const sessions = conversations(
+        first,
+        openSession(instance, { ...options, continue: Option.none() }, here),
+      );
       const approvals = yield* makeApprovals;
       const { runTerminal } = yield* Effect.promise(() => import("./terminal/terminal.js"));
       yield* runTerminal({
         parseInput: (text) => instance.provide(configuration.text.parse(text)),
-        run: (input) => approvals.provideApprover(session.run(input)),
+        run: (input) =>
+          Effect.suspend(() => approvals.provideApprover(sessions.current().session.run(input))),
         renderResult: (result) => instance.provide(configuration.text.render(result)),
-        history: session.history,
-        turns: session.turns,
+        history: Effect.suspend(() => sessions.current().session.history),
+        turns: Effect.suspend(() => sessions.current().session.turns),
         approvals,
-        conversation,
+        current: sessions.current,
+        keys,
+        command: (name, input) =>
+          Effect.suspend(() => sessions.current().session.command(name, input)),
+        newConversation: sessions.newConversation,
       }).pipe(
         failingWith("The terminal failed: "),
         // However it closed, a signal included, the terminal is restored by now and no longer
         // shows the id, and the Session is still open. An empty conversation has nothing to continue.
         Effect.ensuring(
-          session.position.pipe(
+          Effect.suspend(() => sessions.current().session.position).pipe(
             Effect.flatMap((position) =>
-              conversation === undefined || position === undefined
+              sessions.current().conversation === undefined || position === undefined
                 ? Effect.void
                 : Console.error(
-                    `Conversation ${session.transcript} is kept; continue it with ${[
+                    `Conversation ${sessions.current().session.transcript} is kept; continue it with ${[
                       "mitome",
                       // The same Configuration, which may be the only one that keeps it.
                       ...(Option.isSome(options.config)
                         ? ["--config", shellQuote(configuration.path, shell)]
                         : []),
-                      shellQuote(`--continue=${session.transcript}`, shell),
+                      shellQuote(`--continue=${sessions.current().session.transcript}`, shell),
                     ].join(" ")}`,
                   ),
             ),

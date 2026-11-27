@@ -57,6 +57,42 @@ A Tool Call decided `"ask"` runs only when the Approver allows it. Whoever runs 
 
 Tool handlers, Extension policies and an Extension's Effect run with the Approver masked, and the Configuration's `provide` cannot supply it. `mitome run` provides none; the terminal provides one around each Turn. The Agent's own `program` is the author's code, not a handler: a trusted custom program can provide an Approver around its Steps.
 
+## Commands
+
+A Tool is something the Model calls; a Command is something a person runs by typing `/name` at the start of an input. An Extension lists its Commands in `commands`, beside its Tools, and listing the Extension in the Agent's `use` turns them on:
+
+```ts title="todo.ts"
+import { Effect, Ref } from "effect";
+import { Command, Extension } from "@mitome/core";
+
+export const todo = Extension.make(
+  "todo",
+  Effect.gen(function* () {
+    const todos = yield* Ref.make<ReadonlyArray<string>>([]);
+    return {
+      instructions: "Keep a todo list for multi-step work.",
+      commands: [
+        Command.make("todos", {
+          description: "Show the todo list",
+          run: () =>
+            Effect.map(Ref.get(todos), (list) =>
+              Command.reply(list.length === 0 ? "Nothing to do." : list.join("\n")),
+            ),
+        }),
+        Command.make("plan", {
+          description: "Plan the work",
+          run: (input) => Effect.succeed(Command.prompt(`Plan this: ${input}`)),
+        }),
+      ],
+    };
+  }),
+);
+```
+
+`Command.make(name, { description, run })` takes a name of lowercase letters, digits and underscores that starts with a letter and is at most 31 characters, and a description of one line of at most 100 characters; it throws a `TypeError` otherwise. `run` receives the text after the name, without the spaces that follow it, and returns what the Host does next: `Command.reply(text)` shows text to the person, and `Command.prompt(text)` starts a Turn with that text as its input, through the Agent's text mapping as if it had been typed. A Command runs outside any Turn with what its Extension's Effect holds, as the Tools do; it receives no Session, screen or editor. Two Extensions that name the same Command are refused as two Tools of one name are.
+
+Only an input whose first character is `/`, followed by a name and then a space or the end, is a Command; `Command.parse(text)` gives its `name` and `input`, or `undefined`. A Session lists its Commands in `session.commands` and runs one with `session.command(name, input)`, which fails with `CommandNotFoundError` for a name no Extension gives and with `CommandFailedError` when `run` fails. A reply is shown, never sent to the Model or kept in history. The terminal runs Commands and names two of its own, `/quit` and `/new` (see [CLI](/docs/cli#commands-and-keys)); `mitome run` does not recognise them and sends the text as it is.
+
 ## The conversation holds plain data
 
 A value can take three forms on its way through a Turn:
@@ -128,6 +164,7 @@ export const writer = Agent.make({
 
 ```ts title="index.ts"
 import { Mitome } from "@mitome/core";
+import { terminal } from "@mitome/core/terminal";
 import { openai } from "@mitome/providers/openai";
 import { agent } from "./agent.js";
 
@@ -135,10 +172,19 @@ export default Mitome.make({
   agent,
   providers: [openai()],
   model: "openai/gpt-5.6",
+  provide: terminal({
+    keys: {
+      enter: terminal.submit,
+      "shift+enter": terminal.newline,
+      "ctrl+j": terminal.newline,
+      escape: terminal.interrupt,
+      "ctrl+d": "/quit",
+    },
+  }),
 });
 ```
 
-`Mitome.make({ agent, providers?, model?, provide? })` describes a Configuration. `provide` holds shared services, one Layer or a list of them, built once when the Configuration is acquired and released when it shuts down. `model`, the Default Model, is a Qualified Model id whose Provider must be one of `providers`; the Model id itself may be any id that Provider serves, not only the catalog's hints. When Providers are declared, set a Default Model or select a Qualified Model id when acquiring. The default program needs a Model, from a Provider or from `provide`; a custom program that uses none needs none. `Mitome.make` fails to compile when the program, the text mapping, an Extension or a Provider needs a service that nothing in the Configuration supplies.
+`Mitome.make({ agent, providers?, model?, provide? })` describes a Configuration. `provide` holds shared services, one Layer or a list of them, built once when the Configuration is acquired and released when it shuts down. Among them are each Host's options: `terminal({ keys })`, from `@mitome/core/terminal`, binds the terminal's keys, and the terminal does not open without it; see [Commands and keys](/docs/cli#commands-and-keys). `model`, the Default Model, is a Qualified Model id whose Provider must be one of `providers`; the Model id itself may be any id that Provider serves, not only the catalog's hints. When Providers are declared, set a Default Model or select a Qualified Model id when acquiring. The default program needs a Model, from a Provider or from `provide`; a custom program that uses none needs none. `Mitome.make` fails to compile when the program, the text mapping, an Extension or a Provider needs a service that nothing in the Configuration supplies.
 
 Keep secrets out of Configuration source. `openai()` and `anthropic()` name the variable that holds their API key, `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` (change it with `apiKeyEnv`). By default they read it from the process environment; a supplied Effect `ConfigProvider` can supply it instead. Absent or empty input (for Anthropic, with no Claude Console sign-in either) fails provisioning the Model with the Provider's tagged `MissingCredentialError` before any request; an error of the configuration source stays a `ConfigError`. Codex logins are stored in Mitome's state directory by default; see [auth](/docs/cli#auth).
 
@@ -150,10 +196,11 @@ Next to them, `mitome init` writes a `package.json`, a `tsconfig.json`, a `.giti
 
 ## Keep history
 
-A Configuration keeps its conversations in memory only, and `mitome init` writes one that does. To keep them in files, so that `mitome --continue` can pick one up again, add `@mitome/transcripts` to the Configuration's dependencies and these two lines to its `index.ts`:
+A Configuration keeps its conversations in memory only, and `mitome init` writes one that does. To keep them in files, so that `mitome --continue` can pick one up again, add `@mitome/transcripts` to the Configuration's dependencies, import `jsonlTranscripts` in its `index.ts` and list it in `provide` beside the terminal's options:
 
 ```ts title="index.ts"
 import { Mitome } from "@mitome/core";
+import { terminal } from "@mitome/core/terminal";
 import { openai } from "@mitome/providers/openai";
 import { jsonlTranscripts } from "@mitome/transcripts/jsonl";
 import { agent } from "./agent.js";
@@ -162,11 +209,22 @@ export default Mitome.make({
   agent,
   providers: [openai()],
   model: "openai/gpt-5.6",
-  provide: jsonlTranscripts(),
+  provide: [
+    jsonlTranscripts(),
+    terminal({
+      keys: {
+        enter: terminal.submit,
+        "shift+enter": terminal.newline,
+        "ctrl+j": terminal.newline,
+        escape: terminal.interrupt,
+        "ctrl+d": "/quit",
+      },
+    }),
+  ],
 });
 ```
 
-`jsonlTranscripts()` provides the `Transcripts` service, which hands out conversations; a Configuration that already provides a Layer lists both, `provide: [jsonlTranscripts(), layer]`. Each conversation is one file, `<id>.jsonl`, in the `transcripts` directory under the state directory (`~/.local/state/mitome/transcripts` by default; see [auth](/docs/cli#auth) for how the state directory is found), or in the directory `jsonlTranscripts({ directory })` names. On POSIX systems the directory is created readable by its owner only and each file is written so, because conversations hold what Tools read and ran; on Windows these modes set no owner-only ACL, so see [Security](/docs/security#protect-credentials-and-stored-data). Its lines are the stored bytes of [the conversation's plain data](#the-conversation-holds-plain-data), written as JSON: the store applies the same rule to what it is given, and JSON keeps all of plain data but fields of `undefined` and the sign of `-0`, which the conversation already lacks. Each line is appended and synced before the Session publishes it, so what a Turn kept survives the process: every Entry it committed, even if it then failed or was interrupted. A Step still running when the process stops is lost, though its Tools may have run.
+`jsonlTranscripts()` provides the `Transcripts` service, which hands out conversations. Each conversation is one file, `<id>.jsonl`, in the `transcripts` directory under the state directory (`~/.local/state/mitome/transcripts` by default; see [auth](/docs/cli#auth) for how the state directory is found), or in the directory `jsonlTranscripts({ directory })` names. On POSIX systems the directory is created readable by its owner only and each file is written so, because conversations hold what Tools read and ran; on Windows these modes set no owner-only ACL, so see [Security](/docs/security#protect-credentials-and-stored-data). Its lines are the stored bytes of [the conversation's plain data](#the-conversation-holds-plain-data), written as JSON: the store applies the same rule to what it is given, and JSON keeps all of plain data but fields of `undefined` and the sign of `-0`, which the conversation already lacks. Each line is appended and synced before the Session publishes it, so what a Turn kept survives the process: every Entry it committed, even if it then failed or was interrupted. A Step still running when the process stops is lost, though its Tools may have run.
 
 A conversation is a tree of Entries, and the next Turn continues from its stored position. `mitome` and `mitome run` start a new conversation for the working directory; `--continue` continues the one most recently written there and `--continue=<id>` the one with that id (see [CLI](/docs/cli#continue-a-conversation)). From code, `instance.session({ transcript })` and `Session.make(agent, { transcript })` take `{ create: scope }`, `{ latest: scope }` or `{ open: id }`, where the scope is a label of the Host's choosing, and `session.transcript` is the conversation's id. Two Sessions on one conversation never overwrite each other: the one whose view is stale has its next commit refused and stops.
 
@@ -269,4 +327,4 @@ export const main = Effect.scoped(
 
 ## Not yet
 
-These are designed or planned, not implemented: streaming output and its events; Extensions that shape the Model Context or watch events; asking the person a question or notifying them from Extension code, and allowing a Tool for the rest of a Session; installing a Configuration's dependencies before it runs (a missing install names the command to run); navigating a conversation's tree from the terminal, and continuing a Turn interrupted by a crash; Commands in the terminal, queued Messages, `mitome serve`, Channels, schedules and Delegation; and first-party Extensions (coding Tools, Skills, MCP, web).
+These are designed or planned, not implemented: streaming output and its events; Extensions that shape the Model Context or watch events; asking the person a question or notifying them from Extension code, and allowing a Tool for the rest of a Session; installing a Configuration's dependencies before it runs (a missing install names the command to run); navigating a conversation's tree from the terminal, and continuing a Turn interrupted by a crash; Commands that read or change the conversation or ask the person to choose, queued Messages, `mitome serve`, Channels, schedules and Delegation; and first-party Extensions (coding Tools, Skills, MCP, web).

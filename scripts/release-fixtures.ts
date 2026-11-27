@@ -173,6 +173,7 @@ import {
   withModelRequestAccounting,
 } from "@mitome/core";
 import { loop, Session } from "@mitome/core/kernel";
+import { terminal, TerminalOptions } from "@mitome/core/terminal";
 import { anthropic } from "@mitome/providers/anthropic";
 import { openai } from "@mitome/providers/openai";
 import { openaiCompatible } from "@mitome/providers/openai-compatible";
@@ -222,12 +223,27 @@ const kept = await Effect.runPromise(
   ),
 );
 if (kept !== 1) throw new Error("jsonlTranscripts did not keep the conversation.");
+const options = Effect.runSync(
+  Effect.map(TerminalOptions, (options) => options).pipe(
+    Effect.provide(terminal({ keys: { enter: terminal.submit, "ctrl+d": "/quit" } })),
+  ),
+);
+if (options?.keys.enter !== terminal.submit || options.keys["ctrl+d"] !== "/quit") {
+  throw new Error("@mitome/core/terminal did not provide the terminal's options.");
+}
 `,
   );
   // Typechecking the consumer against the packed declarations is the leak gate:
   // it fails if any published .d.ts references types the tarballs cannot resolve.
   await run(["pnpm", "exec", "tsc", "-p", join(consumerDirectory, "tsconfig.json")]);
   await run([process.execPath, "smoke.ts"], consumerDirectory);
+  // The subpath resolves inside the packed core package, not to a copy elsewhere.
+  if (
+    Bun.resolveSync("@mitome/core/terminal", consumerDirectory) !==
+    join(nodeModules, "@mitome", "core", "dist", "terminal.js")
+  ) {
+    throw new Error("@mitome/core/terminal did not resolve to the packed core package.");
+  }
   const createdDirectory = join(temporaryDirectory, "created-app");
   await mkdir(createdDirectory);
   await run(["node", join(nodeModules, ".bin", "create-mitome")], createdDirectory, "1\n1\n");

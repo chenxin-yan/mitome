@@ -219,6 +219,36 @@ test("tarballs must match the cohort, contain platform binaries and native notic
   }
 });
 
+test("the core tarball must export and contain the terminal subpath", () => {
+  const directory = mkdtempSync(join(tmpdir(), "release-archives-"));
+  const core = packages.find((pkg) => pkg.name === "@mitome/core")!;
+  const contents = join(directory, "contents");
+  const archives = join(directory, "archives");
+  mkdirSync(join(contents, "package/dist"), { recursive: true });
+  mkdirSync(archives);
+  const pack = (exports: Record<string, string>): void => {
+    writeFileSync(
+      join(contents, "package/package.json"),
+      JSON.stringify({ name: core.name, version: core.version, exports }),
+    );
+    execFileSync("tar", ["-czf", join(archives, core.archive), "-C", contents, "package"]);
+  };
+  try {
+    pack({ ".": "./dist/index.js" });
+    expect(() => checkArchives([core], archives)).toThrow("does not export ./terminal");
+    pack({ ".": "./dist/index.js", "./terminal": "./dist/terminal.js" });
+    expect(() => checkArchives([core], archives)).toThrow("missing dist/terminal.js");
+    writeFileSync(join(contents, "package/dist/terminal.js"), "fixture");
+    pack({ ".": "./dist/index.js", "./terminal": "./dist/terminal.js" });
+    expect(() => checkArchives([core], archives)).toThrow("missing dist/terminal.d.ts");
+    writeFileSync(join(contents, "package/dist/terminal.d.ts"), "fixture");
+    pack({ ".": "./dist/index.js", "./terminal": "./dist/terminal.js" });
+    expect(() => checkArchives([core], archives)).not.toThrow();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("publishing rejects a source that differs from npm's GitHub provenance before reading artifacts", () => {
   const result = spawnSync(
     "node",
