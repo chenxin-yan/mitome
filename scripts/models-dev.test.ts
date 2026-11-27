@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vite-plus/test";
 import { toolCapableOpenAiModels } from "./models-dev.ts";
 
 test("reads limit.context per tool-capable model and never guesses a missing one", () => {

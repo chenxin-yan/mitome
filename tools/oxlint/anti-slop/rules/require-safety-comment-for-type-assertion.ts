@@ -1,6 +1,4 @@
-import { defineRule } from "@oxlint/plugins";
-
-import type { ESTree, SourceCode } from "@oxlint/plugins";
+import { defineRule, type ESTree, type SourceCode } from "vite-plus/lint/plugins";
 
 type TypeAssertion = ESTree.TSAsExpression | ESTree.TSTypeAssertion;
 

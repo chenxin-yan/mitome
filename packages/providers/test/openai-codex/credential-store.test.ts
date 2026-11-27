@@ -1,4 +1,4 @@
-import { afterAll, describe, expect } from "vitest";
+import { afterAll, describe, expect } from "vite-plus/test";
 import { it } from "@effect/vitest";
 import { Effect, Exit, Fiber, Layer, Predicate } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";

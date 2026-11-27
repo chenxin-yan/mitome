@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test } from "vite-plus/test";
 import { it } from "@effect/vitest";
 import { Effect, Fiber, FileSystem, PlatformError, Schema } from "effect";
 import { TestClock } from "effect/testing";

@@ -19,7 +19,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { Effect, Fiber, Layer, Stream } from "effect";
 import { LanguageModel, type Prompt } from "effect/ai";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vite-plus/test";
 import packageJson from "../package.json" with { type: "json" };
 import {
   type Agent,

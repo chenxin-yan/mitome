@@ -29,13 +29,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "scripts": {
-    "build": "bun ../../scripts/build-lib.ts",
-    "check:types": "tsc",
-    "lint": "oxlint .",
-    "lint:fix": "oxlint --fix .",
-    "test": "vitest run"
-  },
   "dependencies": {
     "effect": "catalog:"
   },
@@ -44,6 +37,7 @@
     "@mitome/config": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:",
+    "vite-plus": "catalog:",
     "vitest": "catalog:"
   },
   "engines": {

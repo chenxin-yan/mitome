@@ -1,6 +1,7 @@
 // TODO: use `FileSystem` once it can remove a directory only when it is empty.
 // FileSystem has no remove-only-if-empty: `remove` refuses a directory without `recursive`, and
 // with it would delete what another process added.
+// oxlint-disable-next-line eslint/no-restricted-imports
 import { rmdir } from "node:fs/promises";
 import { Effect, FileSystem, Path, Predicate } from "effect";
 import {

@@ -1,7 +1,7 @@
 // The compiled bare `mitome` in a real pseudo-terminal (Bun.Terminal), against the offline fixture
-// Configuration: real raw mode, real keys and real signals. Run by `bun test`; POSIX only, so it is
-// skipped on Windows.
-import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+// Configuration: real raw mode, real keys and real signals. Runs on the Bun runtime; POSIX only, so
+// it is skipped on Windows.
+import { afterAll, beforeEach, describe, expect, test } from "vite-plus/test";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -76,7 +76,7 @@ const restoredScreen = (output: string) =>
   output.includes(enterAlternate) &&
   output.lastIndexOf(leaveAlternate) > output.lastIndexOf(enterAlternate);
 
-describe.skipIf(process.platform === "win32")("compiled bare mitome", () => {
+describe.skipIf(process.platform === "win32")("compiled bare mitome", { timeout: 30_000 }, () => {
   test("runs repeated Turns and an approved Tool Call, then Ctrl-C restores and shuts down", async () => {
     const tui = open(selected);
     await tui.shows("Ready");

@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test } from "vite-plus/test";
 import { setTimeout } from "node:timers/promises";
 import { Effect, Layer, Schema, Stream } from "effect";
 import {

@@ -4,7 +4,7 @@ status: accepted
 
 # Build with Vite+ on pnpm, and keep Bun for the CLI
 
-The repository's toolchain is Vite+ (`vp`) on pnpm. One root `vite.config.ts` holds the format, lint and commit-hook settings; `vp check` formats, lints and type-checks the whole repository with Effect's diagnostics, and is the one static gate; `vp run` tasks replace turbo; `vp test` runs vitest, the one test runner. pnpm installs the workspace, owns its catalog and lockfile, and packs the release tarballs.
+The repository's toolchain is Vite+ (`vp`) on pnpm. One root `vite.config.ts` holds the format, lint and commit-hook settings; `vp check` formats, lints and type-checks the whole repository and is the one static gate, run through `effect-tsgo` so that its linter and type-checker carry Effect's diagnostics without depending on a patched `node_modules`; the install patches the `typescript` package's `tsc` (`effect-tsgo patch`, which writes a new file and leaves the package store alone) only so that editors show the same diagnostics; `vp run` tasks replace turbo; `vp test` runs vitest, the one test runner. pnpm installs the workspace, owns its catalog and lockfile, and packs the release tarballs.
 
 Bun stays where it is the product's runtime: the CLI and its terminal UI (OpenTUI needs Bun), the single binary from `bun build --compile`, the scripts that use Bun's APIs, and the source CLI. `mitome init` still installs a person's Configuration with the binary's built-in Bun installer. Tests that need the Bun runtime run vitest under Bun (`bun --bun vp test`); every other package's tests run vitest on Node, so the libraries' Node support of [ADR-0021](0021-keep-libraries-node-capable-with-a-bun-native-cli.md) is still what CI attests.
 

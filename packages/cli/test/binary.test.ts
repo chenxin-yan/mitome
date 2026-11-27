@@ -1,7 +1,7 @@
 // The compiled `mitome` executable against the offline fixture Configuration, as an operator runs
 // it: a real module import, real stdio and real signals. No network or credentials are used. The
 // binary bundles its own `@mitome/core` and `effect`; the fixture imports the workspace's copies.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   copyFile,
   mkdir,
@@ -13,16 +13,30 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { delimiter, join, relative } from "node:path";
 import { text } from "node:stream/consumers";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 import cliPackage from "../package.json" with { type: "json" };
 import { installCommand, type Shell, shellQuote } from "../src/template.ts";
 
 const binary = fileURLToPath(new URL("../dist/local/mitome", import.meta.url));
 const launcher = fileURLToPath(new URL("../scripts/mitome.mjs", import.meta.url));
+// npm runs the launcher on Node. Under `bun --bun` the first `node` on PATH is Bun itself, and
+// another may be a shim that needs PATH, which the child does not get: this asks each for the Node
+// executable behind it and takes the first answer.
+const realNode = () => {
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    const probe = spawnSync(
+      join(directory, "node"),
+      ["--print", "process.versions.bun ? '' : process.execPath"],
+      { encoding: "utf8" },
+    );
+    if (probe.status === 0 && probe.stdout.trim() !== "") return probe.stdout.trim();
+  }
+  throw new Error("The launcher tests need Node on PATH");
+};
 const fixture = fileURLToPath(new URL("fixtures/config", import.meta.url));
 const historyFixture = fileURLToPath(new URL("fixtures/history", import.meta.url));
 let directory = "";
@@ -347,7 +361,7 @@ describe("compiled mitome", () => {
         [join(installed, "mitome.mjs"), "run", "--config", fixture, "wait"],
         "",
         {},
-        process.execPath,
+        realNode(),
         group,
       );
       await until("turn:wait");
