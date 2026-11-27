@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import cloudflare from "@cloudflare/oxlint-config/vite-plus";
 import { defineConfig } from "vite-plus";
 
 const local = (path: string) => fileURLToPath(new URL(path, import.meta.url));
@@ -80,6 +81,7 @@ export default defineConfig({
     ignorePatterns: ["tools/oxlint/anti-slop/", ...docsOutput],
   },
   lint: {
+    extends: [cloudflare],
     plugins: ["typescript", "unicorn", "oxc", "eslint", "promise", "import", "jsdoc"],
     jsPlugins: [
       { name: "anti-slop", specifier: local("./tools/oxlint/anti-slop/index.ts") },
@@ -91,10 +93,6 @@ export default defineConfig({
       correctness: "error",
     },
     rules: {
-      "typescript/no-misused-promises": "error",
-      "typescript/no-unnecessary-type-assertion": "error",
-      "typescript/return-await": "error",
-      "typescript/switch-exhaustiveness-check": "error",
       "typescript/no-unnecessary-condition": [
         "error",
         {
@@ -102,23 +100,10 @@ export default defineConfig({
         },
       ],
       "typescript/restrict-plus-operands": "error",
-      "oxc/no-accumulating-spread": "error",
-      "anti-slop/no-array-filter-map": "error",
-      "anti-slop/no-chained-type-assertions": "error",
-      "anti-slop/no-conditional-empty-object-spread": "error",
-      "anti-slop/no-known-value-widening": "error",
       "anti-slop/no-module-mocking": "error",
-      "anti-slop/no-object-parameters": "error",
-      "anti-slop/no-reduce-accumulator-copy": "error",
-      "anti-slop/no-reflect-apply": "error",
-      "anti-slop/no-reflect-get": "error",
       "anti-slop/no-runtime-typeof": "error",
       "anti-slop/no-shape-in-symbol-names": "error",
       "anti-slop/no-unknown-parameters": "error",
-      "anti-slop/no-unknown-returns": "error",
-      "anti-slop/no-unknown-type-aliases": "error",
-      "anti-slop/no-unsafe-dictionary-type": "error",
-      "anti-slop/no-widen-then-assert": "error",
       "anti-slop/require-safety-comment-for-type-assertion": "error",
       "anti-slop-effect/no-manual-effect-error-tag": "error",
       "anti-slop-effect/no-manual-tag-comparison": "error",
@@ -127,6 +112,49 @@ export default defineConfig({
       "anti-slop-effect/prefer-effect-match": "error",
       "mitome/no-schema-unknown-type": "error",
       "vite-plus/prefer-vite-plus-imports": "error",
+      // Turned off on adopting @cloudflare/oxlint-config; each is evaluated in a commit of its own.
+      "@nkzw/no-instanceof": "off",
+      curly: "off",
+      eqeqeq: "off",
+      "import/consistent-type-specifier-style": "off",
+      "import/no-namespace": "off",
+      "jsx-a11y/html-has-lang": "off",
+      "no-console": "off",
+      "no-promise-executor-return": "off",
+      "no-useless-assignment": "off",
+      "object-shorthand": "off",
+      "prefer-arrow-callback": "off",
+      "react/rules-of-hooks": "off",
+      "typescript/array-type": "off",
+      "typescript/consistent-type-imports": "off",
+      "typescript/no-empty-object-type": "off",
+      "typescript/no-explicit-any": "off",
+      "typescript/no-import-type-side-effects": "off",
+      "typescript/no-non-null-assertion": "off",
+      "typescript/no-unsafe-argument": "off",
+      "typescript/no-unsafe-assignment": "off",
+      "typescript/no-unsafe-call": "off",
+      "typescript/no-unsafe-function-type": "off",
+      "typescript/no-unsafe-member-access": "off",
+      "typescript/no-unsafe-return": "off",
+      "typescript/no-unsafe-type-assertion": "off",
+      "typescript/only-throw-error": "off",
+      "typescript/use-unknown-in-catch-callback-variable": "off",
+      "unicorn/catch-error-name": "off",
+      "unicorn/consistent-function-scoping": "off",
+      "unicorn/numeric-separators-style": "off",
+      "unicorn/prefer-native-coercion-functions": "off",
+      "unicorn/prefer-set-has": "off",
+      "unicorn/prefer-string-raw": "off",
+      "unicorn/prefer-string-replace-all": "off",
+      "unicorn/prefer-structured-clone": "off",
+      "unicorn/text-encoding-identifier-case": "off",
+      "vitest/expect-expect": "off",
+      "vitest/no-conditional-expect": "off",
+      "vitest/no-standalone-expect": "off",
+      "vitest/require-mock-type-parameters": "off",
+      "vitest/require-to-throw-message": "off",
+      "vitest/valid-expect": "off",
     },
     // Overrides cannot hold settings.
     settings: {
@@ -207,6 +235,13 @@ export default defineConfig({
         },
       },
       {
+        // The preset turns this on for TypeScript files in an override of its own.
+        files: ["**/*.{ts,tsx,mts,cts}"],
+        rules: {
+          "typescript/only-throw-error": "off",
+        },
+      },
+      {
         files: ["apps/docs/**"],
         plugins: ["react"],
         env: {
@@ -215,6 +250,7 @@ export default defineConfig({
       },
     ],
     env: {
+      ...cloudflare.env,
       builtin: true,
     },
     options: {
@@ -222,7 +258,7 @@ export default defineConfig({
       typeCheck: true,
     },
     ignorePatterns: [
-      "**/node_modules/",
+      ...cloudflare.ignorePatterns,
       "**/dist/",
       ".agents/",
       ".pi/**",

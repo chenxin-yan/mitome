@@ -494,7 +494,7 @@ export const authenticate = Effect.fnUntraced(function* (
   const capability = yield* capabilityModule(credential.capability.module, app, unloadable).pipe(
     Effect.flatMap((module) =>
       Effect.tryPromise({
-        // oxlint-disable-next-line anti-slop/no-unknown-returns -- a foreign module, decoded on the next line
+        // oxlint-disable-next-line quality/no-unknown-returns -- a foreign module, decoded on the next line
         try: async (): Promise<unknown> => import(module),
         catch: unloadable,
       }),
@@ -525,7 +525,7 @@ export const authenticate = Effect.fnUntraced(function* (
   };
   // The capability is foreign code: a synchronous throw fails the command as its Effect failing would.
   const authenticating = yield* Effect.try({
-    // oxlint-disable-next-line anti-slop/no-unknown-returns -- foreign code's result, checked to be an Effect below
+    // oxlint-disable-next-line quality/no-unknown-returns -- foreign code's result, checked to be an Effect below
     try: (): unknown => capability.authenticate(options),
     catch: failed,
   });

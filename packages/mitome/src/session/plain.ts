@@ -20,7 +20,7 @@ const isJson = Schema.is(Schema.Json);
  */
 export const isPlainData = (value: unknown): value is Schema.Json => isJson(value);
 
-// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- the fields of a record not yet checked, which can hold anything
+// oxlint-disable-next-line quality/no-unsafe-dictionary-type -- the fields of a record not yet checked, which can hold anything
 type Fields = Record<string, unknown>;
 
 /** Whether `Schema.Json` reads `value` field by field: a record whose prototype has no prototype. */

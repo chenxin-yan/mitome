@@ -142,7 +142,7 @@ export const checkParts = (name: string, given: AnyParts): AnyParts => {
   if ((tools === undefined) !== (handlers === undefined)) {
     throw new TypeError(`Extension "${name}" must give handlers exactly when it gives tools`);
   }
-  // oxlint-disable-next-line anti-slop/no-known-value-widening -- typed by the declaration but unchecked: a JavaScript caller can pass anything
+  // oxlint-disable-next-line quality/no-known-value-widening -- typed by the declaration but unchecked: a JavaScript caller can pass anything
   if (tools !== undefined && !isToolkit(tools)) {
     throw new TypeError(`Extension "${name}" tools must be a Toolkit`);
   }

@@ -11,5 +11,5 @@ export const userError = (userMessage: string, cause?: unknown) =>
 /** The runtime's own error under a `PlatformError`: diagnostics quote its message and code. */
 export const runtimeError = (
   error: PlatformError.PlatformError | PlatformError.BadArgument,
-  // oxlint-disable-next-line anti-slop/no-unknown-returns -- the platform's underlying cause, which can be anything
+  // oxlint-disable-next-line quality/no-unknown-returns -- the platform's underlying cause, which can be anything
 ): unknown => error.cause ?? error;
