@@ -143,7 +143,6 @@ export default defineConfig({
       "typescript/no-unsafe-return": "off",
       "typescript/no-unsafe-type-assertion": "off",
       "typescript/only-throw-error": "off",
-      "typescript/use-unknown-in-catch-callback-variable": "off",
       "unicorn/consistent-function-scoping": "off",
       "vitest/expect-expect": "off",
       "vitest/no-conditional-expect": "off",

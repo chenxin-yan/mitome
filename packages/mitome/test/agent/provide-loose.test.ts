@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "@effect/vitest";
+import { compilerOutput } from "../support/compiler.js";
 
 const project = fileURLToPath(new URL("loose/tsconfig.json", import.meta.url));
 const tsc = join(
@@ -17,8 +18,8 @@ describe("Mitome.make in a consumer without exactOptionalPropertyTypes", () => {
     // tsc prints diagnostics on stdout, which the rejection's own message leaves out. Any failure
     // fails the test, so that a compiler that did not run is not taken for a clean check.
     const { stdout } = await promisify(execFile)(process.execPath, [tsc, "-p", project]).catch(
-      (error: { readonly stdout: string; readonly stderr: string }) => {
-        throw new Error(`tsc failed:\n${error.stdout}${error.stderr}`);
+      (cause: unknown) => {
+        throw new Error(`tsc failed:\n${compilerOutput(cause)}`);
       },
     );
     expect(stdout).not.toContain("error TS");

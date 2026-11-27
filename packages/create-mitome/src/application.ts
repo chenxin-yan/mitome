@@ -176,12 +176,16 @@ export const applicationPlan = (options: ApplicationOptions): FileMap =>
     ["README.md", readmeSource(options)],
   ]);
 
+/** The code of a Node file-system error, such as `ENOENT`. */
+const errorCode = (cause: unknown) =>
+  cause instanceof Error && "code" in cause ? cause.code : undefined;
+
 const existing = (path: string) =>
-  lstat(path).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") {
+  lstat(path).catch((cause: unknown) => {
+    if (errorCode(cause) === "ENOENT") {
       return undefined;
     }
-    throw error;
+    throw cause;
   });
 
 export const ensureEmpty = async (directory: string, files: Iterable<string>): Promise<void> => {
@@ -220,8 +224,8 @@ export const writeScaffold = async (directory: string, plan: FileMap): Promise<v
         }
       }
       // Exclusive creation is the guarantee; the preflight above is only the friendly diagnostic.
-      const handle = await open(path, "wx").catch((error: NodeJS.ErrnoException) => {
-        throw error.code === "EEXIST" ? new Error(`${path} already exists`) : error;
+      const handle = await open(path, "wx").catch((cause: unknown) => {
+        throw errorCode(cause) === "EEXIST" ? new Error(`${path} already exists`) : cause;
       });
       // Recorded before the write, so a write that fails after the open (EFBIG) is undone too.
       createdFiles.push(path);
