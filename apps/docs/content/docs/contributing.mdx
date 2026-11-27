@@ -23,12 +23,12 @@ Mitome is developed at [github.com/chenxin-yan/mitome](https://github.com/chenxi
 pnpm install
 ```
 
-The install also sets up a commit hook that checks and fixes the staged files, and patches the `typescript` package's `tsc` with `effect-tsgo patch` so that an editor using the workspace TypeScript shows Effect's diagnostics. Tasks live in each package's `vite.config.ts`, with the shared ones in `vite.shared.ts`; `pnpm vp run <task>` runs one after the tasks it depends on, from cache when nothing it reads changed. `pnpm run build` builds every package and compiles the `mitome` command to `packages/cli/dist/local/mitome`, and `pnpm run dev:cli` runs it from source with `MITOME_HOME` set to the git-ignored `.dev-home` and `ANTHROPIC_CONFIG_DIR` to a directory inside it.
+The install also sets up a commit hook that checks and fixes the staged files, and patches the `typescript` package's `tsc` with `effect-tsgo patch` so that an editor using the workspace TypeScript shows Effect's diagnostics. Tasks live in each package's `vite.config.ts`, with the shared ones in `vite.shared.ts`; `pnpm vp run <task>` runs one after the tasks it depends on, from cache when nothing it reads changed. The packages resolve each other from source through the private `@mitome/source` export condition, so an edit is seen everywhere without a build. `pnpm run build` builds the published libraries with `vp pack` and compiles the `mitome` command to `packages/cli/dist/local/mitome`, and `pnpm run dev:cli` runs it from source with `MITOME_HOME` set to the git-ignored `.dev-home` and `ANTHROPIC_CONFIG_DIR` to a directory inside it.
 
 Narrower commands:
 
 ```sh
-pnpm vp run --filter @mitome/core test   # one package's tests, after the builds they need
+pnpm vp run --filter @mitome/core test   # one package's tests, from source
 pnpm vp test run test/agent/agent.test.ts   # one test file, from its package directory
 bun --bun vp test run test/command.test.ts  # the same in packages/cli, whose tests need the Bun runtime
 ```
@@ -40,9 +40,12 @@ To match CI, run:
 ```sh
 pnpm install --frozen-lockfile
 pnpm vp run check
-pnpm run build
 pnpm test
+pnpm run build
+pnpm run test:dist
 ```
+
+`pnpm test` runs every package's tests from source and needs nothing built. `pnpm run test:dist` runs the tests of built output, tagged `dist` (`@module-tag dist` on a file, `tags: ["dist"]` on a test): a consumer's declarations, cross-process imports of `dist`, the compiled binary and its terminal, the scaffolded application and the release fixtures, each after the builds it needs. A file with such tests needs `pnpm run build` before `pnpm vp test run` runs it alone.
 
 `pnpm vp run check` formats, lints and type-checks the whole repository with Effect's diagnostics, which it gets by running `vp check` through `effect-tsgo`; a bare `vp check` misses them. `pnpm run check:fix` applies format and lint fixes. `pnpm run build:docs` is the site-only build. It fails on an internal link to a page that does not exist and on an `<auto-type-table>` whose type cannot be resolved, so it is the documentation gate as well. Anchors within a page are not checked.
 

@@ -753,20 +753,26 @@ describe("generated TypeScript", () => {
     return root;
   };
 
-  it("every Provider variant typechecks against the workspace packages", async () => {
-    const root = await generated();
-    // One program over every generated module, using the tsconfig a Configuration ships with.
-    await writeFile(
-      join(root, "tsconfig.json"),
-      configurationPlan({ provider: providerOf("openai"), model: "gpt-5.6" }).get("tsconfig.json")!,
-    );
+  it(
+    "every Provider variant typechecks against the workspace packages",
+    { tags: ["dist"], timeout: 60_000 },
+    async () => {
+      const root = await generated();
+      // One program over every generated module, using the tsconfig a Configuration ships with.
+      await writeFile(
+        join(root, "tsconfig.json"),
+        configurationPlan({ provider: providerOf("openai"), model: "gpt-5.6" }).get(
+          "tsconfig.json",
+        )!,
+      );
 
-    const tsc = promisify(execFile)(join(packageDirectory, "node_modules/.bin/tsc"), [
-      "-p",
-      join(root, "tsconfig.json"),
-    ]);
-    await expect(tsc).resolves.toMatchObject({ stdout: "" });
-  }, 60_000);
+      const tsc = promisify(execFile)(join(packageDirectory, "node_modules/.bin/tsc"), [
+        "-p",
+        join(root, "tsconfig.json"),
+      ]);
+      await expect(tsc).resolves.toMatchObject({ stdout: "" });
+    },
+  );
 
   it("every Provider variant default-exports a Configuration of its Model", async () => {
     const root = await generated();

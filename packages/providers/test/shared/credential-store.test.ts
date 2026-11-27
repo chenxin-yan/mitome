@@ -114,38 +114,43 @@ describe("Credential storage", () => {
     },
   );
 
-  test("serializes atomic cross-process writes and keeps storage private", async () => {
-    const stateDirectory = await directory();
-    await mkdir(stateDirectory, { recursive: true });
-    await writeFile(
-      join(stateDirectory, "auth.json"),
-      JSON.stringify({ other: { retained: true } }),
-    );
-    const source = new URL("../../dist/shared/credential-store.js", import.meta.url).href;
-    const platform = new URL("../../dist/shared/platform.js", import.meta.url).href;
-    const writer = (providerKey: string) =>
-      spawnRuntime([
-        "-e",
-        `import { Effect } from "effect"; const { modifyCredential } = await import(${JSON.stringify(source)}); const { platformLayer } = await import(${JSON.stringify(platform)}); await Effect.runPromise(modifyCredential(${JSON.stringify(stateDirectory)}, ${JSON.stringify(providerKey)}, () => Effect.succeed([${JSON.stringify(credential(providerKey))}, undefined])).pipe(Effect.provide(platformLayer)));`,
-      ]);
-    const writers = [writer("first"), writer("second")];
-    expect(await Promise.all(writers.map((child) => child.exited))).toEqual([0, 0]);
-    await Promise.all(
-      Array.from({ length: 8 }, (_, index) =>
-        write(stateDirectory, "concurrent", credential(String(index))),
-      ),
-    );
-    expect(await contents(stateDirectory)).toMatchObject({
-      other: { retained: true },
-      first: { type: "oauth" },
-      second: { type: "oauth" },
-      concurrent: { type: "oauth" },
-    });
-  });
+  test(
+    "serializes atomic cross-process writes and keeps storage private",
+    { tags: ["dist"] },
+    async () => {
+      const stateDirectory = await directory();
+      await mkdir(stateDirectory, { recursive: true });
+      await writeFile(
+        join(stateDirectory, "auth.json"),
+        JSON.stringify({ other: { retained: true } }),
+      );
+      const source = new URL("../../dist/shared/credential-store.js", import.meta.url).href;
+      const platform = new URL("../../dist/shared/platform.js", import.meta.url).href;
+      const writer = (providerKey: string) =>
+        spawnRuntime([
+          "-e",
+          `import { Effect } from "effect"; const { modifyCredential } = await import(${JSON.stringify(source)}); const { platformLayer } = await import(${JSON.stringify(platform)}); await Effect.runPromise(modifyCredential(${JSON.stringify(stateDirectory)}, ${JSON.stringify(providerKey)}, () => Effect.succeed([${JSON.stringify(credential(providerKey))}, undefined])).pipe(Effect.provide(platformLayer)));`,
+        ]);
+      const writers = [writer("first"), writer("second")];
+      expect(await Promise.all(writers.map((child) => child.exited))).toEqual([0, 0]);
+      await Promise.all(
+        Array.from({ length: 8 }, (_, index) =>
+          write(stateDirectory, "concurrent", credential(String(index))),
+        ),
+      );
+      expect(await contents(stateDirectory)).toMatchObject({
+        other: { retained: true },
+        first: { type: "oauth" },
+        second: { type: "oauth" },
+        concurrent: { type: "oauth" },
+      });
+    },
+  );
 
   // A umask applies only to POSIX modes, and only a process of its own can change it.
   test.skipIf(process.platform === "win32")(
     "writes storage readable and writable by its owner alone under any umask, replacing a wider file",
+    { tags: ["dist"] },
     async () => {
       const stateDirectory = await directory();
       await mkdir(stateDirectory, { recursive: true });

@@ -127,6 +127,7 @@ jobs:
       - run: pnpm --dir packages/cli run build:release
       - run: node scripts/release.ts pack "$RUNNER_TEMP/release-packages"
       - run: pnpm test
+      - run: pnpm run test:dist
         env:
           MITOME_RELEASE_ARTIFACTS: ${{ runner.temp }}/release-packages
       - uses: actions/upload-artifact@v7

@@ -207,6 +207,7 @@ describe("application plans", () => {
   // A file-size limit lets the exclusive open create a file and then fails the write into it.
   test.skipIf(process.platform === "win32")(
     "removes a file it created when writing into it fails",
+    { tags: ["dist"] },
     async () => {
       const path = await directory();
       const scaffold = pathToFileURL(join(packageDirectory, "dist/application.js")).href;
@@ -289,51 +290,63 @@ describe("generated application", () => {
       child.stdin.end();
     });
 
-  test("every Provider variant selects its Model and typechecks with its own tsconfig", async () => {
-    const root = await generated();
-    const tsc = promisify(execFile);
-    await Promise.all(
-      variants.map(async ([id, , model]) => {
-        expect(await contents(join(root, id), "src/main.ts")).toContain(model);
-        await expect(
-          tsc(join(packageDirectory, "node_modules/.bin/tsc"), ["-p", join(root, id)]),
-        ).resolves.toMatchObject({ stdout: "" });
-      }),
-    );
-  }, 60_000);
+  test(
+    "every Provider variant selects its Model and typechecks with its own tsconfig",
+    { tags: ["dist"], timeout: 60_000 },
+    async () => {
+      const root = await generated();
+      const tsc = promisify(execFile);
+      await Promise.all(
+        variants.map(async ([id, , model]) => {
+          expect(await contents(join(root, id), "src/main.ts")).toContain(model);
+          await expect(
+            tsc(join(packageDirectory, "node_modules/.bin/tsc"), ["-p", join(root, id)]),
+          ).resolves.toMatchObject({ stdout: "" });
+        }),
+      );
+    },
+  );
 
-  test("every Provider variant's main.ts exits with the Provider's missing-credential message", async () => {
-    // Plain Node, as `npm start` runs it, with no credentials and an empty MITOME_HOME, HOME and
-    // ANTHROPIC_CONFIG_DIR (so no Anthropic profile either), so the Provider stops before any
-    // network request. stdin is a pipe, not a terminal.
-    const credentials = {
-      openai: "Environment variable OPENAI_API_KEY is not set or empty",
-      "openai-codex": "Codex Credential is unavailable.",
-      anthropic:
-        "Environment variable ANTHROPIC_API_KEY is not set or empty. Set it to an API key, or sign in to the Claude Console",
-    } as const;
-    const root = await generated();
-    for (const [id] of variants) {
-      const result = await runNode(join(root, id), ["src/main.ts", "Roll a die."]);
+  test(
+    "every Provider variant's main.ts exits with the Provider's missing-credential message",
+    { tags: ["dist"], timeout: 60_000 },
+    async () => {
+      // Plain Node, as `npm start` runs it, with no credentials and an empty MITOME_HOME, HOME and
+      // ANTHROPIC_CONFIG_DIR (so no Anthropic profile either), so the Provider stops before any
+      // network request. stdin is a pipe, not a terminal.
+      const credentials = {
+        openai: "Environment variable OPENAI_API_KEY is not set or empty",
+        "openai-codex": "Codex Credential is unavailable.",
+        anthropic:
+          "Environment variable ANTHROPIC_API_KEY is not set or empty. Set it to an API key, or sign in to the Claude Console",
+      } as const;
+      const root = await generated();
+      for (const [id] of variants) {
+        const result = await runNode(join(root, id), ["src/main.ts", "Roll a die."]);
+        expect(result).toMatchObject({ code: 1, stdout: "" });
+        expect(result.stderr).toContain(credentials[id]);
+      }
+    },
+  );
+
+  test(
+    "main.ts reports a failure that is not an Error as a value",
+    { tags: ["dist"], timeout: 15_000 },
+    async () => {
+      const project = join(await generated(), "openai");
+      const main = await contents(project, "src/main.ts");
+      const failing = main.replace(
+        /^const program = [\s\S]+?;\n\n/m,
+        'const program = Effect.fail(Object.assign(Object.create(null), { _tag: "Unavailable" }));\n\n',
+      );
+      expect(failing).not.toBe(main);
+      await writeFile(join(project, "src/failing.ts"), failing);
+
+      const result = await runNode(project, ["src/failing.ts"]);
       expect(result).toMatchObject({ code: 1, stdout: "" });
-      expect(result.stderr).toContain(credentials[id]);
-    }
-  }, 60_000);
-
-  test("main.ts reports a failure that is not an Error as a value", async () => {
-    const project = join(await generated(), "openai");
-    const main = await contents(project, "src/main.ts");
-    const failing = main.replace(
-      /^const program = [\s\S]+?;\n\n/m,
-      'const program = Effect.fail(Object.assign(Object.create(null), { _tag: "Unavailable" }));\n\n',
-    );
-    expect(failing).not.toBe(main);
-    await writeFile(join(project, "src/failing.ts"), failing);
-
-    const result = await runNode(project, ["src/failing.ts"]);
-    expect(result).toMatchObject({ code: 1, stdout: "" });
-    expect(result.stderr).toContain("_tag: 'Unavailable'");
-  }, 15_000);
+      expect(result.stderr).toContain("_tag: 'Unavailable'");
+    },
+  );
 
   test("main.ts asks on stderr, and only when stdin and stderr are terminals", async () => {
     const main = await contents(join(await generated(), "openai"), "src/main.ts");
@@ -486,7 +499,7 @@ describe("generated application", () => {
   });
 });
 
-describe("generated Codex login step", () => {
+describe("generated Codex login step", { tags: ["dist"] }, () => {
   // The README's `node -e` program, run like a user would from a project with the packages
   // installed (this package's node_modules stand in for the install). PATH is empty, so no browser
   // opens; the flow falls back to the printed URL and pasted redirect.
@@ -569,7 +582,7 @@ describe("generated Codex login step", () => {
   }, 15_000);
 });
 
-describe("create-mitome executable", () => {
+describe("create-mitome executable", { tags: ["dist"] }, () => {
   const executable = join(packageDirectory, "dist/index.js");
   const run = (args: ReadonlyArray<string>, input: string, cwd: string) =>
     new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve) => {

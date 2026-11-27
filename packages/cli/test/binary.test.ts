@@ -1,6 +1,7 @@
 // The compiled `mitome` executable against the offline fixture Configuration, as an operator runs
 // it: a real module import, real stdio and real signals. No network or credentials are used. The
 // binary bundles its own `@mitome/core` and `effect`; the fixture imports the workspace's copies.
+// @module-tag dist
 import { spawn, spawnSync } from "node:child_process";
 import {
   copyFile,

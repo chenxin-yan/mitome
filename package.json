@@ -9,6 +9,7 @@
     "dev:cli": "bun scripts/dev-cli.ts",
     "build": "vp run -r build",
     "test": "vp run test:task",
+    "test:dist": "vp run test:dist:task",
     "build:pkgs": "vp run --fail-if-no-match --filter \"./packages/*\" build",
     "build:docs": "vp run --fail-if-no-match --filter @mitome/docs build",
     "version-packages": "changeset version && pnpm install --lockfile-only",
@@ -19,7 +20,6 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
-    "@babel/cli": "8.1.0",
     "@babel/core": "8.1.3",
     "@changesets/cli": "3.0.3",
     "@effect/tsgo": "0.73.2",

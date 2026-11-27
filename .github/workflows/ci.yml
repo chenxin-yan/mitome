@@ -27,5 +27,6 @@ jobs:
       - uses: jdx/mise-action@v4
       - run: pnpm install --frozen-lockfile
       - run: pnpm vp run check
-      - run: pnpm run build
       - run: pnpm test
+      - run: pnpm run build
+      - run: pnpm run test:dist
