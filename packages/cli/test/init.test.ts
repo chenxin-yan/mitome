@@ -594,7 +594,9 @@ describe("writeConfiguration", () => {
     const home = join(parent, "mitome");
     const interruption = new AbortController();
     const interrupted = racing(plan, () => interruption.abort());
-    await expect(runWriteConfiguration(home, interrupted, interruption.signal)).rejects.toThrow();
+    await expect(runWriteConfiguration(home, interrupted, interruption.signal)).rejects.toThrow(
+      "All fibers interrupted without error",
+    );
     expect(existsSync(parent)).toBe(false);
   });
 

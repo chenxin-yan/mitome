@@ -52,7 +52,9 @@ describe("Provider.make", () => {
       capability: { module: "./a.js" },
     });
     // An invalid variable is not dropped to leave a sign-in only.
-    expect(() => decode({ env: "BAD-NAME", capability: { module: "./auth.js" } })).toThrow();
+    expect(() => decode({ env: "BAD-NAME", capability: { module: "./auth.js" } })).toThrow(
+      Schema.SchemaError,
+    );
   });
 
   it("takes its Credential and Model metadata as optional fields", () => {

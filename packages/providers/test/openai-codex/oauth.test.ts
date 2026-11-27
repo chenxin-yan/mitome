@@ -237,7 +237,7 @@ describe("Codex OAuth", () => {
     await reading.promise;
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(stoppedReading).toBe(true);
-    await expect(fetch(`http://localhost:${port}/auth/callback`)).rejects.toThrow();
+    await expect(fetch(`http://localhost:${port}/auth/callback`)).rejects.toThrow(TypeError);
   });
 
   test("hands the whole OAuth URL to the native Windows launcher", async () => {

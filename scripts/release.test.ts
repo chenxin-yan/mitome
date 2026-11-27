@@ -208,12 +208,12 @@ test("tarballs must match the cohort, contain platform binaries and native notic
     pack(platform.version, "1.0.0", { os: ["linux"], cpu: ["x64"], libc: [] });
     expect(() => checkArchives([platform], archives)).toThrow("does not restrict its libc");
     pack("9.9.9", "1.0.0");
-    expect(() => checkArchives([platform], archives)).toThrow();
+    expect(() => checkArchives([platform], archives)).toThrow(assert.AssertionError);
     pack(platform.version, "catalog:");
     expect(() => checkArchives([platform], archives)).toThrow("retains workspace protocols");
     pack(platform.version, "1.0.0");
     writeFileSync(join(archives, "unexpected.tgz"), "unexpected");
-    expect(() => checkArchives([platform], archives)).toThrow();
+    expect(() => checkArchives([platform], archives)).toThrow(assert.AssertionError);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
